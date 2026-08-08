@@ -30,3 +30,8 @@ wrangler secret put DM_KEY   # first deploy only
 ```
 
 See `CLAUDE.md` for architecture and the rules of the road.
+
+## License
+
+[AGPL-3.0](LICENSE) © Brian Corbin. Fork it, run it, mod it — but if you
+serve a modified teller to others, share your changes the same way.
