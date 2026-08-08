@@ -89,14 +89,25 @@ export function DmView({ campaignId }: { campaignId: string }) {
         <span className="font-mono text-xs text-stone-500">
           {campaign.system} · {gm}'s console
         </span>
-        <a
-          className="ml-auto font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
-          href={`/table/${campaign.id}`}
-          target="_blank"
-          rel="noreferrer"
-        >
-          open table view ↗
-        </a>
+        <span className="ml-auto flex gap-4">
+          <a
+            className="font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
+            href={`/table/${campaign.id}`}
+            target="_blank"
+            rel="noreferrer"
+          >
+            table ↗
+          </a>
+          <a
+            className="font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
+            href={`/board/${campaign.id}`}
+            target="_blank"
+            rel="noreferrer"
+            title="DM-facing — shows NPC health and secrets"
+          >
+            board ↗
+          </a>
+        </span>
       </header>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
