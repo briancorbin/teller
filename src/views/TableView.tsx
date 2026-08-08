@@ -5,13 +5,16 @@ import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import { ConnectionHint } from '../components/ConnectionHint';
 
-// The table TV — the screen IN the table, under the minis. With a map
-// uploaded it renders full-bleed with the initiative rail overlaid;
-// otherwise it's a big glanceable initiative board. Notices take over
-// everything. (Fog, calibrated grid, and tokens are the next phase.)
+// The table TV — the screen IN the table, under the minis. It is the
+// GROUND, nothing else: the battle map full-bleed when one's up, idle
+// branding otherwise. All bookkeeping (initiative, notices, counters)
+// belongs to the board standing in front of the DM. Fog, calibrated
+// grid, and tokens land here in the next phase.
 
 export function TableView({ campaignId }: { campaignId: string }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+
+  useWakeLock();
 
   const refetch = useCallback(() => {
     api
@@ -24,24 +27,11 @@ export function TableView({ campaignId }: { campaignId: string }) {
 
   useEffect(refetch, [refetch]);
 
-  useWakeLock();
-  const { session, connected } = useSession(campaignId, (id) => {
+  const { connected } = useSession(campaignId, (id) => {
     if (id === 'campaign') refetch();
   });
-  const initiative = session?.initiative ?? [];
-  const turn = session?.turn ?? null;
-  const mapUrl = campaign?.data.map ? `/api/maps/${campaign.data.map.key}` : null;
 
-  if (session?.notice) {
-    return (
-      <main className="flex min-h-screen items-center justify-center p-8">
-        <ConnectionHint connected={connected} />
-        <p className="animate-pulse text-center font-serif text-7xl text-amber-300">
-          {session.notice}
-        </p>
-      </main>
-    );
-  }
+  const mapUrl = campaign?.data.map ? `/api/maps/${campaign.data.map.key}` : null;
 
   if (mapUrl) {
     return (
@@ -52,63 +42,15 @@ export function TableView({ campaignId }: { campaignId: string }) {
           alt=""
           className="absolute inset-0 h-full w-full object-contain"
         />
-        {initiative.length > 0 && (
-          <ol className="absolute inset-x-0 bottom-4 flex flex-wrap items-center justify-center gap-2 px-8">
-            {initiative.map((entry, index) => (
-              <li
-                key={entry.id}
-                className={`rounded-xl px-4 py-1.5 font-serif backdrop-blur ${
-                  index === turn
-                    ? 'bg-amber-600/90 text-2xl text-stone-950 shadow-lg'
-                    : 'bg-stone-950/70 text-lg text-stone-300'
-                }`}
-              >
-                {entry.label}
-              </li>
-            ))}
-            {turn !== null && (
-              <li className="rounded-xl bg-stone-950/70 px-3 py-1.5 font-mono text-sm text-amber-300 backdrop-blur">
-                rd {session?.round}
-              </li>
-            )}
-          </ol>
-        )}
-      </main>
-    );
-  }
-
-  if (initiative.length === 0) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-2">
-        <ConnectionHint connected={connected} />
-        <h1 className="font-serif text-6xl text-stone-700">teller</h1>
-        <p className="text-stone-600">waiting for the books to open…</p>
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 p-8">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-2">
       <ConnectionHint connected={connected} />
-      {turn !== null && (
-        <p className="font-mono text-lg uppercase tracking-[0.3em] text-stone-500">
-          round {session?.round}
-        </p>
-      )}
-      <ol className="flex flex-col items-center gap-3">
-        {initiative.map((entry, index) => (
-          <li
-            key={entry.id}
-            className={`rounded-xl px-8 py-3 font-serif transition-all ${
-              index === turn
-                ? 'scale-110 bg-amber-700 text-4xl text-stone-950 shadow-lg shadow-amber-900/50'
-                : 'bg-stone-900 text-2xl text-stone-400'
-            }`}
-          >
-            {entry.label}
-          </li>
-        ))}
-      </ol>
+      <h1 className="font-serif text-6xl text-stone-700">teller</h1>
+      <p className="text-stone-600">the table awaits a map…</p>
     </main>
   );
 }
