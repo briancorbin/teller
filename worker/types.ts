@@ -48,6 +48,8 @@ export type CampaignData = {
    * use); never ships in templates and never leaves via /public.
    */
   reference?: string;
+  /** Active battle map (R2 object key). v0: one map per campaign. */
+  map?: { key: string };
 };
 
 export type Campaign = {

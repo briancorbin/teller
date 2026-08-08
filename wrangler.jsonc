@@ -18,6 +18,7 @@
     "bindings": [{ "name": "CAMPAIGN", "class_name": "CampaignDO" }],
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CampaignDO"] }],
+  "r2_buckets": [{ "binding": "MAPS", "bucket_name": "teller-maps" }],
   "d1_databases": [
     {
       "binding": "DB",

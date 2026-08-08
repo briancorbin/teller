@@ -96,11 +96,34 @@ export function DmView({ campaignId }: { campaignId: string }) {
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
       <header className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h1 className="font-serif text-3xl text-stone-100">{campaign.name}</h1>
+        <input
+          className="min-w-0 bg-transparent font-serif text-3xl text-stone-100 focus:outline-none"
+          defaultValue={campaign.name}
+          onBlur={(e) => {
+            const name = e.target.value.trim();
+            if (name && name !== campaign.name) {
+              setCampaign({ ...campaign, name });
+              api.patchCampaign(campaign.id, { name }).catch(() => refetch());
+            }
+          }}
+          aria-label="campaign name"
+        />
         <span className="font-mono text-xs text-stone-500">
           {campaign.system} · {gm}'s console
         </span>
-        <span className="ml-auto flex gap-4">
+        <span className="ml-auto flex items-baseline gap-4">
+          <button
+            className="font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
+            onClick={() =>
+              api
+                .undo(campaignId)
+                .then(() => refetch())
+                .catch((e) => setError(String(e instanceof Error ? e.message : e)))
+            }
+            title="revert the last change (character/campaign edits)"
+          >
+            ↺ undo
+          </button>
           <a
             className="font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
             href={`/table/${campaign.id}`}
@@ -133,6 +156,20 @@ export function DmView({ campaignId }: { campaignId: string }) {
 
           <div className={`${card} space-y-2`}>
             <span className={sectionLabel}>Table notice</span>
+            <div className="flex flex-wrap gap-1.5">
+              {['SHORT REST', 'LONG REST', 'ROLL INITIATIVE', 'BREAK'].map((preset) => (
+                <button
+                  key={preset}
+                  className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-300 transition-colors hover:bg-amber-800 hover:text-stone-50"
+                  onClick={() => {
+                    setNotice(preset);
+                    api.sessionOp(campaignId, { op: 'notice', text: preset });
+                  }}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
             <div className="flex gap-2">
               <input
                 className={`${input} min-w-0 flex-1`}
@@ -161,6 +198,51 @@ export function DmView({ campaignId }: { campaignId: string }) {
                 clear
               </button>
             </div>
+          </div>
+
+          <div className={`${card} space-y-2`}>
+            <div className="flex items-center justify-between">
+              <span className={sectionLabel}>Battle map</span>
+              <div className="flex gap-1">
+                <label className="cursor-pointer rounded-md px-2 py-1 text-sm text-stone-400 transition-colors hover:bg-stone-800 hover:text-stone-200">
+                  {campaign.data.map ? 'replace' : 'upload'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      api
+                        .uploadMap(campaignId, file)
+                        .then(() => refetch())
+                        .catch((err2) =>
+                          setError(String(err2 instanceof Error ? err2.message : err2)),
+                        );
+                    }}
+                  />
+                </label>
+                {campaign.data.map && (
+                  <button
+                    className="rounded-md px-2 py-1 text-sm text-stone-400 transition-colors hover:bg-red-950 hover:text-red-300"
+                    onClick={() => api.removeMap(campaignId).then(refetch)}
+                  >
+                    clear
+                  </button>
+                )}
+              </div>
+            </div>
+            {campaign.data.map ? (
+              <img
+                src={`/api/maps/${campaign.data.map.key}`}
+                alt="battle map"
+                className="max-h-40 w-full rounded-md object-cover"
+              />
+            ) : (
+              <p className="text-sm text-stone-600">
+                no map — upload one and it appears on the table TV
+              </p>
+            )}
           </div>
 
           <RulesPanel packs={packs} onUploaded={loadPacks} />

@@ -57,6 +57,7 @@ function CounterRow({
 
   const low =
     counter.max !== null && counter.max > 0 && counter.current / counter.max <= 0.25;
+  const refillable = counter.max !== null && counter.current < counter.max;
 
   return (
     <div className="flex items-center gap-3">
@@ -79,6 +80,17 @@ function CounterRow({
       <button className={big ? bigBtn : iconBtn} onClick={() => bump(1)} aria-label={`increase ${counter.name}`}>
         +
       </button>
+      {counter.max !== null && (
+        <button
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-amber-300 disabled:opacity-0"
+          disabled={!refillable}
+          onClick={() => onChange({ ...counter, current: counter.max! })}
+          aria-label={`refill ${counter.name}`}
+          title="refill to max"
+        >
+          ↻
+        </button>
+      )}
     </div>
   );
 }

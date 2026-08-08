@@ -12,6 +12,7 @@ export type Env = {
   DB: D1Database;
   CAMPAIGN: DurableObjectNamespace;
   ASSETS: Fetcher;
+  MAPS: R2Bucket;
   DM_KEY?: string;
 };
 

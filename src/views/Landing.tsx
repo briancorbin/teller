@@ -66,14 +66,26 @@ export function Landing() {
           <span className={sectionLabel}>Campaigns</span>
           <ul className="space-y-1">
             {campaigns.map((c) => (
-              <li key={c.id}>
+              <li key={c.id} className="flex items-center gap-1">
                 <a
-                  className="flex items-baseline justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-stone-800"
+                  className="flex min-w-0 flex-1 items-baseline justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-stone-800"
                   href={`/dm/${c.id}`}
                 >
-                  <span className="text-stone-100">{c.name}</span>
-                  <span className="font-mono text-xs text-stone-500">{c.system}</span>
+                  <span className="truncate text-stone-100">{c.name}</span>
+                  <span className="ml-3 font-mono text-xs text-stone-500">{c.system}</span>
                 </a>
+                <button
+                  className="rounded-md px-2 py-1 text-sm text-stone-600 transition-colors hover:bg-red-950 hover:text-red-300"
+                  title="delete campaign"
+                  onClick={() => {
+                    if (!window.confirm(`Delete "${c.name}" and all its characters? This cannot be undone.`)) return;
+                    api.deleteCampaign(c.id).then(() =>
+                      setCampaigns((cs) => (cs ?? []).filter((x) => x.id !== c.id)),
+                    );
+                  }}
+                >
+                  ✕
+                </button>
               </li>
             ))}
           </ul>

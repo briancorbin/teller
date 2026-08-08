@@ -85,6 +85,32 @@ export const api = {
       !seatToken,
     ),
 
+  deleteCampaign: (id: string) =>
+    req<{ ok: true }>(`/api/campaigns/${id}`, { method: 'DELETE' }, true),
+
+  undo: (campaignId: string) =>
+    req<{ undid: string; entityId: string | null }>(
+      `/api/campaigns/${campaignId}/undo`,
+      { method: 'POST' },
+      true,
+    ),
+
+  uploadMap: async (campaignId: string, file: File) => {
+    const res = await fetch(`/api/campaigns/${campaignId}/map`, {
+      method: 'PUT',
+      headers: { 'x-teller-key': getDmKey(), 'content-type': file.type },
+      body: file,
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<{ map: { key: string } }>;
+  },
+
+  removeMap: (campaignId: string) =>
+    req<{ ok: true }>(`/api/campaigns/${campaignId}/map`, { method: 'DELETE' }, true),
+
   deleteCharacter: (id: string) =>
     req<{ ok: true }>(`/api/characters/${id}`, { method: 'DELETE' }, true),
 

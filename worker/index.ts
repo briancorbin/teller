@@ -157,6 +157,132 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     });
   }
 
+  // Undo: restore the `before` snapshot of the most recent un-reverted
+  // mutation event. The event log is the source; a revert logs its own
+  // event pointing at what it undid, so repeated undos walk backward.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/undo$/);
+  if (m && method === 'POST') {
+    if (!dm) return err('DM key required', 401);
+    const campaignId = m[1];
+    type EventRow = { id: number; entity_id: string | null; kind: string; payload: string };
+    const reverts = await env.DB.prepare(
+      "SELECT payload FROM events WHERE campaign_id = ? AND kind = 'revert'",
+    )
+      .bind(campaignId)
+      .all();
+    const revertedIds = new Set(
+      reverts.results.map(
+        (r) =>
+          (JSON.parse((r as { payload: string }).payload) as { revertedEventId?: number })
+            .revertedEventId,
+      ),
+    );
+    const rows = await env.DB.prepare(
+      `SELECT id, entity_id, kind, payload FROM events
+       WHERE campaign_id = ? AND kind IN ('character.updated','campaign.updated','character.deleted')
+       ORDER BY id DESC LIMIT 200`,
+    )
+      .bind(campaignId)
+      .all();
+    type Before = { name: string; kind?: string; data: unknown };
+    let target: (EventRow & { before: Before }) | null = null;
+    for (const raw of rows.results as EventRow[]) {
+      if (revertedIds.has(raw.id)) continue;
+      const payload = JSON.parse(raw.payload) as { before?: Before };
+      if (payload.before) {
+        target = { ...raw, before: payload.before };
+        break;
+      }
+    }
+    if (!target) return err('nothing to undo', 404);
+
+    if (target.kind === 'campaign.updated') {
+      await env.DB.prepare('UPDATE campaigns SET name = ?, data = ? WHERE id = ?')
+        .bind(target.before.name, JSON.stringify(target.before.data), campaignId)
+        .run();
+    } else if (target.kind === 'character.deleted') {
+      await env.DB.prepare(
+        'INSERT OR REPLACE INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
+      )
+        .bind(
+          target.entity_id,
+          campaignId,
+          target.before.name,
+          target.before.kind ?? 'pc',
+          JSON.stringify(target.before.data),
+        )
+        .run();
+    } else {
+      await env.DB.prepare(
+        "UPDATE characters SET name = ?, data = ?, updated_at = datetime('now') WHERE id = ?",
+      )
+        .bind(target.before.name, JSON.stringify(target.before.data), target.entity_id)
+        .run();
+    }
+    await logEvent(env, campaignId, target.entity_id, 'dm', 'revert', {
+      revertedEventId: target.id,
+      kind: target.kind,
+    });
+    await poke(env, campaignId, target.entity_id ?? 'campaign');
+    return json({ undid: target.kind, entityId: target.entity_id });
+  }
+
+  // Battle map: PUT raw image → R2, pointer on campaign.data.map.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/map$/);
+  if (m) {
+    if (!dm) return err('DM key required', 401);
+    const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!campaignRow) return err('campaign not found', 404);
+    const campaign = toCampaign(campaignRow as never);
+
+    if (method === 'PUT') {
+      const contentType = request.headers.get('content-type') ?? '';
+      if (!contentType.startsWith('image/')) return err('image body required', 400);
+      const ext = contentType.split('/')[1]?.split('+')[0] ?? 'img';
+      const key = `map/${campaign.id}/${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}.${ext}`;
+      await env.MAPS.put(key, request.body, { httpMetadata: { contentType } });
+      const next = { ...campaign.data, map: { key } };
+      await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+        .bind(JSON.stringify(next), campaign.id)
+        .run();
+      await logEvent(env, campaign.id, null, 'dm', 'campaign.updated', {
+        patch: { map: { key } },
+        before: { name: campaign.name, data: campaign.data },
+      });
+      await poke(env, campaign.id, 'campaign');
+      return json({ map: { key } }, 201);
+    }
+
+    if (method === 'DELETE') {
+      // Pointer only — objects stay (undo-safe; storage is trivial here).
+      const next = { ...campaign.data, map: undefined };
+      await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+        .bind(JSON.stringify(next), campaign.id)
+        .run();
+      await logEvent(env, campaign.id, null, 'dm', 'campaign.updated', {
+        patch: { map: null },
+        before: { name: campaign.name, data: campaign.data },
+      });
+      await poke(env, campaign.id, 'campaign');
+      return json({ ok: true });
+    }
+  }
+
+  // Serve map images (unguessable random keys; cache hard).
+  m = pathname.match(/^\/api\/maps\/(.+)$/);
+  if (m && method === 'GET') {
+    const object = await env.MAPS.get(decodeURIComponent(m[1]));
+    if (!object) return err('not found', 404);
+    return new Response(object.body, {
+      headers: {
+        'content-type': object.httpMetadata?.contentType ?? 'application/octet-stream',
+        'cache-control': 'public, max-age=31536000, immutable',
+      },
+    });
+  }
+
   // Player-safe campaign snapshot for the passive displays (board,
   // table). No auth: everything here is table-visible by design.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/public$/);
@@ -178,10 +304,21 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         data: {
           vocabulary: campaign.data.vocabulary,
           counters: campaign.data.counters,
+          map: campaign.data.map,
         },
       },
       characters: chars.results.map((r) => toPublicCharacter(r as never)),
     });
+  }
+
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)$/);
+  if (m && method === 'DELETE') {
+    if (!dm) return err('DM key required', 401);
+    const campaignId = m[1];
+    await env.DB.prepare('DELETE FROM events WHERE campaign_id = ?').bind(campaignId).run();
+    await env.DB.prepare('DELETE FROM characters WHERE campaign_id = ?').bind(campaignId).run();
+    await env.DB.prepare('DELETE FROM campaigns WHERE id = ?').bind(campaignId).run();
+    return json({ ok: true });
   }
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)$/);
@@ -206,6 +343,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .run();
     await logEvent(env, campaign.id, null, 'dm', 'campaign.updated', {
       patch: body,
+      before: { name: campaign.name, data: campaign.data },
     });
     await poke(env, campaign.id, 'campaign');
     const updated = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
@@ -231,7 +369,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       character.id,
       'dm',
       'character.deleted',
-      { name: character.name },
+      {
+        name: character.name,
+        before: { name: character.name, kind: character.kind, data: character.data },
+      },
     );
     await poke(env, character.campaignId, character.id);
     return json({ ok: true });
@@ -319,7 +460,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       character.id,
       dm ? 'dm' : `seat:${character.id}`,
       'character.updated',
-      { patch },
+      { patch, before: { name: character.name, data: character.data } },
     );
     await poke(env, character.campaignId, character.id);
 
