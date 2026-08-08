@@ -111,7 +111,17 @@ never cross the API boundary — per-resource serializers in
   calibrated true-1-inch grid is a launch requirement THERE, since
   physical minis and terrain must fit squares).
 - Tokens (deliberately dumb when they come: image, position, size — no
-  vision, no auras).
+  vision, no auras). Tokens may be linked to a character
+  (`characterId`), which unlocks **reactive tile effects**: because the
+  table client already receives session + character state over SSE, the
+  map can react to bookkeeping with zero new plumbing — pulsing glow
+  under the tile of whoever's turn it is, wound/blood states when a
+  linked character drops below HP thresholds, condition auras. This
+  works for PHYSICAL minis too: a position-tracked square lights up
+  UNDER the physical mini standing on the glass (state is virtual,
+  action is physical — the map is the ground, the effects are the
+  bookkeeping made visible). Effects are pure render-layer on the
+  table client; no new data model beyond token positions.
 - SRD content import, character builder, level-up wizard.
 - Community template distribution (v0 of that is a GitHub repo of JSON,
   not a platform).
