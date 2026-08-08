@@ -74,6 +74,12 @@ export type SystemTemplate = {
     counters: TemplateCounter[];
     tags: string[];
   };
+  /** Starting kit for kind 'npc' (foes/NPCs). Falls back to `character`. */
+  npc?: {
+    fields: { key: string; label: string; value?: string }[];
+    counters: TemplateCounter[];
+    tags: string[];
+  };
   campaign: {
     counters: TemplateCounter[];
   };

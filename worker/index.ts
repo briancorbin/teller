@@ -197,23 +197,26 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
     const body = await request.json<{ name?: string; kind?: string }>();
     if (!body.name) return err('name required', 400);
+    const kind = body.kind === 'npc' ? 'npc' : 'pc';
+    const kit =
+      (kind === 'npc' ? template?.npc : undefined) ?? template?.character;
 
     const id = newId('chr');
     const data: CharacterData = {
-      fields: (template?.character.fields ?? []).map((f) => ({
+      fields: (kit?.fields ?? []).map((f) => ({
         key: f.key,
         label: f.label,
         value: f.value ?? '',
       })),
-      counters: countersFrom(template?.character.counters ?? []),
-      tags: [...(template?.character.tags ?? [])],
+      counters: countersFrom(kit?.counters ?? []),
+      tags: [...(kit?.tags ?? [])],
       notes: '',
       seatToken: newId('seat'),
     };
     await env.DB.prepare(
       'INSERT INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
     )
-      .bind(id, campaignId, body.name, body.kind === 'npc' ? 'npc' : 'pc', JSON.stringify(data))
+      .bind(id, campaignId, body.name, kind, JSON.stringify(data))
       .run();
     await logEvent(env, campaignId, id, 'dm', 'character.created', {
       name: body.name,

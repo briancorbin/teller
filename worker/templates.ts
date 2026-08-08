@@ -24,6 +24,14 @@ const dnd5e: SystemTemplate = {
     ],
     tags: [],
   },
+  npc: {
+    fields: [
+      { key: 'ac', label: 'AC' },
+      { key: 'speed', label: 'Speed' },
+    ],
+    counters: [{ name: 'HP', max: null }],
+    tags: [],
+  },
   campaign: {
     counters: [],
   },
@@ -63,6 +71,26 @@ const wiw: SystemTemplate = {
       { name: 'Wallet ($)', current: 0, max: null },
       { name: 'Scrap (pcs)', current: 0, max: null },
       { name: 'Supplies', current: 0, max: null },
+    ],
+    tags: [],
+  },
+  // Foe kit mirrors the guidebook's creature stat block anatomy:
+  // Health / Defense / Speed / Size, the same four Skill pools (the
+  // Warden rolls them), and Grit for attack costs. Statuses land as
+  // tags with their Severity in the text ("Afraid 3").
+  npc: {
+    fields: [
+      { key: 'size', label: 'Size' },
+      { key: 'defense', label: 'Defense' },
+      { key: 'speed', label: 'Speed' },
+      { key: 'charm', label: 'Charm' },
+      { key: 'finesse', label: 'Finesse' },
+      { key: 'intuition', label: 'Intuition' },
+      { key: 'nerve', label: 'Nerve' },
+    ],
+    counters: [
+      { name: 'Health', max: null },
+      { name: 'Grit', current: 6, max: 6 },
     ],
     tags: [],
   },
