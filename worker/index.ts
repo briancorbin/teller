@@ -1,7 +1,14 @@
 import { CampaignDO } from './campaign-do';
-import { logEvent, toCampaign, toCharacter, toPublicCharacter, type Env } from './db';
+import {
+  logEvent,
+  toCampaign,
+  toCharacter,
+  toPackRecord,
+  toPublicCharacter,
+  type Env,
+} from './db';
 import { getTemplate, templates } from './templates';
-import type { Campaign, CharacterData, Counter, SessionOp } from './types';
+import type { Campaign, CharacterData, Counter, RulesPack, SessionOp } from './types';
 
 export { CampaignDO };
 
@@ -55,6 +62,45 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (pathname === '/api/templates' && method === 'GET') {
     return json(templates);
+  }
+
+  // Rules packs — uploaded reference content, DM-gated both ways.
+  if (pathname === '/api/packs' && method === 'GET') {
+    if (!dm) return err('DM key required', 401);
+    const system = url.searchParams.get('system');
+    const rows = system
+      ? await env.DB.prepare('SELECT * FROM packs WHERE system = ? ORDER BY name')
+          .bind(system)
+          .all()
+      : await env.DB.prepare('SELECT * FROM packs ORDER BY system, name').all();
+    return json(rows.results.map((r) => toPackRecord(r as never)));
+  }
+
+  if (pathname === '/api/packs' && method === 'PUT') {
+    if (!dm) return err('DM key required', 401);
+    const pack = await request.json<RulesPack>();
+    if (!pack.system || !pack.name || !Array.isArray(pack.sections)) {
+      return err('pack requires system, name, sections[]', 400);
+    }
+    await env.DB.prepare(
+      `INSERT INTO packs (id, system, name, data) VALUES (?, ?, ?, ?)
+       ON CONFLICT(system, name) DO UPDATE SET data = excluded.data, updated_at = datetime('now')`,
+    )
+      .bind(newId('pack'), pack.system, pack.name, JSON.stringify(pack))
+      .run();
+    const row = await env.DB.prepare(
+      'SELECT * FROM packs WHERE system = ? AND name = ?',
+    )
+      .bind(pack.system, pack.name)
+      .first();
+    return json(toPackRecord(row as never), 201);
+  }
+
+  m = pathname.match(/^\/api\/packs\/([^/]+)$/);
+  if (m && method === 'DELETE') {
+    if (!dm) return err('DM key required', 401);
+    await env.DB.prepare('DELETE FROM packs WHERE id = ?').bind(m[1]).run();
+    return json({ ok: true });
   }
 
   if (pathname === '/api/campaigns' && method === 'GET') {

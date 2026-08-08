@@ -91,6 +91,39 @@ export type SystemTemplate = {
   };
 };
 
+// --- Rules packs ------------------------------------------------------------
+// A pack is reference CONTENT (rulebook excerpts, homebrew) keyed to a
+// system. Packs are uploaded data, stored per-instance in D1, and are
+// deliberately not part of templates: templates ship in the repo
+// (structure only), packs never do.
+
+export type PackEntry = {
+  name: string;
+  /** Short qualifier shown next to the name — e.g. "Charm" or "1 Grit". */
+  meta?: string;
+  text: string;
+};
+
+export type PackSection = {
+  title: string;
+  entries: PackEntry[];
+};
+
+export type RulesPack = {
+  system: string;
+  name: string;
+  version: number;
+  sections: PackSection[];
+};
+
+export type PackRecord = {
+  id: string;
+  system: string;
+  name: string;
+  pack: RulesPack;
+  updatedAt: string;
+};
+
 // --- Live session (Durable Object) -----------------------------------------
 
 export type InitiativeEntry = {

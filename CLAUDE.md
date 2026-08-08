@@ -70,6 +70,12 @@ and what makes community templates safe. Templates are starting kits —
 after creation, everything is editable and the template is irrelevant.
 Every template carries `system` + `version` from day one.
 
+Rules CONTENT has a sanctioned home: **rules packs** — JSON uploaded
+to the instance's `packs` table, searchable from the console's Rules
+panel. Pack files live in `packs/` locally and are gitignored:
+rulebook text is personal-use data in a private DB, never repo
+content. See `packs/README.md` for the format.
+
 ### 5. Turn order is a manually ordered list — hard commitment
 
 teller never models any system's initiative *mechanics* (rolls, cards,

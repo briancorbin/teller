@@ -3,7 +3,9 @@ import type {
   CampaignData,
   Character,
   CharacterData,
+  PackRecord,
   PublicCharacter,
+  RulesPack,
 } from './types';
 
 export type Env = {
@@ -52,6 +54,24 @@ export function toCharacter(row: CharacterRow): Character {
     kind: row.kind === 'npc' ? 'npc' : 'pc',
     data: JSON.parse(row.data) as CharacterData,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+type PackRow = {
+  id: string;
+  system: string;
+  name: string;
+  data: string;
+  updated_at: string;
+};
+
+export function toPackRecord(row: PackRow): PackRecord {
+  return {
+    id: row.id,
+    system: row.system,
+    name: row.name,
+    pack: JSON.parse(row.data) as RulesPack,
     updatedAt: row.updated_at,
   };
 }

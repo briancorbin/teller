@@ -3,7 +3,9 @@ import type {
   CampaignData,
   Character,
   CharacterData,
+  PackRecord,
   PublicCharacter,
+  RulesPack,
   SessionOp,
   SessionState,
   SystemTemplate,
@@ -90,6 +92,15 @@ export const api = {
     req<{ character: Character; campaign: Campaign | null }>(
       `/api/seat/${characterId}?token=${encodeURIComponent(token)}`,
     ),
+
+  packs: (system: string) =>
+    req<PackRecord[]>(`/api/packs?system=${encodeURIComponent(system)}`, {}, true),
+
+  putPack: (pack: RulesPack) =>
+    req<PackRecord>('/api/packs', { method: 'PUT', body: JSON.stringify(pack) }, true),
+
+  deletePack: (id: string) =>
+    req<{ ok: true }>(`/api/packs/${id}`, { method: 'DELETE' }, true),
 
   sessionOp: (campaignId: string, op: SessionOp) =>
     req<SessionState>(

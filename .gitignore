@@ -4,3 +4,7 @@ dist/
 .dev.vars
 .DS_Store
 *.log
+
+# Rules pack content (rulebook excerpts) stays out of the public repo —
+# personal-use data uploaded to your own instance. See packs/README.md.
+packs/*.json

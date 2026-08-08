@@ -6,6 +6,7 @@ import { btn, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { CharacterCard } from '../components/CharacterCard';
 import { CounterSection } from '../components/CounterSection';
 import { InitiativePanel } from '../components/InitiativePanel';
+import { RulesPanel } from '../components/RulesPanel';
 
 export function DmView({ campaignId }: { campaignId: string }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -152,6 +153,8 @@ export function DmView({ campaignId }: { campaignId: string }) {
               </button>
             </div>
           </div>
+
+          <RulesPanel system={campaign.system} />
 
           <div className={`${card} space-y-2`}>
             <span className={sectionLabel}>Reference</span>
