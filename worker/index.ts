@@ -335,7 +335,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       name?: string;
       data?: Partial<Campaign['data']>;
     }>();
+    // Carry the full stored blob forward; only these keys are patchable
+    // here (map changes only via its own PUT/DELETE endpoints).
     const next = {
+      ...campaign.data,
       vocabulary: body.data?.vocabulary ?? campaign.data.vocabulary,
       counters: body.data?.counters ?? campaign.data.counters,
       reference: body.data?.reference ?? campaign.data.reference,
