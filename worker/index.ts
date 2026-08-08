@@ -1,7 +1,7 @@
 import { CampaignDO } from './campaign-do';
 import { logEvent, toCampaign, toCharacter, type Env } from './db';
 import { getTemplate, templates } from './templates';
-import type { CharacterData, Counter, SessionOp } from './types';
+import type { Campaign, CharacterData, Counter, SessionOp } from './types';
 
 export { CampaignDO };
 
@@ -57,6 +57,14 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(templates);
   }
 
+  if (pathname === '/api/campaigns' && method === 'GET') {
+    if (!dm) return err('DM key required', 401);
+    const rows = await env.DB.prepare(
+      'SELECT * FROM campaigns ORDER BY created_at DESC',
+    ).all();
+    return json(rows.results.map((r) => toCampaign(r as never)));
+  }
+
   if (pathname === '/api/campaigns' && method === 'POST') {
     if (!dm) return err('DM key required', 401);
     const body = await request.json<{ name?: string; system?: string }>();
@@ -101,6 +109,58 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       campaign: toCampaign(row as never),
       characters: chars.results.map((r) => toCharacter(r as never)),
     });
+  }
+
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)$/);
+  if (m && method === 'PATCH') {
+    if (!dm) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!row) return err('campaign not found', 404);
+    const campaign = toCampaign(row as never);
+    const body = await request.json<{
+      name?: string;
+      data?: Partial<Campaign['data']>;
+    }>();
+    const next = {
+      vocabulary: body.data?.vocabulary ?? campaign.data.vocabulary,
+      counters: body.data?.counters ?? campaign.data.counters,
+    };
+    await env.DB.prepare('UPDATE campaigns SET name = ?, data = ? WHERE id = ?')
+      .bind(body.name ?? campaign.name, JSON.stringify(next), campaign.id)
+      .run();
+    await logEvent(env, campaign.id, null, 'dm', 'campaign.updated', {
+      patch: body,
+    });
+    await poke(env, campaign.id, 'campaign');
+    const updated = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(campaign.id)
+      .first();
+    return json(toCampaign(updated as never));
+  }
+
+  m = pathname.match(/^\/api\/characters\/([^/]+)$/);
+  if (m && method === 'DELETE') {
+    if (!dm) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!row) return err('character not found', 404);
+    const character = toCharacter(row as never);
+    await env.DB.prepare('DELETE FROM characters WHERE id = ?')
+      .bind(character.id)
+      .run();
+    await logEvent(
+      env,
+      character.campaignId,
+      character.id,
+      'dm',
+      'character.deleted',
+      { name: character.name },
+    );
+    await poke(env, character.campaignId, character.id);
+    return json({ ok: true });
   }
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/characters$/);
