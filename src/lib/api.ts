@@ -3,6 +3,7 @@ import type {
   CampaignData,
   Character,
   CharacterData,
+  PublicCharacter,
   SessionOp,
   SessionState,
   SystemTemplate,
@@ -43,6 +44,11 @@ export const api = {
       '/api/campaigns',
       { method: 'POST', body: JSON.stringify({ name, system }) },
       true,
+    ),
+
+  publicCampaign: (id: string) =>
+    req<{ campaign: Campaign; characters: PublicCharacter[] }>(
+      `/api/campaigns/${id}/public`,
     ),
 
   getCampaign: (id: string) =>

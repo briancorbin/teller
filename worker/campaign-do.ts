@@ -5,7 +5,7 @@ import type { SessionOp, SessionState, StreamEvent } from './types';
 // Durable data (characters, campaigns, events) lives in D1 — the DO
 // only relays pokes about it.
 
-const EMPTY: SessionState = { initiative: [], turn: null, round: 1 };
+const EMPTY: SessionState = { initiative: [], turn: null, round: 1, notice: null };
 const PING_MS = 25_000;
 
 function sse(event: StreamEvent): string {
@@ -23,7 +23,7 @@ export class CampaignDO {
   private async load(): Promise<void> {
     if (this.loaded) return;
     const stored = await this.ctx.storage.get<SessionState>('session');
-    if (stored) this.session = stored;
+    if (stored) this.session = { ...EMPTY, ...stored };
     this.loaded = true;
   }
 
@@ -84,6 +84,9 @@ export class CampaignDO {
       case 'end':
         s.turn = null;
         s.round = 1;
+        break;
+      case 'notice':
+        s.notice = op.text?.trim() ? op.text.trim() : null;
         break;
     }
     await this.ctx.storage.put('session', s);

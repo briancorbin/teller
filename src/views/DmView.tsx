@@ -13,6 +13,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const [error, setError] = useState('');
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
+  const [notice, setNotice] = useState('');
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refetch = useCallback(() => {
@@ -103,7 +104,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
             href={`/board/${campaign.id}`}
             target="_blank"
             rel="noreferrer"
-            title="DM-facing — shows NPC health and secrets"
+            title="player-facing vertical companion display — no secrets"
           >
             board ↗
           </a>
@@ -119,6 +120,38 @@ export function DmView({ campaignId }: { campaignId: string }) {
             characters={characters}
             onOp={(op) => api.sessionOp(campaignId, op).catch(() => refetch())}
           />
+
+          <div className={`${card} space-y-2`}>
+            <span className={sectionLabel}>Table notice</span>
+            <div className="flex gap-2">
+              <input
+                className={`${input} min-w-0 flex-1`}
+                placeholder="SHORT REST · roll perception…"
+                value={notice}
+                onChange={(e) => setNotice(e.target.value)}
+                onKeyDown={(e) =>
+                  e.key === 'Enter' &&
+                  api.sessionOp(campaignId, { op: 'notice', text: notice })
+                }
+              />
+              <button
+                className={btn}
+                onClick={() => api.sessionOp(campaignId, { op: 'notice', text: notice })}
+              >
+                show
+              </button>
+              <button
+                className={btn}
+                disabled={!session?.notice}
+                onClick={() => {
+                  setNotice('');
+                  api.sessionOp(campaignId, { op: 'notice', text: null });
+                }}
+              >
+                clear
+              </button>
+            </div>
+          </div>
 
           <div className={card}>
             <CounterSection

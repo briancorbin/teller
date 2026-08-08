@@ -1,5 +1,5 @@
 import { CampaignDO } from './campaign-do';
-import { logEvent, toCampaign, toCharacter, type Env } from './db';
+import { logEvent, toCampaign, toCharacter, toPublicCharacter, type Env } from './db';
 import { getTemplate, templates } from './templates';
 import type { Campaign, CharacterData, Counter, SessionOp } from './types';
 
@@ -108,6 +108,25 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({
       campaign: toCampaign(row as never),
       characters: chars.results.map((r) => toCharacter(r as never)),
+    });
+  }
+
+  // Player-safe campaign snapshot for the passive displays (board,
+  // table). No auth: everything here is table-visible by design.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/public$/);
+  if (m && method === 'GET') {
+    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!row) return err('campaign not found', 404);
+    const chars = await env.DB.prepare(
+      'SELECT * FROM characters WHERE campaign_id = ? ORDER BY created_at',
+    )
+      .bind(m[1])
+      .all();
+    return json({
+      campaign: toCampaign(row as never),
+      characters: chars.results.map((r) => toPublicCharacter(r as never)),
     });
   }
 

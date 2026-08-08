@@ -1,4 +1,10 @@
-import type { Campaign, CampaignData, Character, CharacterData } from './types';
+import type {
+  Campaign,
+  CampaignData,
+  Character,
+  CharacterData,
+  PublicCharacter,
+} from './types';
 
 export type Env = {
   DB: D1Database;
@@ -47,6 +53,24 @@ export function toCharacter(row: CharacterRow): Character {
     data: JSON.parse(row.data) as CharacterData,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+export function toPublicCharacter(row: CharacterRow): PublicCharacter {
+  const character = toCharacter(row);
+  const npc = character.kind === 'npc';
+  return {
+    id: character.id,
+    campaignId: character.campaignId,
+    name: character.name,
+    kind: character.kind,
+    data: {
+      // NPCs keep only tags — the table may know a wolf is Bloodied,
+      // never its numbers. Seat tokens and notes never leave for anyone.
+      fields: npc ? [] : character.data.fields,
+      counters: npc ? [] : character.data.counters,
+      tags: character.data.tags,
+    },
   };
 }
 

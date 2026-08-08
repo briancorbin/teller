@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Campaign, Character, Counter } from '../../worker/types';
-import { api, getDmKey, setDmKey } from '../lib/api';
+import type { Campaign, Counter, PublicCharacter } from '../../worker/types';
+import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
-import { btnPrimary, input, sectionLabel } from '../lib/ui';
+import { sectionLabel } from '../lib/ui';
 
-// The Warden's status board: a large, passive, no-touch display that
-// sits behind the DM screen. DM-privileged — it shows EVERYTHING,
-// including NPC health. Never point this one at the players.
+// The board: a vertical, player-facing display standing in FRONT of
+// the DM — the digital front of the DM screen, companion to the table
+// TV. Passive, no touch, no auth, and NO SECRETS: it renders only the
+// public campaign snapshot (NPC numbers never appear here).
 
 function CounterReadout({ counter }: { counter: Counter }) {
   const pct =
@@ -16,22 +17,22 @@ function CounterReadout({ counter }: { counter: Counter }) {
   const low = pct !== null && pct <= 0.25;
 
   return (
-    <div className="min-w-24">
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm text-stone-400">{counter.name}</span>
+    <div className="min-w-28">
+      <div className="flex items-baseline justify-between gap-3">
+        <span className="text-lg text-stone-400">{counter.name}</span>
         <span
-          className={`font-mono text-2xl tabular-nums ${
+          className={`font-mono text-3xl tabular-nums ${
             low ? 'text-red-400' : 'text-stone-100'
           }`}
         >
           {counter.current}
           {counter.max !== null && (
-            <span className="text-base text-stone-500">/{counter.max}</span>
+            <span className="text-xl text-stone-500">/{counter.max}</span>
           )}
         </span>
       </div>
       {pct !== null && (
-        <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-stone-800">
+        <div className="mt-1 h-2 overflow-hidden rounded-full bg-stone-800">
           <div
             className={`h-full rounded-full transition-all ${
               low ? 'bg-red-500' : 'bg-amber-600'
@@ -46,19 +47,14 @@ function CounterReadout({ counter }: { counter: Counter }) {
 
 export function BoardView({ campaignId }: { campaignId: string }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [error, setError] = useState('');
+  const [characters, setCharacters] = useState<PublicCharacter[]>([]);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refetch = useCallback(() => {
-    api
-      .getCampaign(campaignId)
-      .then(({ campaign, characters }) => {
-        setCampaign(campaign);
-        setCharacters(characters);
-        setError('');
-      })
-      .catch((e) => setError(String(e instanceof Error ? e.message : e)));
+    api.publicCampaign(campaignId).then(({ campaign, characters }) => {
+      setCampaign(campaign);
+      setCharacters(characters);
+    });
   }, [campaignId]);
 
   useEffect(refetch, [refetch]);
@@ -68,141 +64,122 @@ export function BoardView({ campaignId }: { campaignId: string }) {
     refetchTimer.current = setTimeout(refetch, 300);
   });
 
-  if (error && !campaign) {
-    return (
-      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center gap-4 p-8">
-        <h1 className="font-serif text-3xl">teller · board</h1>
-        <p className="text-red-400">{error}</p>
-        <input
-          className={input}
-          type="password"
-          placeholder="DM key"
-          defaultValue={getDmKey()}
-          onBlur={(e) => setDmKey(e.target.value)}
-        />
-        <button className={btnPrimary} onClick={refetch}>
-          unlock
-        </button>
-      </main>
-    );
-  }
-
   if (!campaign) {
     return <main className="p-8 text-stone-500">opening the books…</main>;
   }
 
   const initiative = session?.initiative ?? [];
   const turn = session?.turn ?? null;
-  const currentId = turn !== null ? initiative[turn]?.characterId : null;
-  const byInitiative = [...characters].sort((a, b) => {
-    const ia = initiative.findIndex((e) => e.characterId === a.id);
-    const ib = initiative.findIndex((e) => e.characterId === b.id);
-    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-  });
+  const pcs = characters.filter((c) => c.kind === 'pc');
+  const npcTags = characters.filter((c) => c.kind === 'npc' && c.data.tags.length > 0);
 
   return (
-    <main className="min-h-screen space-y-6 p-6">
-      <header className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <h1 className="font-serif text-3xl text-stone-300">{campaign.name}</h1>
-        {turn !== null && (
-          <span className="rounded bg-amber-950 px-3 py-1 font-mono text-lg text-amber-300">
-            round {session?.round}
-          </span>
-        )}
-        {initiative.length > 0 && (
-          <ol className="flex flex-wrap items-center gap-2">
+    <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
+      <header className="text-center">
+        <h1 className="font-serif text-4xl text-stone-300">{campaign.name}</h1>
+      </header>
+
+      {session?.notice && (
+        <div className="animate-pulse rounded-2xl bg-amber-700 p-6 text-center font-serif text-5xl text-stone-950 shadow-lg shadow-amber-900/50">
+          {session.notice}
+        </div>
+      )}
+
+      {initiative.length > 0 && (
+        <section className="space-y-2">
+          <div className="flex items-baseline justify-between">
+            <span className={sectionLabel}>Initiative</span>
+            {turn !== null && (
+              <span className="font-mono text-xl text-amber-300">
+                round {session?.round}
+              </span>
+            )}
+          </div>
+          <ol className="space-y-2">
             {initiative.map((entry, index) => (
               <li
                 key={entry.id}
-                className={`rounded-lg px-3 py-1 text-lg ${
+                className={`rounded-xl px-5 py-3 font-serif transition-all ${
                   index === turn
-                    ? 'bg-amber-700 font-medium text-stone-950'
-                    : 'bg-stone-900 text-stone-400'
+                    ? 'scale-[1.02] bg-amber-700 text-4xl text-stone-950 shadow-lg shadow-amber-900/50'
+                    : 'bg-stone-900 text-2xl text-stone-400'
                 }`}
               >
+                <span className="mr-3 font-mono text-base opacity-60">
+                  {index + 1}
+                </span>
                 {entry.label}
               </li>
             ))}
           </ol>
-        )}
-        {campaign.data.counters.length > 0 && (
-          <div className="ml-auto flex flex-wrap gap-6">
+        </section>
+      )}
+
+      {pcs.length > 0 && (
+        <section className="space-y-3">
+          <span className={sectionLabel}>The party</span>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {pcs.map((character) => (
+              <article
+                key={character.id}
+                className="space-y-3 rounded-xl border border-stone-800 bg-stone-900/60 p-4"
+              >
+                <h2 className="font-serif text-2xl text-stone-100">
+                  {character.name}
+                </h2>
+                <div className="space-y-2">
+                  {character.data.counters.map((counter) => (
+                    <CounterReadout key={counter.id} counter={counter} />
+                  ))}
+                </div>
+                {character.data.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {character.data.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-amber-950/60 px-3 py-1 text-sm text-amber-200"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {npcTags.length > 0 && (
+        <section className="space-y-2">
+          <span className={sectionLabel}>Foes</span>
+          <div className="flex flex-wrap gap-2">
+            {npcTags.map((npc) => (
+              <span
+                key={npc.id}
+                className="rounded-lg bg-stone-900 px-3 py-1.5 text-lg text-stone-300"
+              >
+                {npc.name}
+                {npc.data.tags.map((tag) => (
+                  <span key={tag} className="ml-2 text-sm text-red-300">
+                    {tag}
+                  </span>
+                ))}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {campaign.data.counters.length > 0 && (
+        <section className="mt-auto space-y-2">
+          <span className={sectionLabel}>Party resources</span>
+          <div className="flex flex-wrap gap-8">
             {campaign.data.counters.map((counter) => (
               <CounterReadout key={counter.id} counter={counter} />
             ))}
           </div>
-        )}
-      </header>
-
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-        {byInitiative.map((character) => (
-          <article
-            key={character.id}
-            className={`space-y-3 rounded-xl border p-4 ${
-              character.id === currentId
-                ? 'border-amber-700 bg-amber-950/20 ring-1 ring-amber-700'
-                : 'border-stone-800 bg-stone-900/60'
-            }`}
-          >
-            <header className="flex items-baseline gap-2">
-              <h2 className="font-serif text-2xl text-stone-100">
-                {character.name}
-              </h2>
-              {character.kind === 'npc' && (
-                <span className="rounded bg-stone-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-stone-500">
-                  npc
-                </span>
-              )}
-              {character.id === currentId && (
-                <span className="ml-auto rounded bg-amber-700 px-2 py-0.5 text-xs font-semibold text-stone-950">
-                  UP
-                </span>
-              )}
-            </header>
-
-            {character.data.fields.length > 0 && (
-              <div className="flex flex-wrap gap-x-5 gap-y-1">
-                {character.data.fields.map((field) => (
-                  <span key={field.key} className="text-sm text-stone-400">
-                    <span className="text-stone-600">{field.label} </span>
-                    <span className="font-mono text-stone-200">
-                      {field.value || '—'}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-              {character.data.counters.map((counter) => (
-                <CounterReadout key={counter.id} counter={counter} />
-              ))}
-            </div>
-
-            {character.data.tags.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {character.data.tags.map((tag) => (
-                  <span
-                    key={tag}
-                    className="rounded-full bg-amber-950/60 px-2.5 py-0.5 text-xs text-amber-200"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            )}
-
-            {character.data.notes && (
-              <p className="line-clamp-2 text-sm text-stone-500">
-                {character.data.notes}
-              </p>
-            )}
-          </article>
-        ))}
-      </div>
-
-      {characters.length === 0 && (
-        <p className={sectionLabel}>no characters yet — add them from the console</p>
+        </section>
       )}
     </main>
   );

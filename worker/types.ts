@@ -94,13 +94,33 @@ export type SessionState = {
   /** Index into initiative, or null when combat isn't running. */
   turn: number | null;
   round: number;
+  /** DM-authored banner shown on the player-facing displays. */
+  notice: string | null;
 };
 
 export type SessionOp =
   | { op: 'set'; initiative: InitiativeEntry[] }
   | { op: 'next' }
   | { op: 'prev' }
-  | { op: 'end' };
+  | { op: 'end' }
+  | { op: 'notice'; text: string | null };
+
+/**
+ * A character as the player-facing displays see it: seat token and
+ * notes stripped; NPCs additionally lose fields/counters (the table
+ * may know a wolf is Bloodied — never its numbers).
+ */
+export type PublicCharacter = {
+  id: string;
+  campaignId: string;
+  name: string;
+  kind: 'pc' | 'npc';
+  data: {
+    fields: Field[];
+    counters: Counter[];
+    tags: string[];
+  };
+};
 
 export type StreamEvent =
   | { type: 'hello'; state: SessionState }

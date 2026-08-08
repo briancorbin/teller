@@ -8,6 +8,16 @@ export function TableView({ campaignId }: { campaignId: string }) {
   const initiative = session?.initiative ?? [];
   const turn = session?.turn ?? null;
 
+  if (session?.notice) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-8">
+        <p className="animate-pulse text-center font-serif text-7xl text-amber-300">
+          {session.notice}
+        </p>
+      </main>
+    );
+  }
+
   if (initiative.length === 0) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-2">

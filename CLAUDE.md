@@ -79,9 +79,12 @@ universal across systems.
 
 ### 6. Web-first; hardware is optional flare
 
-Three client surfaces, all browsers on the same worker:
+Four client surfaces, all browsers on the same worker:
 - `/dm/:campaignId` — DM console (authoritative controls)
-- `/table/:campaignId` — table TV renderer (passive)
+- `/table/:campaignId` — table TV renderer (passive, player-safe)
+- `/board/:campaignId` — vertical player-facing companion display in
+  front of the DM (passive, player-safe: consumes only the `/public`
+  endpoint — seat tokens + notes stripped, NPC numbers never shown)
 - `/seat/:characterId?token=…` — per-player card (self-serve counters)
 
 Seats run on phones first; the custom rail panels (12.6" 1920×515 touch
