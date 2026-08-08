@@ -1,0 +1,2 @@
+# Copy to .dev.vars for local dev (gitignored).
+DM_KEY=dev-warden-key
