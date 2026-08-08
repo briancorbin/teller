@@ -7,5 +7,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), cloudflare()],
   server: {
     port: 4525,
+    host: true, // LAN-exposed so seat cards can be tested from phones
   },
 });
