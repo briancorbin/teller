@@ -153,6 +153,22 @@ export function DmView({ campaignId }: { campaignId: string }) {
             </div>
           </div>
 
+          <div className={`${card} space-y-2`}>
+            <span className={sectionLabel}>Reference</span>
+            <textarea
+              className={`${input} min-h-24 w-full resize-y font-mono text-xs leading-relaxed`}
+              placeholder="house rules, statuses, ranges — the Warden's screen text (private to this campaign)"
+              defaultValue={campaign.data.reference ?? ''}
+              onBlur={(e) =>
+                e.target.value !== (campaign.data.reference ?? '') &&
+                api
+                  .patchCampaign(campaign.id, { data: { reference: e.target.value } })
+                  .catch(() => refetch())
+              }
+              aria-label="campaign reference"
+            />
+          </div>
+
           <div className={card}>
             <CounterSection
               label="Party resources"

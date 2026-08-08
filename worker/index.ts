@@ -124,8 +124,16 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     )
       .bind(m[1])
       .all();
+    const campaign = toCampaign(row as never);
     return json({
-      campaign: toCampaign(row as never),
+      // Reference (Warden's notes/rules text) never leaves via /public.
+      campaign: {
+        ...campaign,
+        data: {
+          vocabulary: campaign.data.vocabulary,
+          counters: campaign.data.counters,
+        },
+      },
       characters: chars.results.map((r) => toPublicCharacter(r as never)),
     });
   }
@@ -145,6 +153,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const next = {
       vocabulary: body.data?.vocabulary ?? campaign.data.vocabulary,
       counters: body.data?.counters ?? campaign.data.counters,
+      reference: body.data?.reference ?? campaign.data.reference,
     };
     await env.DB.prepare('UPDATE campaigns SET name = ?, data = ? WHERE id = ?')
       .bind(body.name ?? campaign.name, JSON.stringify(next), campaign.id)

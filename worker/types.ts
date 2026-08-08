@@ -42,6 +42,12 @@ export type CampaignData = {
   vocabulary: Record<string, string>;
   /** Party-level resources (supplies, group Prestige, doom clocks…). */
   counters: Counter[];
+  /**
+   * Warden's reference text — house rules, pasted rules excerpts,
+   * table notes. Lives ONLY in the campaign's own database (personal
+   * use); never ships in templates and never leaves via /public.
+   */
+  reference?: string;
 };
 
 export type Campaign = {
