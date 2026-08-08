@@ -92,6 +92,9 @@ Four client surfaces, all browsers on the same worker:
   front of the DM (passive, player-safe: consumes only the `/public`
   endpoint — seat tokens + notes stripped, NPC numbers never shown)
 - `/seat/:characterId?token=…` — per-player card (self-serve counters)
+- `/badge/:characterId` — outward-facing per-player display (passive,
+  player-safe: public snapshot only) — the table-facing back panel of
+  a rail unit
 
 Seats run on phones first; the custom rail panels (12.6" 1920×515 touch
 bars + Pi kiosks on the Wyrmwood rail — see project memory) are just

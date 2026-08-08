@@ -89,7 +89,7 @@ export const api = {
     req<{ ok: true }>(`/api/characters/${id}`, { method: 'DELETE' }, true),
 
   seat: (characterId: string, token: string) =>
-    req<{ character: Character; campaign: Campaign | null }>(
+    req<{ character: Character; campaign: Campaign | null; packs: PackRecord[] }>(
       `/api/seat/${characterId}?token=${encodeURIComponent(token)}`,
     ),
 

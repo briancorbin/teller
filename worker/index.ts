@@ -329,6 +329,33 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(toCharacter(updated as never));
   }
 
+  // Public single-character snapshot — powers the table-facing player
+  // badge. Same redaction rules as the campaign /public endpoint.
+  m = pathname.match(/^\/api\/characters\/([^/]+)\/public$/);
+  if (m && method === 'GET') {
+    const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!row) return err('character not found', 404);
+    const character = toPublicCharacter(row as never);
+    const campaignRow = await env.DB.prepare(
+      'SELECT * FROM campaigns WHERE id = ?',
+    )
+      .bind(character.campaignId)
+      .first();
+    const campaign = campaignRow ? toCampaign(campaignRow as never) : null;
+    return json({
+      character,
+      campaign: campaign
+        ? {
+            id: campaign.id,
+            name: campaign.name,
+            vocabulary: campaign.data.vocabulary,
+          }
+        : null,
+    });
+  }
+
   // Seat view: character + campaign vocabulary, gated by seat token alone.
   m = pathname.match(/^\/api\/seat\/([^/]+)$/);
   if (m && method === 'GET') {
@@ -347,7 +374,18 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .bind(character.campaignId)
       .first();
     const campaign = campaignRow ? toCampaign(campaignRow as never) : null;
-    return json({ character, campaign });
+    // Seats get the system's rules packs too — a valid seat token is a
+    // seat at the table, and the table gets to read the rules.
+    const packRows = campaign
+      ? await env.DB.prepare('SELECT * FROM packs WHERE system = ? ORDER BY name')
+          .bind(campaign.system)
+          .all()
+      : null;
+    return json({
+      character,
+      campaign,
+      packs: packRows ? packRows.results.map((r) => toPackRecord(r as never)) : [],
+    });
   }
 
   // Live session — SSE stream + initiative ops, forwarded to the DO.

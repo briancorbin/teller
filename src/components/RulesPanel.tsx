@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { PackEntry, PackRecord } from '../../worker/types';
 import { api } from '../lib/api';
 import { btnGhost, card, input, sectionLabel } from '../lib/ui';
@@ -9,16 +9,16 @@ import { btnGhost, card, input, sectionLabel } from '../lib/ui';
 
 type Hit = PackEntry & { section: string };
 
-export function RulesPanel({ system }: { system: string }) {
-  const [packs, setPacks] = useState<PackRecord[]>([]);
+export function RulesPanel({
+  packs,
+  onUploaded,
+}: {
+  packs: PackRecord[];
+  onUploaded: () => void;
+}) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [status, setStatus] = useState('');
-
-  const load = () => {
-    api.packs(system).then(setPacks).catch(() => setPacks([]));
-  };
-  useEffect(load, [system]);
 
   const entries = useMemo<Hit[]>(
     () =>
@@ -48,7 +48,7 @@ export function RulesPanel({ system }: { system: string }) {
       const pack = JSON.parse(await file.text());
       await api.putPack(pack);
       setStatus(`uploaded "${pack.name}"`);
-      load();
+      onUploaded();
     } catch (e) {
       setStatus(String(e instanceof Error ? e.message : e));
     }

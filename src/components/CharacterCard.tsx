@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Character, CharacterData } from '../../worker/types';
 import { seatLink } from '../lib/api';
+import type { RuleLookup } from '../lib/rules';
 import { btnGhost, card, input, sectionLabel } from '../lib/ui';
 import { CounterSection } from './CounterSection';
 import { FieldSection } from './FieldSection';
@@ -14,11 +15,13 @@ export function CharacterCard({
   vocabulary,
   onPatch,
   onDelete,
+  lookup,
 }: {
   character: Character;
   vocabulary: Record<string, string>;
   onPatch: (patch: { name?: string; data?: Partial<CharacterData> }) => void;
   onDelete: () => void;
+  lookup?: RuleLookup;
 }) {
   const [copied, setCopied] = useState(false);
   const d = character.data;
@@ -50,6 +53,15 @@ export function CharacterCard({
         <button className={btnGhost} onClick={copySeatLink} title="copy seat link">
           {copied ? 'copied!' : 'seat link'}
         </button>
+        <a
+          className={btnGhost}
+          href={`/badge/${character.id}`}
+          target="_blank"
+          rel="noreferrer"
+          title="table-facing player badge (public info only)"
+        >
+          badge ↗
+        </a>
         <button
           className={`${btnGhost} hover:text-red-300`}
           onClick={() => window.confirm(`Delete ${character.name}?`) && onDelete()}
@@ -74,6 +86,7 @@ export function CharacterCard({
       <TagSection
         tags={d.tags}
         label={vocabulary.conditions ?? 'Tags'}
+        lookup={lookup}
         onChange={(tags) => onPatch({ data: { tags } })}
       />
 

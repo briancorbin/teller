@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Campaign, Character, CharacterData } from '../../worker/types';
+import type { Campaign, Character, CharacterData, PackRecord } from '../../worker/types';
 import { api, getDmKey, setDmKey } from '../lib/api';
+import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { btn, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { CharacterCard } from '../components/CharacterCard';
@@ -15,6 +16,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
   const [notice, setNotice] = useState('');
+  const [packs, setPacks] = useState<PackRecord[]>([]);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refetch = useCallback(() => {
@@ -29,6 +31,13 @@ export function DmView({ campaignId }: { campaignId: string }) {
   }, [campaignId]);
 
   useEffect(refetch, [refetch]);
+
+  const loadPacks = useCallback(() => {
+    if (!campaign) return;
+    api.packs(campaign.system).then(setPacks).catch(() => setPacks([]));
+  }, [campaign?.system]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(loadPacks, [loadPacks]);
+  const lookup = useRuleLookup(packs);
 
   // SSE poke → debounced refetch (a burst of taps = one fetch).
   const session = useSession(campaignId, () => {
@@ -154,7 +163,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
             </div>
           </div>
 
-          <RulesPanel system={campaign.system} />
+          <RulesPanel packs={packs} onUploaded={loadPacks} />
 
           <div className={`${card} space-y-2`}>
             <span className={sectionLabel}>Reference</span>
@@ -194,6 +203,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
                 key={character.id}
                 character={character}
                 vocabulary={campaign.data.vocabulary}
+                lookup={lookup}
                 onPatch={(patch) => patchCharacter(character.id, patch)}
                 onDelete={() =>
                   api.deleteCharacter(character.id).catch(() => refetch())

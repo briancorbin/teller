@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Campaign, Character, CharacterData } from '../../worker/types';
+import type { Campaign, Character, CharacterData, PackRecord } from '../../worker/types';
 import { api } from '../lib/api';
+import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { card, input, sectionLabel } from '../lib/ui';
 import { CounterSection } from '../components/CounterSection';
@@ -18,14 +19,17 @@ export function SeatView({ characterId }: { characterId: string }) {
     new URLSearchParams(window.location.search).get('token') ?? '';
   const [character, setCharacter] = useState<Character | null>(null);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [packs, setPacks] = useState<PackRecord[]>([]);
   const [error, setError] = useState('');
+  const lookup = useRuleLookup(packs);
 
   const refetch = useCallback(() => {
     api
       .seat(characterId, token)
-      .then(({ character, campaign }) => {
+      .then(({ character, campaign, packs }) => {
         setCharacter(character);
         setCampaign(campaign);
+        setPacks(packs ?? []);
         setError('');
       })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)));
@@ -106,6 +110,7 @@ export function SeatView({ characterId }: { characterId: string }) {
         <TagSection
           tags={character.data.tags}
           label={campaign?.data.vocabulary.conditions ?? 'Conditions'}
+          lookup={lookup}
           onChange={(tags) => patch({ tags })}
         />
 
