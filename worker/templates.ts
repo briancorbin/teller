@@ -30,22 +30,39 @@ const dnd5e: SystemTemplate = {
 };
 
 // Wild Imaginary West (Boylei Hobby Time / Rune Foundry).
-// Sheet structure to be refined from the guidebook as Brian preps the
-// campaign — this is a first sketch, and every card is editable after
-// creation anyway.
+// Mirrors the official character sheet's tracked state — structure
+// only. Skills are dice-pool strings ("3B", "2B+1G"); Defense is the
+// sheet's `def` box; Grit is the 6-chamber cylinder; Prestige tracks
+// Total and Unclaimed separately; Wallet/Scrap/Supplies come from the
+// Inventory panel. Statuses (Afraid, Burned, Dazed, Electrocuted,
+// Poisoned, Trapped, Unconscious) are applied in play as tags.
+// Abilities/Talents/Weapons/Horse/Mech live in notes until they earn
+// structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 1,
+  version: 2,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
-    conditions: 'Conditions',
+    conditions: 'Statuses',
   },
   character: {
-    fields: [],
+    fields: [
+      { key: 'trade', label: 'Trade' },
+      { key: 'charm', label: 'Charm' },
+      { key: 'finesse', label: 'Finesse' },
+      { key: 'intuition', label: 'Intuition' },
+      { key: 'nerve', label: 'Nerve' },
+      { key: 'defense', label: 'Defense' },
+    ],
     counters: [
       { name: 'Health', max: null },
-      { name: 'Prestige', current: 0, max: null },
+      { name: 'Grit', current: 6, max: 6 },
+      { name: 'Prestige · Total', current: 0, max: null },
+      { name: 'Prestige · Unclaimed', current: 0, max: null },
+      { name: 'Wallet ($)', current: 0, max: null },
+      { name: 'Scrap (pcs)', current: 0, max: null },
+      { name: 'Supplies', current: 0, max: null },
     ],
     tags: [],
   },
