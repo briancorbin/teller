@@ -3,7 +3,9 @@ import type { Campaign, Character, CharacterData, PackRecord } from '../../worke
 import { api } from '../lib/api';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
+import { useWakeLock } from '../lib/use-wake-lock';
 import { card, input, sectionLabel } from '../lib/ui';
+import { ConnectionHint } from '../components/ConnectionHint';
 import { CounterSection } from '../components/CounterSection';
 import { FieldSection } from '../components/FieldSection';
 import { TagSection } from '../components/TagSection';
@@ -37,7 +39,8 @@ export function SeatView({ characterId }: { characterId: string }) {
 
   useEffect(refetch, [refetch]);
 
-  const session = useSession(character?.campaignId ?? null, (id) => {
+  useWakeLock();
+  const { session, connected } = useSession(character?.campaignId ?? null, (id) => {
     if (id === characterId || id === 'campaign') refetch();
   });
 
@@ -79,6 +82,7 @@ export function SeatView({ characterId }: { characterId: string }) {
         youreUp ? 'ring-4 ring-inset ring-amber-600' : ''
       } [@media(max-height:560px)]:max-w-none [@media(max-height:560px)]:flex-row [@media(max-height:560px)]:items-stretch [@media(max-height:560px)]:gap-6 [@media(max-height:560px)]:overflow-hidden`}
     >
+      <ConnectionHint connected={connected} />
       <header className="shrink-0 [@media(max-height:560px)]:flex [@media(max-height:560px)]:w-56 [@media(max-height:560px)]:flex-col [@media(max-height:560px)]:justify-center">
         <h1 className="font-serif text-3xl text-stone-100">{character.name}</h1>
         {campaign && (

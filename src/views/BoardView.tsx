@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Campaign, Counter, PublicCharacter } from '../../worker/types';
 import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
+import { useWakeLock } from '../lib/use-wake-lock';
 import { sectionLabel } from '../lib/ui';
+import { ConnectionHint } from '../components/ConnectionHint';
 
 // The board: a vertical, player-facing display standing in FRONT of
 // the DM — the digital front of the DM screen, companion to the table
@@ -59,7 +61,8 @@ export function BoardView({ campaignId }: { campaignId: string }) {
 
   useEffect(refetch, [refetch]);
 
-  const session = useSession(campaignId, () => {
+  useWakeLock();
+  const { session, connected } = useSession(campaignId, () => {
     if (refetchTimer.current) clearTimeout(refetchTimer.current);
     refetchTimer.current = setTimeout(refetch, 300);
   });
@@ -75,6 +78,7 @@ export function BoardView({ campaignId }: { campaignId: string }) {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col gap-8 p-8">
+      <ConnectionHint connected={connected} />
       <header className="text-center">
         <h1 className="font-serif text-4xl text-stone-300">{campaign.name}</h1>
       </header>

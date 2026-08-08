@@ -3,8 +3,10 @@ import type { Campaign, Character, CharacterData, PackRecord } from '../../worke
 import { api, getDmKey, setDmKey } from '../lib/api';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
+import { useWakeLock } from '../lib/use-wake-lock';
 import { btn, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { CharacterCard } from '../components/CharacterCard';
+import { ConnectionHint } from '../components/ConnectionHint';
 import { CounterSection } from '../components/CounterSection';
 import { InitiativePanel } from '../components/InitiativePanel';
 import { RulesPanel } from '../components/RulesPanel';
@@ -40,7 +42,8 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const lookup = useRuleLookup(packs);
 
   // SSE poke → debounced refetch (a burst of taps = one fetch).
-  const session = useSession(campaignId, () => {
+  useWakeLock();
+  const { session, connected } = useSession(campaignId, () => {
     if (refetchTimer.current) clearTimeout(refetchTimer.current);
     refetchTimer.current = setTimeout(refetch, 300);
   });
@@ -95,6 +98,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
+      <ConnectionHint connected={connected} />
       <header className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <input
           className="min-w-0 bg-transparent font-serif text-3xl text-stone-100 focus:outline-none"

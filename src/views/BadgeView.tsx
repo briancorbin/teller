@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Counter, PublicCharacter } from '../../worker/types';
 import { useSession } from '../lib/use-session';
+import { useWakeLock } from '../lib/use-wake-lock';
+import { ConnectionHint } from '../components/ConnectionHint';
 
 // The player badge: an outward-facing, non-touch display — the back of
 // a rail panel, facing the table. Shows one character's PUBLIC state
@@ -68,7 +70,8 @@ export function BadgeView({ characterId }: { characterId: string }) {
 
   useEffect(refetch, [refetch]);
 
-  const session = useSession(character?.campaignId ?? null, (id) => {
+  useWakeLock();
+  const { session, connected } = useSession(character?.campaignId ?? null, (id) => {
     if (id === characterId || id === 'campaign') refetch();
   });
 
@@ -92,6 +95,7 @@ export function BadgeView({ characterId }: { characterId: string }) {
         up ? 'bg-amber-950/40 ring-8 ring-inset ring-amber-600' : ''
       }`}
     >
+      <ConnectionHint connected={connected} />
       <header className="text-center">
         <h1 className="font-serif text-6xl text-stone-100">{character.name}</h1>
         {up && (

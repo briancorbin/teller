@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import QRCode from 'qrcode';
 import type { Character, CharacterData } from '../../worker/types';
 import { seatLink } from '../lib/api';
 import type { RuleLookup } from '../lib/rules';
@@ -24,12 +25,23 @@ export function CharacterCard({
   lookup?: RuleLookup;
 }) {
   const [copied, setCopied] = useState(false);
+  const [qr, setQr] = useState<string | null>(null);
   const d = character.data;
 
   const copySeatLink = async () => {
     await navigator.clipboard.writeText(seatLink(character));
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  };
+
+  const showQr = async () => {
+    // Dark-on-white regardless of theme — scanners want contrast.
+    const url = await QRCode.toDataURL(seatLink(character), {
+      width: 640,
+      margin: 2,
+      color: { dark: '#1c1917', light: '#ffffff' },
+    });
+    setQr(url);
   };
 
   return (
@@ -52,6 +64,13 @@ export function CharacterCard({
         )}
         <button className={btnGhost} onClick={copySeatLink} title="copy seat link">
           {copied ? 'copied!' : 'seat link'}
+        </button>
+        <button
+          className={btnGhost}
+          onClick={showQr}
+          title="show seat link as a QR code — player scans with their phone"
+        >
+          qr
         </button>
         <a
           className={btnGhost}
@@ -101,6 +120,25 @@ export function CharacterCard({
           aria-label="notes"
         />
       </section>
+
+      {qr && (
+        <div
+          className="fixed inset-0 z-50 flex cursor-pointer flex-col items-center justify-center gap-4 bg-stone-950/90 p-6 backdrop-blur-sm"
+          onClick={() => setQr(null)}
+          role="dialog"
+          aria-label={`seat link QR for ${character.name}`}
+        >
+          <p className="font-serif text-2xl text-stone-100">{character.name}</p>
+          <img
+            src={qr}
+            alt={`QR code for ${character.name}'s seat link`}
+            className="w-[min(75vw,20rem)] rounded-2xl bg-white p-3 shadow-2xl"
+          />
+          <p className="text-sm text-stone-400">
+            scan to claim this seat · tap anywhere to close
+          </p>
+        </div>
+      )}
     </article>
   );
 }

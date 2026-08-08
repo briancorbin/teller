@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Campaign, PublicCharacter } from '../../worker/types';
 import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
+import { useWakeLock } from '../lib/use-wake-lock';
+import { ConnectionHint } from '../components/ConnectionHint';
 
 // The table TV — the screen IN the table, under the minis. With a map
 // uploaded it renders full-bleed with the initiative rail overlaid;
@@ -22,7 +24,8 @@ export function TableView({ campaignId }: { campaignId: string }) {
 
   useEffect(refetch, [refetch]);
 
-  const session = useSession(campaignId, (id) => {
+  useWakeLock();
+  const { session, connected } = useSession(campaignId, (id) => {
     if (id === 'campaign') refetch();
   });
   const initiative = session?.initiative ?? [];
@@ -32,6 +35,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
   if (session?.notice) {
     return (
       <main className="flex min-h-screen items-center justify-center p-8">
+        <ConnectionHint connected={connected} />
         <p className="animate-pulse text-center font-serif text-7xl text-amber-300">
           {session.notice}
         </p>
@@ -42,6 +46,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
   if (mapUrl) {
     return (
       <main className="relative h-screen overflow-hidden bg-black">
+        <ConnectionHint connected={connected} />
         <img
           src={mapUrl}
           alt=""
@@ -75,6 +80,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
   if (initiative.length === 0) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-2">
+        <ConnectionHint connected={connected} />
         <h1 className="font-serif text-6xl text-stone-700">teller</h1>
         <p className="text-stone-600">waiting for the books to open…</p>
       </main>
@@ -83,6 +89,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 p-8">
+      <ConnectionHint connected={connected} />
       {turn !== null && (
         <p className="font-mono text-lg uppercase tracking-[0.3em] text-stone-500">
           round {session?.round}
