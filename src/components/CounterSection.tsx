@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { Counter } from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { bigBtn, btnGhost, iconBtn, input, sectionLabel } from '../lib/ui';
+import { ClockFace } from './ClockFace';
 
 // Renders ANY list of counters — HP, spell slots, Prestige, ammo. The
 // component has no idea which game it's in; that's the point.
@@ -27,6 +28,7 @@ function CounterRow({
   };
 
   if (editing) {
+    const isClock = counter.display === 'clock';
     return (
       <div className="flex items-center gap-2">
         <input
@@ -48,6 +50,35 @@ function CounterRow({
           }
           aria-label="counter max"
         />
+        <button
+          className={`${btnGhost} ${isClock ? 'text-amber-300' : ''}`}
+          disabled={counter.max === null}
+          onClick={() =>
+            onChange({ ...counter, display: isClock ? undefined : 'clock' })
+          }
+          aria-label={`render ${counter.name} as a ${isClock ? 'number' : 'progress clock'}`}
+          title={
+            counter.max === null
+              ? 'set a max to render as a clock'
+              : isClock
+                ? 'render as a number'
+                : 'render as a progress clock'
+          }
+        >
+          ◔
+        </button>
+        <button
+          className={`${btnGhost} ${counter.hidden ? 'text-amber-300' : ''}`}
+          onClick={() => onChange({ ...counter, hidden: !counter.hidden || undefined })}
+          aria-label={`${counter.hidden ? 'reveal' : 'hide'} ${counter.name}`}
+          title={
+            counter.hidden
+              ? 'hidden from board & badge — tap to reveal'
+              : 'hide from board & badge'
+          }
+        >
+          {counter.hidden ? 'hidden' : 'hide'}
+        </button>
         <button className={btnGhost} onClick={onRemove} aria-label="remove counter">
           ✕
         </button>
@@ -58,6 +89,7 @@ function CounterRow({
   const low =
     counter.max !== null && counter.max > 0 && counter.current / counter.max <= 0.25;
   const refillable = counter.max !== null && counter.current < counter.max;
+  const clock = counter.display === 'clock' && counter.max !== null && counter.max > 0;
 
   return (
     <div className="flex items-center gap-3">
@@ -65,17 +97,32 @@ function CounterRow({
         −
       </button>
       <div className="min-w-0 flex-1 text-center">
-        <div
-          className={`font-mono tabular-nums ${big ? 'text-3xl' : 'text-xl'} ${
-            low ? 'text-red-400' : 'text-stone-100'
-          }`}
-        >
-          {counter.current}
-          {counter.max !== null && (
-            <span className="text-stone-500">/{counter.max}</span>
-          )}
+        {clock ? (
+          <div className="flex flex-col items-center">
+            <ClockFace
+              current={counter.current}
+              max={counter.max!}
+              size={big ? 72 : 52}
+              onClick={() => bump(1)}
+              label={`${counter.name}: ${counter.current} of ${counter.max} — tap to advance`}
+            />
+          </div>
+        ) : (
+          <div
+            className={`font-mono tabular-nums ${big ? 'text-3xl' : 'text-xl'} ${
+              low ? 'text-red-400' : 'text-stone-100'
+            }`}
+          >
+            {counter.current}
+            {counter.max !== null && (
+              <span className="text-stone-500">/{counter.max}</span>
+            )}
+          </div>
+        )}
+        <div className="truncate text-xs text-stone-400">
+          {counter.name}
+          {counter.hidden && <span className="ml-1 text-stone-600">· hidden</span>}
         </div>
-        <div className="truncate text-xs text-stone-400">{counter.name}</div>
       </div>
       <button className={big ? bigBtn : iconBtn} onClick={() => bump(1)} aria-label={`increase ${counter.name}`}>
         +

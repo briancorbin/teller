@@ -1,6 +1,7 @@
 import { CampaignDO } from './campaign-do';
 import {
   logEvent,
+  publicCounters,
   toCampaign,
   toCharacter,
   toPackRecord,
@@ -298,12 +299,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .all();
     const campaign = toCampaign(row as never);
     return json({
-      // Reference (Warden's notes/rules text) never leaves via /public.
+      // Reference (Warden's notes/rules text) never leaves via /public,
+      // and hidden counters stay behind the screen until revealed.
       campaign: {
         ...campaign,
         data: {
           vocabulary: campaign.data.vocabulary,
-          counters: campaign.data.counters,
+          counters: publicCounters(campaign.data.counters),
           map: campaign.data.map,
         },
       },

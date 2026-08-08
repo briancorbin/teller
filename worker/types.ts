@@ -10,6 +10,18 @@ export type Counter = {
   current: number;
   /** null = unbounded (set per character, e.g. HP max entered by hand) */
   max: number | null;
+  /**
+   * Presentation hint only — 'clock' renders as a segmented progress
+   * clock (Blades-style; needs a max). Same data, same events, same
+   * undo; nothing downstream may branch on it except renderers.
+   */
+  display?: 'clock';
+  /**
+   * Kept out of /public snapshots (board, badge) until the DM reveals
+   * it. The seat still sees its own — hidden is about the table-facing
+   * surfaces, not the player's own card.
+   */
+  hidden?: boolean;
 };
 
 export type Field = {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Counter, PublicCharacter } from '../../worker/types';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
+import { ClockFace } from '../components/ClockFace';
 import { ConnectionHint } from '../components/ConnectionHint';
 
 // The player badge: an outward-facing, non-touch display — the back of
@@ -21,6 +22,20 @@ function Bar({ counter }: { counter: Counter }) {
       ? Math.max(0, Math.min(1, counter.current / counter.max))
       : null;
   const low = pct !== null && pct <= 0.25;
+
+  if (counter.display === 'clock' && counter.max !== null && counter.max > 0) {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <ClockFace
+          current={counter.current}
+          max={counter.max}
+          size={120}
+          label={`${counter.name}: ${counter.current} of ${counter.max}`}
+        />
+        <span className="text-xl text-stone-400">{counter.name}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="min-w-40">

@@ -3,6 +3,7 @@ import type {
   CampaignData,
   Character,
   CharacterData,
+  Counter,
   PackRecord,
   PublicCharacter,
   RulesPack,
@@ -77,6 +78,11 @@ export function toPackRecord(row: PackRow): PackRecord {
   };
 }
 
+/** Counters as the player-facing surfaces may see them. */
+export function publicCounters(counters: Counter[]): Counter[] {
+  return counters.filter((c) => !c.hidden);
+}
+
 export function toPublicCharacter(row: CharacterRow): PublicCharacter {
   const character = toCharacter(row);
   const npc = character.kind === 'npc';
@@ -87,9 +93,10 @@ export function toPublicCharacter(row: CharacterRow): PublicCharacter {
     kind: character.kind,
     data: {
       // NPCs keep only tags — the table may know a wolf is Bloodied,
-      // never its numbers. Seat tokens and notes never leave for anyone.
+      // never its numbers. Seat tokens and notes never leave for anyone,
+      // and hidden counters stay behind the screen until revealed.
       fields: npc ? [] : character.data.fields,
-      counters: npc ? [] : character.data.counters,
+      counters: npc ? [] : publicCounters(character.data.counters),
       tags: character.data.tags,
     },
   };

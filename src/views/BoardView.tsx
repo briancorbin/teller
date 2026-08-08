@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import { sectionLabel } from '../lib/ui';
+import { ClockFace } from '../components/ClockFace';
 import { ConnectionHint } from '../components/ConnectionHint';
 
 // The board: a vertical, player-facing display standing in FRONT of
@@ -17,6 +18,22 @@ function CounterReadout({ counter }: { counter: Counter }) {
       ? Math.max(0, Math.min(1, counter.current / counter.max))
       : null;
   const low = pct !== null && pct <= 0.25;
+
+  if (counter.display === 'clock' && counter.max !== null && counter.max > 0) {
+    return (
+      <div className="flex flex-col items-center gap-2">
+        <ClockFace
+          current={counter.current}
+          max={counter.max}
+          size={104}
+          label={`${counter.name}: ${counter.current} of ${counter.max}`}
+        />
+        <span className="text-center font-serif text-xl text-stone-300">
+          {counter.name}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="min-w-28">
