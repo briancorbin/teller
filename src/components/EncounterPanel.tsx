@@ -11,6 +11,7 @@ import type {
 } from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
+import { QuickSpawn } from './BestiaryPanel';
 import { STATE_EFFECTS } from './token-visuals';
 
 // The encounter: turn order, plus everything you reach for while it's
@@ -74,8 +75,6 @@ export function EncounterPanel({
   onSpawn: (npcId: string, count: number) => void;
 }) {
   const [draft, setDraft] = useState('');
-  /** How many of the next thing you tap — set once, tap several. */
-  const [count, setCount] = useState(1);
   /** Rows opened to show the whole sheet. Running a monster shouldn't
    *  mean leaving the fight to go and read it. */
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -341,48 +340,7 @@ export function EncounterPanel({
         })}
       </ol>
 
-      {npcs.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-[11px] uppercase tracking-wider text-stone-600">
-            bestiary
-          </span>
-          <span className="flex items-center gap-0.5">
-            <button
-              className={btnGhost}
-              onClick={() => setCount((n) => Math.max(1, n - 1))}
-              aria-label="fewer"
-            >
-              −
-            </button>
-            <span className="w-6 text-center font-mono text-xs text-stone-300">
-              ×{count}
-            </span>
-            <button
-              className={btnGhost}
-              onClick={() => setCount((n) => Math.min(20, n + 1))}
-              aria-label="more"
-            >
-              +
-            </button>
-          </span>
-          {npcs.map((n) => (
-            <button
-              key={n.id}
-              className={btnGhost}
-              onClick={() => onSpawn(n.id, count)}
-              // Where a foe came from belongs in the tooltip, not the
-              // label — mid-fight you want the name, not its provenance.
-              title={
-                n.from
-                  ? `add ${count} × ${n.name} — from ${n.from}`
-                  : `add ${count} × ${n.name} to the fight`
-              }
-            >
-              + {n.name}
-            </button>
-          ))}
-        </div>
-      )}
+      <QuickSpawn npcs={npcs} onSpawn={onSpawn} />
 
       <div className="flex flex-wrap gap-1.5">
         {unlisted.map((c) => (

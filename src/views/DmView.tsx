@@ -17,6 +17,7 @@ import { CharacterCard } from '../components/CharacterCard';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { SceneEditor } from '../components/SceneEditor';
 import { CounterSection } from '../components/CounterSection';
+import { BestiaryPanel } from '../components/BestiaryPanel';
 import { BooksPanel } from '../components/BooksPanel';
 import { BundleImport } from '../components/BundleImport';
 import { DisplaysPanel } from '../components/DisplaysPanel';
@@ -31,7 +32,7 @@ import { RulesPanel } from '../components/RulesPanel';
 //   characters → the character grid
 //   library    → rules · reference · party resources
 //   displays   → the screens in the room, and what each one is
-const PANES = ['session', 'encounter', 'map', 'characters', 'library', 'displays'] as const;
+const PANES = ['session', 'encounter', 'bestiary', 'map', 'characters', 'library', 'displays'] as const;
 
 export function DmView({
   campaignId,
@@ -346,6 +347,21 @@ export function DmView({
           {paneNav}
         </div>
         {encounterPanel}
+      </main>
+    );
+  }
+
+  // The shelf of foes. Search it, open one to see what it actually is,
+  // then drop it into the fight.
+  if (pane === 'bestiary') {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-3 p-3">
+        <ConnectionHint connected={connected} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
+          {paneNav}
+        </div>
+        <BestiaryPanel npcs={bestiary} onSpawn={spawnGroup} />
       </main>
     );
   }
