@@ -45,6 +45,12 @@ export default function App() {
     setPane(next);
   }, []);
 
+  /** Forget a campaign that no longer exists and show the list again. */
+  const forgetCampaign = useCallback(() => {
+    localStorage.removeItem(CAMPAIGN_STORAGE);
+    setCampaignId('');
+  }, []);
+
   const lock = useCallback(() => {
     clearDmKey();
     localStorage.removeItem(CAMPAIGN_STORAGE);
@@ -69,6 +75,7 @@ export default function App() {
         pane={pane}
         onPane={choosePane}
         onLock={lock}
+        onMissing={forgetCampaign}
       />
     ) : (
       <Landing onOpen={openCampaign} onLock={lock} />

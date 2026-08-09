@@ -82,12 +82,29 @@ function authHeaders(headers: Headers): Headers {
   return headers;
 }
 
+/**
+ * A failed request, carrying its status.
+ *
+ * The status is the difference between "this is gone" and "I couldn't
+ * reach the host just now", and callers have to be able to tell: one
+ * means give up on the thing, the other means try again in a moment.
+ */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = authHeaders(new Headers(init.headers));
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+    throw new ApiError(body.error ?? `HTTP ${res.status}`, res.status);
   }
   return res.json() as Promise<T>;
 }

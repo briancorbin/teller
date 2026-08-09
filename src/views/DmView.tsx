@@ -7,7 +7,7 @@ import type {
   PackRecord,
   Scene,
 } from '../../worker/types';
-import { api, getDmKey, newLocalId, setDmKey } from '../lib/api';
+import { api, ApiError, getDmKey, newLocalId, setDmKey } from '../lib/api';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
@@ -36,12 +36,15 @@ export function DmView({
   pane,
   onPane,
   onLock,
+  onMissing,
 }: {
   campaignId: string;
   pane: string | null;
   onPane: (pane: string | null) => void;
   /** Absent on a screen the DM promoted — it has no key to give up. */
   onLock?: () => void;
+  /** The campaign is gone; forget it and show the list again. */
+  onMissing?: () => void;
 }) {
   const showSession = pane === null || pane === 'session';
   const showCharacters = pane === null || pane === 'characters';
@@ -68,8 +71,23 @@ export function DmView({
         setCharacters(characters);
         setError('');
       })
-      .catch((e) => setError(String(e instanceof Error ? e.message : e)));
-  }, [campaignId]);
+      .catch((e) => {
+        // A campaign that isn't there is not an error to stare at — it's
+        // a stale pointer, and the only useful thing to do is go back to
+        // the list. This happens for real: the id is remembered per
+        // origin, so pointing a browser at a different host (or a fresh
+        // one) leaves it holding an id that host has never heard of.
+        //
+        // A 404 means gone; anything else means the host is unreachable
+        // or unhappy, and dropping the Warden out of their campaign
+        // mid-session over a blip would be much worse than a message.
+        if (e instanceof ApiError && e.status === 404) {
+          onMissing?.();
+          return;
+        }
+        setError(String(e instanceof Error ? e.message : e));
+      });
+  }, [campaignId, onMissing]);
 
   useEffect(refetch, [refetch]);
 
