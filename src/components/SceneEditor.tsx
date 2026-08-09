@@ -21,6 +21,7 @@ import { GridOverlay } from './GridOverlay';
 // touches what the table shows.
 
 const DEFAULT_VIEW: SceneView = { mode: 'fit', zoom: 1, cu: 0.5, cv: 0.5 };
+const SNAP_PREF = 'teller.editor.snap';
 
 const TOKEN_SIZES = [0.5, 1, 2, 3, 4, 6, 8];
 const TOKEN_SHAPES = ['circle', 'square', 'triangle'] as const;
@@ -77,6 +78,9 @@ export function SceneEditor({
   const [showFog, setShowFog] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tvDiagonal, setTvDiagonal] = useState('');
+  // Personal workshop preference (not scene data — the table never
+  // needs to know how you placed a token, only where it ended up).
+  const [snap, setSnap] = useState(() => localStorage.getItem(SNAP_PREF) !== '0');
   const [showTokens, setShowTokens] = useState(false);
   const [showScene, setShowScene] = useState(false);
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
@@ -217,6 +221,23 @@ export function SceneEditor({
   const rows = cols && nat ? cols * (nat.h / nat.w) : null;
   const cellPx = cols && baseW ? baseW / cols : null;
 
+  /**
+   * Snap a token's centre to the grid the way minis actually sit:
+   * odd-inch bases (1", 3") centre inside a square, even-inch bases
+   * (2", 4"…) centre on the intersection so they cover their squares
+   * evenly. Hold Option while dragging to place freely.
+   */
+  const snapUv = (u: number, v: number, sizeInches: number) => {
+    if (!snap || !cols || !rows) return { u, v };
+    const onIntersection = sizeInches >= 2 && Math.round(sizeInches) % 2 === 0;
+    const fit = (n: number) =>
+      onIntersection ? Math.round(n) : Math.floor(n) + 0.5;
+    return {
+      u: clamp01(fit(u * cols) / cols),
+      v: clamp01(fit(v * rows) / rows),
+    };
+  };
+
   const cellAt = (clientX: number, clientY: number): Cell | null => {
     if (!cols || !rows) return null;
     const uv = toUv(clientX, clientY);
@@ -335,11 +356,12 @@ export function SceneEditor({
 
   const addToken = () => {
     mark();
+    const placed = snapUv(view.cu, view.cv, 1);
     const token: Token = {
       id: newLocalId('tok'),
       label: `Token ${tokens.length + 1}`,
-      u: view.cu,
-      v: view.cv,
+      u: placed.u,
+      v: placed.v,
       sizeInches: 1,
       color: TOKEN_COLORS[tokens.length % TOKEN_COLORS.length],
       // New markers start behind the screen: revealing is deliberate,
@@ -367,6 +389,11 @@ export function SceneEditor({
       if (e.key === 'b' && cols) setTool('paint');
       if (e.key === 'g' && cols) setTool('fog');
       if (e.key === 'l') setView({ locked: !view.locked });
+      if (e.key === 's' && cols) {
+        const next = !snap;
+        setSnap(next);
+        localStorage.setItem(SNAP_PREF, next ? '1' : '0');
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -438,7 +465,12 @@ export function SceneEditor({
       }
     } else if (d.kind === 'token') {
       const uv = toUv(e.clientX, e.clientY);
-      if (uv) setToken(d.id, uv, false);
+      if (!uv) return;
+      const token = (draftRef.current.tokens ?? []).find((t) => t.id === d.id);
+      // Option bypasses the snap for fine placement.
+      const placed =
+        e.altKey || !token ? uv : snapUv(uv.u, uv.v, token.sizeInches);
+      setToken(d.id, placed, false);
     } else if (d.kind === 'frame') {
       const uv = toUv(e.clientX, e.clientY);
       if (uv) setView({ cu: uv.u, cv: uv.v }, false);
@@ -770,6 +802,27 @@ export function SceneEditor({
             aria-label="fog tool"
           >
             <span className={cols ? '' : 'opacity-30'}>🌫</span>
+          </button>
+          <button
+            className={`${toolBtn(false)} ${
+              snap && cols ? 'text-amber-300' : 'text-stone-500'
+            }`}
+            onClick={() => {
+              const next = !snap;
+              setSnap(next);
+              localStorage.setItem(SNAP_PREF, next ? '1' : '0');
+            }}
+            disabled={!cols}
+            title={
+              cols
+                ? snap
+                  ? 'tokens snap to the grid (S) — hold ⌥ while dragging to place freely'
+                  : 'tokens place freely (S) — turn on to snap them to the grid'
+                : 'set the map width first — snapping needs inch tiles'
+            }
+            aria-label={snap ? 'snapping on' : 'snapping off'}
+          >
+            <span className={cols ? '' : 'opacity-30'}>🧲</span>
           </button>
           <button
             className={toolBtn(showGrid)}
@@ -1310,7 +1363,9 @@ export function SceneEditor({
                 : view.mode === 'true'
                   ? 'drag to aim the amber frame — this moves what the table shows'
                   : 'table is showing the whole map — switch to true scale in scene settings'
-              : 'drag tokens to place · drag the map to move your view · framing is safe'}
+              : `drag tokens to place${
+                  snap && cols ? ' (snapping to the grid — hold ⌥ for free)' : ''
+                } · drag the map to move your view · framing is safe`}
         {combatRunning && ' · combat running'}
       </p>
     </div>
