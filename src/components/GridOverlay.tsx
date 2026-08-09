@@ -4,7 +4,11 @@
 // Calibrate by holding a mini base in any square at the table and
 // tapping ± on the console until it fits.
 
-export function GridOverlay({ grid }: { grid?: { on: boolean; ppi: number } }) {
+export function GridOverlay({
+  grid,
+}: {
+  grid?: { on: boolean; ppi: number; ox?: number; oy?: number };
+}) {
   if (!grid?.on || !grid.ppi) return null;
   const line = 'rgba(251, 191, 36, 0.22)'; // faint amber hairlines
   return (
@@ -13,6 +17,7 @@ export function GridOverlay({ grid }: { grid?: { on: boolean; ppi: number } }) {
       style={{
         backgroundImage: `linear-gradient(to right, ${line} 0 1px, transparent 1px 100%), linear-gradient(to bottom, ${line} 0 1px, transparent 1px 100%)`,
         backgroundSize: `${grid.ppi}px ${grid.ppi}px`,
+        backgroundPosition: `${grid.ox ?? 0}px ${grid.oy ?? 0}px`,
       }}
     />
   );

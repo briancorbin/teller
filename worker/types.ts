@@ -81,8 +81,9 @@ export type CampaignData = {
    * Table grid overlay, controlled from the console (the table is
    * passive glass). ppi = pixels per true inch on the table display —
    * calibrated by holding a mini base in a square and nudging ±.
+   * ox/oy pan the grid so lines sit on the map's walls and streets.
    */
-  grid?: { on: boolean; ppi: number };
+  grid?: { on: boolean; ppi: number; ox?: number; oy?: number };
   /**
    * Handout library — DM-only. The list never leaves via /public
    * (staged spoilers must not leak); only the ACTIVE handout does.

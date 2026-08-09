@@ -72,19 +72,24 @@ export function DmView({ campaignId }: { campaignId: string }) {
     api.patchCharacter(id, patch).catch(() => refetch());
   };
 
-  // Functional update so rapid ± taps never compute from a stale base;
-  // the PATCH sends the absolute value, so replays are harmless.
-  const nudgeGrid = (delta: number) => {
+  // Functional update so rapid taps never compute from a stale base;
+  // the PATCH sends absolute values, so replays are harmless.
+  const patchGrid = (
+    update: (prev: NonNullable<Campaign['data']['grid']>) => NonNullable<Campaign['data']['grid']>,
+  ) => {
     setCampaign((prev) => {
       if (!prev) return prev;
-      const grid = {
-        on: true,
-        ppi: Math.max(10, (prev.data.grid?.ppi ?? 40) + delta),
-      };
+      const grid = update(prev.data.grid ?? { on: false, ppi: 40 });
       api.patchCampaign(prev.id, { data: { grid } }).catch(() => refetch());
       return { ...prev, data: { ...prev.data, grid } };
     });
   };
+
+  const nudgeGrid = (delta: number) =>
+    patchGrid((g) => ({ ...g, on: true, ppi: Math.max(10, g.ppi + delta) }));
+
+  const panGrid = (dx: number, dy: number) =>
+    patchGrid((g) => ({ ...g, ox: (g.ox ?? 0) + dx, oy: (g.oy ?? 0) + dy }));
 
   const addCharacter = async () => {
     if (!newName.trim()) return;
@@ -347,14 +352,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
                     ? 'bg-amber-700 text-stone-950'
                     : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
                 }`}
-                onClick={() => {
-                  const grid = {
-                    ppi: campaign.data.grid?.ppi ?? 40,
-                    on: !campaign.data.grid?.on,
-                  };
-                  setCampaign({ ...campaign, data: { ...campaign.data, grid } });
-                  api.patchCampaign(campaign.id, { data: { grid } }).catch(() => refetch());
-                }}
+                onClick={() => patchGrid((g) => ({ ...g, on: !g.on }))}
               >
                 {campaign.data.grid?.on ? 'on' : 'off'}
               </button>
@@ -380,9 +378,29 @@ export function DmView({ campaignId }: { campaignId: string }) {
                     +
                   </button>
                 </div>
+                <div className="flex items-center justify-center gap-2">
+                  {(
+                    [
+                      ['←', -2, 0],
+                      ['↑', 0, -2],
+                      ['↓', 0, 2],
+                      ['→', 2, 0],
+                    ] as const
+                  ).map(([label, dx, dy]) => (
+                    <button
+                      key={label}
+                      className="h-8 w-8 rounded-lg bg-stone-800 text-sm text-stone-200 hover:bg-stone-700"
+                      aria-label={`pan grid ${label}`}
+                      onClick={() => panGrid(dx, dy)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <span className="ml-1 text-xs text-stone-600">pan</span>
+                </div>
                 <p className="text-xs leading-snug text-stone-600">
-                  hold a mini base in any square on the table and nudge ± until
-                  it fits exactly
+                  ± until a mini base fits a square exactly; arrows slide the
+                  lines onto the map's walls &amp; streets
                 </p>
               </>
             )}
