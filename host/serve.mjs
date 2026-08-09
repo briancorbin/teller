@@ -1,9 +1,4 @@
-#!/usr/bin/env node
-//
-// teller, running on your table.
-//
-//   pnpm host                 # data in ~/.teller
-//   pnpm host /Volumes/CARD   # data on a stick you can walk away with
+// teller, running on your table. Driven by `teller host` (see cli.mjs).
 //
 // One process holds the whole thing: the app, the database, the assets,
 // the books. Every other screen — the table TV, a rail panel, a player's
@@ -31,12 +26,14 @@ import { DurableNamespace } from './durable.mjs';
 import { Assets } from './assets.mjs';
 import { migrate } from './migrate.mjs';
 
+// Resolved from this file, so the same layout works whether it's the
+// repo or an installed copy — `dist/`, `migrations/` and `host/` sit
+// side by side in both.
 const HERE = dirname(fileURLToPath(import.meta.url));
-const REPO = resolve(HERE, '..');
-const PORT = Number(process.env.TELLER_PORT ?? 4525);
+const ROOT = resolve(HERE, '..');
 
-const args = process.argv.slice(2).filter((a) => !a.startsWith('-'));
-const DATA = resolve(args[0] ?? process.env.TELLER_DATA ?? join(homedir(), '.teller'));
+export const defaultData = () =>
+  resolve(process.env.TELLER_DATA ?? join(homedir(), '.teller'));
 
 const log = (msg) => console.log(`  ${msg}`);
 
@@ -49,10 +46,13 @@ const log = (msg) => console.log(`  ${msg}`);
  * model as a physical book of records, and the right one for a thing
  * that has no accounts.
  */
-async function dmKey() {
-  const file = join(DATA, 'dm.key');
-  const existing = await readFile(file, 'utf8').catch(() => null);
-  if (existing?.trim()) return existing.trim();
+export async function dmKey(data, { reset = false } = {}) {
+  const file = join(data, 'dm.key');
+  if (!reset) {
+    const existing = await readFile(file, 'utf8').catch(() => null);
+    if (existing?.trim()) return existing.trim();
+  }
+  await mkdir(data, { recursive: true });
   const key = randomBytes(12).toString('base64url');
   await writeFile(file, key, { mode: 0o600 });
   return key;
@@ -97,33 +97,36 @@ async function send(res, response) {
   Readable.fromWeb(response.body).pipe(res);
 }
 
-async function main() {
+export async function serve({ data = defaultData(), port = 4525 } = {}) {
+  const DATA = data;
+  const PORT = port;
   console.log('\n  teller\n');
   await mkdir(DATA, { recursive: true });
   await mkdir(objectRoot(DATA), { recursive: true });
 
   const dbFile = join(DATA, 'teller.db');
   const db = new D1(dbFile);
-  const { ran, total } = await migrate(db, join(REPO, 'migrations'), log);
+  const { ran, total } = await migrate(db, join(ROOT, 'migrations'), log);
   log(ran ? `database ready (${ran} of ${total} migrations applied)` : 'database ready');
 
   // Imported late and by path so a missing build is a clear message
   // rather than a stack trace about module resolution.
-  const bundle = join(REPO, 'dist', 'teller', 'index.js');
+  const bundle = join(ROOT, 'dist', 'teller', 'index.js');
   let worker;
   try {
     worker = await import(bundle);
   } catch {
-    console.error(`\n  No build found at ${bundle}\n  Run: pnpm build\n`);
-    process.exit(1);
+    throw new Error(
+      `no build found at ${bundle}\n  This copy of teller is incomplete — reinstall it, or run \`pnpm build\` from the repo.`,
+    );
   }
 
   const env = {
     DB: db,
     MAPS: new R2(objectRoot(DATA)),
-    ASSETS: new Assets(join(REPO, 'dist', 'client')),
+    ASSETS: new Assets(join(ROOT, 'dist', 'client')),
     CAMPAIGN: new DurableNamespace(db.raw, worker.CampaignDO),
-    DM_KEY: await dmKey(),
+    DM_KEY: await dmKey(DATA),
   };
 
   const server = createServer(async (req, res) => {
@@ -171,7 +174,3 @@ async function main() {
   });
 }
 
-main().catch((e) => {
-  console.error(`\n  ${e?.stack ?? e}\n`);
-  process.exit(1);
-});
