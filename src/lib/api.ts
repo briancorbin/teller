@@ -32,16 +32,37 @@ export function clearDmKey(): void {
 }
 
 /**
+ * One browser profile is one screen. That's correct at the table —
+ * every panel is its own box — but on a laptop it means every tab is
+ * the same screen and shows the same code.
+ *
+ * A fragment gives this machine another slot: `teller.ink/#tv`,
+ * `/#board`, `/#ragnar`. It says only WHICH screen on this device, and
+ * a slotted tab acts as a screen even when the DM key is stored here,
+ * so one machine can watch the whole table. It never says what a screen
+ * IS — roles only ever come from assignment.
+ */
+export function displaySlot(): string {
+  const slot = window.location.hash.replace(/^#/, '').trim();
+  return /^[A-Za-z0-9_-]{1,16}$/.test(slot) ? slot : '';
+}
+
+const displayKey = () => {
+  const slot = displaySlot();
+  return slot ? `${DISPLAY_ID_STORAGE}.${slot}` : DISPLAY_ID_STORAGE;
+};
+
+/**
  * This screen's identity. It's what the server checks to decide what
  * this screen may do, so it lives here and is never rendered — unlike
  * the pairing code, which exists to be read aloud.
  */
 export function getDisplayId(): string {
-  return localStorage.getItem(DISPLAY_ID_STORAGE) ?? '';
+  return localStorage.getItem(displayKey()) ?? '';
 }
 
 export function setDisplayId(id: string): void {
-  localStorage.setItem(DISPLAY_ID_STORAGE, id);
+  localStorage.setItem(displayKey(), id);
 }
 
 /**

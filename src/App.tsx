@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Display } from '../worker/types';
-import { clearDmKey, getDmKey } from './lib/api';
+import { clearDmKey, displaySlot, getDmKey } from './lib/api';
 import { useDisplay } from './lib/use-display';
 import { useSession } from './lib/use-session';
 import { ArtView } from './views/ArtView';
@@ -52,8 +52,17 @@ export default function App() {
     setCampaignId('');
   }, []);
 
-  // The key outranks any assignment: this is the DM's own device.
-  if (key) {
+  // Changing slots mid-tab should re-mount as that screen.
+  useEffect(() => {
+    const reload = () => window.location.reload();
+    window.addEventListener('hashchange', reload);
+    return () => window.removeEventListener('hashchange', reload);
+  }, []);
+
+  // The key outranks any assignment: this is the DM's own device. A
+  // slotted tab opts out, so the machine holding the key can still
+  // watch what the table sees.
+  if (key && !displaySlot()) {
     return campaignId ? (
       <DmView
         campaignId={campaignId}
