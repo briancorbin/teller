@@ -1,7 +1,11 @@
 # teller
 
-**teller.ink** — an in-person TTRPG companion. The table plays; teller
-keeps the books.
+An in-person TTRPG companion. The table plays; teller keeps the books.
+
+**teller runs on the table's own machine.** One person types `teller
+host`, and every other screen in the room opens the address it prints.
+`teller.ink` is where you get the software — a landing page, not the
+place anyone plays.
 
 ## The thesis (load-bearing — every feature decision derives from it)
 
@@ -35,16 +39,45 @@ keep the repo clean of personal-infra references.
 ## Stack
 
 Single package (no workspace): Vite + React + Tailwind v4 +
-`@cloudflare/vite-plugin`. One Cloudflare Worker (`worker/`) serves the
-SPA (`src/`) as static assets and the `/api/*` routes; `CampaignDO`
-(Durable Object, SQLite-backed) holds live session state; D1 (`teller`)
-holds durable data. Domain: `teller.ink` via Workers custom domain
-(route auto-manages DNS on deploy; zone is on Cloudflare).
+`@cloudflare/vite-plugin`. `worker/` serves the SPA (`src/`) as static
+assets plus the `/api/*` routes; `CampaignDO` holds live session state;
+a SQL database holds durable data.
+
+**One codebase, two runtimes, and no fork.** The same built bundle runs
+on Cloudflare Workers and on Node. The Cloudflare coupling was only ever
+three things — `env.ASSETS.fetch`, one `crypto.subtle` call, and the
+Durable Object — so `host/*.mjs` supplies each of them against
+`node:sqlite` and the local disk: `d1.mjs`, `r2.mjs`, `durable.mjs`,
+`assets.mjs`. **Keep route handlers runtime-agnostic or this dies.** No
+`env.` API that only one runtime has, reached for directly from a route.
+
+The local runtime is the one that matters (`bin/teller` → `host/cli.mjs`):
+
+- `teller host [path]` — serve this table. `--data` (default `~/.teller`)
+  or a bare path, so a campaign can live on a stick you carry.
+- `teller key` / `teller where` / `teller version`.
+
+Data lives in `~/.teller/`: `teller.db`, `books/` (PDFs named by content
+hash), `map/`, `dm.key`.
 
 - `pnpm dev` — Vite dev server (port 4525) with the worker + local D1/DO.
-- `pnpm db:migrate:local` / `db:migrate:remote` — D1 migrations.
-- `pnpm typecheck` / `pnpm build` / `pnpm deploy`.
-- Secrets: `DM_KEY` (`.dev.vars` locally, `wrangler secret put` in prod).
+- `pnpm db:migrate:local` / `db:migrate:remote` — D1 migrations. The host
+  applies the same `migrations/` on boot.
+- `pnpm typecheck` / `pnpm build` / `pnpm pack` (installable tarball).
+- Secrets: `DM_KEY` (`.dev.vars` locally; on a host, `~/.teller/dm.key`,
+  minted on first run).
+
+The Cloudflare deployment still exists (worker `teller`, D1 `teller`, R2
+`teller-maps`, custom domain) and is where the landing page will live.
+It is no longer where play happens.
+
+## Design docs — read before touching their subject
+
+- **`docs/BATTLEMAP.md`** — everything map-related, and it describes what
+  actually SHIPPED: coordinate spaces, scale, the calibrated 1-inch grid,
+  tokens, fog, hidden-means-stripped. Scenes, fog and tokens are built;
+  don't design them again from this file.
+- **`packs/README.md`** — the pack format. The JSON itself is gitignored.
 
 ## RULES — settled decisions; don't re-litigate
 
@@ -65,24 +98,48 @@ character or to the campaign (party resources).
 
 ### 3. Every mutation appends to the event log
 
-`events` (D1) gets a row for every state change: who, what, payload.
-This is the seed for undo / combat log / history. Never mutate without
-logging.
+The `events` table gets a row for every state change: who, what,
+payload. This is the seed for undo / combat log / history. Never mutate
+without logging. (Nothing has ever *read* it yet — TEL-5. Keep writing
+anyway; the log is only worth having if it's complete.)
 
 ### 4. System templates are data, never code — and never rules text
 
-A template (`worker/templates.ts`) = structure + vocabulary (field
-lists, counter names, "Warden" vs "DM"). NEVER rules content: no spell
-descriptions, no stat blocks, no game text. This is the IP bright line
-and what makes community templates safe. Templates are starting kits —
-after creation, everything is editable and the template is irrelevant.
-Every template carries `system` + `version` from day one.
+A template = structure + vocabulary (field lists, counter names,
+"Warden" vs "DM"). NEVER rules content: no spell descriptions, no stat
+blocks, no game text. This is the IP bright line and what makes
+community templates safe. Templates are starting kits — after creation,
+everything is editable and the template is irrelevant. Every template
+carries `system` + `version` from day one.
 
-Rules CONTENT has a sanctioned home: **rules packs** — JSON uploaded
-to the instance's `packs` table, searchable from the console's Rules
-panel. Pack files live in `packs/` locally and are gitignored:
-rulebook text is personal-use data in a private DB, never repo
-content. See `packs/README.md` for the format.
+Templates live in the **`systems` table** (migration 0007), not in code.
+`worker/templates.ts` is a *seed* — `seedSystems` inserts with `INSERT
+OR IGNORE`, so a counter someone renamed survives the next reboot
+(rule 1). A system added by a person and a system that shipped with
+teller are the same kind of thing and neither outranks the other.
+
+### 4a. A pack is the unit of content
+
+Rules CONTENT has a sanctioned home: **packs** — JSON uploaded to the
+instance's `packs` table. A pack carries the distilled rulings that come
+up mid-game AND the bestiary that goes with them; the campaign's foe
+list is the pack catalogue merged with the campaign's own, campaign
+winning on an id collision.
+
+A pack works with **no PDF at all**. A book is optional enrichment,
+attached by content hash: a book's id is `bok_` + sha-256 of its own
+bytes, so two people who own the same rulebook derive the same id
+without coordinating and a reference resolves on any host that has it —
+no registry, no ids handed out by anyone.
+
+Pack files live in `packs/` locally and are **gitignored**: rulebook
+text is personal-use data in a private DB, never repo content. See
+`packs/README.md` for the format.
+
+**teller hosts no content.** Not packs, not books. Listing anything is
+possible only with a rightsholder's sanction, and even then the
+publisher distributes it themselves. What people do with files they
+have is between them and the publisher.
 
 ### 5. Turn order is a manually ordered list — hard commitment
 
@@ -93,21 +150,27 @@ universal across systems.
 
 ### 6. Web-first; hardware is optional flare
 
-**There is ONE url.** Every screen — phone, tablet, table TV, rail
-panel — loads `teller.ink`, shows a pairing code, and the DM types that
-code into their console to adopt it. What a screen *is* is an
-assignment the DM makes and changes at will; no surface is addressable
-by URL and nothing is provisioned per-device. A Pi kiosk boots to the
-same address forever.
+**There is ONE url per table — the host's.** Every screen — phone,
+tablet, table TV, rail panel — opens the address `teller host` prints,
+shows a pairing code, and the DM types that code into their console to
+adopt it. What a screen *is* is an assignment the DM makes and changes
+at will; no surface is addressable by URL and nothing is provisioned
+per-device. A Pi kiosk boots to the same address forever.
+
+The address is now the table's, not teller.ink's — that's the only
+change the pivot made here, and it's what makes a table with no
+internet work at all.
 
 The direction matters: the screen shows the code and the DM types it,
 so the dumbest panel in the room needs no keyboard.
 
 Roles a screen can be assigned:
 - `console` — the DM console, with all the authority that implies.
-  `params.pane` narrows it to one slice (session · encounter · map ·
-  characters · library · displays); one pane per panel is the digital
-  DM screen.
+  `params.pane` narrows it to one slice; one pane per panel is the
+  digital DM screen. The pane list is **`src/lib/panes.ts`, and only
+  there** — the console renders from it and the Displays panel offers it
+  when assigning. A pane the console can show but nobody can be assigned
+  to is a pane that doesn't exist.
 - `table` — the table TV renderer (passive, player-safe).
   **The table is the GROUND, nothing else**: the active scene
   full-bleed (+ grid overlay), or idle branding. No bookkeeping, no
@@ -134,6 +197,22 @@ dedicated hardware doing the same thing. Nothing may ever *require* the
 panels or the table TV. Seat UI must work as a short-and-wide strip
 (~1920×515) AND as a phone portrait card.
 
+**A LAN host is served over plain HTTP, and that constrains the
+client.** Two consequences that have already bitten:
+
+- **It is not a secure context.** `crypto.randomUUID`, `crypto.subtle`,
+  OPFS and PWA install are all unavailable on a `192.168.x.x` origin —
+  loopback is trusted, the LAN is not. Use `crypto.getRandomValues`, and
+  have the server compute anything that needs real crypto (the SSE
+  handle comes back from `/displays/hello` for exactly this reason).
+- **HTTP/1.1 allows six connections per origin and an SSE stream never
+  releases one.** Exhaust the pool and every later request on that
+  origin queues forever — it presents as "everything disconnected". HTTPS
+  hides this completely, which is why it survived months of hosted
+  play. Keep it to **one stream per resource per tab** with a subscriber
+  set (`src/lib/use-session.ts`); never let component count set socket
+  count.
+
 ### 7. Auth: one key, and assignments — no accounts, no other secrets
 
 **There is exactly one secret in teller: `DM_KEY`.** It is the root of
@@ -152,7 +231,9 @@ console.
 
 The one irreducible asymmetry: something must hold the key first,
 because a console can't be assigned by a console that doesn't exist
-yet. That's the DM's own device, unlocked at the same single URL.
+yet. That's the DM's own device, unlocked at the same address every
+other screen opens. On a host the key is minted on first run into
+`~/.teller/dm.key` — `teller key` prints it.
 
 A display's `id` is capability-bearing — it's what the server checks —
 so it's high-entropy, lives only in that device's storage, and is never
@@ -176,32 +257,59 @@ ON the player's own device gets "walk in and your character loads"
 without a server owning anyone's character; reach for real accounts when
 the requirement is genuinely cross-device or cross-table, not before.
 
-(SSE streams are unauthenticated in v0: they carry initiative labels
-only. Keep secrets out of the stream.)
+**The stream is authenticated, by ticket.** An `EventSource` can't send
+headers, so anything that must be named in a URL gets a short-lived HMAC
+ticket signed with the one key over subject + expiry
+(`worker/tickets.ts`) — same trick for a book's bytes in an iframe. The
+signature covers the *presented* expiry, so a client can't extend its
+own. Watching requires being a screen the DM adopted; a ticket
+identifies, it never grants a power the assignment didn't already have.
+Keep secrets out of the stream regardless.
 
 ### 8. Schema: few real columns + JSON `data` blob
 
-Promote a blob key to a column only when a query needs it. Raw D1 rows
-never cross the API boundary — per-resource serializers in
-`worker/db.ts` (`toCampaign`, `toCharacter`) parse/coerce.
+Promote a blob key to a column only when a query needs it. Raw database
+rows never cross the API boundary — per-resource serializers in
+`worker/db.ts` (`toCampaign`, `toCharacter`) parse/coerce — so a route
+never sees an integer where it wanted a boolean, whichever engine
+answered.
+
+The mirror of that rule lives in `host/d1.mjs`, which normalises what
+goes *in*: D1 quietly accepts a JS boolean as a bind parameter and
+`node:sqlite` throws, so the shim converts. Two engines, one contract —
+keep both edges honest and route code never learns which is running.
+
+### 9. What lives on the host, and what travels
+
+**State that more than one screen argues about lives on the host.
+Everything else lives as close to the person as possible.** That single
+line explains the pivot, why seat tokens died, why books stopped living
+in browser storage, and why there is no cloud in the play path.
+
+Its companion, for content: **what a publisher wrote stays put; what you
+wrote travels.** A `.tell` bundle carries your campaign — characters,
+encounters, scenes, packs — and **references books by id, never carries
+them**. So a bundle stays small, holds no rules text, and is safe to hand
+to anyone. A rulebook is downloaded once, by the person who owns it, onto
+the machine that serves the table.
+
+Bundle rules that follow from this (`worker/bundle.ts`, `worker/import.ts`):
+
+- **Sections, not types** — a bundle declares what it contains, so a
+  system-only pack and a whole campaign are the same file format.
+- **Import layers onto a running table** rather than replacing it, and
+  on a collision the **stored value wins** (rule 1 again — an import is
+  a proposal, not an authority).
+- A book that's referenced but absent is reported as missing, never
+  silently dropped: "you don't have this" beats forgetting it existed.
 
 ## Deferred on purpose (documented so they aren't re-invented badly)
 
-- Battlemap / scenes / fog on the table TV (phase 2 — canvas work;
-  calibrated true-1-inch grid is a launch requirement THERE, since
-  physical minis and terrain must fit squares).
-- Tokens (deliberately dumb when they come: image, position, size — no
-  vision, no auras). Tokens may be linked to a character
-  (`characterId`), which unlocks **reactive tile effects**: because the
-  table client already receives session + character state over SSE, the
-  map can react to bookkeeping with zero new plumbing — pulsing glow
-  under the tile of whoever's turn it is, wound/blood states when a
-  linked character drops below HP thresholds, condition auras. This
-  works for PHYSICAL minis too: a position-tracked square lights up
-  UNDER the physical mini standing on the glass (state is virtual,
-  action is physical — the map is the ground, the effects are the
-  bookkeeping made visible). Effects are pure render-layer on the
-  table client; no new data model beyond token positions.
 - SRD content import, character builder, level-up wizard.
+- Remote seats and hybrid tables — a player joining over the network,
+  their camera on a panel, their dice rolled physically on the far end
+  (TEL-55/56/57). The local-first architecture is what makes this
+  coherent: the host is already the authority, so a remote seat is a
+  screen that happens to be far away.
 - Community template distribution (v0 of that is a GitHub repo of JSON,
   not a platform).
