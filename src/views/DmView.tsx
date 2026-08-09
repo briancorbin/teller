@@ -7,6 +7,7 @@ import { useWakeLock } from '../lib/use-wake-lock';
 import { btn, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { CharacterCard } from '../components/CharacterCard';
 import { ConnectionHint } from '../components/ConnectionHint';
+import { SceneEditor } from '../components/SceneEditor';
 import { CounterSection } from '../components/CounterSection';
 import { InitiativePanel } from '../components/InitiativePanel';
 import { RulesPanel } from '../components/RulesPanel';
@@ -28,6 +29,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
+  const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refetch = useCallback(() => {
@@ -336,6 +338,14 @@ export function DmView({ campaignId }: { campaignId: string }) {
                       >
                         ✕
                       </button>
+                      <button
+                        className="absolute left-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-stone-950/80 text-xs text-stone-400 hover:text-amber-300"
+                        onClick={() => setEditingSceneId(scene.id)}
+                        aria-label={`edit ${scene.name} — scale & framing`}
+                        title="scale & framing"
+                      >
+                        ✎
+                      </button>
                     </div>
                   );
                 })}
@@ -580,6 +590,31 @@ export function DmView({ campaignId }: { campaignId: string }) {
         </div>
         )}
       </div>
+
+      {editingSceneId &&
+        (() => {
+          const scene = (campaign.data.maps ?? []).find(
+            (s) => s.id === editingSceneId,
+          );
+          if (!scene) return null;
+          return (
+            <SceneEditor
+              scene={scene}
+              combatRunning={(session?.turn ?? null) !== null}
+              onClose={() => setEditingSceneId(null)}
+              onSave={(next) => {
+                const maps = (campaign.data.maps ?? []).map((s) =>
+                  s.id === next.id ? next : s,
+                );
+                setCampaign({ ...campaign, data: { ...campaign.data, maps } });
+                api
+                  .patchCampaign(campaign.id, { data: { maps } })
+                  .catch(() => refetch());
+                setEditingSceneId(null);
+              }}
+            />
+          );
+        })()}
     </main>
   );
 }

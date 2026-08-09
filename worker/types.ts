@@ -57,6 +57,32 @@ export type Handout = {
   name: string;
 };
 
+/**
+ * How the table frames a scene. cu/cv = map-space (0..1) point at the
+ * viewport center; zoom multiplies true scale (1 = exact inches).
+ * See docs/BATTLEMAP.md for the coordinate-space rules.
+ */
+export type SceneView = {
+  mode: 'fit' | 'true';
+  zoom: number;
+  cu: number;
+  cv: number;
+};
+
+/**
+ * A scene: a battle map or splash image for the table TV.
+ * widthInches = the map's intended physical width (publisher-stated);
+ * with the display's calibrated ppi it makes true-scale rendering
+ * possible. fog/tokens arrive in later battlemap phases.
+ */
+export type Scene = {
+  id: string;
+  key: string;
+  name: string;
+  widthInches?: number;
+  view?: SceneView;
+};
+
 export type CampaignData = {
   /** UI strings per system — e.g. { gm: 'Warden' }. */
   vocabulary: Record<string, string>;
@@ -74,9 +100,11 @@ export type CampaignData = {
    */
   map?: { key: string };
   /** Scene library: named battle maps / splash art for the table TV. */
-  maps?: Handout[];
+  maps?: Scene[];
   /** Which scene the table is showing. Falls back to legacy `map`. */
   activeMapId?: string | null;
+  /** Derived, /public responses only: the resolved active scene. */
+  scene?: Scene | null;
   /**
    * Table grid overlay, controlled from the console (the table is
    * passive glass). ppi = pixels per true inch on the table display —

@@ -7,13 +7,14 @@ import { ConnectionHint } from '../components/ConnectionHint';
 import { GridOverlay } from '../components/GridOverlay';
 
 // The table TV — the screen IN the table, under the minis. It is the
-// GROUND, nothing else: the battle map full-bleed when one's up, idle
-// branding otherwise. All bookkeeping (initiative, notices, counters)
-// belongs to the board standing in front of the DM. Fog, calibrated
-// grid, and tokens land here in the next phase.
+// GROUND, nothing else: the active scene (framed per its view + true
+// scale when calibrated), the grid overlay, idle branding otherwise.
+// All control lives on the console; state arrives over SSE.
+// Coordinate rules: docs/BATTLEMAP.md.
 
 export function TableView({ campaignId }: { campaignId: string }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
 
   useWakeLock();
 
@@ -32,16 +33,60 @@ export function TableView({ campaignId }: { campaignId: string }) {
     if (id === 'campaign') refetch();
   });
 
-  const mapUrl = campaign?.data.map ? `/api/maps/${campaign.data.map.key}` : null;
+  const scene = campaign?.data.scene ?? null;
+  const mapKey = scene?.key ?? campaign?.data.map?.key ?? null;
+  const mapUrl = mapKey ? `/api/maps/${mapKey}` : null;
+
+  // Natural dimensions belong to the current image only.
+  useEffect(() => setNat(null), [mapKey]);
+
+  // True scale needs all three facts: the display's calibrated ppi,
+  // the scene's declared physical width, and the image's pixel width.
+  const ppi = campaign?.data.grid?.ppi;
+  const view = scene?.view;
+  const trueScale =
+    view?.mode === 'true' && scene?.widthInches && ppi && nat
+      ? ((ppi * scene.widthInches) / nat.w) * (view.zoom || 1)
+      : null;
+
+  // Measure via ref AND onLoad: a cached image can complete before
+  // React attaches the load listener, so onLoad alone silently misses.
+  const measure = (el: HTMLImageElement | null) => {
+    if (el && el.complete && el.naturalWidth) {
+      setNat((prev) =>
+        prev?.w === el.naturalWidth && prev?.h === el.naturalHeight
+          ? prev
+          : { w: el.naturalWidth, h: el.naturalHeight },
+      );
+    }
+  };
 
   if (mapUrl) {
+    const framed = trueScale !== null && nat !== null && view !== undefined;
     return (
       <main className="relative h-screen overflow-hidden bg-black">
         <ConnectionHint connected={connected} />
         <img
+          key={mapKey}
           src={mapUrl}
           alt=""
-          className="absolute inset-0 h-full w-full object-contain"
+          ref={measure}
+          onLoad={(e) => measure(e.currentTarget)}
+          className={
+            framed
+              ? 'absolute max-w-none'
+              : 'absolute inset-0 h-full w-full object-contain'
+          }
+          style={
+            framed
+              ? {
+                  width: nat.w * trueScale,
+                  height: nat.h * trueScale,
+                  left: `calc(50vw - ${view.cu * nat.w * trueScale}px)`,
+                  top: `calc(50vh - ${view.cv * nat.h * trueScale}px)`,
+                }
+              : undefined
+          }
         />
         <GridOverlay grid={campaign?.data.grid} />
       </main>

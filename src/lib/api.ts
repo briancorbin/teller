@@ -5,6 +5,7 @@ import type {
   CharacterData,
   Handout,
   PackRecord,
+  Scene,
   PublicCharacter,
   RulesPack,
   SessionOp,
@@ -126,7 +127,7 @@ export const api = {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       throw new Error(body.error ?? `HTTP ${res.status}`);
     }
-    return res.json() as Promise<{ scene: Handout }>;
+    return res.json() as Promise<{ scene: Scene }>;
   },
 
   deleteScene: (campaignId: string, sceneId: string) =>

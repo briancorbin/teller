@@ -437,11 +437,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           vocabulary: campaign.data.vocabulary,
           counters: publicCounters(campaign.data.counters),
           grid: campaign.data.grid,
-          // Active scene wins; legacy single-map pointer is the fallback.
-          map:
+          // Active scene (with view/scale metadata); legacy single-map
+          // pointer keeps old campaigns rendering.
+          scene:
             (campaign.data.maps ?? []).find(
               (s) => s.id === campaign.data.activeMapId,
-            ) ?? campaign.data.map ?? null,
+            ) ?? null,
+          map: campaign.data.map ?? null,
           handout:
             (campaign.data.handouts ?? []).find(
               (h) => h.id === campaign.data.activeHandoutId,
@@ -490,6 +492,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           ? body.data.activeMapId
           : campaign.data.activeMapId,
       grid: body.data?.grid !== undefined ? body.data.grid : campaign.data.grid,
+      // Scene metadata edits (widthInches/view; later fog/tokens) patch
+      // the whole array, counters-style. Upload/delete have their own
+      // endpoints.
+      maps: body.data?.maps ?? campaign.data.maps,
     };
     await env.DB.prepare('UPDATE campaigns SET name = ?, data = ? WHERE id = ?')
       .bind(body.name ?? campaign.name, JSON.stringify(next), campaign.id)
