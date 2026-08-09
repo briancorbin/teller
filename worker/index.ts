@@ -20,6 +20,7 @@ import {
 import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
 import { bundleFilename, exportCampaign } from './bundle';
+import { apply as applyBundle, inspect as inspectBundle } from './import';
 import type {
   Calibration,
   Campaign,
@@ -255,6 +256,38 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     });
     await poke(env, campaignId, target.entity_id ?? 'campaign');
     return json({ undid: target.kind, entityId: target.entity_id });
+  }
+
+  // Look inside a .tell file without unpacking it — what's in the box,
+  // with counts, so the choice of what to take is an informed one.
+  if (pathname === '/api/bundles/inspect' && method === 'POST') {
+    if (!dm()) return err('DM key required', 401);
+    try {
+      return json(await inspectBundle(await request.arrayBuffer()));
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'could not read that file', 400);
+    }
+  }
+
+  // Unpack one. `campaign` merges into an existing table; without it a
+  // new campaign is made from the bundle.
+  if (pathname === '/api/bundles/import' && method === 'POST') {
+    if (!dm(url.searchParams.get('campaign') ?? undefined)) {
+      return err('DM key required', 401);
+    }
+    try {
+      const sections = url.searchParams.get('sections');
+      const result = await applyBundle(env, await request.arrayBuffer(), {
+        campaignId: url.searchParams.get('campaign') ?? undefined,
+        sections: sections ? sections.split(',').filter(Boolean) : undefined,
+      });
+      await logEvent(env, result.campaignId, null, 'dm', 'bundle.imported', {
+        applied: result.applied,
+      });
+      return json(result);
+    } catch (e) {
+      return err(e instanceof Error ? e.message : 'import failed', 400);
+    }
   }
 
   // Export the whole campaign as a .tell bundle.
