@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import type { Scene, SceneView, Token } from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { btn, input, sectionLabel } from '../lib/ui';
+import { TOKEN_EFFECTS, zoneStyle } from './token-visuals';
 
 // Fullscreen scene editor (console-side). Scale + framing + tokens —
 // drag the map to move the viewport, drag a token to move the token,
@@ -21,7 +22,7 @@ export const TOKEN_COLORS = [
   '#57534e', // stone
 ];
 
-const TOKEN_SIZES = [0.5, 1, 2, 3];
+const TOKEN_SIZES = [0.5, 1, 2, 3, 4, 6, 8];
 
 export function SceneEditor({
   scene,
@@ -196,37 +197,50 @@ export function SceneEditor({
           </>
         )}
         {img &&
-          tokens.map((token) => {
-            const size = previewPxPerInch
-              ? Math.max(14, token.sizeInches * previewPxPerInch)
-              : 24;
-            return (
-              <button
-                key={token.id}
-                className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 font-mono text-[10px] font-bold text-stone-950 ${
-                  selectedId === token.id
-                    ? 'border-amber-300 ring-2 ring-amber-400'
-                    : 'border-stone-950/70'
-                }`}
-                style={{
-                  left: img.offsetLeft + token.u * img.offsetWidth,
-                  top: img.offsetTop + token.v * img.offsetHeight,
-                  width: size,
-                  height: size,
-                  backgroundColor: token.color,
-                }}
-                onPointerDown={(e) => {
-                  e.stopPropagation();
-                  setSelectedId(token.id);
-                  draggingTokenRef.current = token.id;
-                }}
-                aria-label={`token ${token.label}`}
-                title={token.label}
-              >
-                {token.label.slice(0, 2)}
-              </button>
-            );
-          })}
+          [...tokens]
+            .sort((a, b) => (a.effect ? 0 : 1) - (b.effect ? 0 : 1))
+            .map((token) => {
+              const size = previewPxPerInch
+                ? Math.max(14, token.sizeInches * previewPxPerInch)
+                : 24;
+              const zone = token.effect ? zoneStyle(token.effect) : null;
+              return (
+                <button
+                  key={token.id}
+                  className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full font-mono text-[10px] font-bold text-stone-950 ${
+                    zone
+                      ? zone.animate
+                        ? 'animate-pulse'
+                        : ''
+                      : 'border-2'
+                  } ${
+                    selectedId === token.id
+                      ? 'ring-2 ring-amber-400'
+                      : zone
+                        ? ''
+                        : 'border-stone-950/70'
+                  } ${selectedId === token.id && !zone ? 'border-amber-300' : ''}`}
+                  style={{
+                    left: img.offsetLeft + token.u * img.offsetWidth,
+                    top: img.offsetTop + token.v * img.offsetHeight,
+                    width: size,
+                    height: size,
+                    ...(zone
+                      ? { background: zone.background, boxShadow: zone.boxShadow }
+                      : { backgroundColor: token.color }),
+                  }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    setSelectedId(token.id);
+                    draggingTokenRef.current = token.id;
+                  }}
+                  aria-label={`token ${token.label}`}
+                  title={token.label}
+                >
+                  {!zone && token.label.slice(0, 2)}
+                </button>
+              );
+            })}
       </div>
 
       <footer className="space-y-3 p-4">
@@ -238,19 +252,38 @@ export function SceneEditor({
               onChange={(e) => setToken(selected.id, { label: e.target.value })}
               aria-label="token label"
             />
-            <div className="flex gap-1">
-              {TOKEN_COLORS.map((color) => (
-                <button
-                  key={color}
-                  className={`h-6 w-6 rounded-full ${
-                    selected.color === color ? 'ring-2 ring-stone-100' : ''
-                  }`}
-                  style={{ backgroundColor: color }}
-                  onClick={() => setToken(selected.id, { color })}
-                  aria-label={`color ${color}`}
-                />
+            <select
+              className={input}
+              value={selected.effect ?? ''}
+              onChange={(e) =>
+                setToken(selected.id, {
+                  effect: (e.target.value || undefined) as Token['effect'],
+                })
+              }
+              aria-label="token style"
+            >
+              <option value="">marker</option>
+              {TOKEN_EFFECTS.map((fx) => (
+                <option key={fx.value} value={fx.value}>
+                  {fx.label}
+                </option>
               ))}
-            </div>
+            </select>
+            {!selected.effect && (
+              <div className="flex gap-1">
+                {TOKEN_COLORS.map((color) => (
+                  <button
+                    key={color}
+                    className={`h-6 w-6 rounded-full ${
+                      selected.color === color ? 'ring-2 ring-stone-100' : ''
+                    }`}
+                    style={{ backgroundColor: color }}
+                    onClick={() => setToken(selected.id, { color })}
+                    aria-label={`color ${color}`}
+                  />
+                ))}
+              </div>
+            )}
             <div className="flex gap-1">
               {TOKEN_SIZES.map((s) => (
                 <button
@@ -266,6 +299,7 @@ export function SceneEditor({
                 </button>
               ))}
             </div>
+            {!selected.effect && (
             <select
               className={input}
               value={selected.characterId ?? ''}
@@ -282,6 +316,7 @@ export function SceneEditor({
                 </option>
               ))}
             </select>
+            )}
             <button
               className="ml-auto rounded px-2 py-1 text-sm text-stone-400 hover:bg-red-950 hover:text-red-300"
               onClick={() => {

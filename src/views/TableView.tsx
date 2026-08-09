@@ -5,6 +5,7 @@ import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { GridOverlay } from '../components/GridOverlay';
+import { zoneStyle } from '../components/token-visuals';
 
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the active scene (framed per its view + true
@@ -133,10 +134,34 @@ export function TableView({ campaignId }: { campaignId: string }) {
         />
         {rect &&
           nat &&
-          (scene?.tokens ?? []).map((token) => {
+          [...(scene?.tokens ?? [])]
+            .sort((a, b) => (a.effect ? 0 : 1) - (b.effect ? 0 : 1))
+            .map((token) => {
             const size = pxPerMapInch
               ? token.sizeInches * pxPerMapInch
               : 24;
+            if (token.effect) {
+              // Environmental zone: ground the minis stand IN. Under
+              // everything, no label, no glow — just the fire.
+              const zone = zoneStyle(token.effect);
+              return (
+                <div
+                  key={token.id}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${
+                    zone.animate ? 'animate-pulse' : ''
+                  }`}
+                  style={{
+                    left: rect.left + token.u * nat.w * rect.scale,
+                    top: rect.top + token.v * nat.h * rect.scale,
+                    width: size,
+                    height: size,
+                    background: zone.background,
+                    boxShadow: zone.boxShadow,
+                    transition: 'left 300ms, top 300ms',
+                  }}
+                />
+              );
+            }
             const linked = token.characterId
               ? characters.find((c) => c.id === token.characterId)
               : null;

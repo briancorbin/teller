@@ -70,10 +70,19 @@ export type SceneView = {
 };
 
 /**
+ * Presentation styles for zone tokens — fire, oil, smoke on the
+ * GROUND. Pure render vocabulary: teller draws the burning patch;
+ * whether standing in it hurts is the humans' business.
+ */
+export type TokenEffect = 'fire' | 'oil' | 'smoke' | 'ice' | 'poison' | 'water';
+
+/**
  * A token: a ground marker on a scene — deliberately dumb (no vision,
  * no auras-as-data). Position in map space (u/v ∈ 0..1), size in
  * physical inches. characterId links it to a character, unlocking
  * reactive render effects on the table (turn glow, wound tint).
+ * `effect` turns the disc into an environmental zone (renders under
+ * everything, no label/glow).
  */
 export type Token = {
   id: string;
@@ -83,6 +92,7 @@ export type Token = {
   sizeInches: number;
   color: string;
   characterId?: string | null;
+  effect?: TokenEffect;
 };
 
 /**
