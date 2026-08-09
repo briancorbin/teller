@@ -189,17 +189,12 @@ export function BooksPanel({ system }: { system: string }) {
     }
   };
 
-  if (!opfsSupported()) {
-    return (
-      <section className={`${card} space-y-2`}>
-        <span className={sectionLabel}>Rulebooks</span>
-        <p className="text-sm text-stone-500">
-          This browser can't store books locally. Try Chrome, Edge, Safari 17+
-          or Firefox 111+.
-        </p>
-      </section>
-    );
-  }
+  // No OPFS means this screen can't KEEP a book — it doesn't mean it can't
+  // read or search one. A panel on a table's own network is served over
+  // plain HTTP, so it has no origin-private storage at all, and yet the
+  // host beside it is holding every book there is. Importing is what's
+  // unavailable here; everything else works.
+  const canKeep = opfsSupported();
 
   return (
     <section className={`${card} space-y-3`}>
@@ -361,9 +356,15 @@ export function BooksPanel({ system }: { system: string }) {
             e.target.value = '';
           }}
         />
-        <button className={btn} disabled={!!busy} onClick={() => fileRef.current?.click()}>
-          import a PDF…
-        </button>
+        {canKeep ? (
+          <button className={btn} disabled={!!busy} onClick={() => fileRef.current?.click()}>
+            import a PDF…
+          </button>
+        ) : (
+          <span className="text-xs text-stone-600">
+            this screen can't keep books of its own — it reads the host's
+          </span>
+        )}
         {busy && <span className="font-mono text-xs text-amber-400">{busy}</span>}
       </div>
 

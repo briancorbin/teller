@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, getDisplayId, setDisplayId } from './api';
-import { displayHandle, type Display } from '../../worker/types';
+import { type Display } from '../../worker/types';
 
 /** Waiting to be adopted, so there's no stream yet — ask now and then. */
 const STANDBY_POLL_MS = 3000;
@@ -27,10 +27,13 @@ export function useDisplay(): {
 
   const refresh = useCallback(async () => {
     try {
-      const { display: next } = await api.hello(getDisplayId());
+      // The handle arrives with the display rather than being computed
+      // here: `crypto.subtle` doesn't exist on a plain-HTTP origin, which
+      // is what a screen on a table's own network is talking to.
+      const { display: next, handle: next_handle } = await api.hello(getDisplayId());
       setDisplayId(next.id);
       setDisplay(next);
-      setHandle(await displayHandle(next.id));
+      setHandle(next_handle);
     } catch {
       // Offline or the worker is down; keep whatever we last knew and
       // let the poll below try again.

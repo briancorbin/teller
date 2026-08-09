@@ -223,7 +223,7 @@ export const api = {
   // A screen announcing itself. No auth: this is how a screen comes to
   // exist, and a brand new one is blank and belongs to nobody.
   hello: (id: string) =>
-    req<{ display: Display }>('/api/displays/hello', {
+    req<{ display: Display; handle: string }>('/api/displays/hello', {
       method: 'POST',
       body: JSON.stringify({ id }),
     }),
@@ -316,5 +316,12 @@ export const api = {
 };
 
 export function newLocalId(prefix: string): string {
-  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
+  // getRandomValues, not randomUUID: a screen on a table's own network is
+  // served over plain HTTP, and randomUUID is secure-context-only. This
+  // one isn't, and four bytes is plenty for an id that's unique within a
+  // single character sheet.
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const hex = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  return `${prefix}_${hex}`;
 }

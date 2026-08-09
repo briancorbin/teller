@@ -188,7 +188,11 @@ export async function displayRoutes(
         .first();
       if (expired) display = await refreshCode(env, display);
     }
-    return json({ display });
+    // The handle is told, not derived. A screen served over plain HTTP on
+    // a table's own network has no `crypto.subtle` — it isn't a secure
+    // context — so a client that computed its own sha-256 could never open
+    // its stream. The server knows the answer anyway.
+    return json({ display, handle: await displayHandle(display.id) });
   }
 
   // A screen reporting its own viewport. Unauthenticated like hello and
