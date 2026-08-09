@@ -505,6 +505,38 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(toCharacter(row as never), 201);
   }
 
+  // Duplicate a character: same sheet, fresh identity (id + seat token).
+  // The workhorse for NPC packs — make one Coyote, stamp out five.
+  m = pathname.match(/^\/api\/characters\/([^/]+)\/duplicate$/);
+  if (m && method === 'POST') {
+    if (!dm) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!row) return err('character not found', 404);
+    const source = toCharacter(row as never);
+    const id = newId('chr');
+    const data: CharacterData = {
+      ...structuredClone(source.data),
+      seatToken: newId('seat'),
+    };
+    const name = `${source.name} (copy)`;
+    await env.DB.prepare(
+      'INSERT INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
+    )
+      .bind(id, source.campaignId, name, source.kind, JSON.stringify(data))
+      .run();
+    await logEvent(env, source.campaignId, id, 'dm', 'character.created', {
+      name,
+      duplicatedFrom: source.id,
+    });
+    await poke(env, source.campaignId, id);
+    const created = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+      .bind(id)
+      .first();
+    return json(toCharacter(created as never), 201);
+  }
+
   m = pathname.match(/^\/api\/characters\/([^/]+)$/);
   if (m && method === 'PATCH') {
     const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')

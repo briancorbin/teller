@@ -16,12 +16,14 @@ export function CharacterCard({
   vocabulary,
   onPatch,
   onDelete,
+  onDuplicate,
   lookup,
 }: {
   character: Character;
   vocabulary: Record<string, string>;
   onPatch: (patch: { name?: string; data?: Partial<CharacterData> }) => void;
   onDelete: () => void;
+  onDuplicate?: () => void;
   lookup?: RuleLookup;
 }) {
   const [copied, setCopied] = useState(false);
@@ -81,6 +83,15 @@ export function CharacterCard({
         >
           badge ↗
         </a>
+        {onDuplicate && (
+          <button
+            className={btnGhost}
+            onClick={onDuplicate}
+            title="duplicate — same sheet, fresh seat token"
+          >
+            ⧉
+          </button>
+        )}
         <button
           className={`${btnGhost} hover:text-red-300`}
           onClick={() => window.confirm(`Delete ${character.name}?`) && onDelete()}

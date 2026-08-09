@@ -418,6 +418,12 @@ export function DmView({ campaignId }: { campaignId: string }) {
                 onDelete={() =>
                   api.deleteCharacter(character.id).catch(() => refetch())
                 }
+                onDuplicate={() =>
+                  api
+                    .duplicateCharacter(character.id)
+                    .then(() => refetch())
+                    .catch((e) => setError(String(e instanceof Error ? e.message : e)))
+                }
               />
             ))}
           </div>

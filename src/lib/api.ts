@@ -139,6 +139,9 @@ export const api = {
   deleteCharacter: (id: string) =>
     req<{ ok: true }>(`/api/characters/${id}`, { method: 'DELETE' }, true),
 
+  duplicateCharacter: (id: string) =>
+    req<Character>(`/api/characters/${id}/duplicate`, { method: 'POST' }, true),
+
   seat: (characterId: string, token: string) =>
     req<{ character: Character; campaign: Campaign | null; packs: PackRecord[] }>(
       `/api/seat/${characterId}?token=${encodeURIComponent(token)}`,
