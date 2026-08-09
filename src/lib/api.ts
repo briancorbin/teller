@@ -228,9 +228,23 @@ export const api = {
       body: JSON.stringify({ code, name }),
     }),
 
+  /** This screen telling the books how big it is. Telemetry, not control. */
+  reportViewport: (w: number, h: number) =>
+    req<{ ok: true }>('/api/displays/viewport', {
+      method: 'POST',
+      body: JSON.stringify({ w, h }),
+    }),
+
   patchDisplay: (
     id: string,
-    patch: { name?: string; color?: string; role?: DisplayRole; params?: DisplayParams },
+    patch: {
+      name?: string;
+      color?: string;
+      role?: DisplayRole;
+      params?: DisplayParams;
+      ppi?: number | null;
+      ppiY?: number | null;
+    },
   ) =>
     req<{ display: Display }>(`/api/displays/${id}`, {
       method: 'PATCH',

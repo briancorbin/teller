@@ -3,6 +3,7 @@ import type {
   Campaign,
   Character,
   CharacterData,
+  Display,
   PackRecord,
   Scene,
 } from '../../worker/types';
@@ -50,6 +51,8 @@ export function DmView({
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
+  /** The screen on table duty — it owns the calibration, not the campaign. */
+  const [tableScreen, setTableScreen] = useState<Display | null>(null);
   // Which scene the map pane is shaping — independent of what's live.
   const [editSceneId, setEditSceneId] = useState<string | null>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -67,6 +70,24 @@ export function DmView({
   }, [campaignId]);
 
   useEffect(refetch, [refetch]);
+
+  const loadTableScreen = useCallback(() => {
+    api
+      .displays(campaignId)
+      .then((ds) => {
+        // More than one screen can be on table duty. The preview can
+        // only describe one, so prefer a screen that has actually
+        // reported itself, then the most recently seen of those.
+        const tables = ds.filter((d) => d.role === 'table');
+        const live = tables.filter((d) => d.viewport);
+        const pick = (live.length ? live : tables).sort((a, b) =>
+          b.lastSeenAt.localeCompare(a.lastSeenAt),
+        )[0];
+        setTableScreen(pick ?? null);
+      })
+      .catch(() => setTableScreen(null));
+  }, [campaignId]);
+  useEffect(loadTableScreen, [loadTableScreen]);
 
   const loadPacks = useCallback(() => {
     if (!campaign) return;
@@ -97,14 +118,14 @@ export function DmView({
     api.patchCharacter(id, patch).catch(() => refetch());
   };
 
-  /** Table display calibration — px per true inch, set in the workshop. */
+  /** Calibration is written to the SCREEN it describes, not the campaign. */
   const calibrate = (ppi: number, ppiY: number) => {
-    setCampaign((prev) => {
-      if (!prev) return prev;
-      const grid = { ...(prev.data.grid ?? {}), ppi, ppiY };
-      api.patchCampaign(prev.id, { data: { grid } }).catch(() => refetch());
-      return { ...prev, data: { ...prev.data, grid } };
-    });
+    if (!tableScreen) return;
+    setTableScreen({ ...tableScreen, ppi, ppiY });
+    api
+      .patchDisplay(tableScreen.id, { ppi, ppiY })
+      .then(loadTableScreen)
+      .catch(loadTableScreen);
   };
 
   const activateScene = (id: string | null) => {
@@ -271,9 +292,7 @@ export function DmView({
               scene={editing}
               live={isLive}
               combatRunning={(session?.turn ?? null) !== null}
-              ppi={campaign.data.grid?.ppi}
-              ppiY={campaign.data.grid?.ppiY}
-              tableDisplay={campaign.data.tableDisplay}
+              table={tableScreen}
               onCalibrate={calibrate}
               characters={characters.map((c) => ({
                 id: c.id,

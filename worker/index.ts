@@ -293,36 +293,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
-  // Table display self-report — telemetry, not control (the table is
-  // passive but may say what it is). Unauthenticated like the table
-  // itself: values clamped hard, only the tableDisplay field written,
-  // and only when changed. Enables auto grid ppi on the console.
-  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/display$/);
-  if (m && method === 'POST') {
-    const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
-      .bind(m[1])
-      .first();
-    if (!campaignRow) return err('campaign not found', 404);
-    const campaign = toCampaign(campaignRow as never);
-    const body = await request.json<{ w?: number; h?: number }>().catch(() => ({}) as { w?: number; h?: number });
-    const clamp = (n: unknown) =>
-      Math.min(20000, Math.max(100, Math.round(Number(n) || 0)));
-    const w = clamp(body.w);
-    const h = clamp(body.h);
-    const prev = campaign.data.tableDisplay;
-    if (prev?.w === w && prev?.h === h) return json({ ok: true });
-    const next = { ...campaign.data, tableDisplay: { w, h } };
-    await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
-      .bind(JSON.stringify(next), campaign.id)
-      .run();
-    await logEvent(env, campaign.id, null, 'table', 'campaign.updated', {
-      patch: { tableDisplay: { w, h } },
-      before: { name: campaign.name, data: campaign.data },
-    });
-    await poke(env, campaign.id, 'campaign');
-    return json({ ok: true });
-  }
-
   // Scene library: named battle maps / splash art for the table TV.
   // Same shape as handouts; the active one renders on /table.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/maps$/);

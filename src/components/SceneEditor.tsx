@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Scene, SceneView, Token, TokenEffect } from '../../worker/types';
+import type { Display, Scene, SceneView, Token, TokenEffect } from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { input } from '../lib/ui';
 import {
@@ -46,9 +46,7 @@ export function SceneEditor({
   campaignId,
   scene,
   combatRunning,
-  ppi,
-  ppiY,
-  tableDisplay,
+  table,
   characters,
   live = true,
   onCalibrate,
@@ -58,10 +56,12 @@ export function SceneEditor({
   campaignId: string;
   scene: Scene;
   combatRunning: boolean;
-  ppi?: number;
-  /** Vertical px per true inch; equals ppi on a well-behaved screen. */
-  ppiY?: number;
-  tableDisplay?: { w: number; h: number };
+  /**
+   * The screen currently assigned the table role, if any. Calibration
+   * and viewport belong to that glass, not to the campaign — so the
+   * true-scale preview is only as real as the screen it describes.
+   */
+  table?: Display | null;
   characters: { id: string; name: string; kind: 'pc' | 'npc' }[];
   /** Whether this scene is the one currently on the table. */
   live?: boolean;
@@ -120,6 +120,9 @@ export function SceneEditor({
     | null
   >(null);
 
+  const ppi = table?.ppi ?? undefined;
+  const ppiY = table?.ppiY ?? undefined;
+  const tableDisplay = table?.viewport ?? undefined;
   const view = draft.view ?? DEFAULT_VIEW;
   const showGrid = draft.grid?.on !== false;
   /** Axes that disagree by more than rounding = the picture is stretched. */
@@ -1267,7 +1270,9 @@ export function SceneEditor({
                   </>
                 ) : (
                   <span className="text-xs text-stone-600">
-                    put a screen on the table role once to enable calibration
+                    {table
+                      ? 'waiting for that screen to report its size…'
+                      : 'assign a screen to the table role to enable calibration'}
                   </span>
                 )}
               </div>

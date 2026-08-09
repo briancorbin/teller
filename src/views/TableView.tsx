@@ -16,7 +16,16 @@ import { CalibrationOverlay } from '../components/CalibrationOverlay';
 // the grid overlay, idle branding otherwise. All control lives on the
 // console; state arrives over SSE. Coordinate rules: docs/BATTLEMAP.md.
 
-export function TableView({ campaignId }: { campaignId: string }) {
+export function TableView({
+  campaignId,
+  ppi,
+  ppiY,
+}: {
+  campaignId: string;
+  /** This screen's own calibration — px per true inch, per axis. */
+  ppi?: number | null;
+  ppiY?: number | null;
+}) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [characters, setCharacters] = useState<PublicCharacter[]>([]);
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
@@ -44,15 +53,12 @@ export function TableView({ campaignId }: { campaignId: string }) {
 
   useEffect(refetch, [refetch]);
 
-  // Tell the console what this display is (CSS px) so it can offer
-  // auto grid calibration from the TV's diagonal. Telemetry only.
+  // Tell the books how big this screen is, so the workshop can draw an
+  // honest frame preview. Telemetry only — it writes to this display's
+  // own row and nothing else.
   useEffect(() => {
-    fetch(`/api/campaigns/${campaignId}/display`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ w: window.innerWidth, h: window.innerHeight }),
-    }).catch(() => {});
-  }, [campaignId]);
+    api.reportViewport(window.innerWidth, window.innerHeight).catch(() => {});
+  }, [vp.w, vp.h]);
 
   // Any poke (scene switch, counter tick → vitality change) refreshes;
   // debounced so a burst of console taps costs one fetch.
@@ -90,17 +96,19 @@ export function TableView({ campaignId }: { campaignId: string }) {
   // down: on a stretched or overscanned picture the axes calibrate
   // differently, and a 1" square must still measure 1" both ways with
   // a physical ruler. On a correctly-set-up display sx === sy.
-  const ppi = campaign?.data.grid?.ppi;
-  const ppiY = campaign?.data.grid?.ppiY ?? ppi;
+  // Calibration is this screen's own; the campaign-level value is only
+  // a fallback for glass that hasn't been calibrated since it moved.
+  const px = ppi ?? campaign?.data.grid?.ppi;
+  const pxY = ppiY ?? campaign?.data.grid?.ppiY ?? px;
   const view = scene?.view;
   let rect: { left: number; top: number; sx: number; sy: number } | null = null;
   if (nat) {
-    if (view?.mode === 'true' && scene?.widthInches && ppi && ppiY) {
+    if (view?.mode === 'true' && scene?.widthInches && px && pxY) {
       const zoom = view.zoom || 1;
-      const sx = ((ppi * scene.widthInches) / nat.w) * zoom;
+      const sx = ((px * scene.widthInches) / nat.w) * zoom;
       // The map's physical height follows from its aspect, so the
       // vertical scale differs from sx only by the vertical ppi.
-      const sy = ((ppiY * scene.widthInches) / nat.w) * zoom;
+      const sy = ((pxY * scene.widthInches) / nat.w) * zoom;
       rect = {
         sx,
         sy,

@@ -49,6 +49,10 @@ type DisplayRow = {
   color: string;
   role: string;
   params: string;
+  ppi: number | null;
+  ppi_y: number | null;
+  vw: number | null;
+  vh: number | null;
   code: string | null;
   code_expires_at: string | null;
   last_seen_at: string;
@@ -88,6 +92,10 @@ export function toDisplay(row: DisplayRow): Display {
     color: row.color,
     role,
     params,
+    ppi: row.ppi,
+    // Calibrated before the vertical axis existed = square pixels.
+    ppiY: row.ppi_y ?? row.ppi,
+    viewport: row.vw && row.vh ? { w: row.vw, h: row.vh } : null,
     code: row.code,
     lastSeenAt: row.last_seen_at,
     createdAt: row.created_at,

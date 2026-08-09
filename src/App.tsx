@@ -116,7 +116,10 @@ function Assigned({
   const characterId = display.params.characterId ?? '';
 
   let body = <BlankScreen display={display} />;
-  if (display.role === 'table') body = <TableView campaignId={campaignId} />;
+  if (display.role === 'table')
+    body = (
+      <TableView campaignId={campaignId} ppi={display.ppi} ppiY={display.ppiY} />
+    );
   else if (display.role === 'board') body = <BoardView campaignId={campaignId} />;
   else if (display.role === 'art') body = <ArtView campaignId={campaignId} />;
   else if (display.role === 'badge' && characterId)

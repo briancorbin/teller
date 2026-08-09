@@ -191,6 +191,29 @@ export async function displayRoutes(
     return json({ display });
   }
 
+  // A screen reporting its own viewport. Unauthenticated like hello and
+  // clamped hard: it's telemetry about the caller itself, and it only
+  // ever writes to the caller's own row. Must be matched before the
+  // /api/displays/:id routes below, which would otherwise claim it.
+  if (pathname === '/api/displays/viewport' && method === 'POST') {
+    const self = auth.display;
+    if (!self) return err('display required', 401);
+    const body = await request.json<{ w?: number; h?: number }>();
+    const clamp = (n: unknown) =>
+      typeof n === 'number' && Number.isFinite(n)
+        ? Math.min(20000, Math.max(1, Math.round(n)))
+        : null;
+    const w = clamp(body.w);
+    const h = clamp(body.h);
+    if (!w || !h) return err('w and h required', 400);
+    if (self.viewport?.w !== w || self.viewport?.h !== h) {
+      await env.DB.prepare('UPDATE displays SET vw = ?, vh = ? WHERE id = ?')
+        .bind(w, h, self.id)
+        .run();
+    }
+    return json({ ok: true });
+  }
+
   // Everything below is the DM arranging the room.
   let m = pathname.match(/^\/api\/campaigns\/([^/]+)\/displays$/);
   if (m && method === 'GET') {
@@ -253,15 +276,19 @@ export async function displayRoutes(
       color?: string;
       role?: DisplayRole;
       params?: DisplayParams;
+      ppi?: number | null;
+      ppiY?: number | null;
     }>();
     const name = body.name?.trim() ?? display.name;
     const color = body.color ?? display.color;
     const role = body.role ?? display.role;
     const params = body.params ?? display.params;
+    const ppi = body.ppi === undefined ? display.ppi : body.ppi;
+    const ppiY = body.ppiY === undefined ? display.ppiY : body.ppiY;
     await env.DB.prepare(
-      'UPDATE displays SET name = ?, color = ?, role = ?, params = ? WHERE id = ?',
+      'UPDATE displays SET name = ?, color = ?, role = ?, params = ?, ppi = ?, ppi_y = ? WHERE id = ?',
     )
-      .bind(name, color, role, JSON.stringify(params), display.id)
+      .bind(name, color, role, JSON.stringify(params), ppi, ppiY, display.id)
       .run();
     await notify(env, display.campaignId, display.id, { type: 'assign' });
     return json({ display: (await readDisplay(env, display.id))! });

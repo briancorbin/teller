@@ -202,28 +202,14 @@ export type CampaignData = {
   /** Derived, /public responses only: the resolved active scene. */
   scene?: Scene | null;
   /**
-   * Display calibration for the TABLE screen: pixels per true inch,
-   * horizontally (`ppi`) and vertically (`ppiY`).
-   *
-   * Measured off the glass, not taken from the panel's spec: what we
-   * render into is the browser VIEWPORT, and TV overscan, a windowed
-   * browser or OS scaling all make the visible picture smaller than
-   * the panel — invisibly, and in a way a diagonal can't detect. The
-   * DM measures the picture teller actually draws, so the calibration
-   * absorbs all of that.
-   *
-   * Two axes because that measurement can also catch a stretched
-   * picture. On a correctly-configured display they match; when they
-   * don't, a true inch really is different across than down, and the
-   * table renders it that way so a 1" square is 1" in both directions.
-   * `ppiY` falls back to `ppi` (serializer normalises legacy rows).
-   * (`on`/`ox`/`oy` are legacy from the screen-fixed grid.)
+   * LEGACY. Calibration lived here when there was assumed to be one
+   * table screen per campaign; it belongs to the glass, so it now lives
+   * on the display row (`Display.ppi`/`ppiY`). Kept only as a fallback
+   * for a screen that hasn't been calibrated since the move, and as the
+   * home of the vestigial `on`/`ox`/`oy` from the screen-fixed grid.
    */
   grid?: { on?: boolean; ppi: number; ppiY?: number; ox?: number; oy?: number };
-  /**
-   * The table client's self-reported viewport (CSS px) — telemetry,
-   * not control; enables auto ppi (√(w²+h²) / diagonal inches).
-   */
+  /** LEGACY, same reason — see `Display.viewport`. */
   tableDisplay?: { w: number; h: number };
   /**
    * Handout library — DM-only. The list never leaves via /public
@@ -350,6 +336,19 @@ export type Display = {
   color: string;
   role: DisplayRole;
   params: DisplayParams;
+  /**
+   * Px per true inch for THIS screen, per axis — a fact about the glass,
+   * so it survives role changes and follows the screen between
+   * campaigns. null until calibrated. See docs/BATTLEMAP.md.
+   */
+  ppi: number | null;
+  ppiY: number | null;
+  /**
+   * The screen's self-reported viewport in CSS px. Telemetry, not
+   * control: with ppi it says how many true inches of picture this
+   * screen has, which is what the workshop's frame preview needs.
+   */
+  viewport: { w: number; h: number } | null;
   /** Present only while waiting to be claimed. */
   code: string | null;
   lastSeenAt: string;
