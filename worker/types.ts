@@ -116,7 +116,14 @@ export type Token = {
  * [col, row] from the map origin; requires widthInches). One entry
  * per effect. Painted in the scene editor, rendered under everything.
  */
+/**
+ * One patch of painted ground. Identity is the id, NOT the effect —
+ * two separate fires are two layers, hidden, revealed and deleted
+ * independently. (Legacy rows predate `id`; the editor assigns one on
+ * first touch.)
+ */
 export type TileZone = {
+  id?: string;
   effect: TokenEffect;
   cells: [number, number][];
   /** Behind the screen until revealed — never sent to /public. */

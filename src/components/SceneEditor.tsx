@@ -65,10 +65,13 @@ export function SceneEditor({
   /** Omitted when the editor IS the surface (the map pane). */
   onClose?: () => void;
 }) {
-  const [draft, setDraft] = useState<Scene>({
+  const [draft, setDraft] = useState<Scene>(() => ({
     ...scene,
     view: scene.view ?? DEFAULT_VIEW,
-  });
+    // Layers painted before they had identities get one now, so they
+    // can be managed individually like everything painted since.
+    zones: scene.zones?.map((z) => (z.id ? z : { ...z, id: newLocalId('zon') })),
+  }));
   const [tool, setTool] = useState<Tool>('select');
   const [brush, setBrush] = useState<TokenEffect>('fire');
   const [secret, setSecret] = useState(false);
@@ -77,6 +80,8 @@ export function SceneEditor({
   const [regionEditId, setRegionEditId] = useState<string | null>(null);
   const [showFog, setShowFog] = useState(false);
   const [showZones, setShowZones] = useState(false);
+  /** When set, painting continues that ground layer instead of a new one. */
+  const [zoneEditId, setZoneEditId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tvDiagonal, setTvDiagonal] = useState('');
   // Personal workshop preference (not scene data — the table never
@@ -92,6 +97,8 @@ export function SceneEditor({
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const undoRef = useRef<Scene[]>([]);
   const confirmedRef = useRef(false);
+  /** The ground layer the in-progress stroke is writing into. */
+  const zoneStrokeRef = useRef<string | null>(null);
   const dragRef = useRef<
     | { kind: 'pan'; x: number; y: number }
     | { kind: 'token'; id: string }
@@ -249,23 +256,46 @@ export function SceneEditor({
     ];
   };
 
-  // Painted ground has two layers per effect: what the table sees and
-  // what's waiting behind the screen.
-  const painted = (effect: TokenEffect, [c, r]: Cell) =>
-    (draftRef.current.zones ?? [])
-      .find((z) => z.effect === effect && !!z.hidden === secret)
-      ?.cells.some(([cc, rr]) => cc === c && rr === r) ?? false;
+  /**
+   * Which layer a paint stroke belongs to. Touching existing paint of
+   * the current brush picks that layer up (and erases from it);
+   * otherwise the stroke continues the layer you're editing, or starts
+   * a fresh one — so two separate fires stay two separate fires.
+   */
+  const zoneStrokeTarget = (cell: Cell): { id: string; op: 'add' | 'remove' } => {
+    const zones = draftRef.current.zones ?? [];
+    const under = zones.find(
+      (z) =>
+        z.effect === brush &&
+        !!z.hidden === secret &&
+        z.cells.some(([c, r]) => c === cell[0] && r === cell[1]),
+    );
+    if (under?.id) return { id: under.id, op: 'remove' };
+    const editing = zones.find(
+      (z) => z.id === zoneEditId && z.effect === brush && !!z.hidden === secret,
+    );
+    return { id: editing?.id ?? newLocalId('zon'), op: 'add' };
+  };
 
-  const applyCell = (effect: TokenEffect, cell: Cell, op: 'add' | 'remove') => {
+  const applyCell = (zoneId: string, cell: Cell, op: 'add' | 'remove') => {
     const d = draftRef.current;
     const zones = [...(d.zones ?? [])];
-    const i = zones.findIndex((z) => z.effect === effect && !!z.hidden === secret);
-    const cells = i >= 0 ? [...zones[i].cells] : [];
-    const at = cells.findIndex(([c, r]) => c === cell[0] && r === cell[1]);
-    if (op === 'add' && at < 0) cells.push(cell);
-    if (op === 'remove' && at >= 0) cells.splice(at, 1);
-    if (i >= 0) zones[i] = { ...zones[i], cells };
-    else zones.push({ effect, cells, ...(secret ? { hidden: true } : {}) });
+    const i = zones.findIndex((z) => z.id === zoneId);
+    if (i < 0) {
+      if (op === 'remove') return;
+      zones.push({
+        id: zoneId,
+        effect: brush,
+        cells: [cell],
+        ...(secret ? { hidden: true } : {}),
+      });
+    } else {
+      const cells = zones[i].cells.filter(
+        ([c, r]) => !(c === cell[0] && r === cell[1]),
+      );
+      if (op === 'add') cells.push(cell);
+      zones[i] = { ...zones[i], cells };
+    }
     commit({ ...d, zones: zones.filter((z) => z.cells.length > 0) });
   };
 
@@ -320,38 +350,19 @@ export function SceneEditor({
     setShowFog(true);
   };
 
-  /**
-   * Flip a painted layer between shown and hidden. If the destination
-   * already has a layer of that effect the cells merge (deduped), so
-   * revealing a secret fire never leaves two fire layers behind.
-   */
-  const toggleZoneHidden = (effect: TokenEffect, fromHidden: boolean) => {
-    const d = draftRef.current;
-    const zones = [...(d.zones ?? [])];
-    const i = zones.findIndex((z) => z.effect === effect && !!z.hidden === fromHidden);
-    if (i < 0) return;
-    const moving = zones[i];
-    const j = zones.findIndex(
-      (z, k) => k !== i && z.effect === effect && !!z.hidden === !fromHidden,
-    );
-    if (j >= 0) {
-      const seen = new Set(zones[j].cells.map((c) => c.join(',')));
-      const merged = [...zones[j].cells];
-      for (const c of moving.cells) if (!seen.has(c.join(','))) merged.push(c);
-      zones[j] = { ...zones[j], cells: merged };
-      zones.splice(i, 1);
-    } else {
-      zones[i] = { ...moving, hidden: fromHidden ? undefined : true };
-    }
-    commit({ ...d, zones });
-  };
-
-  const deleteZone = (effect: TokenEffect, hidden: boolean) =>
+  /** Flip one layer between shown and hidden — layers stay distinct. */
+  const toggleZoneHidden = (zoneId: string) =>
     commit({
       ...draftRef.current,
-      zones: (draftRef.current.zones ?? []).filter(
-        (z) => !(z.effect === effect && !!z.hidden === hidden),
+      zones: (draftRef.current.zones ?? []).map((z) =>
+        z.id === zoneId ? { ...z, hidden: z.hidden ? undefined : true } : z,
       ),
+    });
+
+  const deleteZone = (zoneId: string) =>
+    commit({
+      ...draftRef.current,
+      zones: (draftRef.current.zones ?? []).filter((z) => z.id !== zoneId),
     });
 
   // --- framing (soft-locked during combat) ---------------------------------
@@ -448,19 +459,18 @@ export function SceneEditor({
       const cell = cellAt(e.clientX, e.clientY);
       if (!cell) return;
       mark();
-      const op =
-        tool === 'fog'
-          ? fogBrush === 'reveal'
-            ? fogPainted(cell)
-              ? 'remove'
-              : 'add'
-            : 'remove'
-          : painted(brush, cell)
-            ? 'remove'
-            : 'add';
-      dragRef.current = { kind: 'paint', op, last: cell.join(',') };
-      if (tool === 'fog') applyFog(cell, op);
-      else applyCell(brush, cell, op);
+      if (tool === 'fog') {
+        const op =
+          fogBrush === 'reveal' ? (fogPainted(cell) ? 'remove' : 'add') : 'remove';
+        dragRef.current = { kind: 'paint', op, last: cell.join(',') };
+        applyFog(cell, op);
+        return;
+      }
+      const target = zoneStrokeTarget(cell);
+      setZoneEditId(target.id);
+      zoneStrokeRef.current = target.id;
+      dragRef.current = { kind: 'paint', op: target.op, last: cell.join(',') };
+      applyCell(target.id, cell, target.op);
       return;
     }
     // frame tool
@@ -486,7 +496,8 @@ export function SceneEditor({
       if (cell && cell.join(',') !== d.last) {
         d.last = cell.join(',');
         if (tool === 'fog') applyFog(cell, d.op);
-        else applyCell(brush, cell, d.op);
+        else if (zoneStrokeRef.current)
+          applyCell(zoneStrokeRef.current, cell, d.op);
       }
     } else if (d.kind === 'token') {
       const uv = toUv(e.clientX, e.clientY);
@@ -1392,10 +1403,12 @@ export function SceneEditor({
                   smoke and the rest
                 </p>
               ) : (
-                (draft.zones ?? []).map((zone) => (
+                (draft.zones ?? []).map((zone, i) => (
                   <div
-                    key={`${zone.effect}-${zone.hidden ? 'hidden' : 'shown'}`}
-                    className="flex items-center gap-2"
+                    key={zone.id ?? i}
+                    className={`flex items-center gap-2 rounded px-1 ${
+                      zoneEditId === zone.id ? 'bg-stone-800/70' : ''
+                    }`}
                   >
                     <span
                       className="h-4 w-4 shrink-0 rounded"
@@ -1407,11 +1420,21 @@ export function SceneEditor({
                         // pick this layer up with the brush
                         setBrush(zone.effect);
                         setSecret(!!zone.hidden);
+                        setZoneEditId(zone.id ?? null);
                         setTool('paint');
                       }}
                       title="paint into this layer"
                     >
                       {zone.effect}
+                      {(draft.zones ?? []).filter((z) => z.effect === zone.effect)
+                        .length > 1 && (
+                        <span className="text-stone-500">
+                          {' '}
+                          {(draft.zones ?? [])
+                            .filter((z) => z.effect === zone.effect)
+                            .indexOf(zone) + 1}
+                        </span>
+                      )}
                     </button>
                     <span className="shrink-0 font-mono text-[10px] text-stone-600">
                       {zone.cells.length}
@@ -1424,7 +1447,7 @@ export function SceneEditor({
                       }`}
                       onClick={() => {
                         mark();
-                        toggleZoneHidden(zone.effect, !!zone.hidden);
+                        if (zone.id) toggleZoneHidden(zone.id);
                       }}
                       title={
                         zone.hidden
@@ -1439,7 +1462,8 @@ export function SceneEditor({
                       className="shrink-0 rounded px-1.5 py-1 text-xs text-stone-500 hover:bg-red-950 hover:text-red-300"
                       onClick={() => {
                         mark();
-                        deleteZone(zone.effect, !!zone.hidden);
+                        if (zoneEditId === zone.id) setZoneEditId(null);
+                        if (zone.id) deleteZone(zone.id);
                       }}
                       aria-label={`delete ${zone.effect}${zone.hidden ? ' hidden' : ''} layer`}
                     >
