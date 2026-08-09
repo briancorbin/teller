@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Campaign, PublicCharacter } from '../../worker/types';
+import type { Calibration, Campaign, PublicCharacter } from '../../worker/types';
 import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
@@ -8,6 +8,7 @@ import { GridOverlay } from '../components/GridOverlay';
 import { tokenShapeStyle, zoneStyle } from '../components/token-visuals';
 import { TileZones } from '../components/TileZones';
 import { FogLayer } from '../components/FogLayer';
+import { CalibrationOverlay } from '../components/CalibrationOverlay';
 
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the active scene (framed per its view + true
@@ -20,6 +21,8 @@ export function TableView({ campaignId }: { campaignId: string }) {
   const [characters, setCharacters] = useState<PublicCharacter[]>([]);
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
   const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
+  // Console-driven, transient, never stored — see Calibration in the contract.
+  const [calibration, setCalibration] = useState<Calibration | null>(null);
 
   useWakeLock();
 
@@ -54,10 +57,14 @@ export function TableView({ campaignId }: { campaignId: string }) {
   // Any poke (scene switch, counter tick → vitality change) refreshes;
   // debounced so a burst of console taps costs one fetch.
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { session, connected } = useSession(campaignId, () => {
-    if (refetchTimer.current) clearTimeout(refetchTimer.current);
-    refetchTimer.current = setTimeout(refetch, 300);
-  });
+  const { session, connected } = useSession(
+    campaignId,
+    () => {
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
+      refetchTimer.current = setTimeout(refetch, 300);
+    },
+    { onCalibration: setCalibration },
+  );
 
   const scene = campaign?.data.scene ?? null;
   const mapKey = scene?.key ?? campaign?.data.map?.key ?? null;
@@ -126,6 +133,10 @@ export function TableView({ campaignId }: { campaignId: string }) {
     session && session.turn !== null
       ? (session.initiative[session.turn]?.characterId ?? null)
       : null;
+
+  // Calibration takes the whole screen: this is about the glass, not
+  // the map, and a high-contrast field is what you match a jig against.
+  if (calibration) return <CalibrationOverlay calibration={calibration} />;
 
   if (mapUrl) {
     return (

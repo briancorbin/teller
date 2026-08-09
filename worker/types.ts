@@ -425,6 +425,31 @@ export type PublicCharacter = {
   };
 };
 
+/**
+ * A calibration pattern the console puts on the table screen while the
+ * DM works with a physical reference. Transient — never stored, never
+ * part of a snapshot; it arrives over SSE and leaves the same way,
+ * which is the only sanctioned route onto a passive surface.
+ *
+ * The steps, in order, and why each exists:
+ *  - corners: markers hard against the viewport edges. If the DM can't
+ *    see all four, the TV is cropping (overscan) and NOTHING downstream
+ *    can be trusted — the frame preview would overstate coverage.
+ *  - across / down: a tick strip of `inches` true inches at the
+ *    candidate scale. The DM lays a jig on the glass and nudges until
+ *    drawn marks sit on physical ones. Matching beats measuring, and a
+ *    long baseline divides the error.
+ *  - verify: single inch squares to check against a card.
+ */
+export type Calibration = {
+  step: 'corners' | 'across' | 'down' | 'verify';
+  /** Candidate px per true inch being tried, per axis. */
+  ppi: number;
+  ppiY: number;
+  /** True inches the physical reference spans (counted, not measured). */
+  inches: number;
+};
+
 export type StreamEvent =
   | { type: 'hello'; state: SessionState }
   | { type: 'session'; state: SessionState }
@@ -436,4 +461,6 @@ export type StreamEvent =
   | { type: 'assign' }
   /** Targeted: flash your name so the DM can tell which panel you are. */
   | { type: 'identify' }
+  /** Table screens: show this calibration pattern, or null to stop. */
+  | { type: 'calibration'; calibration: Calibration | null }
   | { type: 'ping' };

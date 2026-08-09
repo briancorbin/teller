@@ -266,6 +266,7 @@ export function DmView({
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-stone-800">
           {editing ? (
             <SceneEditor
+              campaignId={campaignId}
               key={editing.id}
               scene={editing}
               live={isLive}

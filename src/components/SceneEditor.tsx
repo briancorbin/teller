@@ -12,6 +12,7 @@ import {
 import { TileZones } from './TileZones';
 import { FogLayer } from './FogLayer';
 import { GRID_COLORS, GRID_DEFAULTS, GridOverlay } from './GridOverlay';
+import { CalibrationWizard } from './CalibrationWizard';
 
 // The map workshop: a fullscreen canvas with floating tool overlays.
 // Edits are LIVE (debounced PATCH) like everything else in teller —
@@ -42,6 +43,7 @@ const toolBtn = (on: boolean) =>
   }`;
 
 export function SceneEditor({
+  campaignId,
   scene,
   combatRunning,
   ppi,
@@ -53,6 +55,7 @@ export function SceneEditor({
   onChange,
   onClose,
 }: {
+  campaignId: string;
   scene: Scene;
   combatRunning: boolean;
   ppi?: number;
@@ -87,6 +90,7 @@ export function SceneEditor({
   /** When set, painting continues that ground layer instead of a new one. */
   const [zoneEditId, setZoneEditId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [calibrating, setCalibrating] = useState(false);
   const [tvWidth, setTvWidth] = useState('');
   const [tvHeight, setTvHeight] = useState('');
   // Personal workshop preference (not scene data — the table never
@@ -548,6 +552,19 @@ export function SceneEditor({
 
   return (
     <div className="absolute inset-0 z-40 overflow-hidden bg-stone-950">
+      {calibrating && (
+        <CalibrationWizard
+          campaignId={campaignId}
+          ppi={ppi}
+          ppiY={ppiY}
+          tableDisplay={tableDisplay}
+          onCancel={() => setCalibrating(false)}
+          onDone={(x, y) => {
+            onCalibrate?.(x, y);
+            setCalibrating(false);
+          }}
+        />
+      )}
       {/* ---------------- canvas ---------------- */}
       <div
         ref={canvasRef}
@@ -1232,6 +1249,13 @@ export function SceneEditor({
                       title={`the table reports ${tableDisplay.w}×${tableDisplay.h}px — measure the PICTURE it's drawing, edge to edge, and give both sides`}
                     >
                       calibrate
+                    </button>
+                    <button
+                      className="rounded-lg bg-stone-800 px-2.5 py-1.5 font-mono text-xs text-stone-300 hover:bg-stone-700"
+                      onClick={() => setCalibrating(true)}
+                      title="match the table against a ruler or a jig — more accurate than measuring, and it checks for cropping first"
+                    >
+                      with a ruler…
                     </button>
                     <span className="font-mono text-xs text-stone-500">
                       {ppi

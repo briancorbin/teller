@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SessionState, StreamEvent } from '../../worker/types';
+import type { Calibration, SessionState, StreamEvent } from '../../worker/types';
 
 /**
  * Subscribe to a campaign's live session over SSE.
@@ -15,7 +15,12 @@ export function useSession(
    * Screen-directed events. `handle` is this display's opaque handle —
    * without it the stream is anonymous and only hears the room.
    */
-  screen?: { handle?: string; onAssign?: () => void; onIdentify?: () => void },
+  screen?: {
+    handle?: string;
+    onAssign?: () => void;
+    onIdentify?: () => void;
+    onCalibration?: (calibration: Calibration | null) => void;
+  },
 ): { session: SessionState | null; connected: boolean } {
   const [session, setSession] = useState<SessionState | null>(null);
   const [connected, setConnected] = useState(true);
@@ -44,6 +49,8 @@ export function useSession(
         screenRef.current?.onAssign?.();
       } else if (event.type === 'identify') {
         screenRef.current?.onIdentify?.();
+      } else if (event.type === 'calibration') {
+        screenRef.current?.onCalibration?.(event.calibration);
       }
     };
     return () => source.close();

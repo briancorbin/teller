@@ -1,4 +1,5 @@
 import type {
+  Calibration,
   Campaign,
   CampaignData,
   Character,
@@ -238,6 +239,13 @@ export const api = {
 
   forgetDisplay: (id: string) =>
     req<{ ok: true }>(`/api/displays/${id}`, { method: 'DELETE' }),
+
+  /** Put a calibration pattern on the table, or null to take it away. */
+  setCalibration: (campaignId: string, calibration: Calibration | null) =>
+    req<{ ok: true }>(`/api/campaigns/${campaignId}/calibration`, {
+      method: 'POST',
+      body: JSON.stringify({ calibration }),
+    }),
 
   identifyDisplay: (id: string) =>
     req<{ ok: true }>(`/api/displays/${id}/identify`, { method: 'POST' }),

@@ -18,7 +18,14 @@ import {
   type Auth,
 } from './displays';
 import { getTemplate, templates } from './templates';
-import type { Campaign, CharacterData, Counter, RulesPack, SessionOp } from './types';
+import type {
+  Calibration,
+  Campaign,
+  CharacterData,
+  Counter,
+  RulesPack,
+  SessionOp,
+} from './types';
 
 export { CampaignDO };
 
@@ -763,6 +770,23 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       campaign,
       packs: packRows ? packRows.results.map((r) => toPackRecord(r as never)) : [],
     });
+  }
+
+  // Calibration pattern for the table screen. Transient and never
+  // stored: it goes straight out over SSE and the table forgets it the
+  // moment the console sends null.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/calibration$/);
+  if (m && method === 'POST') {
+    if (!dm(m[1])) return err('DM key required', 401);
+    const body = await request.json<{ calibration: Calibration | null }>();
+    await sessionStub(env, m[1]).fetch('https://do/broadcast', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'calibration',
+        calibration: body.calibration ?? null,
+      }),
+    });
+    return json({ ok: true });
   }
 
   // Live session — SSE stream + initiative ops, forwarded to the DO.
