@@ -19,6 +19,7 @@ import {
 } from './displays';
 import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
+import { bundleFilename, exportCampaign } from './bundle';
 import type {
   Calibration,
   Campaign,
@@ -254,6 +255,43 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     });
     await poke(env, campaignId, target.entity_id ?? 'campaign');
     return json({ undid: target.kind, entityId: target.entity_id });
+  }
+
+  // Export the whole campaign as a .tell bundle.
+  //
+  // Also the backup. Once teller runs on a host under your table there
+  // is no copy anywhere else, so this file is the only thing standing
+  // between a dead drive and a dead campaign.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/export$/);
+  if (m && method === 'GET') {
+    if (!dm(m[1])) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!row) return err('campaign not found', 404);
+    const campaign = toCampaign(row as never);
+    const chars = await env.DB.prepare(
+      'SELECT * FROM characters WHERE campaign_id = ? ORDER BY created_at',
+    )
+      .bind(m[1])
+      .all();
+    const characters = chars.results.map((r) => toCharacter(r as never));
+    const template = await getSystem(env, campaign.system);
+
+    // Sections are opt-out, so you can take the structure without the
+    // hundred megabytes of art when all you want is the shape.
+    const want = (name: string) => url.searchParams.get(name) !== '0';
+    const body = exportCampaign(env, campaign, characters, template, {
+      books: want('books'),
+      assets: want('assets'),
+    });
+    return new Response(body, {
+      headers: {
+        'content-type': 'application/zip',
+        'content-disposition': `attachment; filename="${bundleFilename(campaign)}"`,
+        'cache-control': 'no-store',
+      },
+    });
   }
 
   // Battle map: PUT raw image → R2, pointer on campaign.data.map.
