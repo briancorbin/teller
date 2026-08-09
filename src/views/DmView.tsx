@@ -39,6 +39,10 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
   const [tvDiagonal, setTvDiagonal] = useState('');
+  // Which scene the map pane is shaping — independent of what's live.
+  const [editSceneId, setEditSceneId] = useState<string | null>(
+    () => new URLSearchParams(window.location.search).get('scene'),
+  );
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -185,34 +189,76 @@ export function DmView({ campaignId }: { campaignId: string }) {
     </nav>
   );
 
-  // The map pane IS the workshop for whatever scene is on the table:
-  // choose a scene on the console, shape it here. A dedicated station
-  // (DM-screen panel) can sit on this URL all session.
+  // The map pane is the workshop. What you SHAPE and what the players
+  // SEE are separate on purpose: prep a scene off the table, then put
+  // it up when the moment comes. A station can sit on this URL all
+  // session; ?scene=<id> makes a particular workbench linkable.
   if (pane === 'map') {
-    const active = (campaign.data.maps ?? []).find(
-      (s) => s.id === campaign.data.activeMapId,
-    );
+    const scenes = campaign.data.maps ?? [];
+    const editing =
+      scenes.find((s) => s.id === editSceneId) ??
+      scenes.find((s) => s.id === campaign.data.activeMapId) ??
+      scenes[0];
+    const isLive = !!editing && editing.id === campaign.data.activeMapId;
+
+    const pickScene = (id: string) => {
+      setEditSceneId(id);
+      const url = new URL(window.location.href);
+      url.searchParams.set('scene', id);
+      window.history.replaceState(null, '', url);
+    };
+
     return (
       <main className="flex h-screen flex-col gap-3 p-3">
         <ConnectionHint connected={connected} />
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
           {paneNav}
-          {active && (
-            <button
-              className="ml-auto font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
-              onClick={() => activateScene(null)}
-              title="clear the table (goes to the idle mark)"
-            >
-              clear table
-            </button>
+
+          {scenes.length > 0 && (
+            <span className="ml-auto flex flex-wrap items-center gap-2">
+              <select
+                className={`${input} max-w-52`}
+                value={editing?.id ?? ''}
+                onChange={(e) => pickScene(e.target.value)}
+                aria-label="scene to work on"
+              >
+                {scenes.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {s.id === campaign.data.activeMapId ? ' — on the table' : ''}
+                  </option>
+                ))}
+              </select>
+
+              {editing &&
+                (isLive ? (
+                  <button
+                    className="rounded-lg bg-stone-800 px-3 py-1.5 font-mono text-xs text-stone-300 hover:bg-stone-700"
+                    onClick={() => activateScene(null)}
+                    title="clear the table (goes to the idle mark)"
+                  >
+                    take off table
+                  </button>
+                ) : (
+                  <button
+                    className="rounded-lg bg-amber-700 px-3 py-1.5 font-mono text-xs text-stone-950 hover:bg-amber-600"
+                    onClick={() => activateScene(editing.id)}
+                    title="show this scene to the table"
+                  >
+                    put on table ↗
+                  </button>
+                ))}
+            </span>
           )}
         </div>
+
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-stone-800">
-          {active ? (
+          {editing ? (
             <SceneEditor
-              key={active.id}
-              scene={active}
+              key={editing.id}
+              scene={editing}
+              live={isLive}
               combatRunning={(session?.turn ?? null) !== null}
               ppi={campaign.data.grid?.ppi}
               tableDisplay={campaign.data.tableDisplay}
@@ -224,28 +270,11 @@ export function DmView({ campaignId }: { campaignId: string }) {
               onChange={onSceneChange}
             />
           ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-5 p-8">
-              <p className="text-stone-500">
-                nothing on the table — put a scene up to shape it
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8">
+              <p className="text-stone-500">no scenes yet</p>
+              <p className="text-sm text-stone-600">
+                upload battle maps from the console's Scenes card
               </p>
-              <div className="grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-3">
-                {(campaign.data.maps ?? []).map((scene) => (
-                  <button
-                    key={scene.id}
-                    className="rounded-lg text-left hover:opacity-80"
-                    onClick={() => activateScene(scene.id)}
-                  >
-                    <img
-                      src={`/api/maps/${scene.key}`}
-                      alt={scene.name}
-                      className="h-24 w-full rounded-lg object-cover"
-                    />
-                    <span className="block truncate px-0.5 text-xs text-stone-400">
-                      {scene.name}
-                    </span>
-                  </button>
-                ))}
-              </div>
             </div>
           )}
         </div>

@@ -43,6 +43,7 @@ export function SceneEditor({
   ppi,
   tableDisplay,
   characters,
+  live = true,
   onChange,
   onClose,
 }: {
@@ -51,6 +52,8 @@ export function SceneEditor({
   ppi?: number;
   tableDisplay?: { w: number; h: number };
   characters: { id: string; name: string; kind: 'pc' | 'npc' }[];
+  /** Whether this scene is the one currently on the table. */
+  live?: boolean;
   /** Live — called on every committed edit (debounced upstream). */
   onChange: (next: Scene) => void;
   /** Omitted when the editor IS the surface (the map pane). */
@@ -493,8 +496,17 @@ export function SceneEditor({
             }}
             aria-label="scene name"
           />
-          <span className="font-mono text-[10px] uppercase tracking-widest text-emerald-500/80">
-            live
+          <span
+            className={`font-mono text-[10px] uppercase tracking-widest ${
+              live ? 'text-emerald-500/80' : 'text-stone-500'
+            }`}
+            title={
+              live
+                ? 'this scene is on the table — edits show up immediately'
+                : 'off the table — shape it privately, then put it up'
+            }
+          >
+            {live ? 'on the table' : 'off the table'}
           </span>
         </div>
 
