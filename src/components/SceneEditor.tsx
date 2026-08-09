@@ -1076,6 +1076,42 @@ export function SceneEditor({
                 </span>
               </label>
 
+              <div className="flex items-center gap-2">
+                <span className="w-24 font-mono text-xs uppercase tracking-wider text-stone-500">
+                  start over
+                </span>
+                <button
+                  className="rounded-lg px-2.5 py-1.5 font-mono text-xs text-stone-400 hover:bg-red-950 hover:text-red-300"
+                  onClick={() => {
+                    const counts = [
+                      tokens.length && `${tokens.length} token${tokens.length > 1 ? 's' : ''}`,
+                      (draft.zones ?? []).length &&
+                        `${(draft.zones ?? []).length} ground layer${(draft.zones ?? []).length > 1 ? 's' : ''}`,
+                      fog.on || regions.length ? 'fog' : '',
+                    ].filter(Boolean);
+                    if (!counts.length) return;
+                    if (
+                      !window.confirm(
+                        `Clear ${counts.join(', ')} from “${draft.name}”? The map, its width and framing stay. (⌘Z undoes this.)`,
+                      )
+                    )
+                      return;
+                    mark();
+                    commit({
+                      ...draftRef.current,
+                      tokens: [],
+                      zones: [],
+                      fog: undefined,
+                    });
+                    setRegionEditId(null);
+                    setSelectedId(null);
+                  }}
+                  title="wipe tokens, painted ground and fog — the map itself stays"
+                >
+                  clear tokens, ground &amp; fog
+                </button>
+              </div>
+
               <div className="flex flex-wrap items-center gap-2">
                 <span className="w-24 font-mono text-xs uppercase tracking-wider text-stone-500">
                   table screen
