@@ -29,6 +29,16 @@ export function TableView({ campaignId }: { campaignId: string }) {
 
   useEffect(refetch, [refetch]);
 
+  // Tell the console what this display is (CSS px) so it can offer
+  // auto grid calibration from the TV's diagonal. Telemetry only.
+  useEffect(() => {
+    fetch(`/api/campaigns/${campaignId}/display`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ w: window.innerWidth, h: window.innerHeight }),
+    }).catch(() => {});
+  }, [campaignId]);
+
   const { connected } = useSession(campaignId, (id) => {
     if (id === 'campaign') refetch();
   });

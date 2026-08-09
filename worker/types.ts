@@ -108,10 +108,16 @@ export type CampaignData = {
   /**
    * Table grid overlay, controlled from the console (the table is
    * passive glass). ppi = pixels per true inch on the table display —
+   * auto-derived from the TV's diagonal + reported resolution, or
    * calibrated by holding a mini base in a square and nudging ±.
    * ox/oy pan the grid so lines sit on the map's walls and streets.
    */
   grid?: { on: boolean; ppi: number; ox?: number; oy?: number };
+  /**
+   * The table client's self-reported viewport (CSS px) — telemetry,
+   * not control; enables auto ppi (√(w²+h²) / diagonal inches).
+   */
+  tableDisplay?: { w: number; h: number };
   /**
    * Handout library — DM-only. The list never leaves via /public
    * (staged spoilers must not leak); only the ACTIVE handout does.

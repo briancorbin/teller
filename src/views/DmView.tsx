@@ -30,6 +30,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
   const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
+  const [tvDiagonal, setTvDiagonal] = useState('');
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refetch = useCallback(() => {
@@ -408,9 +409,46 @@ export function DmView({ campaignId }: { campaignId: string }) {
                   ))}
                   <span className="ml-1 text-xs text-stone-600">pan</span>
                 </div>
+                {campaign.data.tableDisplay ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      className={`${input} w-20`}
+                      type="number"
+                      placeholder={'TV size"'}
+                      value={tvDiagonal}
+                      onChange={(e) => setTvDiagonal(e.target.value)}
+                      aria-label="table display diagonal in inches"
+                    />
+                    <button
+                      className={btn}
+                      disabled={!Number(tvDiagonal)}
+                      onClick={() => {
+                        const { w, h } = campaign.data.tableDisplay!;
+                        const ppi = Math.hypot(w, h) / Number(tvDiagonal);
+                        patchGrid((g) => ({
+                          ...g,
+                          on: true,
+                          ppi: Math.round(ppi * 10) / 10,
+                        }));
+                      }}
+                      title={`table reports ${campaign.data.tableDisplay.w}×${campaign.data.tableDisplay.h}px — enter its diagonal size to compute true squares`}
+                    >
+                      auto
+                    </button>
+                    <span className="text-xs text-stone-600">
+                      table: {campaign.data.tableDisplay.w}×
+                      {campaign.data.tableDisplay.h}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-stone-600">
+                    open /table on the TV once to enable auto calibration
+                  </p>
+                )}
                 <p className="text-xs leading-snug text-stone-600">
-                  ± until a mini base fits a square exactly; arrows slide the
-                  lines onto the map's walls &amp; streets
+                  auto: enter the TV's diagonal size · manual: ± until a mini
+                  base fits a square · arrows slide the lines onto the map's
+                  walls &amp; streets
                 </p>
               </>
             )}
