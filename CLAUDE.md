@@ -99,9 +99,13 @@ character or to the campaign (party resources).
 ### 3. Every mutation appends to the event log
 
 The `events` table gets a row for every state change: who, what,
-payload. This is the seed for undo / combat log / history. Never mutate
-without logging. (Nothing has ever *read* it yet — TEL-5. Keep writing
-anyway; the log is only worth having if it's complete.)
+payload. Never mutate without logging.
+
+It is already load-bearing: `/undo` walks it backward, writing a
+`revert` event pointing at what it undid, so repeated undos keep
+stepping back instead of fighting each other. What doesn't exist yet is
+a *readable* combat log or history for the DM (TEL-5) — the data is
+there, nothing renders it.
 
 ### 4. System templates are data, never code — and never rules text
 
