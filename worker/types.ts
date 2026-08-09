@@ -35,8 +35,6 @@ export type CharacterData = {
   counters: Counter[];
   tags: string[];
   notes: string;
-  /** Seat claim, not an account: knowing this token = being this character. */
-  seatToken: string;
 };
 
 export type Character = {
@@ -304,6 +302,69 @@ export type PackRecord = {
   updatedAt: string;
 };
 
+// --- Displays ---------------------------------------------------------------
+// Every screen is the same kind of thing — phone, tablet, table TV,
+// rail panel. It joins by showing a code; the DM says what it is. The
+// role is the whole permission model: the server looks up what a
+// display was assigned and allows exactly that (CLAUDE.md rule 7).
+
+export type DisplayRole =
+  /** Claimed but not yet given a job — shows its name, nothing else. */
+  | 'blank'
+  /** The ground: active scene, full-bleed. */
+  | 'table'
+  /** Player-facing bookkeeping — initiative, counters, notices. */
+  | 'board'
+  /** Fullscreen frame for the active handout. */
+  | 'art'
+  /** Outward-facing card for one character. */
+  | 'badge'
+  /** One player's own controls — may edit that character and no other. */
+  | 'seat'
+  /** A slice of the DM console, with all the power that implies. */
+  | 'console';
+
+export type DisplayParams = {
+  /** seat + badge: whose card this is. */
+  characterId?: string | null;
+  /** console: which slice to render. null = the whole console. */
+  pane?: 'session' | 'map' | 'characters' | 'library' | 'displays' | null;
+};
+
+export type Display = {
+  id: string;
+  /** null until the DM claims it with the pairing code. */
+  campaignId: string | null;
+  name: string;
+  color: string;
+  role: DisplayRole;
+  params: DisplayParams;
+  /** Present only while waiting to be claimed. */
+  code: string | null;
+  lastSeenAt: string;
+  createdAt: string;
+};
+
+/** Roles that may only ever RECEIVE the player-safe snapshot. */
+export const PASSIVE_ROLES: DisplayRole[] = ['blank', 'table', 'board', 'art', 'badge'];
+
+/**
+ * A display's public handle — sha-256 of its id.
+ *
+ * The SSE stream can't carry headers, so the DO learns which screen is
+ * on the other end from the URL. Putting the raw id there would put a
+ * capability in every access log; this is derived the same way on both
+ * sides, is enough to aim an event at one screen, and grants nothing
+ * to whoever reads it. (Runtime helper in the contract file on purpose:
+ * the worker and the web client must derive it identically.)
+ */
+export async function displayHandle(id: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(id));
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 // --- Live session (Durable Object) -----------------------------------------
 
 export type InitiativeEntry = {
@@ -357,4 +418,11 @@ export type StreamEvent =
   | { type: 'hello'; state: SessionState }
   | { type: 'session'; state: SessionState }
   | { type: 'character'; characterId: string }
+  /**
+   * Targeted: this display's assignment changed (or it was forgotten).
+   * It re-reads itself and becomes whatever it now is.
+   */
+  | { type: 'assign' }
+  /** Targeted: flash your name so the DM can tell which panel you are. */
+  | { type: 'identify' }
   | { type: 'ping' };

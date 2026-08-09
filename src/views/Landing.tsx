@@ -3,7 +3,16 @@ import type { Campaign, SystemTemplate } from '../../worker/types';
 import { api, getDmKey, setDmKey } from '../lib/api';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
 
-export function Landing() {
+// The console's front door — the one place the key is entered, and the
+// only asymmetry left in the system (a console can't be assigned by a
+// console that doesn't exist yet).
+export function Landing({
+  onOpen,
+  onLock,
+}: {
+  onOpen: (campaignId: string) => void;
+  onLock: () => void;
+}) {
   const [key, setKey] = useState(getDmKey());
   const [templates, setTemplates] = useState<SystemTemplate[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
@@ -33,7 +42,7 @@ export function Landing() {
     if (!name.trim()) return;
     try {
       const campaign = await api.createCampaign(name.trim(), system);
-      window.location.href = `/dm/${campaign.id}`;
+      onOpen(campaign.id);
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     }
@@ -41,9 +50,17 @@ export function Landing() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-6 p-8">
-      <header>
-        <h1 className="font-serif text-5xl text-stone-100">teller</h1>
-        <p className="mt-2 text-stone-400">The table plays. teller keeps the books.</p>
+      <header className="flex items-end justify-between">
+        <div>
+          <h1 className="font-serif text-5xl text-stone-100">teller</h1>
+          <p className="mt-2 text-stone-400">The table plays. teller keeps the books.</p>
+        </div>
+        <button
+          className="text-sm text-stone-600 transition-colors hover:text-stone-300"
+          onClick={onLock}
+        >
+          lock
+        </button>
       </header>
 
       <section className={`${card} space-y-2`}>
@@ -67,13 +84,13 @@ export function Landing() {
           <ul className="space-y-1">
             {campaigns.map((c) => (
               <li key={c.id} className="flex items-center gap-1">
-                <a
-                  className="flex min-w-0 flex-1 items-baseline justify-between rounded-md px-2 py-1.5 transition-colors hover:bg-stone-800"
-                  href={`/dm/${c.id}`}
+                <button
+                  className="flex min-w-0 flex-1 items-baseline justify-between rounded-md px-2 py-1.5 text-left transition-colors hover:bg-stone-800"
+                  onClick={() => onOpen(c.id)}
                 >
                   <span className="truncate text-stone-100">{c.name}</span>
                   <span className="ml-3 font-mono text-xs text-stone-500">{c.system}</span>
-                </a>
+                </button>
                 <button
                   className="rounded-md px-2 py-1 text-sm text-stone-600 transition-colors hover:bg-red-950 hover:text-red-300"
                   title="delete campaign"

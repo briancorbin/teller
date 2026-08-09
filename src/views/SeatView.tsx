@@ -17,8 +17,6 @@ import { TagSection } from '../components/TagSection';
 //    in both.
 
 export function SeatView({ characterId }: { characterId: string }) {
-  const token =
-    new URLSearchParams(window.location.search).get('token') ?? '';
   const [character, setCharacter] = useState<Character | null>(null);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [packs, setPacks] = useState<PackRecord[]>([]);
@@ -27,7 +25,7 @@ export function SeatView({ characterId }: { characterId: string }) {
 
   const refetch = useCallback(() => {
     api
-      .seat(characterId, token)
+      .seat(characterId)
       .then(({ character, campaign, packs }) => {
         setCharacter(character);
         setCampaign(campaign);
@@ -35,7 +33,7 @@ export function SeatView({ characterId }: { characterId: string }) {
         setError('');
       })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)));
-  }, [characterId, token]);
+  }, [characterId]);
 
   useEffect(refetch, [refetch]);
 
@@ -47,7 +45,7 @@ export function SeatView({ characterId }: { characterId: string }) {
   const patch = (data: Partial<CharacterData>) => {
     if (!character) return;
     setCharacter({ ...character, data: { ...character.data, ...data } });
-    api.patchCharacter(characterId, { data }, token).catch(() => refetch());
+    api.patchCharacter(characterId, { data }).catch(() => refetch());
   };
 
   if (error) {

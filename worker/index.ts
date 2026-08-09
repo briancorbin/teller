@@ -9,6 +9,14 @@ import {
   toPublicCharacter,
   type Env,
 } from './db';
+import {
+  actorOf,
+  canDm,
+  canEditCharacter,
+  displayRoutes,
+  resolveDisplay,
+  type Auth,
+} from './displays';
 import { getTemplate, templates } from './templates';
 import type { Campaign, CharacterData, Counter, RulesPack, SessionOp } from './types';
 
@@ -23,7 +31,7 @@ function newId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
 }
 
-function isDm(request: Request, env: Env): boolean {
+function hasKey(request: Request, env: Env): boolean {
   const key = request.headers.get('x-teller-key');
   return Boolean(env.DM_KEY && key === env.DM_KEY);
 }
@@ -55,8 +63,14 @@ function countersFrom(
 async function api(request: Request, env: Env, url: URL): Promise<Response> {
   const { pathname } = url;
   const method = request.method;
-  const dm = isDm(request, env);
+  // Two ways to be the DM: hold the key, or be a screen the DM pointed
+  // at the console. Everything else is a screen doing its assigned job.
+  const auth: Auth = { key: hasKey(request, env), display: await resolveDisplay(env, request) };
+  const dm = (campaignId?: string) => canDm(auth, campaignId);
   let m: RegExpMatchArray | null;
+
+  const displayed = await displayRoutes(request, env, url, auth);
+  if (displayed) return displayed;
 
   if (pathname === '/api/health') {
     return json({ ok: true, name: 'teller' });
@@ -68,7 +82,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   // Rules packs — uploaded reference content, DM-gated both ways.
   if (pathname === '/api/packs' && method === 'GET') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm()) return err('DM key required', 401);
     const system = url.searchParams.get('system');
     const rows = system
       ? await env.DB.prepare('SELECT * FROM packs WHERE system = ? ORDER BY name')
@@ -79,7 +93,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   }
 
   if (pathname === '/api/packs' && method === 'PUT') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm()) return err('DM key required', 401);
     const pack = await request.json<RulesPack>();
     if (!pack.system || !pack.name || !Array.isArray(pack.sections)) {
       return err('pack requires system, name, sections[]', 400);
@@ -100,13 +114,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   m = pathname.match(/^\/api\/packs\/([^/]+)$/);
   if (m && method === 'DELETE') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm()) return err('DM key required', 401);
     await env.DB.prepare('DELETE FROM packs WHERE id = ?').bind(m[1]).run();
     return json({ ok: true });
   }
 
   if (pathname === '/api/campaigns' && method === 'GET') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm()) return err('DM key required', 401);
     const rows = await env.DB.prepare(
       'SELECT * FROM campaigns ORDER BY created_at DESC',
     ).all();
@@ -114,7 +128,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   }
 
   if (pathname === '/api/campaigns' && method === 'POST') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm()) return err('DM key required', 401);
     const body = await request.json<{ name?: string; system?: string }>();
     if (!body.name) return err('name required', 400);
     const template = getTemplate(body.system ?? '');
@@ -143,7 +157,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)$/);
   if (m && method === 'GET') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
       .bind(m[1])
       .first();
@@ -164,7 +178,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // event pointing at what it undid, so repeated undos walk backward.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/undo$/);
   if (m && method === 'POST') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const campaignId = m[1];
     type EventRow = { id: number; entity_id: string | null; kind: string; payload: string };
     const reverts = await env.DB.prepare(
@@ -232,7 +246,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // Battle map: PUT raw image → R2, pointer on campaign.data.map.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/map$/);
   if (m) {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
       .bind(m[1])
       .first();
@@ -306,7 +320,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // Same shape as handouts; the active one renders on /table.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/maps$/);
   if (m && method === 'POST') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
       .bind(m[1])
       .first();
@@ -340,7 +354,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/maps\/([^/]+)$/);
   if (m && method === 'DELETE') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
       .bind(m[1])
       .first();
@@ -369,7 +383,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // Library is DM-only; only the ACTIVE handout leaves via /public.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/handouts$/);
   if (m && method === 'POST') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
       .bind(m[1])
       .first();
@@ -404,7 +418,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/handouts\/([^/]+)$/);
   if (m && method === 'DELETE') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
       .bind(m[1])
       .first();
@@ -487,7 +501,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)$/);
   if (m && method === 'DELETE') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const campaignId = m[1];
     await env.DB.prepare('DELETE FROM events WHERE campaign_id = ?').bind(campaignId).run();
     await env.DB.prepare('DELETE FROM characters WHERE campaign_id = ?').bind(campaignId).run();
@@ -497,7 +511,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)$/);
   if (m && method === 'PATCH') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
       .bind(m[1])
       .first();
@@ -544,12 +558,14 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   m = pathname.match(/^\/api\/characters\/([^/]+)$/);
   if (m && method === 'DELETE') {
-    if (!dm) return err('DM key required', 401);
     const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
       .bind(m[1])
       .first();
     if (!row) return err('character not found', 404);
     const character = toCharacter(row as never);
+    // Scoped to the character's own campaign — a console is a console
+    // for the table it was claimed into, not for every table.
+    if (!dm(character.campaignId)) return err('DM key required', 401);
     await env.DB.prepare('DELETE FROM characters WHERE id = ?')
       .bind(character.id)
       .run();
@@ -570,7 +586,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/characters$/);
   if (m && method === 'POST') {
-    if (!dm) return err('DM key required', 401);
+    if (!dm(m[1])) return err('DM key required', 401);
     const campaignId = m[1];
     const campaignRow = await env.DB.prepare(
       'SELECT * FROM campaigns WHERE id = ?',
@@ -597,7 +613,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       counters: countersFrom(kit?.counters ?? []),
       tags: [...(kit?.tags ?? [])],
       notes: '',
-      seatToken: newId('seat'),
     };
     await env.DB.prepare(
       'INSERT INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
@@ -615,21 +630,18 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(toCharacter(row as never), 201);
   }
 
-  // Duplicate a character: same sheet, fresh identity (id + seat token).
+  // Duplicate a character: same sheet, fresh identity.
   // The workhorse for NPC packs — make one Coyote, stamp out five.
   m = pathname.match(/^\/api\/characters\/([^/]+)\/duplicate$/);
   if (m && method === 'POST') {
-    if (!dm) return err('DM key required', 401);
     const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
       .bind(m[1])
       .first();
     if (!row) return err('character not found', 404);
     const source = toCharacter(row as never);
+    if (!dm(source.campaignId)) return err('DM key required', 401);
     const id = newId('chr');
-    const data: CharacterData = {
-      ...structuredClone(source.data),
-      seatToken: newId('seat'),
-    };
+    const data: CharacterData = structuredClone(source.data);
     const name = `${source.name} (copy)`;
     await env.DB.prepare(
       'INSERT INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
@@ -655,9 +667,12 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (!row) return err('character not found', 404);
     const character = toCharacter(row as never);
 
-    const token = url.searchParams.get('token');
-    const isSeat = Boolean(token && token === character.data.seatToken);
-    if (!dm && !isSeat) return err('DM key or seat token required', 401);
+    // The DM may edit anyone; a seat may edit the one character it was
+    // pointed at. Nothing here consults a secret — only the assignment.
+    const isDm = dm(character.campaignId);
+    if (!canEditCharacter(auth, character.campaignId, character.id)) {
+      return err('not your character', 401);
+    }
 
     const body = await request.json<{ name?: string; data?: Partial<CharacterData> }>();
     const patch = body.data ?? {};
@@ -666,10 +681,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       counters: patch.counters ?? character.data.counters,
       tags: patch.tags ?? character.data.tags,
       notes: patch.notes ?? character.data.notes,
-      // Seat token is never patchable — not by anyone, v0.
-      seatToken: character.data.seatToken,
     };
-    const name = (dm ? body.name : undefined) ?? character.name;
+    const name = (isDm ? body.name : undefined) ?? character.name;
 
     await env.DB.prepare(
       "UPDATE characters SET name = ?, data = ?, updated_at = datetime('now') WHERE id = ?",
@@ -680,7 +693,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       env,
       character.campaignId,
       character.id,
-      dm ? 'dm' : `seat:${character.id}`,
+      actorOf(auth),
       'character.updated',
       { patch, before: { name: character.name, data: character.data } },
     );
@@ -719,7 +732,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     });
   }
 
-  // Seat view: character + campaign vocabulary, gated by seat token alone.
+  // Seat view: character + campaign vocabulary. Gated by assignment —
+  // this screen is Ragnar's because the DM said so, not because it
+  // knows a string.
   m = pathname.match(/^\/api\/seat\/([^/]+)$/);
   if (m && method === 'GET') {
     const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
@@ -727,9 +742,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .first();
     if (!row) return err('character not found', 404);
     const character = toCharacter(row as never);
-    const token = url.searchParams.get('token');
-    if (!token || token !== character.data.seatToken) {
-      return err('seat token required', 401);
+    if (!canEditCharacter(auth, character.campaignId, character.id)) {
+      return err('not your character', 401);
     }
     const campaignRow = await env.DB.prepare(
       'SELECT * FROM campaigns WHERE id = ?',
@@ -755,14 +769,18 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/(stream|session)$/);
   if (m) {
     if (m[2] === 'session' && method === 'POST') {
-      if (!dm) return err('DM key required', 401);
+      if (!dm(m[1])) return err('DM key required', 401);
       const op = await request.json<SessionOp>();
       return sessionStub(env, m[1]).fetch('https://do/session', {
         method: 'POST',
         body: JSON.stringify(op),
       });
     }
-    return sessionStub(env, m[1]).fetch(`https://do/${m[2]}`);
+    // The stream carries the caller's opaque handle (never its id), so
+    // the DO can aim an event at one screen instead of the whole room.
+    const handle = url.searchParams.get('display');
+    const who = handle ? `?display=${encodeURIComponent(handle)}` : '';
+    return sessionStub(env, m[1]).fetch(`https://do/${m[2]}${who}`);
   }
 
   return err('not found', 404);

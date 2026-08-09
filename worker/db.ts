@@ -4,6 +4,9 @@ import type {
   Character,
   CharacterData,
   Counter,
+  Display,
+  DisplayParams,
+  DisplayRole,
   PackRecord,
   PublicCharacter,
   RulesPack,
@@ -38,6 +41,58 @@ type CharacterRow = {
   created_at: string;
   updated_at: string;
 };
+
+type DisplayRow = {
+  id: string;
+  campaign_id: string | null;
+  name: string;
+  color: string;
+  role: string;
+  params: string;
+  code: string | null;
+  code_expires_at: string | null;
+  last_seen_at: string;
+  created_at: string;
+};
+
+const ROLES: DisplayRole[] = [
+  'blank',
+  'table',
+  'board',
+  'art',
+  'badge',
+  'seat',
+  'console',
+];
+
+/**
+ * Note what does NOT come out of here: `code_expires_at` is internal,
+ * and the row's own id is echoed back only because the caller is the
+ * display itself or the DM. Never hand a display list to a passive
+ * surface — the ids in it are capabilities.
+ */
+export function toDisplay(row: DisplayRow): Display {
+  const role = ROLES.includes(row.role as DisplayRole)
+    ? (row.role as DisplayRole)
+    : 'blank';
+  let params: DisplayParams = {};
+  try {
+    params = JSON.parse(row.params) as DisplayParams;
+  } catch {
+    params = {};
+  }
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    name: row.name,
+    color: row.color,
+    role,
+    params,
+    code: row.code,
+    lastSeenAt: row.last_seen_at,
+    createdAt: row.created_at,
+  };
+}
 
 export function toCampaign(row: CampaignRow): Campaign {
   return {

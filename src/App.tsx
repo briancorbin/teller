@@ -1,52 +1,134 @@
+import { useCallback, useEffect, useState } from 'react';
+import type { Display } from '../worker/types';
+import { clearDmKey, getDmKey } from './lib/api';
+import { useDisplay } from './lib/use-display';
+import { useSession } from './lib/use-session';
 import { ArtView } from './views/ArtView';
 import { BadgeView } from './views/BadgeView';
 import { BoardView } from './views/BoardView';
 import { DmView } from './views/DmView';
 import { Landing } from './views/Landing';
 import { SeatView } from './views/SeatView';
+import { BlankScreen, IdentifyFlash, Standby } from './views/Standby';
 import { TableView } from './views/TableView';
 
-type Route =
-  | { view: 'landing' }
-  | { view: 'dm'; campaignId: string }
-  | { view: 'table'; campaignId: string }
-  | { view: 'board'; campaignId: string }
-  | { view: 'art'; campaignId: string }
-  | { view: 'seat'; characterId: string }
-  | { view: 'badge'; characterId: string };
+// One door.
+//
+// There are no per-screen URLs any more. Everything — phone, tablet,
+// table TV, rail panel — arrives here, shows a code, and becomes
+// whatever the DM says it is. The only asymmetry is that somebody has
+// to hold the key first: a console can't be assigned by a console that
+// doesn't exist yet. See CLAUDE.md rule 7.
 
-function parseRoute(pathname: string): Route {
-  let m = pathname.match(/^\/dm\/([^/]+)$/);
-  if (m) return { view: 'dm', campaignId: m[1] };
-  m = pathname.match(/^\/table\/([^/]+)$/);
-  if (m) return { view: 'table', campaignId: m[1] };
-  m = pathname.match(/^\/board\/([^/]+)$/);
-  if (m) return { view: 'board', campaignId: m[1] };
-  m = pathname.match(/^\/art\/([^/]+)$/);
-  if (m) return { view: 'art', campaignId: m[1] };
-  m = pathname.match(/^\/seat\/([^/]+)$/);
-  if (m) return { view: 'seat', characterId: m[1] };
-  m = pathname.match(/^\/badge\/([^/]+)$/);
-  if (m) return { view: 'badge', characterId: m[1] };
-  return { view: 'landing' };
-}
+const CAMPAIGN_STORAGE = 'teller.campaignId';
+const PANE_STORAGE = 'teller.pane';
+const IDENTIFY_MS = 4000;
 
 export default function App() {
-  const route = parseRoute(window.location.pathname);
-  switch (route.view) {
-    case 'dm':
-      return <DmView campaignId={route.campaignId} />;
-    case 'table':
-      return <TableView campaignId={route.campaignId} />;
-    case 'board':
-      return <BoardView campaignId={route.campaignId} />;
-    case 'art':
-      return <ArtView campaignId={route.campaignId} />;
-    case 'seat':
-      return <SeatView characterId={route.characterId} />;
-    case 'badge':
-      return <BadgeView characterId={route.characterId} />;
-    default:
-      return <Landing />;
+  const { display, handle, ready, refresh } = useDisplay();
+  const [key, setKey] = useState(getDmKey());
+  const [campaignId, setCampaignId] = useState(
+    () => localStorage.getItem(CAMPAIGN_STORAGE) ?? '',
+  );
+  const [pane, setPane] = useState<string | null>(
+    () => localStorage.getItem(PANE_STORAGE) || null,
+  );
+
+  const openCampaign = useCallback((id: string) => {
+    localStorage.setItem(CAMPAIGN_STORAGE, id);
+    setCampaignId(id);
+  }, []);
+
+  const choosePane = useCallback((next: string | null) => {
+    if (next) localStorage.setItem(PANE_STORAGE, next);
+    else localStorage.removeItem(PANE_STORAGE);
+    setPane(next);
+  }, []);
+
+  const lock = useCallback(() => {
+    clearDmKey();
+    localStorage.removeItem(CAMPAIGN_STORAGE);
+    setKey('');
+    setCampaignId('');
+  }, []);
+
+  // The key outranks any assignment: this is the DM's own device.
+  if (key) {
+    return campaignId ? (
+      <DmView
+        campaignId={campaignId}
+        pane={pane}
+        onPane={choosePane}
+        onLock={lock}
+      />
+    ) : (
+      <Landing onOpen={openCampaign} onLock={lock} />
+    );
   }
+
+  if (!ready) return <main className="min-h-screen" />;
+
+  if (!display?.campaignId) {
+    return <Standby display={display} onUnlock={() => setKey(getDmKey())} />;
+  }
+
+  return <Assigned display={display} handle={handle} onAssign={refresh} />;
+}
+
+/**
+ * A screen doing its job. It listens on its own stream for the two
+ * things the console can say to it directly: "you're something else
+ * now" and "flash, so I can find you".
+ */
+function Assigned({
+  display,
+  handle,
+  onAssign,
+}: {
+  display: Display;
+  handle: string;
+  onAssign: () => void;
+}) {
+  const [flashing, setFlashing] = useState(false);
+
+  useSession(display.campaignId, undefined, {
+    handle,
+    onAssign,
+    onIdentify: () => setFlashing(true),
+  });
+
+  useEffect(() => {
+    if (!flashing) return;
+    const timer = setTimeout(() => setFlashing(false), IDENTIFY_MS);
+    return () => clearTimeout(timer);
+  }, [flashing]);
+
+  const campaignId = display.campaignId!;
+  const characterId = display.params.characterId ?? '';
+
+  let body = <BlankScreen display={display} />;
+  if (display.role === 'table') body = <TableView campaignId={campaignId} />;
+  else if (display.role === 'board') body = <BoardView campaignId={campaignId} />;
+  else if (display.role === 'art') body = <ArtView campaignId={campaignId} />;
+  else if (display.role === 'badge' && characterId)
+    body = <BadgeView characterId={characterId} />;
+  else if (display.role === 'seat' && characterId)
+    body = <SeatView characterId={characterId} />;
+  else if (display.role === 'console')
+    body = (
+      <DmView
+        campaignId={campaignId}
+        pane={display.params.pane ?? null}
+        onPane={() => {
+          /* An assigned panel is what the DM said it is. */
+        }}
+      />
+    );
+
+  return (
+    <>
+      {body}
+      {flashing && <IdentifyFlash display={display} />}
+    </>
+  );
 }

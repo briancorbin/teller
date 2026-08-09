@@ -127,7 +127,7 @@ what makes off-table prep safe.
 
 ## Console surface
 
-`/dm/:id?pane=map` IS the workshop — not a modal. A fullscreen canvas
+The **map pane** IS the workshop — not a modal. A fullscreen canvas
 with floating tool overlays, editing whatever scene you select, which
 is deliberately independent of what's on the table (`put on table ↗`
 promotes it). Edits are LIVE and debounced, with an in-editor undo

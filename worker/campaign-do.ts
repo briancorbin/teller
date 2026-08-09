@@ -12,8 +12,16 @@ function sse(event: StreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
+type Client = ReadableStreamDefaultController<Uint8Array>;
+
 export class CampaignDO {
-  private clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  /**
+   * Clients are no longer anonymous: each carries the opaque handle of
+   * the screen on the other end, so the console can speak to one panel
+   * ("flash your name", "you're the map now") instead of shouting at
+   * the room. A handle identifies; it never authorises.
+   */
+  private clients = new Map<Client, string | null>();
   private session: SessionState = EMPTY;
   private loaded = false;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -31,7 +39,19 @@ export class CampaignDO {
     await this.load();
     const url = new URL(request.url);
 
-    if (url.pathname.endsWith('/stream')) return this.handleStream();
+    if (url.pathname.endsWith('/stream')) {
+      return this.handleStream(url.searchParams.get('display'));
+    }
+
+    // Aimed at a single screen, by its opaque handle.
+    if (url.pathname.endsWith('/notify') && request.method === 'POST') {
+      const { handle, event } = await request.json<{
+        handle: string;
+        event: StreamEvent;
+      }>();
+      this.send(event, handle);
+      return Response.json({ ok: true });
+    }
 
     if (url.pathname.endsWith('/session')) {
       if (request.method === 'POST') {
@@ -93,17 +113,17 @@ export class CampaignDO {
     this.broadcast({ type: 'session', state: s });
   }
 
-  private handleStream(): Response {
+  private handleStream(handle: string | null): Response {
     const encoder = new TextEncoder();
     // Captured in start(), used in cancel() — assigned before any read.
-    let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null;
+    let ctrl: Client | null = null;
     const clients = this.clients;
     const hello = sse({ type: 'hello', state: this.session });
 
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         ctrl = controller;
-        clients.add(controller);
+        clients.set(controller, handle);
         controller.enqueue(encoder.encode(hello));
       },
       cancel() {
@@ -134,8 +154,14 @@ export class CampaignDO {
   }
 
   private broadcast(event: StreamEvent): void {
+    this.send(event, null);
+  }
+
+  /** handle null = everyone; otherwise just that screen's connections. */
+  private send(event: StreamEvent, handle: string | null): void {
     const bytes = new TextEncoder().encode(sse(event));
-    for (const client of this.clients) {
+    for (const [client, id] of this.clients) {
+      if (handle !== null && id !== handle) continue;
       try {
         client.enqueue(bytes);
       } catch {

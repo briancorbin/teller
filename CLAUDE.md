@@ -85,39 +85,77 @@ universal across systems.
 
 ### 6. Web-first; hardware is optional flare
 
-Client surfaces, all browsers on the same worker:
-- `/dm/:campaignId` — DM console (authoritative controls; `?pane=`
-  renders focused slices)
-- `/table/:campaignId` — table TV renderer (passive, player-safe).
+**There is ONE url.** Every screen — phone, tablet, table TV, rail
+panel — loads `teller.ink`, shows a pairing code, and the DM types that
+code into their console to adopt it. What a screen *is* is an
+assignment the DM makes and changes at will; no surface is addressable
+by URL and nothing is provisioned per-device. A Pi kiosk boots to the
+same address forever.
+
+The direction matters: the screen shows the code and the DM types it,
+so the dumbest panel in the room needs no keyboard.
+
+Roles a screen can be assigned:
+- `console` — the DM console, with all the authority that implies.
+  `params.pane` narrows it to one slice (session · map · characters ·
+  library · displays); one pane per panel is the digital DM screen.
+- `table` — the table TV renderer (passive, player-safe).
   **The table is the GROUND, nothing else**: the active scene
   full-bleed (+ grid overlay), or idle branding. No bookkeeping, no
   notices, and NO controls of any kind — even display-ish settings
   (grid calibration) are driven from the console and arrive over SSE.
   Passive surfaces never grow buttons.
-- `/art/:campaignId` — fullscreen frame for the active handout
-  (passive, player-safe: public snapshot only)
-- `/board/:campaignId` — vertical player-facing companion display in
-  front of the DM (passive, player-safe: consumes only the `/public`
-  endpoint — seat tokens + notes stripped, NPC numbers never shown)
-- `/seat/:characterId?token=…` — per-player card (self-serve counters)
-- `/badge/:characterId` — outward-facing per-player display (passive,
-  player-safe: public snapshot only) — the table-facing back panel of
-  a rail unit
+- `board` — vertical player-facing companion display in front of the
+  DM (passive, player-safe: consumes only the `/public` endpoint —
+  notes stripped, NPC numbers never shown)
+- `art` — fullscreen frame for the active handout (passive,
+  player-safe: public snapshot only)
+- `seat` — one player's own card (self-serve counters), for the one
+  character it was pointed at
+- `badge` — outward-facing per-player display (passive, player-safe:
+  public snapshot only) — the table-facing back panel of a rail unit
+- `blank` — claimed, no job yet
+
+Identify (flash a screen's name and colour) is console-driven over SSE
+— the sanctioned way anything reaches a passive surface.
 
 Seats run on phones first; the custom rail panels (12.6" 1920×515 touch
 bars + Pi kiosks on the Wyrmwood rail — see project memory) are just
-dedicated hardware for the same URLs. Nothing may ever *require* the
+dedicated hardware doing the same thing. Nothing may ever *require* the
 panels or the table TV. Seat UI must work as a short-and-wide strip
 (~1920×515) AND as a phone portrait card.
 
-### 7. Auth: DM key + seat claims — no accounts
+### 7. Auth: one key, and assignments — no accounts, no other secrets
 
-DM mutations require `x-teller-key` (= `DM_KEY` secret). A seat is a
-claim, not an account: knowing a character's `seatToken` = being that
-character. Seat tokens are never patchable via the API. No user tables,
-no OAuth, no sessions — this is a home game. (SSE streams are
-unauthenticated in v0: they carry initiative labels only. Keep secrets
-out of the stream.)
+**There is exactly one secret in teller: `DM_KEY`.** It is the root of
+trust and the only thing that ever confers authority by being known.
+Everything else is an assignment: the server looks up what a display
+was assigned and allows exactly that. A `console` screen has full power
+over *its own campaign*; a `seat` screen may edit *its one character*
+and no other; passive screens may only receive the player-safe
+snapshot. Authorization is role-derived — never re-derive it from a
+secret the client holds.
+
+This replaces seat tokens, which are gone: a seat used to be "whoever
+knows this string", carried in a shareable URL that never expired. It's
+now "whoever the DM pointed at this character", revocable from the
+console.
+
+The one irreducible asymmetry: something must hold the key first,
+because a console can't be assigned by a console that doesn't exist
+yet. That's the DM's own device, unlocked at the same single URL.
+
+A display's `id` is capability-bearing — it's what the server checks —
+so it's high-entropy, lives only in that device's storage, and is never
+rendered. The **pairing code** is the opposite: short, readable across
+a room, short-lived, and it only ever means "adopt this screen", never
+"grant this power". Where a screen must be named in a URL (the SSE
+stream can't send headers), use its **handle** — `sha-256(id)`, which
+identifies but never authorises.
+
+No user tables, no OAuth, no sessions — this is a home game. (SSE
+streams are unauthenticated in v0: they carry initiative labels only.
+Keep secrets out of the stream.)
 
 ### 8. Schema: few real columns + JSON `data` blob
 

@@ -15,19 +15,31 @@ import { CharacterCard } from '../components/CharacterCard';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { SceneEditor } from '../components/SceneEditor';
 import { CounterSection } from '../components/CounterSection';
+import { DisplaysPanel } from '../components/DisplaysPanel';
 import { InitiativePanel } from '../components/InitiativePanel';
 import { RulesPanel } from '../components/RulesPanel';
 
-// ?pane= renders a focused slice of the console — one slice per future
-// DM-screen panel, useful today across iPad + phone:
+// A pane is a focused slice of the console — one slice per DM-screen
+// panel. A screen assigned the 'console' role renders exactly one:
 //   session    → initiative · notices · handouts
 //   map        → scenes · table grid (everything the table TV shows)
 //   characters → the character grid
 //   library    → rules · reference · party resources
-const PANES = ['session', 'map', 'characters', 'library'] as const;
+//   displays   → the screens in the room, and what each one is
+const PANES = ['session', 'map', 'characters', 'library', 'displays'] as const;
 
-export function DmView({ campaignId }: { campaignId: string }) {
-  const pane = new URLSearchParams(window.location.search).get('pane');
+export function DmView({
+  campaignId,
+  pane,
+  onPane,
+  onLock,
+}: {
+  campaignId: string;
+  pane: string | null;
+  onPane: (pane: string | null) => void;
+  /** Absent on a screen the DM promoted — it has no key to give up. */
+  onLock?: () => void;
+}) {
   const showSession = pane === null || pane === 'session';
   const showCharacters = pane === null || pane === 'characters';
   const showLibrary = pane === null || pane === 'library';
@@ -39,9 +51,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
   // Which scene the map pane is shaping — independent of what's live.
-  const [editSceneId, setEditSceneId] = useState<string | null>(
-    () => new URLSearchParams(window.location.search).get('scene'),
-  );
+  const [editSceneId, setEditSceneId] = useState<string | null>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -151,33 +161,48 @@ export function DmView({ campaignId }: { campaignId: string }) {
 
   const gm = campaign.data.vocabulary.gm ?? 'DM';
 
+  const paneChip = (label: string, value: string | null) => (
+    <button
+      key={label}
+      className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
+        pane === value
+          ? 'bg-amber-700 text-stone-950'
+          : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+      }`}
+      onClick={() => onPane(value)}
+    >
+      {label}
+    </button>
+  );
+
   const paneNav = (
     <nav className="flex flex-wrap gap-1.5" aria-label="console panes">
-      <a
-        className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
-          pane === null
-            ? 'bg-amber-700 text-stone-950'
-            : 'bg-stone-900 text-stone-400 hover:text-stone-200'
-        }`}
-        href={`/dm/${campaignId}`}
-      >
-        full
-      </a>
-      {PANES.map((p) => (
-        <a
-          key={p}
-          className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
-            pane === p
-              ? 'bg-amber-700 text-stone-950'
-              : 'bg-stone-900 text-stone-400 hover:text-stone-200'
-          }`}
-          href={`/dm/${campaignId}?pane=${p}`}
+      {paneChip('full', null)}
+      {PANES.map((p) => paneChip(p, p))}
+      {onLock && (
+        <button
+          className="rounded-full px-2.5 py-0.5 font-mono text-xs text-stone-600 transition-colors hover:text-stone-300"
+          onClick={onLock}
         >
-          {p}
-        </a>
-      ))}
+          lock
+        </button>
+      )}
     </nav>
   );
+
+  // The patch bay: every screen in the room and what each one is.
+  if (pane === 'displays') {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-3 p-3">
+        <ConnectionHint connected={connected} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
+          {paneNav}
+        </div>
+        <DisplaysPanel campaignId={campaignId} characters={characters} />
+      </main>
+    );
+  }
 
   // The map pane is the workshop. What you SHAPE and what the players
   // SEE are separate on purpose: prep a scene off the table, then put
@@ -191,12 +216,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
       scenes[0];
     const isLive = !!editing && editing.id === campaign.data.activeMapId;
 
-    const pickScene = (id: string) => {
-      setEditSceneId(id);
-      const url = new URL(window.location.href);
-      url.searchParams.set('scene', id);
-      window.history.replaceState(null, '', url);
-    };
+    const pickScene = (id: string) => setEditSceneId(id);
 
     return (
       <main className="flex h-screen flex-col gap-3 p-3">
