@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Character, Display, DisplayRole } from '../../worker/types';
 import { api } from '../lib/api';
+import { PANES } from '../lib/panes';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
 
 // Every screen in the room, and what each one is. This panel is the
@@ -15,8 +16,6 @@ const ROLES: { value: DisplayRole; label: string; needsCharacter?: boolean }[] =
   { value: 'seat', label: 'seat', needsCharacter: true },
   { value: 'console', label: 'console' },
 ];
-
-const PANES = ['session', 'map', 'characters', 'library', 'displays'] as const;
 
 const COLORS = ['#f59e0b', '#38bdf8', '#a3e635', '#f472b6', '#c084fc', '#fb7185'];
 

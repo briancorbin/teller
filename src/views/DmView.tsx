@@ -9,6 +9,7 @@ import type {
 } from '../../worker/types';
 import { api, ApiError, getDmKey, newLocalId, setDmKey } from '../lib/api';
 import type { SourcedNpc } from '../../worker/bestiary';
+import { PANES } from '../lib/panes';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
@@ -23,16 +24,6 @@ import { BundleImport } from '../components/BundleImport';
 import { DisplaysPanel } from '../components/DisplaysPanel';
 import { EncounterPanel } from '../components/EncounterPanel';
 import { RulesPanel } from '../components/RulesPanel';
-
-// A pane is a focused slice of the console — one slice per DM-screen
-// panel. A screen assigned the 'console' role renders exactly one:
-//   session    → the encounter · notices · handouts
-//   encounter  → turn order, stats and states, on its own
-//   map        → scenes · table grid (everything the table TV shows)
-//   characters → the character grid
-//   library    → rules · reference · party resources
-//   displays   → the screens in the room, and what each one is
-const PANES = ['session', 'encounter', 'bestiary', 'map', 'characters', 'library', 'displays'] as const;
 
 export function DmView({
   campaignId,
