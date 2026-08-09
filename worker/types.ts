@@ -76,6 +76,10 @@ export type NpcBlueprint = {
   fields: Field[];
   counters: Counter[];
   tags: string[];
+  /** The page this foe is printed on, when it came from a book. */
+  page?: number;
+  /** Which book that page is in. Stamped from the pack when it's absent. */
+  book?: string;
 };
 
 export type Character = {
@@ -327,6 +331,16 @@ export type PackEntry = {
   /** Short qualifier shown next to the name — e.g. "Charm" or "1 Grit". */
   meta?: string;
   text: string;
+  /**
+   * Where this lives in the book, so the console can open the page —
+   * for the art, the sidebar, and the table the digest left out.
+   *
+   * Optional forever. The entry's text is the thing that works with no
+   * book at all; the page is the enrichment (see `RulesPack.books`).
+   */
+  page?: number;
+  /** Which book, when the pack is about more than one. Defaults to the pack's. */
+  book?: string;
 };
 
 export type PackSection = {

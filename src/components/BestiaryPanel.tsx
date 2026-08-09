@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { SourcedNpc } from '../../worker/bestiary';
+import { useBooks } from '../lib/use-books';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
+import { BookReader, type BookTarget } from './BookReader';
 
 // The bestiary: everything you could put in front of the party.
 //
@@ -28,9 +30,11 @@ export function BestiaryPanel({
   npcs: SourcedNpc[];
   onSpawn: (npcId: string, count: number) => void;
 }) {
+  const { books } = useBooks();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [count, setCount] = useState(1);
+  const [reading, setReading] = useState<BookTarget | null>(null);
 
   const found = useMemo(
     () => npcs.filter((n) => matches(n, query.trim())),
@@ -79,6 +83,10 @@ export function BestiaryPanel({
           const description = npc.fields.find((f) => f.key === 'description');
           const stats = npc.fields.filter((f) => f.key !== 'description');
           const isOpen = open === npc.id;
+          // The page it's printed on — the art and the flavour a stat
+          // block can't carry. Only when the book is actually here.
+          const book =
+            npc.page && npc.book ? books.find((b) => b.id === npc.book) : undefined;
           return (
             <li key={npc.id} className="rounded-md bg-stone-900">
               <button
@@ -122,9 +130,21 @@ export function BestiaryPanel({
                       {description.value}
                     </p>
                   )}
-                  <button className={btnPrimary} onClick={() => onSpawn(npc.id, count)}>
-                    add {count > 1 ? `${count} ` : ''}to the fight
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button className={btnPrimary} onClick={() => onSpawn(npc.id, count)}>
+                      add {count > 1 ? `${count} ` : ''}to the fight
+                    </button>
+                    {book && (
+                      <button
+                        className={`${btnGhost} text-[11px] text-amber-400/90`}
+                        onClick={() =>
+                          setReading({ bookId: book.id, page: npc.page!, name: book.name })
+                        }
+                      >
+                        {book.name} · p.{npc.page} →
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
             </li>
@@ -136,6 +156,8 @@ export function BestiaryPanel({
           </li>
         )}
       </ul>
+
+      {reading && <BookReader target={reading} onClose={() => setReading(null)} />}
     </section>
   );
 }

@@ -39,9 +39,16 @@ export async function bestiaryFor(
   const byId = new Map<string, SourcedNpc>();
   for (const row of rows.results) {
     const record = toPackRecord(row as never);
+    // A foe printed in a book belongs to that book. The pack knows which
+    // one, the foe usually doesn't, so resolve it here rather than
+    // making every client re-derive it — and never overwrite a foe that
+    // named its own book.
+    const book = record.pack.books?.[0];
     for (const npc of record.pack.npcs ?? []) {
       // First pack wins over a later one; both lose to the campaign.
-      if (!byId.has(npc.id)) byId.set(npc.id, { ...npc, from: record.pack.name });
+      if (!byId.has(npc.id)) {
+        byId.set(npc.id, { ...npc, book: npc.book ?? book, from: record.pack.name });
+      }
     }
   }
   for (const npc of own) byId.set(npc.id, npc);
