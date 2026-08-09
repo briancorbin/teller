@@ -38,7 +38,6 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
-  const [tvDiagonal, setTvDiagonal] = useState('');
   // Which scene the map pane is shaping — independent of what's live.
   const [editSceneId, setEditSceneId] = useState<string | null>(
     () => new URLSearchParams(window.location.search).get('scene'),
@@ -88,24 +87,15 @@ export function DmView({ campaignId }: { campaignId: string }) {
     api.patchCharacter(id, patch).catch(() => refetch());
   };
 
-  // Functional update so rapid taps never compute from a stale base;
-  // the PATCH sends absolute values, so replays are harmless.
-  const patchGrid = (
-    update: (prev: NonNullable<Campaign['data']['grid']>) => NonNullable<Campaign['data']['grid']>,
-  ) => {
+  /** Table display calibration — px per true inch, set in the workshop. */
+  const calibrate = (ppi: number) => {
     setCampaign((prev) => {
       if (!prev) return prev;
-      const grid = update(prev.data.grid ?? { on: false, ppi: 40 });
+      const grid = { ...(prev.data.grid ?? {}), ppi };
       api.patchCampaign(prev.id, { data: { grid } }).catch(() => refetch());
       return { ...prev, data: { ...prev.data, grid } };
     });
   };
-
-  const nudgeGrid = (delta: number) =>
-    patchGrid((g) => ({ ...g, on: true, ppi: Math.max(10, g.ppi + delta) }));
-
-  const panGrid = (dx: number, dy: number) =>
-    patchGrid((g) => ({ ...g, ox: (g.ox ?? 0) + dx, oy: (g.oy ?? 0) + dy }));
 
   const activateScene = (id: string | null) => {
     setCampaign((prev) =>
@@ -262,6 +252,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
               combatRunning={(session?.turn ?? null) !== null}
               ppi={campaign.data.grid?.ppi}
               tableDisplay={campaign.data.tableDisplay}
+              onCalibrate={calibrate}
               characters={characters.map((c) => ({
                 id: c.id,
                 name: c.name,
@@ -513,106 +504,6 @@ export function DmView({ campaignId }: { campaignId: string }) {
                   );
                 })}
               </div>
-            )}
-          </div>
-
-          <div className={`${card} space-y-2`}>
-            <div className="flex items-center justify-between">
-              <span className={sectionLabel}>Table grid</span>
-              <button
-                className={`rounded-md px-2 py-1 text-sm transition-colors ${
-                  campaign.data.grid?.on
-                    ? 'bg-amber-700 text-stone-950'
-                    : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                }`}
-                onClick={() => patchGrid((g) => ({ ...g, on: !g.on }))}
-              >
-                {campaign.data.grid?.on ? 'on' : 'off'}
-              </button>
-            </div>
-            {campaign.data.grid?.on && (
-              <>
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    className="h-8 w-8 rounded-lg bg-stone-800 text-lg text-stone-200 hover:bg-stone-700"
-                    aria-label="smaller squares"
-                    onClick={() => nudgeGrid(-0.5)}
-                  >
-                    −
-                  </button>
-                  <span className="font-mono text-sm text-stone-400">
-                    {(campaign.data.grid?.ppi ?? 40).toFixed(1)} px/in
-                  </span>
-                  <button
-                    className="h-8 w-8 rounded-lg bg-stone-800 text-lg text-stone-200 hover:bg-stone-700"
-                    aria-label="larger squares"
-                    onClick={() => nudgeGrid(0.5)}
-                  >
-                    +
-                  </button>
-                </div>
-                <div className="flex items-center justify-center gap-2">
-                  {(
-                    [
-                      ['←', -2, 0],
-                      ['↑', 0, -2],
-                      ['↓', 0, 2],
-                      ['→', 2, 0],
-                    ] as const
-                  ).map(([label, dx, dy]) => (
-                    <button
-                      key={label}
-                      className="h-8 w-8 rounded-lg bg-stone-800 text-sm text-stone-200 hover:bg-stone-700"
-                      aria-label={`pan grid ${label}`}
-                      onClick={() => panGrid(dx, dy)}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                  <span className="ml-1 text-xs text-stone-600">pan</span>
-                </div>
-                {campaign.data.tableDisplay ? (
-                  <div className="flex items-center gap-2">
-                    <input
-                      className={`${input} w-20`}
-                      type="number"
-                      placeholder={'TV size"'}
-                      value={tvDiagonal}
-                      onChange={(e) => setTvDiagonal(e.target.value)}
-                      aria-label="table display diagonal in inches"
-                    />
-                    <button
-                      className={btn}
-                      disabled={!Number(tvDiagonal)}
-                      onClick={() => {
-                        const { w, h } = campaign.data.tableDisplay!;
-                        const ppi = Math.hypot(w, h) / Number(tvDiagonal);
-                        patchGrid((g) => ({
-                          ...g,
-                          on: true,
-                          ppi: Math.round(ppi * 10) / 10,
-                        }));
-                      }}
-                      title={`table reports ${campaign.data.tableDisplay.w}×${campaign.data.tableDisplay.h}px — enter its diagonal size to compute true squares`}
-                    >
-                      auto
-                    </button>
-                    <span className="text-xs text-stone-600">
-                      table: {campaign.data.tableDisplay.w}×
-                      {campaign.data.tableDisplay.h}
-                    </span>
-                  </div>
-                ) : (
-                  <p className="text-xs text-stone-600">
-                    open /table on the TV once to enable auto calibration
-                  </p>
-                )}
-                <p className="text-xs leading-snug text-stone-600">
-                  auto: enter the TV's diagonal size · manual: ± until a mini
-                  base fits a square · arrows slide the lines onto the map's
-                  walls &amp; streets
-                </p>
-              </>
             )}
           </div>
           </>

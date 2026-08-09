@@ -11,6 +11,7 @@ import {
 } from './token-visuals';
 import { TileZones } from './TileZones';
 import { FogLayer } from './FogLayer';
+import { GridOverlay } from './GridOverlay';
 
 // The map workshop: a fullscreen canvas with floating tool overlays.
 // Edits are LIVE (debounced PATCH) like everything else in teller —
@@ -20,7 +21,6 @@ import { FogLayer } from './FogLayer';
 // touches what the table shows.
 
 const DEFAULT_VIEW: SceneView = { mode: 'fit', zoom: 1, cu: 0.5, cv: 0.5 };
-const GRID_PREF = 'teller.editor.grid';
 
 const TOKEN_SIZES = [0.5, 1, 2, 3, 4, 6, 8];
 const TOKEN_SHAPES = ['circle', 'square', 'triangle'] as const;
@@ -46,6 +46,7 @@ export function SceneEditor({
   tableDisplay,
   characters,
   live = true,
+  onCalibrate,
   onChange,
   onClose,
 }: {
@@ -56,6 +57,8 @@ export function SceneEditor({
   characters: { id: string; name: string; kind: 'pc' | 'npc' }[];
   /** Whether this scene is the one currently on the table. */
   live?: boolean;
+  /** Write the table display's calibration (px per true inch). */
+  onCalibrate?: (ppi: number) => void;
   /** Live — called on every committed edit (debounced upstream). */
   onChange: (next: Scene) => void;
   /** Omitted when the editor IS the surface (the map pane). */
@@ -73,11 +76,7 @@ export function SceneEditor({
   const [regionEditId, setRegionEditId] = useState<string | null>(null);
   const [showFog, setShowFog] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // A workshop preference, not scene data — it belongs to this device
-  // and must survive the remount when you switch scenes.
-  const [showGrid, setShowGrid] = useState(
-    () => localStorage.getItem(GRID_PREF) !== '0',
-  );
+  const [tvDiagonal, setTvDiagonal] = useState('');
   const [showTokens, setShowTokens] = useState(false);
   const [showScene, setShowScene] = useState(false);
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
@@ -97,6 +96,7 @@ export function SceneEditor({
   >(null);
 
   const view = draft.view ?? DEFAULT_VIEW;
+  const showGrid = draft.grid?.on !== false;
   const tokens = draft.tokens ?? [];
   const selected = tokens.find((t) => t.id === selectedId) ?? null;
 
@@ -506,17 +506,7 @@ export function SceneEditor({
             />
           )}
 
-          {cellPx && showGrid && (
-            <div
-              className="pointer-events-none absolute inset-0"
-              style={{
-                backgroundImage:
-                  'linear-gradient(to right, rgba(251,191,36,0.22) 0 1px, transparent 1px 100%), linear-gradient(to bottom, rgba(251,191,36,0.22) 0 1px, transparent 1px 100%)',
-                backgroundSize: `${cellPx}px ${cellPx}px`,
-              }}
-              aria-hidden
-            />
-          )}
+          {cellPx && <GridOverlay cellPx={cellPx} on={showGrid} />}
 
           {cellPx && (
             <FogLayer
@@ -784,11 +774,10 @@ export function SceneEditor({
           <button
             className={toolBtn(showGrid)}
             onClick={() => {
-              const next = !showGrid;
-              setShowGrid(next);
-              localStorage.setItem(GRID_PREF, next ? '1' : '0');
+              mark();
+              commit({ ...draftRef.current, grid: { on: !showGrid } });
             }}
-            title="map grid preview (this device)"
+            title="this map's grid — the table shows the same lines"
             aria-label="toggle grid"
           >
             ▦
@@ -1021,6 +1010,44 @@ export function SceneEditor({
                   {cols ? `${cols} × ${Math.round(rows ?? 0)} squares` : 'needed for tiles'}
                 </span>
               </label>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-24 font-mono text-xs uppercase tracking-wider text-stone-500">
+                  table screen
+                </span>
+                {tableDisplay ? (
+                  <>
+                    <input
+                      className={`${input} w-20`}
+                      type="number"
+                      placeholder={'size"'}
+                      value={tvDiagonal}
+                      onChange={(e) => setTvDiagonal(e.target.value)}
+                      aria-label="table display diagonal in inches"
+                    />
+                    <button
+                      className="rounded-lg bg-stone-800 px-2.5 py-1.5 font-mono text-xs text-stone-300 hover:bg-stone-700"
+                      disabled={!Number(tvDiagonal)}
+                      onClick={() => {
+                        const { w, h } = tableDisplay;
+                        onCalibrate?.(
+                          Math.round((Math.hypot(w, h) / Number(tvDiagonal)) * 10) / 10,
+                        );
+                      }}
+                      title={`the table reports ${tableDisplay.w}×${tableDisplay.h}px — give its diagonal size for true inches`}
+                    >
+                      calibrate
+                    </button>
+                    <span className="font-mono text-xs text-stone-500">
+                      {ppi ? `${ppi.toFixed(1)} px/in` : 'not calibrated'}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-xs text-stone-600">
+                    open /table on the TV once to enable calibration
+                  </span>
+                )}
+              </div>
 
               <div className="flex items-center gap-2">
                 <span className="w-24 font-mono text-xs uppercase tracking-wider text-stone-500">

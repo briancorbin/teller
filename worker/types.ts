@@ -164,6 +164,12 @@ export type Scene = {
   tokens?: Token[];
   zones?: TileZone[];
   fog?: Fog;
+  /**
+   * The grid belongs to the MAP, not the screen: drawn in map space on
+   * the map's own inch lines, so it lines up with painted ground, fog
+   * cells, and the workshop preview by construction. Default on.
+   */
+  grid?: { on: boolean };
 };
 
 export type CampaignData = {
@@ -189,13 +195,13 @@ export type CampaignData = {
   /** Derived, /public responses only: the resolved active scene. */
   scene?: Scene | null;
   /**
-   * Table grid overlay, controlled from the console (the table is
-   * passive glass). ppi = pixels per true inch on the table display —
-   * auto-derived from the TV's diagonal + reported resolution, or
-   * calibrated by holding a mini base in a square and nudging ±.
-   * ox/oy pan the grid so lines sit on the map's walls and streets.
+   * Display calibration for the TABLE screen: ppi = pixels per true
+   * inch, auto-derived from the TV's diagonal + reported resolution.
+   * This is what makes true-scale rendering physically honest; the
+   * grid itself is per-scene and drawn in map space.
+   * (`on`/`ox`/`oy` are legacy from the screen-fixed grid.)
    */
-  grid?: { on: boolean; ppi: number; ox?: number; oy?: number };
+  grid?: { on?: boolean; ppi: number; ox?: number; oy?: number };
   /**
    * The table client's self-reported viewport (CSS px) — telemetry,
    * not control; enables auto ppi (√(w²+h²) / diagonal inches).

@@ -134,6 +134,21 @@ export function TableView({ campaignId }: { campaignId: string }) {
               : { visibility: 'hidden' }
           }
         />
+        {/* grid on the map's own inch lines, so it agrees with the
+            workshop and with every painted cell */}
+        {rect && nat && pxPerMapInch && (
+          <div
+            className="pointer-events-none absolute"
+            style={{
+              left: rect.left,
+              top: rect.top,
+              width: nat.w * rect.scale,
+              height: nat.h * rect.scale,
+            }}
+          >
+            <GridOverlay cellPx={pxPerMapInch} on={scene?.grid?.on !== false} />
+          </div>
+        )}
         {/* painted tile zones — one gooey layer of ground effects */}
         {rect && nat && pxPerMapInch && (
           <TileZones
@@ -219,7 +234,6 @@ export function TableView({ campaignId }: { campaignId: string }) {
             cellPx={pxPerMapInch}
           />
         )}
-        <GridOverlay grid={campaign?.data.grid} />
       </main>
     );
   }
