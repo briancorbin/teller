@@ -25,6 +25,33 @@ export const TOKEN_EFFECTS: { value: TokenEffect; label: string }[] = [
   { value: 'water', label: 'water' },
 ];
 
+/**
+ * Gooey tile-layer vocabulary. The blur+contrast merge filter REQUIRES
+ * opaque fills (semi-transparent input dies in the alpha contrast), so
+ * fills are solid and translucency is applied to the group AFTER the
+ * filter.
+ */
+export function zoneBase(effect: TokenEffect): {
+  fill: string;
+  opacity: number;
+  core?: string;
+} {
+  switch (effect) {
+    case 'fire':
+      return { fill: '#f97316', opacity: 0.7, core: 'rgba(253,224,71,0.85)' };
+    case 'oil':
+      return { fill: '#14101c', opacity: 0.8 };
+    case 'smoke':
+      return { fill: '#b4afaa', opacity: 0.55 };
+    case 'ice':
+      return { fill: '#93c5fd', opacity: 0.55 };
+    case 'poison':
+      return { fill: '#84cc16', opacity: 0.55, core: 'rgba(190,242,100,0.6)' };
+    case 'water':
+      return { fill: '#0ea5e9', opacity: 0.55 };
+  }
+}
+
 export function zoneStyle(effect: TokenEffect): {
   background: string;
   animate: boolean;

@@ -3,6 +3,7 @@ import type { Scene, SceneView, Token, TokenEffect } from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { btn, input, sectionLabel } from '../lib/ui';
 import { TOKEN_EFFECTS, tokenShapeStyle, zoneStyle } from './token-visuals';
+import { TileZones } from './TileZones';
 
 // Fullscreen scene editor (console-side): the DM's map workshop.
 // Scale + framing + tokens + tile-painted ground effects. Tools:
@@ -237,28 +238,17 @@ export function SceneEditor({
             onLoad={() => setLoaded(true)}
           />
 
-          {/* painted tile zones — under everything */}
-          {img &&
-            cellPx &&
-            (draft.zones ?? []).map((zone) => {
-              const z = zoneStyle(zone.effect);
-              return zone.cells.map(([c, r]) => (
-                <div
-                  key={`${zone.effect}:${c},${r}`}
-                  className={`pointer-events-none absolute rounded-[2px] ${
-                    z.animate ? 'animate-pulse' : ''
-                  }`}
-                  style={{
-                    left: img.offsetLeft + c * cellPx,
-                    top: img.offsetTop + r * cellPx,
-                    width: cellPx,
-                    height: cellPx,
-                    background: z.background,
-                    boxShadow: z.boxShadow,
-                  }}
-                />
-              ));
-            })}
+          {/* painted tile zones — one gooey layer, under everything */}
+          {img && cellPx && (
+            <TileZones
+              zones={draft.zones ?? []}
+              left={img.offsetLeft}
+              top={img.offsetTop}
+              width={img.offsetWidth}
+              height={img.offsetHeight}
+              cellPx={cellPx}
+            />
+          )}
 
           {/* map-space 1-inch grid preview */}
           {img && cellPx && showGrid && (

@@ -6,6 +6,7 @@ import { useWakeLock } from '../lib/use-wake-lock';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { GridOverlay } from '../components/GridOverlay';
 import { tokenShapeStyle, zoneStyle } from '../components/token-visuals';
+import { TileZones } from '../components/TileZones';
 
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the active scene (framed per its view + true
@@ -132,27 +133,17 @@ export function TableView({ campaignId }: { campaignId: string }) {
               : { visibility: 'hidden' }
           }
         />
-        {/* painted tile zones — ground effects on 1" map cells */}
-        {rect &&
-          nat &&
-          pxPerMapInch &&
-          (scene?.zones ?? []).map((zone) => {
-            const z = zoneStyle(zone.effect);
-            return zone.cells.map(([c, r]) => (
-              <div
-                key={`${zone.effect}:${c},${r}`}
-                className={`absolute rounded-[2px] ${z.animate ? 'animate-pulse' : ''}`}
-                style={{
-                  left: rect.left + c * pxPerMapInch,
-                  top: rect.top + r * pxPerMapInch,
-                  width: pxPerMapInch,
-                  height: pxPerMapInch,
-                  background: z.background,
-                  boxShadow: z.boxShadow,
-                }}
-              />
-            ));
-          })}
+        {/* painted tile zones — one gooey layer of ground effects */}
+        {rect && nat && pxPerMapInch && (
+          <TileZones
+            zones={scene?.zones ?? []}
+            left={rect.left}
+            top={rect.top}
+            width={nat.w * rect.scale}
+            height={nat.h * rect.scale}
+            cellPx={pxPerMapInch}
+          />
+        )}
         {rect &&
           nat &&
           [...(scene?.tokens ?? [])]
