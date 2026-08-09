@@ -1,3 +1,4 @@
+import { ArtView } from './views/ArtView';
 import { BadgeView } from './views/BadgeView';
 import { BoardView } from './views/BoardView';
 import { DmView } from './views/DmView';
@@ -10,6 +11,7 @@ type Route =
   | { view: 'dm'; campaignId: string }
   | { view: 'table'; campaignId: string }
   | { view: 'board'; campaignId: string }
+  | { view: 'art'; campaignId: string }
   | { view: 'seat'; characterId: string }
   | { view: 'badge'; characterId: string };
 
@@ -20,6 +22,8 @@ function parseRoute(pathname: string): Route {
   if (m) return { view: 'table', campaignId: m[1] };
   m = pathname.match(/^\/board\/([^/]+)$/);
   if (m) return { view: 'board', campaignId: m[1] };
+  m = pathname.match(/^\/art\/([^/]+)$/);
+  if (m) return { view: 'art', campaignId: m[1] };
   m = pathname.match(/^\/seat\/([^/]+)$/);
   if (m) return { view: 'seat', characterId: m[1] };
   m = pathname.match(/^\/badge\/([^/]+)$/);
@@ -36,6 +40,8 @@ export default function App() {
       return <TableView campaignId={route.campaignId} />;
     case 'board':
       return <BoardView campaignId={route.campaignId} />;
+    case 'art':
+      return <ArtView campaignId={route.campaignId} />;
     case 'seat':
       return <SeatView characterId={route.characterId} />;
     case 'badge':

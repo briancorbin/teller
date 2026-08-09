@@ -3,6 +3,7 @@ import type {
   CampaignData,
   Character,
   CharacterData,
+  Handout,
   PackRecord,
   PublicCharacter,
   RulesPack,
@@ -110,6 +111,30 @@ export const api = {
 
   removeMap: (campaignId: string) =>
     req<{ ok: true }>(`/api/campaigns/${campaignId}/map`, { method: 'DELETE' }, true),
+
+  uploadHandout: async (campaignId: string, file: File) => {
+    const name = file.name.replace(/\.[^.]+$/, '');
+    const res = await fetch(
+      `/api/campaigns/${campaignId}/handouts?name=${encodeURIComponent(name)}`,
+      {
+        method: 'POST',
+        headers: { 'x-teller-key': getDmKey(), 'content-type': file.type },
+        body: file,
+      },
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<{ handout: Handout }>;
+  },
+
+  deleteHandout: (campaignId: string, handoutId: string) =>
+    req<{ ok: true }>(
+      `/api/campaigns/${campaignId}/handouts/${handoutId}`,
+      { method: 'DELETE' },
+      true,
+    ),
 
   deleteCharacter: (id: string) =>
     req<{ ok: true }>(`/api/characters/${id}`, { method: 'DELETE' }, true),

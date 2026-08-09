@@ -106,6 +106,24 @@ export function BoardView({ campaignId }: { campaignId: string }) {
         </div>
       )}
 
+      {campaign.data.handout && (
+        <div className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-5 bg-stone-950/95 p-8 backdrop-blur-sm">
+          {session?.notice && (
+            <p className="animate-pulse rounded-2xl bg-amber-700 px-8 py-3 text-center font-serif text-4xl text-stone-950">
+              {session.notice}
+            </p>
+          )}
+          <img
+            src={`/api/maps/${campaign.data.handout.key}`}
+            alt={campaign.data.handout.name}
+            className="max-h-[75vh] max-w-full rounded-xl object-contain shadow-2xl"
+          />
+          <p className="font-serif text-3xl text-stone-200">
+            {campaign.data.handout.name}
+          </p>
+        </div>
+      )}
+
       {initiative.length > 0 && (
         <section className="space-y-2">
           <div className="flex items-baseline justify-between">

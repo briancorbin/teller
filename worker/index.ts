@@ -271,6 +271,72 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
+  // Handouts: an image library the DM pushes to player-facing surfaces.
+  // Library is DM-only; only the ACTIVE handout leaves via /public.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/handouts$/);
+  if (m && method === 'POST') {
+    if (!dm) return err('DM key required', 401);
+    const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!campaignRow) return err('campaign not found', 404);
+    const campaign = toCampaign(campaignRow as never);
+    const contentType = request.headers.get('content-type') ?? '';
+    if (!contentType.startsWith('image/')) return err('image body required', 400);
+    const ext = contentType.split('/')[1]?.split('+')[0] ?? 'img';
+    const key = `handout/${campaign.id}/${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}.${ext}`;
+    await env.MAPS.put(key, request.body, { httpMetadata: { contentType } });
+    const name =
+      new URL(request.url).searchParams.get('name')?.trim() || 'Handout';
+    const handout = {
+      id: `hnd_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`,
+      key,
+      name,
+    };
+    const next = {
+      ...campaign.data,
+      handouts: [...(campaign.data.handouts ?? []), handout],
+    };
+    await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+      .bind(JSON.stringify(next), campaign.id)
+      .run();
+    await logEvent(env, campaign.id, null, 'dm', 'campaign.updated', {
+      patch: { handout },
+      before: { name: campaign.name, data: campaign.data },
+    });
+    await poke(env, campaign.id, 'campaign');
+    return json({ handout }, 201);
+  }
+
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/handouts\/([^/]+)$/);
+  if (m && method === 'DELETE') {
+    if (!dm) return err('DM key required', 401);
+    const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!campaignRow) return err('campaign not found', 404);
+    const campaign = toCampaign(campaignRow as never);
+    const handoutId = m[2];
+    // Pointer only — objects stay (undo-safe; storage is trivial here).
+    const next = {
+      ...campaign.data,
+      handouts: (campaign.data.handouts ?? []).filter((h) => h.id !== handoutId),
+      activeHandoutId:
+        campaign.data.activeHandoutId === handoutId
+          ? null
+          : campaign.data.activeHandoutId,
+    };
+    await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+      .bind(JSON.stringify(next), campaign.id)
+      .run();
+    await logEvent(env, campaign.id, null, 'dm', 'campaign.updated', {
+      patch: { removeHandout: handoutId },
+      before: { name: campaign.name, data: campaign.data },
+    });
+    await poke(env, campaign.id, 'campaign');
+    return json({ ok: true });
+  }
+
   // Serve map images (unguessable random keys; cache hard).
   m = pathname.match(/^\/api\/maps\/(.+)$/);
   if (m && method === 'GET') {
@@ -300,13 +366,18 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const campaign = toCampaign(row as never);
     return json({
       // Reference (Warden's notes/rules text) never leaves via /public,
-      // and hidden counters stay behind the screen until revealed.
+      // hidden counters stay behind the screen until revealed, and the
+      // handout LIBRARY stays private — only the active handout shows.
       campaign: {
         ...campaign,
         data: {
           vocabulary: campaign.data.vocabulary,
           counters: publicCounters(campaign.data.counters),
           map: campaign.data.map,
+          handout:
+            (campaign.data.handouts ?? []).find(
+              (h) => h.id === campaign.data.activeHandoutId,
+            ) ?? null,
         },
       },
       characters: chars.results.map((r) => toPublicCharacter(r as never)),
@@ -336,12 +407,16 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       data?: Partial<Campaign['data']>;
     }>();
     // Carry the full stored blob forward; only these keys are patchable
-    // here (map changes only via its own PUT/DELETE endpoints).
+    // here (map/handouts change only via their own endpoints).
     const next = {
       ...campaign.data,
       vocabulary: body.data?.vocabulary ?? campaign.data.vocabulary,
       counters: body.data?.counters ?? campaign.data.counters,
       reference: body.data?.reference ?? campaign.data.reference,
+      activeHandoutId:
+        body.data?.activeHandoutId !== undefined
+          ? body.data.activeHandoutId
+          : campaign.data.activeHandoutId,
     };
     await env.DB.prepare('UPDATE campaigns SET name = ?, data = ? WHERE id = ?')
       .bind(body.name ?? campaign.name, JSON.stringify(next), campaign.id)

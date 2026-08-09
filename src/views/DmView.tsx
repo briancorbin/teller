@@ -11,7 +11,16 @@ import { CounterSection } from '../components/CounterSection';
 import { InitiativePanel } from '../components/InitiativePanel';
 import { RulesPanel } from '../components/RulesPanel';
 
+// ?pane= renders a focused slice of the console — one slice per future
+// DM-screen panel, useful today across iPad + phone:
+//   session    → initiative · notices · map · handouts
+//   characters → the character grid
+//   library    → rules · reference · party resources
 export function DmView({ campaignId }: { campaignId: string }) {
+  const pane = new URLSearchParams(window.location.search).get('pane');
+  const showSession = pane === null || pane === 'session';
+  const showCharacters = pane === null || pane === 'characters';
+  const showLibrary = pane === null || pane === 'library';
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [error, setError] = useState('');
@@ -145,19 +154,41 @@ export function DmView({ campaignId }: { campaignId: string }) {
           >
             board ↗
           </a>
+          <a
+            className="font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
+            href={`/art/${campaign.id}`}
+            target="_blank"
+            rel="noreferrer"
+            title="fullscreen frame for the active handout — point any spare screen at it"
+          >
+            art ↗
+          </a>
         </span>
       </header>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,22rem)_1fr]">
+      <div
+        className={
+          pane === null
+            ? 'grid gap-6 lg:grid-cols-[minmax(0,22rem)_1fr]'
+            : pane === 'characters'
+              ? 'space-y-6'
+              : 'mx-auto max-w-2xl space-y-6'
+        }
+      >
+        {(showSession || showLibrary) && (
         <div className="space-y-6">
+          {showSession && (
           <InitiativePanel
             session={session}
             characters={characters}
             onOp={(op) => api.sessionOp(campaignId, op).catch(() => refetch())}
           />
+          )}
 
+          {showSession && (
+          <>
           <div className={`${card} space-y-2`}>
             <span className={sectionLabel}>Table notice</span>
             <div className="flex flex-wrap gap-1.5">
@@ -249,6 +280,95 @@ export function DmView({ campaignId }: { campaignId: string }) {
             )}
           </div>
 
+          <div className={`${card} space-y-2`}>
+            <div className="flex items-center justify-between">
+              <span className={sectionLabel}>Handouts</span>
+              <div className="flex gap-1">
+                {campaign.data.activeHandoutId && (
+                  <button
+                    className="rounded-md px-2 py-1 text-sm text-stone-400 transition-colors hover:bg-stone-800 hover:text-stone-200"
+                    onClick={() =>
+                      api
+                        .patchCampaign(campaign.id, { data: { activeHandoutId: null } })
+                        .then(() => refetch())
+                    }
+                  >
+                    hide
+                  </button>
+                )}
+                <label className="cursor-pointer rounded-md px-2 py-1 text-sm text-stone-400 transition-colors hover:bg-stone-800 hover:text-stone-200">
+                  + upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      api
+                        .uploadHandout(campaignId, file)
+                        .then(() => refetch())
+                        .catch((err2) =>
+                          setError(String(err2 instanceof Error ? err2.message : err2)),
+                        );
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+            {(campaign.data.handouts ?? []).length === 0 ? (
+              <p className="text-sm text-stone-600">
+                none yet — push art, letters, WANTED posters to the board & art panels
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-2">
+                {(campaign.data.handouts ?? []).map((handout) => {
+                  const active = campaign.data.activeHandoutId === handout.id;
+                  return (
+                    <div key={handout.id} className="relative">
+                      <button
+                        className={`w-full rounded-lg text-left ${
+                          active ? 'ring-2 ring-amber-500' : 'hover:opacity-80'
+                        }`}
+                        onClick={() =>
+                          api
+                            .patchCampaign(campaign.id, {
+                              data: { activeHandoutId: active ? null : handout.id },
+                            })
+                            .then(() => refetch())
+                        }
+                        title={active ? 'showing — tap to hide' : 'show on board & art panels'}
+                      >
+                        <img
+                          src={`/api/maps/${handout.key}`}
+                          alt={handout.name}
+                          className="h-20 w-full rounded-lg object-cover"
+                        />
+                        <span className="block truncate px-0.5 text-xs text-stone-400">
+                          {handout.name}
+                        </span>
+                      </button>
+                      <button
+                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-stone-950/80 text-xs text-stone-400 hover:text-red-300"
+                        onClick={() =>
+                          api.deleteHandout(campaignId, handout.id).then(() => refetch())
+                        }
+                        aria-label={`delete ${handout.name}`}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          </>
+          )}
+
+          {showLibrary && (
+          <>
           <RulesPanel packs={packs} onUploaded={loadPacks} />
 
           <div className={`${card} space-y-2`}>
@@ -280,8 +400,12 @@ export function DmView({ campaignId }: { campaignId: string }) {
               }}
             />
           </div>
+          </>
+          )}
         </div>
+        )}
 
+        {showCharacters && (
         <div className="space-y-4">
           <div className="grid gap-4 xl:grid-cols-2">
             {characters.map((character) => (
@@ -322,6 +446,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
             </div>
           </div>
         </div>
+        )}
       </div>
     </main>
   );

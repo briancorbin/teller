@@ -49,6 +49,14 @@ export type Character = {
   updatedAt: string;
 };
 
+/** An uploaded image the DM can push to the player-facing surfaces. */
+export type Handout = {
+  id: string;
+  /** R2 object key (served via /api/maps/*). */
+  key: string;
+  name: string;
+};
+
 export type CampaignData = {
   /** UI strings per system — e.g. { gm: 'Warden' }. */
   vocabulary: Record<string, string>;
@@ -62,6 +70,18 @@ export type CampaignData = {
   reference?: string;
   /** Active battle map (R2 object key). v0: one map per campaign. */
   map?: { key: string };
+  /**
+   * Handout library — DM-only. The list never leaves via /public
+   * (staged spoilers must not leak); only the ACTIVE handout does.
+   */
+  handouts?: Handout[];
+  /** Which handout is currently pushed to board + art surfaces. */
+  activeHandoutId?: string | null;
+  /**
+   * Derived, /public responses only: the resolved active handout.
+   * Never stored.
+   */
+  handout?: Handout | null;
 };
 
 export type Campaign = {
