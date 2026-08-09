@@ -145,6 +145,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const data = {
       vocabulary: template.vocabulary,
       counters: countersFrom(template.campaign.counters),
+      states: template.states ?? [],
     };
     await env.DB.prepare(
       'INSERT INTO campaigns (id, name, system, data) VALUES (?, ?, ?, ?)',
@@ -458,6 +459,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         data: {
           vocabulary: campaign.data.vocabulary,
           counters: publicCounters(campaign.data.counters),
+          // Vocabulary, so the table can turn a tag into a visual. The
+          // tags themselves are already table-safe; numbers are not and
+          // never come with them.
+          states: campaign.data.states ?? [],
           grid: campaign.data.grid,
           // Active scene (with view/scale metadata); legacy single-map
           // pointer keeps old campaigns rendering.
@@ -504,6 +509,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       ...campaign.data,
       vocabulary: body.data?.vocabulary ?? campaign.data.vocabulary,
       counters: body.data?.counters ?? campaign.data.counters,
+      states: body.data?.states ?? campaign.data.states,
       reference: body.data?.reference ?? campaign.data.reference,
       activeHandoutId:
         body.data?.activeHandoutId !== undefined

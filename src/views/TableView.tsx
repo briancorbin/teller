@@ -5,7 +5,7 @@ import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { GridOverlay } from '../components/GridOverlay';
-import { tokenShapeStyle, zoneStyle } from '../components/token-visuals';
+import { STATE_EFFECTS, tokenShapeStyle, zoneStyle } from '../components/token-visuals';
 import { TileZones } from '../components/TileZones';
 import { FogLayer } from '../components/FogLayer';
 import { CalibrationOverlay } from '../components/CalibrationOverlay';
@@ -232,6 +232,14 @@ export function TableView({
             const linked = token.characterId
               ? characters.find((c) => c.id === token.characterId)
               : null;
+            // A state the DM applied, made visible. Tags reach the table;
+            // the numbers behind them never do.
+            const state = linked
+              ? (campaign?.data.states ?? []).find((s) =>
+                  linked.data.tags.includes(s.name),
+                )
+              : null;
+            const stateVisual = state ? STATE_EFFECTS[state.effect ?? 'mark'] : null;
             const vitality = linked?.data.vitality;
             const isTurn =
               token.characterId != null && token.characterId === turnCharacterId;
@@ -254,7 +262,10 @@ export function TableView({
                   width: size,
                   height: sizeY,
                   backgroundColor: token.color,
-                  boxShadow: glow,
+                  boxShadow: stateVisual
+                    ? `0 0 0 ${Math.max(2, size * 0.06)}px ${stateVisual.ring}${glow ? `, ${glow}` : ''}`
+                    : glow,
+                  opacity: stateVisual?.fade ? 0.45 : undefined,
                   fontSize: Math.max(9, size * 0.28),
                   transition: 'left 300ms, top 300ms',
                 }}

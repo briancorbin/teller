@@ -35,6 +35,13 @@ const dnd5e: SystemTemplate = {
   campaign: {
     counters: [],
   },
+  // Vocabulary + thresholds only — never rules text. teller OFFERS
+  // these when a counter crosses; the DM decides (rule 1).
+  states: [
+    { name: 'Bloodied', effect: 'wound', suggest: { counter: 'HP', atOrBelow: 0.5 } },
+    { name: 'Down', effect: 'fade', suggest: { counter: 'HP', atOrBelow: 0 } },
+    { name: 'Concentrating', effect: 'mark' },
+  ],
 };
 
 // Wild Imaginary West (Boylei Hobby Time / Rune Foundry).
@@ -97,6 +104,11 @@ const wiw: SystemTemplate = {
   campaign: {
     counters: [],
   },
+  states: [
+    { name: 'Bloodied', effect: 'wound', suggest: { counter: 'Health', atOrBelow: 0.5 } },
+    { name: 'Out of Grit', effect: 'daze', suggest: { counter: 'Grit', atOrBelow: 0 } },
+    { name: 'Down', effect: 'fade', suggest: { counter: 'Health', atOrBelow: 0 } },
+  ],
 };
 
 export const templates: SystemTemplate[] = [dnd5e, wiw];

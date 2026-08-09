@@ -7,7 +7,7 @@ import type {
   PackRecord,
   Scene,
 } from '../../worker/types';
-import { api, getDmKey, setDmKey } from '../lib/api';
+import { api, getDmKey, newLocalId, setDmKey } from '../lib/api';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
@@ -17,17 +17,18 @@ import { ConnectionHint } from '../components/ConnectionHint';
 import { SceneEditor } from '../components/SceneEditor';
 import { CounterSection } from '../components/CounterSection';
 import { DisplaysPanel } from '../components/DisplaysPanel';
-import { InitiativePanel } from '../components/InitiativePanel';
+import { EncounterPanel } from '../components/EncounterPanel';
 import { RulesPanel } from '../components/RulesPanel';
 
 // A pane is a focused slice of the console — one slice per DM-screen
 // panel. A screen assigned the 'console' role renders exactly one:
-//   session    → initiative · notices · handouts
+//   session    → the encounter · notices · handouts
+//   encounter  → turn order, stats and states, on its own
 //   map        → scenes · table grid (everything the table TV shows)
 //   characters → the character grid
 //   library    → rules · reference · party resources
 //   displays   → the screens in the room, and what each one is
-const PANES = ['session', 'map', 'characters', 'library', 'displays'] as const;
+const PANES = ['session', 'encounter', 'map', 'characters', 'library', 'displays'] as const;
 
 export function DmView({
   campaignId,
@@ -211,6 +212,61 @@ export function DmView({
     </nav>
   );
 
+  // One encounter component: the session pane and the encounter pane
+  // show the same thing, the latter on its own for a DM-screen panel.
+  const liveScene = (campaign.data.maps ?? []).find(
+    (sc) => sc.id === campaign.data.activeMapId,
+  );
+  const tokenLinks = new Set(
+    (liveScene?.tokens ?? [])
+      .map((t) => t.characterId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const dropToken = (characterId: string, label: string) => {
+    if (!liveScene) return;
+    const character = characters.find((c) => c.id === characterId);
+    onSceneChange({
+      ...liveScene,
+      tokens: [
+        ...(liveScene.tokens ?? []),
+        {
+          id: newLocalId('tok'),
+          label,
+          u: 0.5,
+          v: 0.5,
+          sizeInches: 1,
+          color: character?.kind === 'npc' ? '#f87171' : '#38bdf8',
+          characterId,
+        },
+      ],
+    });
+  };
+  const encounterPanel = (
+    <EncounterPanel
+      session={session}
+      characters={characters}
+      states={campaign.data.states ?? []}
+      tokenLinks={tokenLinks}
+      onOp={(op) => api.sessionOp(campaignId, op).catch(() => refetch())}
+      onPatchCharacter={patchCharacter}
+      onDropToken={dropToken}
+    />
+  );
+
+  // Turn order and everything you reach for mid-fight.
+  if (pane === 'encounter') {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-3 p-3">
+        <ConnectionHint connected={connected} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
+          {paneNav}
+        </div>
+        {encounterPanel}
+      </main>
+    );
+  }
+
   // The patch bay: every screen in the room and what each one is.
   if (pane === 'displays') {
     return (
@@ -390,13 +446,7 @@ export function DmView({
       >
         {(showSession || showLibrary) && (
         <div className="space-y-6">
-          {showSession && (
-          <InitiativePanel
-            session={session}
-            characters={characters}
-            onOp={(op) => api.sessionOp(campaignId, op).catch(() => refetch())}
-          />
-          )}
+          {showSession && encounterPanel}
 
           {showSession && (
           <>

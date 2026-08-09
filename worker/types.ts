@@ -24,6 +24,30 @@ export type Counter = {
   hidden?: boolean;
 };
 
+/** Render vocabulary for a state — how the table shows it, nothing more. */
+export type StateEffect = 'wound' | 'burn' | 'chill' | 'daze' | 'mark' | 'fade';
+
+/**
+ * A condition a combatant can be IN, as the encounter panel offers it.
+ *
+ * A state IS a tag (rule 2) — this only adds presentation and, at most,
+ * a proposal. `suggest` makes teller ASK when a counter crosses the
+ * line ("Bloodied?"); it never applies anything itself. That's rule 1:
+ * a rules engine may propose into a slot, never own it. The name is
+ * vocabulary, not rules text, so templates may carry it.
+ */
+export type EncounterState = {
+  /** The tag applied when the DM accepts it. */
+  name: string;
+  effect?: StateEffect;
+  suggest?: {
+    /** Counter name to watch, matched case-insensitively. */
+    counter: string;
+    /** Offer the state at or below this fraction of max (0..1). */
+    atOrBelow: number;
+  };
+};
+
 export type Field = {
   key: string;
   label: string;
@@ -185,6 +209,11 @@ export type CampaignData = {
   /** Party-level resources (supplies, group Prestige, doom clocks…). */
   counters: Counter[];
   /**
+   * States the encounter panel offers, seeded from the template and
+   * editable afterwards like everything else.
+   */
+  states?: EncounterState[];
+  /**
    * Warden's reference text — house rules, pasted rules excerpts,
    * table notes. Lives ONLY in the campaign's own database (personal
    * use); never ships in templates and never leaves via /public.
@@ -264,6 +293,8 @@ export type SystemTemplate = {
   campaign: {
     counters: TemplateCounter[];
   };
+  /** Starting kit of encounter states — vocabulary + thresholds only. */
+  states?: EncounterState[];
 };
 
 // --- Rules packs ------------------------------------------------------------

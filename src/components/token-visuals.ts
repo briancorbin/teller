@@ -109,3 +109,17 @@ export function zoneStyle(effect: TokenEffect): {
       };
   }
 }
+
+// How a state reads on the table. Pure render vocabulary — teller draws
+// the ring; what being Bloodied MEANS is the humans' business.
+export const STATE_EFFECTS: Record<
+  string,
+  { chip: string; ring: string; fade?: boolean }
+> = {
+  wound: { chip: '#f87171', ring: 'rgba(220,38,38,0.85)' },
+  burn: { chip: '#fb923c', ring: 'rgba(249,115,22,0.85)' },
+  chill: { chip: '#67e8f9', ring: 'rgba(34,211,238,0.85)' },
+  daze: { chip: '#c084fc', ring: 'rgba(168,85,247,0.85)' },
+  mark: { chip: '#fbbf24', ring: 'rgba(251,191,36,0.85)' },
+  fade: { chip: '#a8a29e', ring: 'rgba(120,113,108,0.9)', fade: true },
+};

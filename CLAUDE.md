@@ -97,8 +97,9 @@ so the dumbest panel in the room needs no keyboard.
 
 Roles a screen can be assigned:
 - `console` — the DM console, with all the authority that implies.
-  `params.pane` narrows it to one slice (session · map · characters ·
-  library · displays); one pane per panel is the digital DM screen.
+  `params.pane` narrows it to one slice (session · encounter · map ·
+  characters · library · displays); one pane per panel is the digital
+  DM screen.
 - `table` — the table TV renderer (passive, player-safe).
   **The table is the GROUND, nothing else**: the active scene
   full-bleed (+ grid overlay), or idle branding. No bookkeeping, no
