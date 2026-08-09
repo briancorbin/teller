@@ -2,6 +2,7 @@ import { CampaignDO } from './campaign-do';
 import {
   logEvent,
   publicCounters,
+  publicScene,
   toCampaign,
   toCharacter,
   toPackRecord,
@@ -469,10 +470,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           grid: campaign.data.grid,
           // Active scene (with view/scale metadata); legacy single-map
           // pointer keeps old campaigns rendering.
-          scene:
-            (campaign.data.maps ?? []).find(
-              (s) => s.id === campaign.data.activeMapId,
-            ) ?? null,
+          // Hidden tokens and painted zones are stripped here, not
+          // merely styled away: what's behind the screen never reaches
+          // the table client at all.
+          scene: publicScene(campaign.data),
           map: campaign.data.map ?? null,
           handout:
             (campaign.data.handouts ?? []).find(

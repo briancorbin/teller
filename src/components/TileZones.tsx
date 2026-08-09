@@ -15,6 +15,7 @@ export function TileZones({
   width,
   height,
   cellPx,
+  dm = false,
 }: {
   zones: TileZone[];
   left: number;
@@ -22,6 +23,8 @@ export function TileZones({
   width: number;
   height: number;
   cellPx: number;
+  /** Console-side: hidden layers are drawn ghosted instead of absent. */
+  dm?: boolean;
 }) {
   const uid = useId();
   if (zones.length === 0 || !cellPx) return null;
@@ -53,9 +56,13 @@ export function TileZones({
       </defs>
       {zones.map((zone) => {
         const base = zoneBase(zone.effect);
-        const coreId = `core-${uid}-${zone.effect}`;
+        const ghost = dm && zone.hidden;
+        const coreId = `core-${uid}-${zone.effect}-${zone.hidden ? 'h' : 'v'}`;
         return (
-          <g key={zone.effect}>
+          <g
+            key={`${zone.effect}-${zone.hidden ? 'hidden' : 'shown'}`}
+            opacity={ghost ? 0.4 : 1}
+          >
             {base.core && (
               <defs>
                 <radialGradient id={coreId}>

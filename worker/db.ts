@@ -7,6 +7,7 @@ import type {
   PackRecord,
   PublicCharacter,
   RulesPack,
+  Scene,
 } from './types';
 
 export type Env = {
@@ -81,6 +82,21 @@ export function toPackRecord(row: PackRow): PackRecord {
 /** Counters as the player-facing surfaces may see them. */
 export function publicCounters(counters: Counter[]): Counter[] {
   return counters.filter((c) => !c.hidden);
+}
+
+/**
+ * The active scene as the table may see it: hidden tokens and hidden
+ * painted zones are removed from the payload entirely — an ambush the
+ * players can't inspect in devtools.
+ */
+export function publicScene(data: CampaignData): Scene | null {
+  const scene = (data.maps ?? []).find((s) => s.id === data.activeMapId);
+  if (!scene) return null;
+  return {
+    ...scene,
+    tokens: (scene.tokens ?? []).filter((t) => !t.hidden),
+    zones: (scene.zones ?? []).filter((z) => !z.hidden),
+  };
 }
 
 /**

@@ -103,6 +103,12 @@ export type Token = {
   shape?: 'circle' | 'square' | 'triangle';
   /** Zone tokens only: rotation in degrees (45° steps from the editor). */
   rot?: number;
+  /**
+   * Behind the screen: stripped from /public entirely, so the table
+   * never receives it. Revealing is one tap — an ambush that was
+   * always there, a trap that becomes real when someone finds it.
+   */
+  hidden?: boolean;
 };
 
 /**
@@ -113,6 +119,8 @@ export type Token = {
 export type TileZone = {
   effect: TokenEffect;
   cells: [number, number][];
+  /** Behind the screen until revealed — never sent to /public. */
+  hidden?: boolean;
 };
 
 /**

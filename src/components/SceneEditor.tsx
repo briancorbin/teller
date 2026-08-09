@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Scene, SceneView, Token, TokenEffect } from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { input } from '../lib/ui';
@@ -65,6 +65,7 @@ export function SceneEditor({
   });
   const [tool, setTool] = useState<Tool>('select');
   const [brush, setBrush] = useState<TokenEffect>('fire');
+  const [secret, setSecret] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showGrid, setShowGrid] = useState(true);
   const [showTokens, setShowTokens] = useState(false);
@@ -117,17 +118,24 @@ export function SceneEditor({
 
   // --- canvas geometry ------------------------------------------------------
 
+  // Self-healing measurement: the observer catches resizes, and the
+  // layout pass re-checks every render so a stale zero (pane hidden,
+  // tab backgrounded, device rotated) can never strand the geometry.
+  useLayoutEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    if (w && h && (size?.w !== w || size?.h !== h)) setSize({ w, h });
+  });
+
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
-    // Seed immediately; the observer keeps it honest on resize.
-    setSize({ w: el.clientWidth, h: el.clientHeight });
-    const ro = new ResizeObserver(([entry]) =>
-      setSize({
-        w: entry.contentRect.width,
-        h: entry.contentRect.height,
-      }),
-    );
+    const ro = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      if (width && height) setSize({ w: width, h: height });
+    });
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -209,23 +217,35 @@ export function SceneEditor({
     ];
   };
 
+  // Painted ground has two layers per effect: what the table sees and
+  // what's waiting behind the screen.
   const painted = (effect: TokenEffect, [c, r]: Cell) =>
     (draftRef.current.zones ?? [])
-      .find((z) => z.effect === effect)
+      .find((z) => z.effect === effect && !!z.hidden === secret)
       ?.cells.some(([cc, rr]) => cc === c && rr === r) ?? false;
 
   const applyCell = (effect: TokenEffect, cell: Cell, op: 'add' | 'remove') => {
     const d = draftRef.current;
     const zones = [...(d.zones ?? [])];
-    const i = zones.findIndex((z) => z.effect === effect);
+    const i = zones.findIndex((z) => z.effect === effect && !!z.hidden === secret);
     const cells = i >= 0 ? [...zones[i].cells] : [];
     const at = cells.findIndex(([c, r]) => c === cell[0] && r === cell[1]);
     if (op === 'add' && at < 0) cells.push(cell);
     if (op === 'remove' && at >= 0) cells.splice(at, 1);
-    if (i >= 0) zones[i] = { effect, cells };
-    else zones.push({ effect, cells });
+    if (i >= 0) zones[i] = { ...zones[i], cells };
+    else zones.push({ effect, cells, ...(secret ? { hidden: true } : {}) });
     commit({ ...d, zones: zones.filter((z) => z.cells.length > 0) });
   };
+
+  const revealZone = (effect: TokenEffect, hidden: boolean) =>
+    commit({
+      ...draftRef.current,
+      zones: (draftRef.current.zones ?? []).map((z) =>
+        z.effect === effect && !!z.hidden === hidden
+          ? { ...z, hidden: hidden ? undefined : true }
+          : z,
+      ),
+    });
 
   // --- framing (soft-locked during combat) ---------------------------------
 
@@ -261,6 +281,9 @@ export function SceneEditor({
       v: view.cv,
       sizeInches: 1,
       color: TOKEN_COLORS[tokens.length % TOKEN_COLORS.length],
+      // New markers start behind the screen: revealing is deliberate,
+      // and nothing lands on the table by surprise.
+      hidden: true,
     };
     commit({ ...draft, tokens: [...tokens, token] });
     setSelectedId(token.id);
@@ -406,6 +429,7 @@ export function SceneEditor({
               width={baseW}
               height={baseH}
               cellPx={cellPx}
+              dm
             />
           )}
 
@@ -451,13 +475,20 @@ export function SceneEditor({
                     tool !== 'select' ? 'pointer-events-none' : ''
                   } ${zone?.animate ? 'animate-pulse' : ''} ${
                     selectedId === token.id ? 'ring-2 ring-amber-300' : ''
-                  } ${!zone ? 'border-2 border-stone-950/70' : ''}`}
+                  } ${!zone ? 'border-2' : ''} ${
+                    !zone
+                      ? token.hidden
+                        ? 'border-dashed border-stone-300/70'
+                        : 'border-stone-950/70'
+                      : ''
+                  }`}
                   style={{
                     left: token.u * baseW,
                     top: token.v * baseH,
                     width: s,
                     height: s,
                     fontSize: Math.max(8, s * 0.3),
+                    opacity: token.hidden ? 0.55 : 1,
                     ...(zone
                       ? { background: zone.background, boxShadow: zone.boxShadow }
                       : { backgroundColor: token.color }),
@@ -643,6 +674,33 @@ export function SceneEditor({
                 aria-label={`brush ${fx.label}`}
               />
             ))}
+            <button
+              className={`mt-1 flex h-9 w-11 items-center justify-center rounded-lg text-sm ${
+                secret ? 'bg-stone-800 text-amber-300' : 'text-stone-500 hover:bg-stone-800'
+              }`}
+              onClick={() => setSecret(!secret)}
+              aria-label={secret ? 'painting hidden' : 'painting visible'}
+              title={
+                secret
+                  ? 'painting behind the screen — the table sees nothing'
+                  : 'painting in the open — the table sees it immediately'
+              }
+            >
+              {secret ? '🙈' : '👁'}
+            </button>
+            {(draft.zones ?? []).some((z) => z.hidden) && (
+              <button
+                className="mt-1 rounded-lg px-1 py-1.5 text-[10px] leading-tight text-amber-300 hover:bg-stone-800"
+                onClick={() => {
+                  mark();
+                  const hiddenFx = (draftRef.current.zones ?? []).find((z) => z.hidden);
+                  if (hiddenFx) revealZone(hiddenFx.effect, true);
+                }}
+                title="reveal the hidden painted ground to the table"
+              >
+                reveal
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -652,6 +710,25 @@ export function SceneEditor({
         <div
           className={`absolute bottom-20 left-1/2 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 ${panel}`}
         >
+          <button
+            className={`rounded-lg px-2.5 py-1.5 font-mono text-xs ${
+              selected.hidden
+                ? 'bg-stone-800 text-amber-300'
+                : 'bg-emerald-800/70 text-emerald-100'
+            }`}
+            onClick={() => {
+              mark();
+              setToken(selected.id, { hidden: selected.hidden ? undefined : true });
+            }}
+            aria-label={selected.hidden ? 'reveal to the table' : 'hide from the table'}
+            title={
+              selected.hidden
+                ? 'behind the screen — tap to reveal it to the table'
+                : 'the table can see this — tap to hide it'
+            }
+          >
+            {selected.hidden ? '🙈 hidden' : '👁 shown'}
+          </button>
           <input
             className={`${input} w-28`}
             value={selected.label}
@@ -877,9 +954,11 @@ export function SceneEditor({
                         : t.color,
                     }}
                   />
-                  <span className="truncate">{t.label}</span>
+                  <span className={`truncate ${t.hidden ? 'italic' : ''}`}>
+                    {t.label}
+                  </span>
                   <span className="ml-auto shrink-0 font-mono text-[10px] text-stone-600">
-                    {t.sizeInches}"
+                    {t.hidden ? '🙈' : `${t.sizeInches}"`}
                   </span>
                 </button>
               ))}
@@ -897,7 +976,7 @@ export function SceneEditor({
       {/* ---------------- hint ---------------- */}
       <p className="pointer-events-none absolute inset-x-0 bottom-14 text-center font-mono text-[11px] text-stone-600">
         {tool === 'paint'
-          ? `drag to paint ${brush} · tap a painted tile to erase`
+          ? `drag to paint ${brush}${secret ? ' behind the screen' : ''} · tap a painted tile to erase`
           : tool === 'pan'
             ? 'drag to move your view · scroll to zoom'
             : tool === 'frame'
