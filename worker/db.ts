@@ -95,11 +95,15 @@ export function toDisplay(row: DisplayRow): Display {
 }
 
 export function toCampaign(row: CampaignRow): Campaign {
+  const data = JSON.parse(row.data) as CampaignData;
+  // Rows calibrated before the vertical axis existed carry one number;
+  // square pixels are the sane reading of it.
+  if (data.grid?.ppi && !data.grid.ppiY) data.grid.ppiY = data.grid.ppi;
   return {
     id: row.id,
     name: row.name,
     system: row.system,
-    data: JSON.parse(row.data) as CampaignData,
+    data,
     createdAt: row.created_at,
   };
 }

@@ -15,6 +15,7 @@ export function TileZones({
   width,
   height,
   cellPx,
+  cellPxY,
   dm = false,
 }: {
   zones: TileZone[];
@@ -23,13 +24,16 @@ export function TileZones({
   width: number;
   height: number;
   cellPx: number;
+  /** Vertical cell size; differs only on a stretched table. */
+  cellPxY?: number;
   /** Console-side: hidden layers are drawn ghosted instead of absent. */
   dm?: boolean;
 }) {
   const uid = useId();
   if (zones.length === 0 || !cellPx) return null;
-  const inset = cellPx * 0.06;
-  const blur = cellPx * 0.22;
+  const cellY = cellPxY || cellPx;
+  const inset = Math.min(cellPx, cellY) * 0.06;
+  const blur = Math.min(cellPx, cellY) * 0.22;
 
   return (
     <svg
@@ -76,9 +80,9 @@ export function TileZones({
                   <rect
                     key={`${c},${r}`}
                     x={c * cellPx + inset}
-                    y={r * cellPx + inset}
+                    y={r * cellY + inset}
                     width={cellPx - inset * 2}
-                    height={cellPx - inset * 2}
+                    height={cellY - inset * 2}
                     rx={cellPx * 0.18}
                     fill={base.fill}
                   />

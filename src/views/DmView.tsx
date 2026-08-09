@@ -98,10 +98,10 @@ export function DmView({
   };
 
   /** Table display calibration — px per true inch, set in the workshop. */
-  const calibrate = (ppi: number) => {
+  const calibrate = (ppi: number, ppiY: number) => {
     setCampaign((prev) => {
       if (!prev) return prev;
-      const grid = { ...(prev.data.grid ?? {}), ppi };
+      const grid = { ...(prev.data.grid ?? {}), ppi, ppiY };
       api.patchCampaign(prev.id, { data: { grid } }).catch(() => refetch());
       return { ...prev, data: { ...prev.data, grid } };
     });
@@ -271,6 +271,7 @@ export function DmView({
               live={isLive}
               combatRunning={(session?.turn ?? null) !== null}
               ppi={campaign.data.grid?.ppi}
+              ppiY={campaign.data.grid?.ppiY}
               tableDisplay={campaign.data.tableDisplay}
               onCalibrate={calibrate}
               characters={characters.map((c) => ({

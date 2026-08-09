@@ -79,21 +79,32 @@ export function TableView({ campaignId }: { campaignId: string }) {
   };
 
   // One geometry for both modes: where the map sits on the glass.
+  // Two scales, because a true inch across need not be a true inch
+  // down: on a stretched or overscanned picture the axes calibrate
+  // differently, and a 1" square must still measure 1" both ways with
+  // a physical ruler. On a correctly-set-up display sx === sy.
   const ppi = campaign?.data.grid?.ppi;
+  const ppiY = campaign?.data.grid?.ppiY ?? ppi;
   const view = scene?.view;
-  let rect: { left: number; top: number; scale: number } | null = null;
+  let rect: { left: number; top: number; sx: number; sy: number } | null = null;
   if (nat) {
-    if (view?.mode === 'true' && scene?.widthInches && ppi) {
-      const scale = ((ppi * scene.widthInches) / nat.w) * (view.zoom || 1);
+    if (view?.mode === 'true' && scene?.widthInches && ppi && ppiY) {
+      const zoom = view.zoom || 1;
+      const sx = ((ppi * scene.widthInches) / nat.w) * zoom;
+      // The map's physical height follows from its aspect, so the
+      // vertical scale differs from sx only by the vertical ppi.
+      const sy = ((ppiY * scene.widthInches) / nat.w) * zoom;
       rect = {
-        scale,
-        left: vp.w / 2 - view.cu * nat.w * scale,
-        top: vp.h / 2 - view.cv * nat.h * scale,
+        sx,
+        sy,
+        left: vp.w / 2 - view.cu * nat.w * sx,
+        top: vp.h / 2 - view.cv * nat.h * sy,
       };
     } else {
       const scale = Math.min(vp.w / nat.w, vp.h / nat.h);
       rect = {
-        scale,
+        sx: scale,
+        sy: scale,
         left: (vp.w - nat.w * scale) / 2,
         top: (vp.h - nat.h * scale) / 2,
       };
@@ -104,7 +115,11 @@ export function TableView({ campaignId }: { campaignId: string }) {
   // either mode (in true scale a 1" token IS 1" of glass).
   const pxPerMapInch =
     rect && nat && scene?.widthInches
-      ? (rect.scale * nat.w) / scene.widthInches
+      ? (rect.sx * nat.w) / scene.widthInches
+      : null;
+  const pxPerMapInchY =
+    rect && nat && scene?.widthInches
+      ? (rect.sy * nat.w) / scene.widthInches
       : null;
 
   const turnCharacterId =
@@ -126,8 +141,8 @@ export function TableView({ campaignId }: { campaignId: string }) {
           style={
             rect && nat
               ? {
-                  width: nat.w * rect.scale,
-                  height: nat.h * rect.scale,
+                  width: nat.w * rect.sx,
+                  height: nat.h * rect.sy,
                   left: rect.left,
                   top: rect.top,
                 }
@@ -142,11 +157,15 @@ export function TableView({ campaignId }: { campaignId: string }) {
             style={{
               left: rect.left,
               top: rect.top,
-              width: nat.w * rect.scale,
-              height: nat.h * rect.scale,
+              width: nat.w * rect.sx,
+              height: nat.h * rect.sy,
             }}
           >
-            <GridOverlay cellPx={pxPerMapInch} grid={scene?.grid} />
+            <GridOverlay
+              cellPx={pxPerMapInch}
+              cellPxY={pxPerMapInchY ?? undefined}
+              grid={scene?.grid}
+            />
           </div>
         )}
         {/* painted tile zones — one gooey layer of ground effects */}
@@ -155,9 +174,10 @@ export function TableView({ campaignId }: { campaignId: string }) {
             zones={scene?.zones ?? []}
             left={rect.left}
             top={rect.top}
-            width={nat.w * rect.scale}
-            height={nat.h * rect.scale}
+            width={nat.w * rect.sx}
+            height={nat.h * rect.sy}
             cellPx={pxPerMapInch}
+            cellPxY={pxPerMapInchY ?? undefined}
           />
         )}
         {rect &&
@@ -165,9 +185,10 @@ export function TableView({ campaignId }: { campaignId: string }) {
           [...(scene?.tokens ?? [])]
             .sort((a, b) => (a.effect ? 0 : 1) - (b.effect ? 0 : 1))
             .map((token) => {
-            const size = pxPerMapInch
-              ? token.sizeInches * pxPerMapInch
-              : 24;
+            const size = pxPerMapInch ? token.sizeInches * pxPerMapInch : 24;
+            // A round token is round in INCHES, so on a stretched
+            // picture it is an ellipse in pixels.
+            const sizeY = pxPerMapInchY ? token.sizeInches * pxPerMapInchY : size;
             if (token.effect) {
               // Environmental zone: ground the minis stand IN. Under
               // everything, no label, no glow — just the fire.
@@ -177,10 +198,10 @@ export function TableView({ campaignId }: { campaignId: string }) {
                   key={token.id}
                   className={`absolute ${zone.animate ? 'animate-pulse' : ''}`}
                   style={{
-                    left: rect.left + token.u * nat.w * rect.scale,
-                    top: rect.top + token.v * nat.h * rect.scale,
+                    left: rect.left + token.u * nat.w * rect.sx,
+                    top: rect.top + token.v * nat.h * rect.sy,
                     width: size,
-                    height: size,
+                    height: sizeY,
                     background: zone.background,
                     boxShadow: zone.boxShadow,
                     transition: 'left 300ms, top 300ms',
@@ -209,10 +230,10 @@ export function TableView({ campaignId }: { campaignId: string }) {
                   isTurn || vitality === 'critical' ? 'animate-pulse' : ''
                 } ${vitality === 'bloodied' || vitality === 'critical' ? 'border-red-900' : 'border-stone-950/80'}`}
                 style={{
-                  left: rect.left + token.u * nat.w * rect.scale,
-                  top: rect.top + token.v * nat.h * rect.scale,
+                  left: rect.left + token.u * nat.w * rect.sx,
+                  top: rect.top + token.v * nat.h * rect.sy,
                   width: size,
-                  height: size,
+                  height: sizeY,
                   backgroundColor: token.color,
                   boxShadow: glow,
                   fontSize: Math.max(9, size * 0.28),
@@ -229,9 +250,10 @@ export function TableView({ campaignId }: { campaignId: string }) {
             fog={scene?.fog}
             left={rect.left}
             top={rect.top}
-            width={nat.w * rect.scale}
-            height={nat.h * rect.scale}
+            width={nat.w * rect.sx}
+            height={nat.h * rect.sy}
             cellPx={pxPerMapInch}
+            cellPxY={pxPerMapInchY ?? undefined}
           />
         )}
       </main>

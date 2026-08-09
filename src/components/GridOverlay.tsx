@@ -32,12 +32,16 @@ function rgba(hex: string, alpha: number): string {
 
 export function GridOverlay({
   cellPx,
+  cellPxY,
   grid,
 }: {
   cellPx: number;
+  /** Vertical cell size; differs from cellPx only on a stretched table. */
+  cellPxY?: number;
   grid?: { on: boolean; color?: string; opacity?: number };
 }) {
   if (grid?.on === false || !cellPx) return null;
+  const cellY = cellPxY || cellPx;
   const line = rgba(
     grid?.color ?? GRID_DEFAULTS.color,
     grid?.opacity ?? GRID_DEFAULTS.opacity,
@@ -47,7 +51,7 @@ export function GridOverlay({
       className="pointer-events-none absolute inset-0"
       style={{
         backgroundImage: `linear-gradient(to right, ${line} 0 1px, transparent 1px 100%), linear-gradient(to bottom, ${line} 0 1px, transparent 1px 100%)`,
-        backgroundSize: `${cellPx}px ${cellPx}px`,
+        backgroundSize: `${cellPx}px ${cellY}px`,
       }}
       aria-hidden
     />

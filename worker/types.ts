@@ -202,13 +202,24 @@ export type CampaignData = {
   /** Derived, /public responses only: the resolved active scene. */
   scene?: Scene | null;
   /**
-   * Display calibration for the TABLE screen: ppi = pixels per true
-   * inch, auto-derived from the TV's diagonal + reported resolution.
-   * This is what makes true-scale rendering physically honest; the
-   * grid itself is per-scene and drawn in map space.
+   * Display calibration for the TABLE screen: pixels per true inch,
+   * horizontally (`ppi`) and vertically (`ppiY`).
+   *
+   * Measured off the glass, not taken from the panel's spec: what we
+   * render into is the browser VIEWPORT, and TV overscan, a windowed
+   * browser or OS scaling all make the visible picture smaller than
+   * the panel — invisibly, and in a way a diagonal can't detect. The
+   * DM measures the picture teller actually draws, so the calibration
+   * absorbs all of that.
+   *
+   * Two axes because that measurement can also catch a stretched
+   * picture. On a correctly-configured display they match; when they
+   * don't, a true inch really is different across than down, and the
+   * table renders it that way so a 1" square is 1" in both directions.
+   * `ppiY` falls back to `ppi` (serializer normalises legacy rows).
    * (`on`/`ox`/`oy` are legacy from the screen-fixed grid.)
    */
-  grid?: { on?: boolean; ppi: number; ox?: number; oy?: number };
+  grid?: { on?: boolean; ppi: number; ppiY?: number; ox?: number; oy?: number };
   /**
    * The table client's self-reported viewport (CSS px) — telemetry,
    * not control; enables auto ppi (√(w²+h²) / diagonal inches).

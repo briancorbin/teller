@@ -45,6 +45,7 @@ export function SceneEditor({
   scene,
   combatRunning,
   ppi,
+  ppiY,
   tableDisplay,
   characters,
   live = true,
@@ -55,12 +56,14 @@ export function SceneEditor({
   scene: Scene;
   combatRunning: boolean;
   ppi?: number;
+  /** Vertical px per true inch; equals ppi on a well-behaved screen. */
+  ppiY?: number;
   tableDisplay?: { w: number; h: number };
   characters: { id: string; name: string; kind: 'pc' | 'npc' }[];
   /** Whether this scene is the one currently on the table. */
   live?: boolean;
-  /** Write the table display's calibration (px per true inch). */
-  onCalibrate?: (ppi: number) => void;
+  /** Write the table display's calibration (px per true inch, per axis). */
+  onCalibrate?: (ppi: number, ppiY: number) => void;
   /** Live — called on every committed edit (debounced upstream). */
   onChange: (next: Scene) => void;
   /** Omitted when the editor IS the surface (the map pane). */
@@ -84,7 +87,8 @@ export function SceneEditor({
   /** When set, painting continues that ground layer instead of a new one. */
   const [zoneEditId, setZoneEditId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [tvDiagonal, setTvDiagonal] = useState('');
+  const [tvWidth, setTvWidth] = useState('');
+  const [tvHeight, setTvHeight] = useState('');
   // Personal workshop preference (not scene data — the table never
   // needs to know how you placed a token, only where it ended up).
   const [snap, setSnap] = useState(() => localStorage.getItem(SNAP_PREF) !== '0');
@@ -114,6 +118,8 @@ export function SceneEditor({
 
   const view = draft.view ?? DEFAULT_VIEW;
   const showGrid = draft.grid?.on !== false;
+  /** Axes that disagree by more than rounding = the picture is stretched. */
+  const stretched = Boolean(ppi && ppiY && Math.abs(ppiY / ppi - 1) > 0.02);
   const tokens = draft.tokens ?? [];
   const selected = tokens.find((t) => t.id === selectedId) ?? null;
 
@@ -527,12 +533,14 @@ export function SceneEditor({
 
   // --- derived table frame --------------------------------------------------
 
-  const denom = (ppi ?? 0) * (draft.widthInches ?? 0) * (view.zoom || 1);
+  const zoomed = (draft.widthInches ?? 0) * (view.zoom || 1);
+  const denomX = (ppi ?? 0) * zoomed;
+  const denomY = (ppiY ?? ppi ?? 0) * zoomed;
   const frame =
-    view.mode === 'true' && denom > 0 && tableDisplay && nat
+    view.mode === 'true' && denomX > 0 && denomY > 0 && tableDisplay && nat
       ? {
-          fw: tableDisplay.w / denom,
-          fh: tableDisplay.h / (denom * (nat.h / nat.w)),
+          fw: tableDisplay.w / denomX,
+          fh: tableDisplay.h / (denomY * (nat.h / nat.w)),
         }
       : null;
 
@@ -1196,34 +1204,65 @@ export function SceneEditor({
                     <input
                       className={`${input} w-20`}
                       type="number"
-                      placeholder={'size"'}
-                      value={tvDiagonal}
-                      onChange={(e) => setTvDiagonal(e.target.value)}
-                      aria-label="table display diagonal in inches"
+                      placeholder={'width"'}
+                      value={tvWidth}
+                      onChange={(e) => setTvWidth(e.target.value)}
+                      aria-label="measured picture width in inches"
+                    />
+                    <span className="font-mono text-xs text-stone-600">×</span>
+                    <input
+                      className={`${input} w-20`}
+                      type="number"
+                      placeholder={'height"'}
+                      value={tvHeight}
+                      onChange={(e) => setTvHeight(e.target.value)}
+                      aria-label="measured picture height in inches"
                     />
                     <button
                       className="rounded-lg bg-stone-800 px-2.5 py-1.5 font-mono text-xs text-stone-300 hover:bg-stone-700"
-                      disabled={!Number(tvDiagonal)}
+                      disabled={!Number(tvWidth) || !Number(tvHeight)}
                       onClick={() => {
                         const { w, h } = tableDisplay;
+                        const round = (n: number) => Math.round(n * 10) / 10;
                         onCalibrate?.(
-                          Math.round((Math.hypot(w, h) / Number(tvDiagonal)) * 10) / 10,
+                          round(w / Number(tvWidth)),
+                          round(h / Number(tvHeight)),
                         );
                       }}
-                      title={`the table reports ${tableDisplay.w}×${tableDisplay.h}px — give its diagonal size for true inches`}
+                      title={`the table reports ${tableDisplay.w}×${tableDisplay.h}px — measure the PICTURE it's drawing, edge to edge, and give both sides`}
                     >
                       calibrate
                     </button>
                     <span className="font-mono text-xs text-stone-500">
-                      {ppi ? `${ppi.toFixed(1)} px/in` : 'not calibrated'}
+                      {ppi
+                        ? stretched
+                          ? `${ppi.toFixed(1)} × ${(ppiY ?? ppi).toFixed(1)} px/in`
+                          : `${ppi.toFixed(1)} px/in`
+                        : 'not calibrated'}
                     </span>
                   </>
                 ) : (
                   <span className="text-xs text-stone-600">
-                    open /table on the TV once to enable calibration
+                    put a screen on the table role once to enable calibration
                   </span>
                 )}
               </div>
+
+              {/* Measure the picture, not the panel: overscan and
+                  windowing make them differ, invisibly. */}
+              <p className="pl-26 text-xs text-stone-600">
+                Measure the image on the table screen itself, corner to corner
+                of the picture — not the bezel, not the box's size.
+              </p>
+              {stretched && (
+                <p className="pl-26 text-xs text-amber-500/80">
+                  Those axes disagree by{' '}
+                  {Math.round(Math.abs((ppiY ?? 0) / (ppi ?? 1) - 1) * 100)}% — the
+                  table is stretching the picture. teller will draw true inches
+                  correctly anyway, but the TV's aspect/zoom setting is worth a
+                  look.
+                </p>
+              )}
 
               <div className="flex items-center gap-2">
                 <span className="w-24 font-mono text-xs uppercase tracking-wider text-stone-500">

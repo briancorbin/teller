@@ -14,6 +14,7 @@ export function FogLayer({
   width,
   height,
   cellPx,
+  cellPxY,
   dm = false,
 }: {
   fog?: Fog;
@@ -22,12 +23,15 @@ export function FogLayer({
   width: number;
   height: number;
   cellPx: number;
+  /** Vertical cell size; differs only on a stretched table. */
+  cellPxY?: number;
   dm?: boolean;
 }) {
   const uid = useId();
   if (!fog?.on || !cellPx || !width || !height) return null;
-  const blur = cellPx * 0.28;
-  const bleed = cellPx * 0.12; // let neighbours meet before the blur
+  const cellY = cellPxY || cellPx;
+  const blur = Math.min(cellPx, cellY) * 0.28;
+  const bleed = Math.min(cellPx, cellY) * 0.12; // let neighbours meet before the blur
   // What's actually clear: freeform reveals plus every revealed region.
   // (The table receives this already flattened; recomputing is a no-op
   // there and keeps the console honest.)
@@ -56,9 +60,9 @@ export function FogLayer({
               <rect
                 key={i}
                 x={c * cellPx - bleed}
-                y={r * cellPx - bleed}
+                y={r * cellY - bleed}
                 width={cellPx + bleed * 2}
-                height={cellPx + bleed * 2}
+                height={cellY + bleed * 2}
                 rx={cellPx * 0.3}
                 fill="black"
               />
