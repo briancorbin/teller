@@ -18,6 +18,7 @@ import type {
   SessionState,
   SystemTemplate,
 } from '../../worker/types';
+import type { BundleSummary } from '../../worker/import';
 
 const DM_KEY_STORAGE = 'teller.dmKey';
 const DISPLAY_ID_STORAGE = 'teller.displayId';
@@ -307,6 +308,49 @@ export const api = {
 
   deletePack: (id: string) =>
     req<{ ok: true }>(`/api/packs/${id}`, { method: 'DELETE' }),
+
+  // --- .tell bundles -----------------------------------------------------
+  // A whole game in one file: import merges what's present and skips what
+  // isn't, export is also the backup.
+  inspectBundle: (file: File) =>
+    req<BundleSummary>('/api/bundles/inspect', { method: 'POST', body: file }),
+
+  importBundle: (file: File, opts: { campaignId?: string; sections?: string[] } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.campaignId) params.set('campaign', opts.campaignId);
+    if (opts.sections) params.set('sections', opts.sections.join(','));
+    const query = params.toString();
+    return req<{ campaignId: string; applied: string[]; skipped: string[] }>(
+      `/api/bundles/import${query ? `?${query}` : ''}`,
+      { method: 'POST', body: file },
+    );
+  },
+
+  /**
+   * Download a campaign as a .tell file.
+   *
+   * Fetched rather than linked: export needs the key, and a plain
+   * `<a download>` sends no headers — it would just 401. The key could
+   * ride in the query string instead, but secrets don't belong in URLs
+   * where history and logs can keep them.
+   *
+   * The cost is that the bundle is assembled in memory before it's
+   * saved. Same known limit as import, and the same follow-up.
+   */
+  downloadBundle: async (campaignId: string, name: string) => {
+    const res = await fetch(`/api/campaigns/${campaignId}/export`, {
+      headers: authHeaders(new Headers()),
+    });
+    if (!res.ok) throw new Error(`export failed (${res.status})`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'campaign'}.tell`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
 
   sessionOp: (campaignId: string, op: SessionOp) =>
     req<SessionState>(

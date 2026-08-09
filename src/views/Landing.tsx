@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Campaign, SystemTemplate } from '../../worker/types';
+import type { BundleSummary } from '../../worker/import';
 import { api, getDmKey, setDmKey } from '../lib/api';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
 
@@ -19,6 +20,11 @@ export function Landing({
   const [name, setName] = useState('');
   const [system, setSystem] = useState('');
   const [error, setError] = useState('');
+  const [bundle, setBundle] = useState<{ file: File; summary: BundleSummary } | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     api.templates().then((t) => {
@@ -37,6 +43,32 @@ export function Landing({
       })
       .catch((e) => setError(String(e instanceof Error ? e.message : e)));
   }, [key]);
+
+  // Look before unpacking: a bundle says what it holds, and taking it is
+  // a second, deliberate act.
+  const look = async (file: File) => {
+    setError('');
+    setBusy(true);
+    try {
+      setBundle({ file, summary: await api.inspectBundle(file) });
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const take = async () => {
+    if (!bundle) return;
+    setBusy(true);
+    try {
+      const result = await api.importBundle(bundle.file);
+      onOpen(result.campaignId);
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+      setBusy(false);
+    }
+  };
 
   const create = async () => {
     if (!name.trim()) return;
@@ -91,6 +123,19 @@ export function Landing({
                   <span className="truncate text-stone-100">{c.name}</span>
                   <span className="ml-3 font-mono text-xs text-stone-500">{c.system}</span>
                 </button>
+                {/* Export is the backup: on your own host there is no
+                    copy anywhere else. */}
+                <button
+                  className="rounded-md px-2 py-1 text-sm text-stone-600 transition-colors hover:bg-stone-800 hover:text-amber-400"
+                  title="save this campaign as a .tell file"
+                  onClick={() =>
+                    api
+                      .downloadBundle(c.id, c.name)
+                      .catch((e) => setError(String(e instanceof Error ? e.message : e)))
+                  }
+                >
+                  ↓
+                </button>
                 <button
                   className="rounded-md px-2 py-1 text-sm text-stone-600 transition-colors hover:bg-red-950 hover:text-red-300"
                   title="delete campaign"
@@ -108,6 +153,71 @@ export function Landing({
           </ul>
         </section>
       )}
+
+      {/* A whole game in one file. Pick it, see what's inside, take it. */}
+      <section className={`${card} space-y-3`}>
+        <span className={sectionLabel}>Open a .tell file</span>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".tell,.zip,application/zip"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void look(file);
+            e.target.value = '';
+          }}
+        />
+        {!bundle ? (
+          <div className="flex items-center gap-3">
+            <button
+              className={btnPrimary}
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              choose a file…
+            </button>
+            <span className="text-sm text-stone-500">
+              a system, a campaign, foes, maps — whatever it carries
+            </span>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between">
+              <span className="font-serif text-lg text-stone-100">
+                {bundle.summary.manifest.name}
+              </span>
+              <span className="font-mono text-[11px] text-stone-600">
+                {bundle.summary.manifest.system}
+              </span>
+            </div>
+            <ul className="space-y-0.5">
+              {bundle.summary.sections.map((s) => (
+                <li key={s.name} className="text-sm text-stone-400">
+                  <span className="font-mono text-amber-400">{s.count}</span> {s.label}
+                </li>
+              ))}
+            </ul>
+            {bundle.summary.missingSystem && (
+              <p className="text-sm text-amber-500/80">
+                Needs the “{bundle.summary.missingSystem}” system, which this
+                bundle doesn't include — import its core file first.
+              </p>
+            )}
+            <div className="flex items-center gap-2">
+              <button className={btnPrimary} disabled={busy} onClick={take}>
+                {busy ? 'unpacking…' : 'bring it in'}
+              </button>
+              <button
+                className="text-sm text-stone-600 hover:text-stone-300"
+                onClick={() => setBundle(null)}
+              >
+                cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <section className={`${card} space-y-3`}>
         <span className={sectionLabel}>New campaign</span>

@@ -51,21 +51,24 @@ export async function inspect(buffer: ArrayBuffer): Promise<BundleSummary> {
     ((await readJson<unknown[]>(files, name)) ?? []).length;
 
   const sections: BundleSummary['sections'] = [];
-  const add = (name: string, n: number, label: string) => {
-    if (n > 0) sections.push({ name, count: n, label });
+  // Counts are read aloud beside the number, so they have to agree with
+  // it — "1 foes" is the kind of small wrongness that makes a tool feel
+  // unfinished.
+  const add = (name: string, n: number, one: string, many = `${one}s`) => {
+    if (n > 0) sections.push({ name, count: n, label: n === 1 ? one : many });
   };
 
   if (files.has('system.json')) add('system', 1, 'the system itself');
   if (files.has('campaign.json')) add('campaign', 1, 'campaign settings');
-  add('bestiary', await count('bestiary.json'), 'foes');
-  add('characters', await count('characters.json'), 'characters');
-  add('pack', await count('pack.json'), 'rules packs');
-  add('scenes', await count('scenes.json'), 'maps');
-  add('handouts', await count('handouts.json'), 'handouts');
-  add('books', await count('books.json'), 'books (indexes only)');
+  add('bestiary', await count('bestiary.json'), 'foe');
+  add('characters', await count('characters.json'), 'character');
+  add('pack', await count('pack.json'), 'rules pack');
+  add('scenes', await count('scenes.json'), 'map');
+  add('handouts', await count('handouts.json'), 'handout');
+  add('books', await count('books.json'), 'book, already indexed', 'books, already indexed');
 
   const assets = [...files.keys()].filter((n) => n.startsWith('assets/')).length;
-  add('assets', assets, 'images');
+  add('assets', assets, 'image');
 
   const summary: BundleSummary = { manifest, sections };
   if (!files.has('system.json')) {
