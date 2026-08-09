@@ -76,6 +76,16 @@ export function EncounterPanel({
   const [draft, setDraft] = useState('');
   /** How many of the next thing you tap — set once, tap several. */
   const [count, setCount] = useState(1);
+  /** Rows opened to show the whole sheet. Running a monster shouldn't
+   *  mean leaving the fight to go and read it. */
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const toggleOpen = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const initiative = session?.initiative ?? [];
   const turn = session?.turn ?? null;
   const running = turn !== null;
@@ -168,7 +178,20 @@ export function EncounterPanel({
                 <span className="w-5 text-right font-mono text-xs text-stone-500">
                   {index + 1}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-sm">{entry.label}</span>
+                {character ? (
+                  <button
+                    className="min-w-0 flex-1 truncate text-left text-sm hover:text-stone-100"
+                    onClick={() => toggleOpen(entry.id)}
+                    title="show the whole sheet"
+                  >
+                    {entry.label}
+                    <span className="ml-1.5 font-mono text-[10px] text-stone-600">
+                      {open.has(entry.id) ? '▾' : '▸'}
+                    </span>
+                  </button>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-sm">{entry.label}</span>
+                )}
 
                 {counter && character && (
                   <span className="flex items-center gap-1">
@@ -227,6 +250,58 @@ export function EncounterPanel({
                   ✕
                 </button>
               </div>
+
+              {character && open.has(entry.id) && (
+                <div className="space-y-1.5 pl-6 pr-1">
+                  {character.data.fields.filter((f) => f.value).length > 0 && (
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+                      {character.data.fields
+                        .filter((f) => f.value)
+                        .map((f) => (
+                          <span key={f.key} className="font-mono text-[11px]">
+                            <span className="text-stone-500">{f.label} </span>
+                            <span className="text-stone-200">{f.value}</span>
+                          </span>
+                        ))}
+                    </div>
+                  )}
+                  {/* Every other counter, not just the vital one. */}
+                  {character.data.counters
+                    .filter((c) => c.id !== counter?.id)
+                    .map((c) => (
+                      <div key={c.id} className="flex items-center gap-1">
+                        <span className="min-w-20 font-mono text-[11px] text-stone-500">
+                          {c.name}
+                        </span>
+                        <button
+                          className={btnGhost}
+                          onClick={() => bump(character, c, -1)}
+                          aria-label={`${c.name} down`}
+                        >
+                          −
+                        </button>
+                        <span className="min-w-10 text-center font-mono text-[11px]">
+                          {c.current}
+                          {c.max !== null && (
+                            <span className="text-stone-500">/{c.max}</span>
+                          )}
+                        </span>
+                        <button
+                          className={btnGhost}
+                          onClick={() => bump(character, c, 1)}
+                          aria-label={`${c.name} up`}
+                        >
+                          +
+                        </button>
+                      </div>
+                    ))}
+                  {character.data.notes && (
+                    <p className="whitespace-pre-wrap text-[11px] leading-snug text-stone-400">
+                      {character.data.notes}
+                    </p>
+                  )}
+                </div>
+              )}
 
               {character && (states.length > 0 || offers.length > 0) && (
                 <div className="flex flex-wrap items-center gap-1 pl-6">
