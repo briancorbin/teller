@@ -20,6 +20,9 @@ const PANES = ['session', 'map', 'characters', 'library', 'displays'] as const;
 
 const COLORS = ['#f59e0b', '#38bdf8', '#a3e635', '#f472b6', '#c084fc', '#fb7185'];
 
+/** Starting points only — a slot is any short name you like. */
+const SLOT_SUGGESTIONS = ['tv', 'board', 'art', 'seat'];
+
 /** A screen is "live" if it has spoken to us lately. */
 function isLive(display: Display): boolean {
   const seen = Date.parse(display.lastSeenAt.replace(' ', 'T') + 'Z');
@@ -89,6 +92,30 @@ export function DisplaysPanel({
           </button>
         </div>
         {error && <p className="text-sm text-red-400">{error}</p>}
+
+        {/*
+          A fragment gives this machine another screen, and nothing in
+          the UI would otherwise hint that it exists. Offer it where
+          you'd want it: while you're trying to add a screen and haven't
+          got a spare device in your hand.
+        */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 text-sm text-stone-500">
+          <span>No spare device? Open one on this machine:</span>
+          {SLOT_SUGGESTIONS.map((slot) => (
+            <a
+              key={slot}
+              className="rounded-full bg-stone-900 px-2 py-0.5 font-mono text-xs text-stone-300 transition-colors hover:bg-stone-800 hover:text-stone-100"
+              href={`/#${slot}`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              #{slot}
+            </a>
+          ))}
+          <span className="text-stone-600">
+            — any name works, and each one is its own screen
+          </span>
+        </div>
       </section>
 
       {displays.map((d) => {
