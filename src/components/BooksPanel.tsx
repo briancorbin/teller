@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Book, BookHit } from '../../worker/types';
+import { useRef, useState } from 'react';
+import type { BookHit } from '../../worker/types';
 import { api } from '../lib/api';
+import { useBooks } from '../lib/use-books';
 import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui';
+import { BookReader, type BookTarget } from './BookReader';
 
 // Rulebooks.
 //
@@ -39,30 +41,16 @@ function Snippet({ text }: { text: string }) {
 }
 
 export function BooksPanel({ system }: { system: string }) {
-  const [books, setBooks] = useState<Book[]>([]);
+  // The shelf is shared — a book added here shows up in the rules panel's
+  // "you have this book" check without either panel knowing the other.
+  const { books, refresh } = useBooks();
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<BookHit[] | null>(null);
   const [total, setTotal] = useState(0);
-  const [open, setOpen] = useState<{ url: string; name: string; page: number } | null>(
-    null,
-  );
+  const [open, setOpen] = useState<BookTarget | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
-
-  const load = useCallback(() => {
-    api.books().then(setBooks).catch(() => setBooks([]));
-  }, []);
-  useEffect(load, [load]);
-
-  // A book the host is still reading becomes searchable partway through
-  // this poll, so keep looking while any of them is unread.
-  const reading = books.some((b) => !b.indexed);
-  useEffect(() => {
-    if (!reading) return;
-    const timer = setInterval(load, 3000);
-    return () => clearInterval(timer);
-  }, [reading, load]);
 
   const add = async (file: File) => {
     setError('');
@@ -71,7 +59,7 @@ export function BooksPanel({ system }: { system: string }) {
       const { duplicate, book } = await api.addBook(file, system);
       setBusy('');
       if (duplicate) setError(`You already have “${book.name}” — same book, same bytes.`);
-      load();
+      refresh();
     } catch (e) {
       setBusy('');
       setError(String(e instanceof Error ? e.message : e));
@@ -89,14 +77,8 @@ export function BooksPanel({ system }: { system: string }) {
     }
   };
 
-  const openAt = async (bookId: string, page: number, name: string) => {
-    try {
-      const { url } = await api.bookTicket(bookId);
-      setOpen({ url, name, page });
-    } catch {
-      setError(`“${name}” isn't on this host.`);
-    }
-  };
+  const openAt = (bookId: string, page: number, name: string) =>
+    setOpen({ bookId, page, name });
 
   return (
     <section className={`${card} space-y-3`}>
@@ -163,7 +145,7 @@ export function BooksPanel({ system }: { system: string }) {
               onClick={async () => {
                 if (!window.confirm(`Remove "${book.name}" from this host?`)) return;
                 await api.deleteBook(book.id).catch(() => {});
-                load();
+                refresh();
               }}
             >
               ✕
@@ -193,21 +175,7 @@ export function BooksPanel({ system }: { system: string }) {
 
       {error && <p className="text-sm text-amber-500/80">{error}</p>}
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-stone-950">
-          <div className="flex items-center gap-2 border-b border-stone-800 p-2">
-            <span className="font-serif text-lg text-stone-200">{open.name}</span>
-            <button className={`${btn} ml-auto`} onClick={() => setOpen(null)}>
-              close
-            </button>
-          </div>
-          <iframe
-            title={open.name}
-            className="flex-1"
-            src={`${open.url}#page=${open.page}`}
-          />
-        </div>
-      )}
+      {open && <BookReader target={open} onClose={() => setOpen(null)} />}
     </section>
   );
 }
