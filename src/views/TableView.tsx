@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import { ConnectionHint } from '../components/ConnectionHint';
+import { GridOverlay } from '../components/GridOverlay';
 
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the battle map full-bleed when one's up, idle
@@ -42,6 +43,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
           alt=""
           className="absolute inset-0 h-full w-full object-contain"
         />
+        <GridOverlay />
       </main>
     );
   }
