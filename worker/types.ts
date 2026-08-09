@@ -334,11 +334,34 @@ export type PackSection = {
   entries: PackEntry[];
 };
 
+/**
+ * A pack: the unit of content.
+ *
+ * Distilled rulings AND the monsters they describe. That's a working
+ * table on its own — most Wardens own paper, and a pack needs no PDF to
+ * be useful. A book, when you have one, attaches by hash and adds the
+ * page and the art. Enrichment, never a prerequisite.
+ */
 export type RulesPack = {
   system: string;
   name: string;
   version: number;
   sections: PackSection[];
+  /**
+   * The bestiary this pack brings. Having the pack means having the
+   * foes, the way having the book on a shelf does — instead of every
+   * new campaign starting empty.
+   */
+  npcs?: NpcBlueprint[];
+  /**
+   * Book ids (content hashes) this pack is about. A LIST, because the
+   * hash is of exact bytes and a corrected re-upload or a copy from
+   * another store is a different hash for the same book.
+   *
+   * It identifies, it does not authorise: a pack whose book is absent
+   * still works completely. Only "jump to the page" is missing.
+   */
+  books?: string[];
 };
 
 /**

@@ -21,6 +21,7 @@ import {
 import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
 import { bundleFilename, exportCampaign } from './bundle';
+import { bestiaryFor, findBlueprint } from './bestiary';
 import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
 import type {
@@ -184,9 +185,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     )
       .bind(m[1])
       .all();
+    const campaign = toCampaign(row as never);
     return json({
-      campaign: toCampaign(row as never),
+      campaign,
       characters: chars.results.map((r) => toCharacter(r as never)),
+      // The whole shelf: what your packs bring plus what this campaign
+      // wrote itself, with the campaign's own version winning.
+      bestiary: await bestiaryFor(env, campaign.system, campaign.data.npcs ?? []),
     });
   }
 
@@ -859,7 +864,14 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .first();
     if (!row) return err('campaign not found', 404);
     const campaign = toCampaign(row as never);
-    const blueprint = (campaign.data.npcs ?? []).find((n) => n.id === body.npcId);
+    // Foes come from the campaign OR from any pack for this system —
+    // having the pack means having the monsters.
+    const blueprint = await findBlueprint(
+      env,
+      campaign.system,
+      campaign.data.npcs ?? [],
+      body.npcId ?? '',
+    );
     if (!blueprint) return err('npc not found', 404);
     const count = Math.min(20, Math.max(1, Math.round(body.count ?? 1)));
 

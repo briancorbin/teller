@@ -1,11 +1,11 @@
 import { useState } from 'react';
+import type { SourcedNpc } from '../../worker/bestiary';
 import type {
   Character,
   CharacterData,
   Counter,
   EncounterState,
   InitiativeEntry,
-  NpcBlueprint,
   SessionOp,
   SessionState,
 } from '../../worker/types';
@@ -65,7 +65,7 @@ export function EncounterPanel({
   characters: Character[];
   states: EncounterState[];
   /** The bestiary — stamp these out into the fight. */
-  npcs: NpcBlueprint[];
+  npcs: SourcedNpc[];
   /** Character ids that already have a token on the active scene. */
   tokenLinks: Set<string>;
   onOp: (op: SessionOp) => void;
@@ -370,7 +370,13 @@ export function EncounterPanel({
               key={n.id}
               className={btnGhost}
               onClick={() => onSpawn(n.id, count)}
-              title={`add ${count} × ${n.name} to the fight`}
+              // Where a foe came from belongs in the tooltip, not the
+              // label — mid-fight you want the name, not its provenance.
+              title={
+                n.from
+                  ? `add ${count} × ${n.name} — from ${n.from}`
+                  : `add ${count} × ${n.name} to the fight`
+              }
             >
               + {n.name}
             </button>

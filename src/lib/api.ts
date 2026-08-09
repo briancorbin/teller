@@ -19,6 +19,7 @@ import type {
   SystemTemplate,
 } from '../../worker/types';
 import type { BundleSummary } from '../../worker/import';
+import type { SourcedNpc } from '../../worker/bestiary';
 
 const DM_KEY_STORAGE = 'teller.dmKey';
 const DISPLAY_ID_STORAGE = 'teller.displayId';
@@ -126,7 +127,7 @@ export const api = {
     ),
 
   getCampaign: (id: string) =>
-    req<{ campaign: Campaign; characters: Character[] }>(
+    req<{ campaign: Campaign; characters: Character[]; bestiary: SourcedNpc[] }>(
       `/api/campaigns/${id}`,
     ),
 

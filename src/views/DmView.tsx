@@ -8,6 +8,7 @@ import type {
   Scene,
 } from '../../worker/types';
 import { api, ApiError, getDmKey, newLocalId, setDmKey } from '../lib/api';
+import type { SourcedNpc } from '../../worker/bestiary';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
@@ -53,6 +54,8 @@ export function DmView({
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [error, setError] = useState('');
+  // Pack foes plus this campaign's own, already merged by the server.
+  const [bestiary, setBestiary] = useState<SourcedNpc[]>([]);
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
   const [notice, setNotice] = useState('');
@@ -67,9 +70,10 @@ export function DmView({
   const refetch = useCallback(() => {
     api
       .getCampaign(campaignId)
-      .then(({ campaign, characters }) => {
+      .then(({ campaign, characters, bestiary }) => {
         setCampaign(campaign);
         setCharacters(characters);
+        setBestiary(bestiary ?? []);
         setError('');
       })
       .catch((e) => {
@@ -323,7 +327,7 @@ export function DmView({
       session={session}
       characters={characters}
       states={campaign.data.states ?? []}
-      npcs={campaign.data.npcs ?? []}
+      npcs={bestiary}
       onSpawn={spawnGroup}
       tokenLinks={tokenLinks}
       onOp={(op) => api.sessionOp(campaignId, op).catch(() => refetch())}
