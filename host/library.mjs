@@ -150,6 +150,25 @@ export async function sweep(db, data, { quiet = false } = {}) {
     onDisk.set(real, renamed);
   }
 
+  // A book dropped into the folder can't say which game it belongs to —
+  // it's a file, not a declaration. But a pack names the books it's
+  // about, so let the reference answer the question. Only fills blanks;
+  // a system someone set by hand is theirs (rule 1).
+  for (const pack of db.prepare('SELECT system, data FROM packs').all()) {
+    let ids = [];
+    try {
+      ids = JSON.parse(pack.data).books ?? [];
+    } catch {
+      // A pack that isn't valid JSON has bigger problems than this.
+    }
+    for (const id of ids) {
+      db.prepare("UPDATE books SET system = ? WHERE id = ? AND system = ''").run(
+        pack.system,
+        id,
+      );
+    }
+  }
+
   // Rows whose file has gone. Left in place — the campaign still refers
   // to the book, and saying "you don't have this" is more use than
   // silently forgetting it existed.
