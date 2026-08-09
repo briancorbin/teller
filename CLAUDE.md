@@ -85,9 +85,17 @@ universal across systems.
 
 ### 6. Web-first; hardware is optional flare
 
-Four client surfaces, all browsers on the same worker:
-- `/dm/:campaignId` — DM console (authoritative controls)
-- `/table/:campaignId` — table TV renderer (passive, player-safe)
+Client surfaces, all browsers on the same worker:
+- `/dm/:campaignId` — DM console (authoritative controls; `?pane=`
+  renders focused slices)
+- `/table/:campaignId` — table TV renderer (passive, player-safe).
+  **The table is the GROUND, nothing else**: the active scene
+  full-bleed (+ grid overlay), or idle branding. No bookkeeping, no
+  notices, and NO controls of any kind — even display-ish settings
+  (grid calibration) are driven from the console and arrive over SSE.
+  Passive surfaces never grow buttons.
+- `/art/:campaignId` — fullscreen frame for the active handout
+  (passive, player-safe: public snapshot only)
 - `/board/:campaignId` — vertical player-facing companion display in
   front of the DM (passive, player-safe: consumes only the `/public`
   endpoint — seat tokens + notes stripped, NPC numbers never shown)
