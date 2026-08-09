@@ -5,7 +5,7 @@ import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { GridOverlay } from '../components/GridOverlay';
-import { zoneStyle } from '../components/token-visuals';
+import { tokenShapeStyle, zoneStyle } from '../components/token-visuals';
 
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the active scene (framed per its view + true
@@ -132,6 +132,27 @@ export function TableView({ campaignId }: { campaignId: string }) {
               : { visibility: 'hidden' }
           }
         />
+        {/* painted tile zones — ground effects on 1" map cells */}
+        {rect &&
+          nat &&
+          pxPerMapInch &&
+          (scene?.zones ?? []).map((zone) => {
+            const z = zoneStyle(zone.effect);
+            return zone.cells.map(([c, r]) => (
+              <div
+                key={`${zone.effect}:${c},${r}`}
+                className={`absolute rounded-[2px] ${z.animate ? 'animate-pulse' : ''}`}
+                style={{
+                  left: rect.left + c * pxPerMapInch,
+                  top: rect.top + r * pxPerMapInch,
+                  width: pxPerMapInch,
+                  height: pxPerMapInch,
+                  background: z.background,
+                  boxShadow: z.boxShadow,
+                }}
+              />
+            ));
+          })}
         {rect &&
           nat &&
           [...(scene?.tokens ?? [])]
@@ -147,9 +168,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
               return (
                 <div
                   key={token.id}
-                  className={`absolute -translate-x-1/2 -translate-y-1/2 rounded-full ${
-                    zone.animate ? 'animate-pulse' : ''
-                  }`}
+                  className={`absolute ${zone.animate ? 'animate-pulse' : ''}`}
                   style={{
                     left: rect.left + token.u * nat.w * rect.scale,
                     top: rect.top + token.v * nat.h * rect.scale,
@@ -158,6 +177,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
                     background: zone.background,
                     boxShadow: zone.boxShadow,
                     transition: 'left 300ms, top 300ms',
+                    ...tokenShapeStyle(token),
                   }}
                 />
               );

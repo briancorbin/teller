@@ -1,8 +1,20 @@
-import type { TokenEffect } from '../../worker/types';
+import type { Token, TokenEffect } from '../../worker/types';
 
 // Zone token render vocabulary — presentation only, shared by the
 // scene editor preview and the table. Fire is drawn; what fire DOES
 // stays with the humans (docs/BATTLEMAP.md).
+
+/** Centering + zone footprint (shape/rotation) as inline transform. */
+export function tokenShapeStyle(token: Token): React.CSSProperties {
+  const rot = token.rot ?? 0;
+  const shape = token.shape ?? 'circle';
+  return {
+    transform: `translate(-50%, -50%) rotate(${rot}deg)`,
+    borderRadius: shape === 'circle' ? '9999px' : shape === 'square' ? '4px' : '0',
+    clipPath:
+      shape === 'triangle' ? 'polygon(50% 0%, 100% 100%, 0% 100%)' : undefined,
+  };
+}
 
 export const TOKEN_EFFECTS: { value: TokenEffect; label: string }[] = [
   { value: 'fire', label: 'fire' },

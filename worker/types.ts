@@ -93,6 +93,20 @@ export type Token = {
   color: string;
   characterId?: string | null;
   effect?: TokenEffect;
+  /** Zone tokens only: footprint shape (default circle). */
+  shape?: 'circle' | 'square' | 'triangle';
+  /** Zone tokens only: rotation in degrees (45° steps from the editor). */
+  rot?: number;
+};
+
+/**
+ * Ground effects painted onto map-space 1-inch tiles (cells indexed
+ * [col, row] from the map origin; requires widthInches). One entry
+ * per effect. Painted in the scene editor, rendered under everything.
+ */
+export type TileZone = {
+  effect: TokenEffect;
+  cells: [number, number][];
 };
 
 /**
@@ -108,6 +122,7 @@ export type Scene = {
   widthInches?: number;
   view?: SceneView;
   tokens?: Token[];
+  zones?: TileZone[];
 };
 
 export type CampaignData = {
