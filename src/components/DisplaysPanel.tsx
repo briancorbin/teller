@@ -101,10 +101,21 @@ export function DisplaysPanel({
                 style={{ backgroundColor: isLive(d) ? d.color || '#f59e0b' : '#44403c' }}
                 title={isLive(d) ? 'live' : `last seen ${d.lastSeenAt}`}
               />
+              {/*
+                Uncontrolled and committed on blur, deliberately: a
+                round trip per keystroke means the refetch lands mid-word
+                and overwrites what you're still typing. Same reason
+                CharacterCard names work this way.
+              */}
               <input
                 className={`${input} min-w-0 flex-1`}
-                value={d.name}
-                onChange={(e) => patch(d.id, { name: e.target.value })}
+                defaultValue={d.name}
+                aria-label="screen name"
+                onBlur={(e) => {
+                  const name = e.target.value.trim();
+                  if (name && name !== d.name) patch(d.id, { name });
+                }}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               />
               <button
                 className="rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
