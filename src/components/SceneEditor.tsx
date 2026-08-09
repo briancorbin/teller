@@ -12,11 +12,17 @@ const DEFAULT_VIEW: SceneView = { mode: 'fit', zoom: 1, cu: 0.5, cv: 0.5 };
 export function SceneEditor({
   scene,
   combatRunning,
+  ppi,
+  tableDisplay,
   onSave,
   onClose,
 }: {
   scene: Scene;
   combatRunning: boolean;
+  /** The table display's calibrated px-per-inch (from the grid). */
+  ppi?: number;
+  /** The table client's self-reported viewport. */
+  tableDisplay?: { w: number; h: number };
   onSave: (next: Scene) => void;
   onClose: () => void;
 }) {
@@ -24,11 +30,26 @@ export function SceneEditor({
     ...scene,
     view: scene.view ?? DEFAULT_VIEW,
   });
+  const [, setLoaded] = useState(false); // re-render once img has layout
   const confirmedRef = useRef(false);
   const draggingRef = useRef(false);
   const imgRef = useRef<HTMLImageElement | null>(null);
 
   const view = draft.view ?? DEFAULT_VIEW;
+
+  // The exact region the table will show, as fractions of the map:
+  // visible map inches = table px / (ppi × zoom); over widthInches.
+  const img = imgRef.current;
+  const denom = (ppi ?? 0) * (draft.widthInches ?? 0) * (view.zoom || 1);
+  const frame =
+    view.mode === 'true' && denom > 0 && tableDisplay && img && img.naturalWidth
+      ? {
+          fw: tableDisplay.w / denom,
+          fh:
+            tableDisplay.h /
+            (denom * (img.naturalHeight / img.naturalWidth)),
+        }
+      : null;
 
   // Soft lock: physical minis stand on the current framing. Warn once
   // per editor open while initiative is running; never forbid.
@@ -74,7 +95,7 @@ export function SceneEditor({
       </header>
 
       <div
-        className="relative min-h-0 flex-1 touch-none select-none"
+        className="relative min-h-0 flex-1 touch-none select-none overflow-hidden"
         onPointerDown={(e) => {
           if (view.mode !== 'true' || !framingAllowed()) return;
           draggingRef.current = true;
@@ -90,20 +111,31 @@ export function SceneEditor({
           alt={draft.name}
           className="absolute inset-0 m-auto max-h-full max-w-full"
           draggable={false}
+          onLoad={() => setLoaded(true)}
         />
-        {view.mode === 'true' && (
-          <div
-            className="pointer-events-none absolute h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-400"
-            style={{
-              left: imgRef.current
-                ? imgRef.current.offsetLeft + view.cu * imgRef.current.offsetWidth
-                : '50%',
-              top: imgRef.current
-                ? imgRef.current.offsetTop + view.cv * imgRef.current.offsetHeight
-                : '50%',
-            }}
-            aria-hidden
-          />
+        {view.mode === 'true' && img && (
+          <>
+            {frame && (
+              <div
+                className="pointer-events-none absolute border-2 border-amber-400 bg-amber-400/10 shadow-[0_0_0_9999px_rgba(12,10,9,0.45)]"
+                style={{
+                  left: img.offsetLeft + (view.cu - frame.fw / 2) * img.offsetWidth,
+                  top: img.offsetTop + (view.cv - frame.fh / 2) * img.offsetHeight,
+                  width: frame.fw * img.offsetWidth,
+                  height: frame.fh * img.offsetHeight,
+                }}
+                aria-hidden
+              />
+            )}
+            <div
+              className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-amber-400"
+              style={{
+                left: img.offsetLeft + view.cu * img.offsetWidth,
+                top: img.offsetTop + view.cv * img.offsetHeight,
+              }}
+              aria-hidden
+            />
+          </>
         )}
       </div>
 
@@ -178,7 +210,7 @@ export function SceneEditor({
 
         <p className="basis-full text-xs leading-snug text-stone-600">
           {view.mode === 'true'
-            ? 'tap or drag the map to move the viewport center (amber dot); 1.00× = exact inches on a calibrated table'
+            ? 'tap or drag to frame — the amber box is exactly what the table shows; 1.00× = exact inches on a calibrated table'
             : 'fit shows the whole map; switch to true scale for combat once the grid is calibrated'}
           {combatRunning && ' · combat is running — framing changes will ask first'}
         </p>
