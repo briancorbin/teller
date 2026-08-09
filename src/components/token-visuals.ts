@@ -4,6 +4,18 @@ import type { Token, TokenEffect } from '../../worker/types';
 // scene editor preview and the table. Fire is drawn; what fire DOES
 // stays with the humans (docs/BATTLEMAP.md).
 
+/** Marker token palette. */
+export const TOKEN_COLORS = [
+  '#dc2626',
+  '#d97706',
+  '#65a30d',
+  '#0d9488',
+  '#2563eb',
+  '#9333ea',
+  '#db2777',
+  '#57534e',
+];
+
 /** Centering + zone footprint (shape/rotation) as inline transform. */
 export function tokenShapeStyle(token: Token): React.CSSProperties {
   const rot = token.rot ?? 0;

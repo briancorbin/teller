@@ -67,6 +67,12 @@ export type SceneView = {
   zoom: number;
   cu: number;
   cv: number;
+  /**
+   * Framing is deliberate, not incidental: while locked, nothing in
+   * the editor can re-aim the table (physical minis are standing on
+   * this framing). Unlocking is one tap.
+   */
+  locked?: boolean;
 };
 
 /**

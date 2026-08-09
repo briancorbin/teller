@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { Scene, SceneView, Token, TokenEffect } from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { input } from '../lib/ui';
-import { TOKEN_EFFECTS, tokenShapeStyle, zoneBase, zoneStyle } from './token-visuals';
+import {
+  TOKEN_COLORS,
+  TOKEN_EFFECTS,
+  tokenShapeStyle,
+  zoneBase,
+  zoneStyle,
+} from './token-visuals';
 import { TileZones } from './TileZones';
 
 // The map workshop: a fullscreen canvas with floating tool overlays.
@@ -14,21 +20,13 @@ import { TileZones } from './TileZones';
 
 const DEFAULT_VIEW: SceneView = { mode: 'fit', zoom: 1, cu: 0.5, cv: 0.5 };
 
-export const TOKEN_COLORS = [
-  '#dc2626',
-  '#d97706',
-  '#65a30d',
-  '#0d9488',
-  '#2563eb',
-  '#9333ea',
-  '#db2777',
-  '#57534e',
-];
-
 const TOKEN_SIZES = [0.5, 1, 2, 3, 4, 6, 8];
 const TOKEN_SHAPES = ['circle', 'square', 'triangle'] as const;
 
-type Tool = 'pan' | 'frame' | 'paint';
+// 'select' is the safe default: it drags tokens, and a drag on empty
+// map pans the workshop view rather than re-aiming the table. Aiming
+// the table is its own deliberate tool, and can be locked outright.
+type Tool = 'select' | 'pan' | 'frame' | 'paint';
 type Cell = [number, number];
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
@@ -62,7 +60,7 @@ export function SceneEditor({
     ...scene,
     view: scene.view ?? DEFAULT_VIEW,
   });
-  const [tool, setTool] = useState<Tool>('frame');
+  const [tool, setTool] = useState<Tool>('select');
   const [brush, setBrush] = useState<TokenEffect>('fire');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showGrid, setShowGrid] = useState(true);
@@ -119,6 +117,8 @@ export function SceneEditor({
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
+    // Seed immediately; the observer keeps it honest on resize.
+    setSize({ w: el.clientWidth, h: el.clientHeight });
     const ro = new ResizeObserver(([entry]) =>
       setSize({
         w: entry.contentRect.width,
@@ -129,18 +129,23 @@ export function SceneEditor({
     return () => ro.disconnect();
   }, []);
 
-  // Measure via ref AND onLoad: a cached image completes before React
-  // attaches the load listener, so onLoad alone silently misses and the
-  // whole geometry (grid, tiles, painting) never initialises.
-  const measure = (el: HTMLImageElement | null) => {
-    if (el && el.complete && el.naturalWidth) {
-      setNat((prev) =>
-        prev?.w === el.naturalWidth && prev?.h === el.naturalHeight
-          ? prev
-          : { w: el.naturalWidth, h: el.naturalHeight },
-      );
-    }
-  };
+  // Measure the map off to the side rather than off the rendered <img>:
+  // React's onLoad misses images the browser already has cached, and the
+  // whole geometry (grid, tiles, painting, framing) hangs off this.
+  useEffect(() => {
+    let alive = true;
+    const probe = new Image();
+    const take = () => {
+      if (alive && probe.naturalWidth)
+        setNat({ w: probe.naturalWidth, h: probe.naturalHeight });
+    };
+    probe.onload = take;
+    probe.src = `/api/maps/${draft.key}`;
+    if (probe.complete) take();
+    return () => {
+      alive = false;
+    };
+  }, [draft.key]);
 
   const fitScale = nat && size ? Math.min(size.w / nat.w, size.h / nat.h) : null;
   const baseW = nat && fitScale ? nat.w * fitScale : 0;
@@ -269,9 +274,11 @@ export function SceneEditor({
         e.preventDefault();
         undo();
       }
-      if (e.key === 'v') setTool('frame');
+      if (e.key === 'v') setTool('select');
+      if (e.key === 'f') setTool('frame');
       if (e.key === 'h') setTool('pan');
       if (e.key === 'b' && cols) setTool('paint');
+      if (e.key === 'l') setView({ locked: !view.locked });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -291,7 +298,9 @@ export function SceneEditor({
 
   const onPointerDown = (e: React.PointerEvent) => {
     capture(e);
-    if (tool === 'pan' || e.button === 1) {
+    // A drag on empty map never re-aims the table unless that's the
+    // tool you chose — it just moves your own view.
+    if (tool === 'pan' || tool === 'select' || e.button === 1) {
       dragRef.current = { kind: 'pan', x: e.clientX, y: e.clientY };
       return;
     }
@@ -304,7 +313,8 @@ export function SceneEditor({
       applyCell(brush, cell, op);
       return;
     }
-    // frame tool on empty map
+    // frame tool
+    if (view.locked) return;
     if (view.mode !== 'true') return;
     if (!framingAllowed()) return;
     mark();
@@ -383,8 +393,6 @@ export function SceneEditor({
             alt={draft.name}
             className="absolute inset-0 h-full w-full select-none"
             draggable={false}
-            ref={measure}
-            onLoad={(e) => measure(e.currentTarget)}
           />
 
           {cellPx && (
@@ -412,7 +420,11 @@ export function SceneEditor({
 
           {frame && (
             <div
-              className="pointer-events-none absolute border-2 border-amber-400 bg-amber-400/5"
+              className={`pointer-events-none absolute ${
+                view.locked
+                  ? 'border-dashed border-amber-500/60'
+                  : 'border-amber-400 bg-amber-400/5'
+              } border-2`}
               style={{
                 left: (view.cu - frame.fw / 2) * baseW,
                 top: (view.cv - frame.fh / 2) * baseH,
@@ -433,7 +445,7 @@ export function SceneEditor({
                 <button
                   key={token.id}
                   className={`absolute flex items-center justify-center font-mono font-bold text-stone-950 ${
-                    tool !== 'frame' ? 'pointer-events-none' : ''
+                    tool !== 'select' ? 'pointer-events-none' : ''
                   } ${zone?.animate ? 'animate-pulse' : ''} ${
                     selectedId === token.id ? 'ring-2 ring-amber-300' : ''
                   } ${!zone ? 'border-2 border-stone-950/70' : ''}`}
@@ -449,7 +461,7 @@ export function SceneEditor({
                     ...tokenShapeStyle(zone ? token : { ...token, shape: 'circle' }),
                   }}
                   onPointerDown={(e) => {
-                    if (tool !== 'frame') return;
+                    if (tool !== 'select') return;
                     e.stopPropagation();
                     capture(e);
                     mark();
@@ -535,12 +547,36 @@ export function SceneEditor({
       <div className="absolute left-3 top-1/2 flex -translate-y-1/2 flex-col gap-2">
         <div className={`flex flex-col gap-1 p-1 ${panel}`}>
           <button
-            className={toolBtn(tool === 'frame')}
-            onClick={() => setTool('frame')}
-            title="select & frame (V) — drag tokens, drag map to aim the table"
-            aria-label="frame tool"
+            className={toolBtn(tool === 'select')}
+            onClick={() => setTool('select')}
+            title="select (V) — drag tokens; drag the map to move your view"
+            aria-label="select tool"
           >
             ⊹
+          </button>
+          <button
+            className={toolBtn(tool === 'frame')}
+            onClick={() => setTool('frame')}
+            title={
+              view.locked
+                ? 'framing is locked — unlock below to aim the table'
+                : 'aim the table (F) — drag to move what the table shows'
+            }
+            aria-label="frame tool"
+          >
+            <span className={view.locked ? 'opacity-40' : ''}>▣</span>
+          </button>
+          <button
+            className={`${toolBtn(false)} ${view.locked ? 'text-amber-300' : 'text-stone-500'}`}
+            onClick={() => setView({ locked: !view.locked })}
+            title={
+              view.locked
+                ? 'framing locked — tap to allow re-aiming (L)'
+                : 'lock framing so it cannot be moved by accident (L)'
+            }
+            aria-label={view.locked ? 'unlock framing' : 'lock framing'}
+          >
+            {view.locked ? '🔒' : '🔓'}
           </button>
           <button
             className={toolBtn(tool === 'pan')}
@@ -851,10 +887,14 @@ export function SceneEditor({
         {tool === 'paint'
           ? `drag to paint ${brush} · tap a painted tile to erase`
           : tool === 'pan'
-            ? 'drag to move the workshop view · scroll to zoom'
-            : view.mode === 'true'
-              ? 'drag tokens to place · drag the map to aim the amber frame at the table'
-              : 'drag tokens to place · table is showing the whole map'}
+            ? 'drag to move your view · scroll to zoom'
+            : tool === 'frame'
+              ? view.locked
+                ? 'framing is locked — tap 🔒 to allow re-aiming'
+                : view.mode === 'true'
+                  ? 'drag to aim the amber frame — this moves what the table shows'
+                  : 'table is showing the whole map — switch to true scale in scene settings'
+              : 'drag tokens to place · drag the map to move your view · framing is safe'}
         {combatRunning && ' · combat running'}
       </p>
     </div>
