@@ -11,7 +11,7 @@ import {
 } from './token-visuals';
 import { TileZones } from './TileZones';
 import { FogLayer } from './FogLayer';
-import { GridOverlay } from './GridOverlay';
+import { GRID_COLORS, GRID_DEFAULTS, GridOverlay } from './GridOverlay';
 
 // The map workshop: a fullscreen canvas with floating tool overlays.
 // Edits are LIVE (debounced PATCH) like everything else in teller —
@@ -563,7 +563,7 @@ export function SceneEditor({
             />
           )}
 
-          {cellPx && <GridOverlay cellPx={cellPx} on={showGrid} />}
+          {cellPx && <GridOverlay cellPx={cellPx} grid={draft.grid} />}
 
           {cellPx && (
             <FogLayer
@@ -853,7 +853,10 @@ export function SceneEditor({
             className={toolBtn(showGrid)}
             onClick={() => {
               mark();
-              commit({ ...draftRef.current, grid: { on: !showGrid } });
+              commit({
+                ...draftRef.current,
+                grid: { ...(draftRef.current.grid ?? {}), on: !showGrid },
+              });
             }}
             title="this map's grid — the table shows the same lines"
             aria-label="toggle grid"
@@ -1075,6 +1078,61 @@ export function SceneEditor({
                   {cols ? `${cols} × ${Math.round(rows ?? 0)} squares` : 'needed for tiles'}
                 </span>
               </label>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-24 font-mono text-xs uppercase tracking-wider text-stone-500">
+                  grid
+                </span>
+                <div className="flex gap-1">
+                  {GRID_COLORS.map((c) => (
+                    <button
+                      key={c.value}
+                      className={`h-6 w-6 rounded border border-stone-700 ${
+                        (draft.grid?.color ?? GRID_DEFAULTS.color) === c.value
+                          ? 'ring-2 ring-stone-100'
+                          : ''
+                      }`}
+                      style={{ backgroundColor: c.value }}
+                      onClick={() =>
+                        commit({
+                          ...draftRef.current,
+                          grid: {
+                            ...(draftRef.current.grid ?? {}),
+                            on: showGrid,
+                            color: c.value,
+                          },
+                        })
+                      }
+                      aria-label={`grid colour ${c.label}`}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+                <input
+                  className="w-24 accent-amber-500"
+                  type="range"
+                  min={5}
+                  max={80}
+                  step={1}
+                  value={Math.round(
+                    (draft.grid?.opacity ?? GRID_DEFAULTS.opacity) * 100,
+                  )}
+                  onChange={(e) =>
+                    commit({
+                      ...draftRef.current,
+                      grid: {
+                        ...(draftRef.current.grid ?? {}),
+                        on: showGrid,
+                        opacity: Number(e.target.value) / 100,
+                      },
+                    })
+                  }
+                  aria-label="grid opacity"
+                />
+                <span className="font-mono text-xs text-stone-500">
+                  {Math.round((draft.grid?.opacity ?? GRID_DEFAULTS.opacity) * 100)}%
+                </span>
+              </div>
 
               <div className="flex items-center gap-2">
                 <span className="w-24 font-mono text-xs uppercase tracking-wider text-stone-500">

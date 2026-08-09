@@ -168,8 +168,10 @@ export type Scene = {
    * The grid belongs to the MAP, not the screen: drawn in map space on
    * the map's own inch lines, so it lines up with painted ground, fog
    * cells, and the workshop preview by construction. Default on.
+   * Colour and opacity are per-map too — a dark cave wants pale lines,
+   * bright sand wants dark ones.
    */
-  grid?: { on: boolean };
+  grid?: { on: boolean; color?: string; opacity?: number };
 };
 
 export type CampaignData = {

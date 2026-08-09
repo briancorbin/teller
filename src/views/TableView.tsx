@@ -146,7 +146,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
               height: nat.h * rect.scale,
             }}
           >
-            <GridOverlay cellPx={pxPerMapInch} on={scene?.grid?.on !== false} />
+            <GridOverlay cellPx={pxPerMapInch} grid={scene?.grid} />
           </div>
         )}
         {/* painted tile zones — one gooey layer of ground effects */}
