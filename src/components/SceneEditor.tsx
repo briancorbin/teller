@@ -76,6 +76,7 @@ export function SceneEditor({
   /** When set, fog painting edits that region's cells instead of the map. */
   const [regionEditId, setRegionEditId] = useState<string | null>(null);
   const [showFog, setShowFog] = useState(false);
+  const [showZones, setShowZones] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tvDiagonal, setTvDiagonal] = useState('');
   // Personal workshop preference (not scene data — the table never
@@ -319,13 +320,37 @@ export function SceneEditor({
     setShowFog(true);
   };
 
-  const revealZone = (effect: TokenEffect, hidden: boolean) =>
+  /**
+   * Flip a painted layer between shown and hidden. If the destination
+   * already has a layer of that effect the cells merge (deduped), so
+   * revealing a secret fire never leaves two fire layers behind.
+   */
+  const toggleZoneHidden = (effect: TokenEffect, fromHidden: boolean) => {
+    const d = draftRef.current;
+    const zones = [...(d.zones ?? [])];
+    const i = zones.findIndex((z) => z.effect === effect && !!z.hidden === fromHidden);
+    if (i < 0) return;
+    const moving = zones[i];
+    const j = zones.findIndex(
+      (z, k) => k !== i && z.effect === effect && !!z.hidden === !fromHidden,
+    );
+    if (j >= 0) {
+      const seen = new Set(zones[j].cells.map((c) => c.join(',')));
+      const merged = [...zones[j].cells];
+      for (const c of moving.cells) if (!seen.has(c.join(','))) merged.push(c);
+      zones[j] = { ...zones[j], cells: merged };
+      zones.splice(i, 1);
+    } else {
+      zones[i] = { ...moving, hidden: fromHidden ? undefined : true };
+    }
+    commit({ ...d, zones });
+  };
+
+  const deleteZone = (effect: TokenEffect, hidden: boolean) =>
     commit({
       ...draftRef.current,
-      zones: (draftRef.current.zones ?? []).map((z) =>
-        z.effect === effect && !!z.hidden === hidden
-          ? { ...z, hidden: hidden ? undefined : true }
-          : z,
+      zones: (draftRef.current.zones ?? []).filter(
+        (z) => !(z.effect === effect && !!z.hidden === hidden),
       ),
     });
 
@@ -884,19 +909,6 @@ export function SceneEditor({
             >
               {secret ? '🙈' : '👁'}
             </button>
-            {(draft.zones ?? []).some((z) => z.hidden) && (
-              <button
-                className="mt-1 rounded-lg px-1 py-1.5 text-[10px] leading-tight text-amber-300 hover:bg-stone-800"
-                onClick={() => {
-                  mark();
-                  const hiddenFx = (draftRef.current.zones ?? []).find((z) => z.hidden);
-                  if (hiddenFx) revealZone(hiddenFx.effect, true);
-                }}
-                title="reveal the hidden painted ground to the table"
-              >
-                reveal
-              </button>
-            )}
           </div>
         )}
       </div>
@@ -1278,12 +1290,85 @@ export function SceneEditor({
             </div>
           )}
 
+          {showZones && (
+            <div className={`w-72 space-y-1 p-3 ${panel}`}>
+              {(draft.zones ?? []).length === 0 ? (
+                <p className="text-xs leading-snug text-stone-600">
+                  nothing painted yet — use the 🖌 tool to lay down fire, oil,
+                  smoke and the rest
+                </p>
+              ) : (
+                (draft.zones ?? []).map((zone) => (
+                  <div
+                    key={`${zone.effect}-${zone.hidden ? 'hidden' : 'shown'}`}
+                    className="flex items-center gap-2"
+                  >
+                    <span
+                      className="h-4 w-4 shrink-0 rounded"
+                      style={{ backgroundColor: zoneBase(zone.effect).fill }}
+                    />
+                    <button
+                      className="min-w-0 flex-1 truncate text-left text-sm text-stone-200 hover:text-amber-300"
+                      onClick={() => {
+                        // pick this layer up with the brush
+                        setBrush(zone.effect);
+                        setSecret(!!zone.hidden);
+                        setTool('paint');
+                      }}
+                      title="paint into this layer"
+                    >
+                      {zone.effect}
+                    </button>
+                    <span className="shrink-0 font-mono text-[10px] text-stone-600">
+                      {zone.cells.length}
+                    </span>
+                    <button
+                      className={`shrink-0 rounded px-2 py-1 text-xs ${
+                        zone.hidden
+                          ? 'bg-stone-800 text-amber-300'
+                          : 'bg-emerald-800/70 text-emerald-100'
+                      }`}
+                      onClick={() => {
+                        mark();
+                        toggleZoneHidden(zone.effect, !!zone.hidden);
+                      }}
+                      title={
+                        zone.hidden
+                          ? 'behind the screen — tap to reveal to the table'
+                          : 'the table can see this — tap to hide it'
+                      }
+                      aria-label={`${zone.hidden ? 'reveal' : 'hide'} ${zone.effect}`}
+                    >
+                      {zone.hidden ? 'hidden' : 'shown'}
+                    </button>
+                    <button
+                      className="shrink-0 rounded px-1.5 py-1 text-xs text-stone-500 hover:bg-red-950 hover:text-red-300"
+                      onClick={() => {
+                        mark();
+                        deleteZone(zone.effect, !!zone.hidden);
+                      }}
+                      aria-label={`delete ${zone.effect}${zone.hidden ? ' hidden' : ''} layer`}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
           <div className="flex gap-2">
             <button
               className={`px-3 py-2 font-mono text-xs text-stone-300 ${panel}`}
               onClick={() => setShowScene(!showScene)}
             >
               scene {showScene ? '▾' : '▸'}
+            </button>
+            <button
+              className={`px-3 py-2 font-mono text-xs text-stone-300 ${panel}`}
+              onClick={() => setShowZones(!showZones)}
+            >
+              ground · {(draft.zones ?? []).length} {showZones ? '▾' : '▸'}
             </button>
             <button
               className={`px-3 py-2 font-mono text-xs ${panel} ${
