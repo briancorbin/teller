@@ -18,7 +18,7 @@ import {
   type Auth,
 } from './displays';
 import { bookRoutes } from './books';
-import { getTemplate, templates } from './templates';
+import { getSystem, listSystems } from './systems';
 import type {
   Calibration,
   Campaign,
@@ -89,7 +89,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   }
 
   if (pathname === '/api/templates' && method === 'GET') {
-    return json(templates);
+    return json(await listSystems(env));
   }
 
   // Rules packs — uploaded reference content, DM-gated both ways.
@@ -143,7 +143,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (!dm()) return err('DM key required', 401);
     const body = await request.json<{ name?: string; system?: string }>();
     if (!body.name) return err('name required', 400);
-    const template = getTemplate(body.system ?? '');
+    const template = await getSystem(env, body.system ?? '');
     if (!template) return err(`unknown system: ${body.system}`, 400);
 
     const id = newId('cmp');
@@ -584,7 +584,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .first();
     if (!campaignRow) return err('campaign not found', 404);
     const campaign = toCampaign(campaignRow as never);
-    const template = getTemplate(campaign.system);
+    const template = await getSystem(env, campaign.system);
 
     const body = await request.json<{ name?: string; kind?: string }>();
     if (!body.name) return err('name required', 400);
