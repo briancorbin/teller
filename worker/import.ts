@@ -35,7 +35,7 @@ export type BundleSummary = {
 
 type PackEntry = { name: string; system: string; pack: unknown };
 type CharacterEntry = { name: string; kind: string; data: CharacterData };
-type BookEntry = { id: string; name: string; system: string; pages: number };
+type BookEntry = { id: string; name: string; system: string };
 
 const newId = (prefix: string) =>
   `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
@@ -65,7 +65,7 @@ export async function inspect(buffer: ArrayBuffer): Promise<BundleSummary> {
   add('pack', await count('pack.json'), 'rules pack');
   add('scenes', await count('scenes.json'), 'map');
   add('handouts', await count('handouts.json'), 'handout');
-  add('books', await count('books.json'), 'book, already indexed', 'books, already indexed');
+  add('books', await count('books.json'), 'book it expects', 'books it expects');
 
   const assets = [...files.keys()].filter((n) => n.startsWith('assets/')).length;
   add('assets', assets, 'image');
@@ -273,37 +273,20 @@ export async function apply(
   // with no extraction wait. The PDF itself belongs to whichever device
   // holds it; a book listed but absent shows as "not on this screen"
   // rather than as a broken row.
+  // Books are references, so importing one is a question, not a copy:
+  // does this host have it? Anything missing is named rather than
+  // silently absent — a campaign whose rulebook you don't own is a fact
+  // you want at import time, not mid-session.
   const books = await readJson<BookEntry[]>(files, 'books.json');
   if (books?.length && wants('books')) {
-    let added = 0;
-    for (const book of books) {
-      const index = await readJson<{ page: number; text: string }[]>(
-        files,
-        `books/${book.id}.index.json`,
-      );
-      await env.DB.prepare(
-        `INSERT INTO books (id, system, name, pages, indexed) VALUES (?, ?, ?, ?, 1)
-         ON CONFLICT (id) DO UPDATE SET name = excluded.name`,
-      )
-        .bind(book.id, book.system ?? system, book.name, book.pages ?? 0)
-        .run();
-      if (index?.length) {
-        // Chunked: a 400-page book is 400 statements, and D1 has limits
-        // on how much one batch may carry.
-        for (let i = 0; i < index.length; i += 50) {
-          await env.DB.batch(
-            index.slice(i, i + 50).map((page) =>
-              env.DB.prepare(
-                `INSERT INTO book_pages (book_id, page, text) VALUES (?, ?, ?)
-                 ON CONFLICT (book_id, page) DO UPDATE SET text = excluded.text`,
-              ).bind(book.id, page.page, page.text),
-            ),
-          );
-        }
-      }
-      added++;
+    const here = await env.DB.prepare('SELECT id FROM books').all();
+    const have = new Set((here.results as { id: string }[]).map((r) => r.id));
+    const missing = books.filter((b) => !have.has(b.id));
+    const found = books.length - missing.length;
+    if (found) applied.push(`${found} of ${books.length} books already on this host`);
+    for (const book of missing) {
+      skipped.push(`“${book.name}” — add the PDF to this host and it links up`);
     }
-    applied.push(`${added} book${added === 1 ? '' : 's'}, already indexed`);
   }
 
   return { campaignId: campaign.id, applied, skipped };

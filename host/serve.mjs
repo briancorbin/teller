@@ -25,6 +25,7 @@ import { R2, objectRoot } from './r2.mjs';
 import { DurableNamespace } from './durable.mjs';
 import { Assets } from './assets.mjs';
 import { migrate } from './migrate.mjs';
+import { sweep } from './library.mjs';
 
 // Resolved from this file, so the same layout works whether it's the
 // repo or an installed copy — `dist/`, `migrations/` and `host/` sit
@@ -162,6 +163,18 @@ export async function serve({ data = defaultData(), port = 4525 } = {}) {
       for (const { name, address } of nics) log(`  http://${address}:${PORT}   (${name})`);
     }
     console.log('\n  ctrl-c to stop\n');
+
+    // Reading books happens here, not in the worker and not in a
+    // browser: pdfjs stays out of the runtime-agnostic half, a phone
+    // never parses a 300-page rulebook, and it happens once for the
+    // table instead of once per screen.
+    //
+    // The same pass picks up PDFs dropped into the books folder by hand,
+    // which is what the loader program used to be for.
+    const scan = () =>
+      sweep(db.raw, DATA).catch((e) => console.error(`  library: ${e.message}`));
+    void scan();
+    setInterval(scan, 10_000).unref?.();
   });
 
   server.on('error', (e) => {

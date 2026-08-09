@@ -22,6 +22,14 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const INCLUDE = ['bin', 'host', 'migrations', 'dist'];
 
+// The one thing vendored in: pdfjs, so the host can read a rulebook.
+// It's pure JavaScript — no native module, nothing to compile — so the
+// property that matters survives: `brew install` unpacks a folder and
+// there is never an install step.
+const VENDOR = [
+  ['node_modules/pdfjs-dist/legacy/build/pdf.mjs', 'vendor/pdfjs/pdf.mjs'],
+];
+
 async function main() {
   const pkg = JSON.parse(await readFile(join(ROOT, 'package.json'), 'utf8'));
   const version = pkg.version;
@@ -37,6 +45,10 @@ async function main() {
   await mkdir(stage, { recursive: true });
   for (const dir of INCLUDE) {
     await cp(join(ROOT, dir), join(stage, dir), { recursive: true });
+  }
+  for (const [from, to] of VENDOR) {
+    await mkdir(dirname(join(stage, to)), { recursive: true });
+    await cp(join(ROOT, from), join(stage, to));
   }
 
   // A stripped package.json: the installed copy is not a project anyone

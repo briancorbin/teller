@@ -7,20 +7,20 @@ import type { Campaign, Character, SystemTemplate } from './types';
 // `.tell` files — a whole game in one file.
 //
 // A bundle is a zip of OPTIONAL SECTIONS, and that's the entire design.
-// There are no bundle "types": `wiw_core.tell` is one that happens to
-// omit books, `wiw_books.tell` is one that carries only books, and a
-// module is one that carries scenes and foes and requires a system it
-// doesn't include. Nothing has to know which kind it's holding, because
-// import is always the same operation — merge what's present, skip what
-// isn't.
+// There are no bundle "types": a system bundle is one that carries
+// `system.json`, a module is one that carries scenes and foes and
+// requires a system it doesn't include. Nothing has to know which kind
+// it's holding, because import is always the same operation — merge
+// what's present, skip what isn't.
 //
-// Two things travel that are worth naming. Export is also the BACKUP:
-// once the campaign lives on a host under your table, there is no cloud
-// copy, and a dead drive is a dead campaign unless you've written one of
-// these. And a bundle carrying a bestiary, a pack or a book carries
-// rules CONTENT — fine to hold and to carry between your own tables,
-// not fine to publish. The manifest says so out loud rather than leaving
-// it to be assumed.
+// Books are the exception, and deliberately so: they are REFERENCED,
+// never carried. You own the rulebooks; campaigns point at them. That
+// keeps bundles small, stops the same PDF being stored twice, and means
+// a `.tell` file holds no rules content at all.
+//
+// Export is also the BACKUP. Once the campaign lives on a host under
+// your table there is no cloud copy, and a dead drive is a dead campaign
+// unless you've written one of these.
 
 export const BUNDLE_VERSION = 1;
 
@@ -34,15 +34,23 @@ export type BundleManifest = {
   /** Set when the bundle expects a system it does NOT itself provide. */
   requires?: { system: string };
   /**
-   * True when anything in here is rules content — a bestiary, a pack,
-   * a book. Only a bare `system.json` is genuinely safe to hand out.
+   * True when this carries rules content of its own — a bestiary or a
+   * pack, both of which are somebody's stat blocks and rules text.
+   * Book references don't count: a reference is a name, not content.
    */
   personal: boolean;
   exportedAt: string;
 };
 
 type PackRow = { id: string; system: string; name: string; data: string };
-type BookRow = { id: string; system: string; name: string; pages: number };
+type BookRow = {
+  id: string;
+  system: string;
+  name: string;
+  pages: number;
+  /** Object-storage key, or null for a book the host doesn't hold. */
+  key: string | null;
+};
 
 /**
  * Everything about one campaign, as a stream of zip entries.
@@ -86,9 +94,9 @@ async function* campaignEntries(
     name: campaign.name,
     system: campaign.system,
     contains,
-    // Rules content is anything a publisher wrote. Structure isn't.
-    personal:
-      npcs.length > 0 || packs.results.length > 0 || books.results.length > 0,
+    // Rules content is anything a publisher wrote. Structure isn't, and
+    // neither is a reference to a book you both happen to own.
+    personal: npcs.length > 0 || packs.results.length > 0,
     exportedAt: new Date().toISOString(),
   };
   if (!template) manifest.requires = { system: campaign.system };
@@ -150,23 +158,27 @@ async function* campaignEntries(
     }
   }
 
-  // Books: the page index travels, so search works the moment this
-  // lands. The PDFs themselves are held by whichever device imported
-  // them, which is the bargain books have always made here.
+  // Books are REFERENCED, never carried.
+  //
+  // You own the rulebooks; a campaign refers to them. So a bundle says
+  // "this expects the WiW Guidebook, bok_a23d…" and stays small enough
+  // to email. Two consequences, both wanted:
+  //
+  // A `.tell` file contains no rules content at all — no PDF, no page
+  // text — so it is genuinely safe to hand to someone. The IP line rule 4
+  // draws stops being a rule anyone has to remember and becomes a
+  // property of the format.
+  //
+  // And because a book's id is the hash of its own bytes, a reference
+  // resolves on any host that has that book, with no registry and no
+  // coordination. Whoever opens this either owns the book or is told
+  // exactly which one they're missing.
   if (books.results.length) {
     const rows = books.results as unknown as BookRow[];
     yield jsonEntry(
       'books.json',
-      rows.map((b) => ({ id: b.id, name: b.name, system: b.system, pages: b.pages })),
+      rows.map((b) => ({ id: b.id, name: b.name, system: b.system })),
     );
-    for (const book of rows) {
-      const pages = await env.DB.prepare(
-        'SELECT page, text FROM book_pages WHERE book_id = ? ORDER BY page',
-      )
-        .bind(book.id)
-        .all();
-      yield jsonEntry(`books/${book.id}.index.json`, pages.results);
-    }
   }
 }
 

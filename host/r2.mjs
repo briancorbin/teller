@@ -58,18 +58,33 @@ export class R2 {
     return { key };
   }
 
-  async get(key) {
+  /**
+   * `options.range` mirrors R2's own `{ offset, length }`.
+   *
+   * This is what lets a screen open a 200MB rulebook at page 184 without
+   * pulling the other 199 megabytes. Cloudflare's R2 does ranged reads
+   * natively; here it's an offset on a read stream.
+   */
+  async get(key, options = {}) {
     const path = safeJoin(this.#root, key);
     const info = await stat(path).catch(() => null);
     if (!info?.isFile()) return null;
     const contentType = await readFile(`${path}.type`, 'utf8').catch(() => null);
+
+    const range = options.range;
+    const start = range ? (range.offset ?? 0) : 0;
+    const end = range
+      ? Math.min(info.size - 1, start + (range.length ?? info.size - start) - 1)
+      : info.size - 1;
+
     return {
       key,
       size: info.size,
+      range: range ? { offset: start, length: end - start + 1 } : undefined,
       httpMetadata: contentType ? { contentType } : {},
       // A web stream, because the worker passes this straight to a
       // Response — so a 100MB map is streamed, not buffered.
-      body: Readable.toWeb(createReadStream(path)),
+      body: Readable.toWeb(createReadStream(path, { start, end })),
       arrayBuffer: async () => (await readFile(path)).buffer,
     };
   }
@@ -90,4 +105,13 @@ export class R2 {
   }
 }
 
-export const objectRoot = (dataDir) => join(dataDir, 'assets');
+/**
+ * Objects live in the data directory itself, not a subfolder of it.
+ *
+ * So keys become the folders you'd expect — `books/bok_a23d….pdf` is
+ * literally `~/.teller/books/bok_a23d….pdf`, and `map/…` sits beside it.
+ * That matters because the book library is meant to be a place you can
+ * open in Finder and drop a PDF into; burying it under `assets/` would
+ * make the folder an implementation detail instead of the feature.
+ */
+export const objectRoot = (dataDir) => dataDir;

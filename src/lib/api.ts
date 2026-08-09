@@ -275,27 +275,44 @@ export const api = {
     req<{ ok: true }>(`/api/displays/${id}/identify`, { method: 'POST' }),
 
   // --- Rulebooks -------------------------------------------------------
-  // Only the derived index travels; the PDF stays on this device.
-  books: (system?: string) =>
-    req<Book[]>(`/api/books${system ? `?system=${encodeURIComponent(system)}` : ''}`),
+  // A book lives on the host. Upload it once; every screen reads it.
+  books: () => req<Book[]>('/api/books'),
 
-  // `id` is supplied when the book came off a card, which names books by
-  // their content — so adopting the same card twice lands on one row.
-  registerBook: (system: string, name: string, id?: string) =>
-    req<{ book: Book }>('/api/books', {
+  /**
+   * Add a book by handing the host the file.
+   *
+   * The host names it — the id is the sha-256 of the bytes, so the same
+   * rulebook is the same book on anyone's host, which is what lets a
+   * `.tell` file refer to it. The browser couldn't compute that anyway:
+   * crypto.subtle doesn't exist on the plain-HTTP origin a table's host
+   * serves from.
+   */
+  addBook: (file: File, system: string) => {
+    const params = new URLSearchParams({
+      name: file.name.replace(/\.pdf$/i, ''),
+      system,
+    });
+    return req<{ book: Book; duplicate: boolean }>(`/api/books?${params}`, {
       method: 'POST',
-      body: JSON.stringify({ system, name, id }),
-    }),
+      body: file,
+      headers: { 'content-type': 'application/pdf' },
+    });
+  },
 
-  indexPages: (bookId: string, pages: { page: number; text: string }[], done = false) =>
-    req<{ ok: true }>(`/api/books/${bookId}/pages`, {
-      method: 'POST',
-      body: JSON.stringify({ pages, done }),
-    }),
+  /**
+   * Permission to read one book, as a URL.
+   *
+   * The viewer is an iframe and an iframe sends no headers, so the key
+   * can't ride along — and fetching the file into a blob first would
+   * throw away the range streaming that makes opening page 184 of a
+   * 200MB rulebook instant.
+   */
+  bookTicket: (bookId: string) =>
+    req<{ url: string }>(`/api/books/${bookId}/ticket`, { method: 'POST' }),
 
-  searchBooks: (system: string, q: string) =>
+  searchBooks: (q: string) =>
     req<{ hits: BookHit[]; total: number }>(
-      `/api/books/search?system=${encodeURIComponent(system)}&q=${encodeURIComponent(q)}`,
+      `/api/books/search?q=${encodeURIComponent(q)}`,
     ),
 
   deleteBook: (id: string) => req<{ ok: true }>(`/api/books/${id}`, { method: 'DELETE' }),
