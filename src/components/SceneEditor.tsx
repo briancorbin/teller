@@ -19,6 +19,7 @@ import { TileZones } from './TileZones';
 // touches what the table shows.
 
 const DEFAULT_VIEW: SceneView = { mode: 'fit', zoom: 1, cu: 0.5, cv: 0.5 };
+const GRID_PREF = 'teller.editor.grid';
 
 const TOKEN_SIZES = [0.5, 1, 2, 3, 4, 6, 8];
 const TOKEN_SHAPES = ['circle', 'square', 'triangle'] as const;
@@ -67,7 +68,11 @@ export function SceneEditor({
   const [brush, setBrush] = useState<TokenEffect>('fire');
   const [secret, setSecret] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showGrid, setShowGrid] = useState(true);
+  // A workshop preference, not scene data — it belongs to this device
+  // and must survive the remount when you switch scenes.
+  const [showGrid, setShowGrid] = useState(
+    () => localStorage.getItem(GRID_PREF) !== '0',
+  );
   const [showTokens, setShowTokens] = useState(false);
   const [showScene, setShowScene] = useState(false);
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
@@ -652,8 +657,12 @@ export function SceneEditor({
           </button>
           <button
             className={toolBtn(showGrid)}
-            onClick={() => setShowGrid(!showGrid)}
-            title="map grid preview"
+            onClick={() => {
+              const next = !showGrid;
+              setShowGrid(next);
+              localStorage.setItem(GRID_PREF, next ? '1' : '0');
+            }}
+            title="map grid preview (this device)"
             aria-label="toggle grid"
           >
             ▦

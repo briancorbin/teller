@@ -129,6 +129,18 @@ export type TileZone = {
  * with the display's calibrated ppi it makes true-scale rendering
  * possible. Fog arrives in the next battlemap phase.
  */
+/**
+ * Fog over the map, in the same 1-inch cells as painted ground.
+ * Stored as what's REVEALED (the common case is a mostly-dark map),
+ * so a fresh cover costs one flag instead of nine hundred cells.
+ * No vision simulation, ever — the Warden's finger is the vision
+ * system (docs/BATTLEMAP.md).
+ */
+export type Fog = {
+  on: boolean;
+  revealed: [number, number][];
+};
+
 export type Scene = {
   id: string;
   key: string;
@@ -137,6 +149,7 @@ export type Scene = {
   view?: SceneView;
   tokens?: Token[];
   zones?: TileZone[];
+  fog?: Fog;
 };
 
 export type CampaignData = {
