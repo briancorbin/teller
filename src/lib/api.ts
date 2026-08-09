@@ -1,4 +1,6 @@
 import type {
+  Book,
+  BookHit,
   Calibration,
   Campaign,
   CampaignData,
@@ -270,6 +272,30 @@ export const api = {
 
   identifyDisplay: (id: string) =>
     req<{ ok: true }>(`/api/displays/${id}/identify`, { method: 'POST' }),
+
+  // --- Rulebooks -------------------------------------------------------
+  // Only the derived index travels; the PDF stays on this device.
+  books: (system?: string) =>
+    req<Book[]>(`/api/books${system ? `?system=${encodeURIComponent(system)}` : ''}`),
+
+  registerBook: (system: string, name: string) =>
+    req<{ book: Book }>('/api/books', {
+      method: 'POST',
+      body: JSON.stringify({ system, name }),
+    }),
+
+  indexPages: (bookId: string, pages: { page: number; text: string }[], done = false) =>
+    req<{ ok: true }>(`/api/books/${bookId}/pages`, {
+      method: 'POST',
+      body: JSON.stringify({ pages, done }),
+    }),
+
+  searchBooks: (system: string, q: string) =>
+    req<{ hits: BookHit[] }>(
+      `/api/books/search?system=${encodeURIComponent(system)}&q=${encodeURIComponent(q)}`,
+    ),
+
+  deleteBook: (id: string) => req<{ ok: true }>(`/api/books/${id}`, { method: 'DELETE' }),
 
   packs: (system: string) =>
     req<PackRecord[]>(`/api/packs?system=${encodeURIComponent(system)}`),

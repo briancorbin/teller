@@ -341,6 +341,30 @@ export type RulesPack = {
   sections: PackSection[];
 };
 
+/**
+ * A rulebook PDF in this instance. Content, like packs — personal-use
+ * data in a private DB, never repo content and never distributed.
+ * `indexed` is false until the browser finishes extracting its text;
+ * search skips it until then. A scan has no text layer and will index
+ * to nothing (OCR is a separate problem).
+ */
+export type Book = {
+  id: string;
+  system: string;
+  name: string;
+  pages: number;
+  indexed: boolean;
+  createdAt: string;
+};
+
+/** One search result: which book, which page, and what it says there. */
+export type BookHit = {
+  bookId: string;
+  bookName: string;
+  page: number;
+  snippet: string;
+};
+
 export type PackRecord = {
   id: string;
   system: string;

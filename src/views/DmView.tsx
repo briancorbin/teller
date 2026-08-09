@@ -16,6 +16,7 @@ import { CharacterCard } from '../components/CharacterCard';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { SceneEditor } from '../components/SceneEditor';
 import { CounterSection } from '../components/CounterSection';
+import { BooksPanel } from '../components/BooksPanel';
 import { DisplaysPanel } from '../components/DisplaysPanel';
 import { EncounterPanel } from '../components/EncounterPanel';
 import { RulesPanel } from '../components/RulesPanel';
@@ -747,6 +748,8 @@ export function DmView({
           </div>
           </>
           )}
+
+          {showLibrary && <BooksPanel system={campaign.system} />}
 
           {showLibrary && (
           <>

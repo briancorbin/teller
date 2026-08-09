@@ -17,6 +17,7 @@ import {
   resolveDisplay,
   type Auth,
 } from './displays';
+import { bookRoutes } from './books';
 import { getTemplate, templates } from './templates';
 import type {
   Calibration,
@@ -79,6 +80,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   const displayed = await displayRoutes(request, env, url, auth);
   if (displayed) return displayed;
+
+  const booked = await bookRoutes(request, env, url, dm());
+  if (booked) return booked;
 
   if (pathname === '/api/health') {
     return json({ ok: true, name: 'teller' });
