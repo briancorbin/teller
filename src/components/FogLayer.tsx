@@ -28,6 +28,13 @@ export function FogLayer({
   if (!fog?.on || !cellPx || !width || !height) return null;
   const blur = cellPx * 0.28;
   const bleed = cellPx * 0.12; // let neighbours meet before the blur
+  // What's actually clear: freeform reveals plus every revealed region.
+  // (The table receives this already flattened; recomputing is a no-op
+  // there and keeps the console honest.)
+  const clear: [number, number][] = [
+    ...(fog.revealed ?? []),
+    ...(fog.regions ?? []).filter((r) => r.revealed).flatMap((r) => r.cells),
+  ];
 
   return (
     <svg
@@ -43,9 +50,11 @@ export function FogLayer({
         <mask id={`fogmask-${uid}`}>
           <rect x="0" y="0" width={width} height={height} fill="white" />
           <g filter={`url(#fogblur-${uid})`}>
-            {fog.revealed.map(([c, r]) => (
+            {/* a cell can be revealed twice (freeform + region) — index
+                keys, since the coordinates are not unique here */}
+            {clear.map(([c, r], i) => (
               <rect
-                key={`${c},${r}`}
+                key={i}
                 x={c * cellPx - bleed}
                 y={r * cellPx - bleed}
                 width={cellPx + bleed * 2}

@@ -10,6 +10,7 @@ import {
   zoneStyle,
 } from './token-visuals';
 import { TileZones } from './TileZones';
+import { FogLayer } from './FogLayer';
 
 // The map workshop: a fullscreen canvas with floating tool overlays.
 // Edits are LIVE (debounced PATCH) like everything else in teller —
@@ -27,7 +28,7 @@ const TOKEN_SHAPES = ['circle', 'square', 'triangle'] as const;
 // 'select' is the safe default: it drags tokens, and a drag on empty
 // map pans the workshop view rather than re-aiming the table. Aiming
 // the table is its own deliberate tool, and can be locked outright.
-type Tool = 'select' | 'pan' | 'frame' | 'paint';
+type Tool = 'select' | 'pan' | 'frame' | 'paint' | 'fog';
 type Cell = [number, number];
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
@@ -67,6 +68,10 @@ export function SceneEditor({
   const [tool, setTool] = useState<Tool>('select');
   const [brush, setBrush] = useState<TokenEffect>('fire');
   const [secret, setSecret] = useState(false);
+  const [fogBrush, setFogBrush] = useState<'reveal' | 'cover'>('reveal');
+  /** When set, fog painting edits that region's cells instead of the map. */
+  const [regionEditId, setRegionEditId] = useState<string | null>(null);
+  const [showFog, setShowFog] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // A workshop preference, not scene data — it belongs to this device
   // and must survive the remount when you switch scenes.
@@ -242,6 +247,57 @@ export function SceneEditor({
     commit({ ...d, zones: zones.filter((z) => z.cells.length > 0) });
   };
 
+  // --- fog -----------------------------------------------------------------
+
+  const fog = draft.fog ?? { on: false, revealed: [] as [number, number][] };
+  const regions = fog.regions ?? [];
+  const editingRegion = regions.find((r) => r.id === regionEditId) ?? null;
+
+  const setFog = (next: Partial<typeof fog>) =>
+    commit({ ...draftRef.current, fog: { ...fog, ...next } });
+
+  const inCells = (cells: [number, number][], [c, r]: Cell) =>
+    cells.some(([cc, rr]) => cc === c && rr === r);
+
+  const applyFog = (cell: Cell, op: 'add' | 'remove') => {
+    const d = draftRef.current;
+    const f = d.fog ?? { on: true, revealed: [] as [number, number][] };
+    const edit = (cells: [number, number][]) => {
+      const next = cells.filter(([c, r]) => !(c === cell[0] && r === cell[1]));
+      return op === 'add' ? [...next, cell] : next;
+    };
+    // Painting into a region shapes the room; otherwise it clears ground.
+    const nextFog = regionEditId
+      ? {
+          ...f,
+          regions: (f.regions ?? []).map((r) =>
+            r.id === regionEditId ? { ...r, cells: edit(r.cells) } : r,
+          ),
+        }
+      : { ...f, revealed: edit(f.revealed ?? []) };
+    commit({ ...d, fog: nextFog });
+  };
+
+  const fogPainted = (cell: Cell) =>
+    regionEditId
+      ? inCells(editingRegion?.cells ?? [], cell)
+      : inCells(fog.revealed ?? [], cell);
+
+  const addRegion = () => {
+    mark();
+    const region = {
+      id: newLocalId('rgn'),
+      name: `Area ${regions.length + 1}`,
+      cells: [] as [number, number][],
+      revealed: false,
+    };
+    setFog({ on: true, regions: [...regions, region] });
+    setRegionEditId(region.id);
+    setTool('fog');
+    setFogBrush('reveal');
+    setShowFog(true);
+  };
+
   const revealZone = (effect: TokenEffect, hidden: boolean) =>
     commit({
       ...draftRef.current,
@@ -309,6 +365,7 @@ export function SceneEditor({
       if (e.key === 'f') setTool('frame');
       if (e.key === 'h') setTool('pan');
       if (e.key === 'b' && cols) setTool('paint');
+      if (e.key === 'g' && cols) setTool('fog');
       if (e.key === 'l') setView({ locked: !view.locked });
     };
     window.addEventListener('keydown', onKey);
@@ -335,13 +392,23 @@ export function SceneEditor({
       dragRef.current = { kind: 'pan', x: e.clientX, y: e.clientY };
       return;
     }
-    if (tool === 'paint') {
+    if (tool === 'paint' || tool === 'fog') {
       const cell = cellAt(e.clientX, e.clientY);
       if (!cell) return;
       mark();
-      const op = painted(brush, cell) ? 'remove' : 'add';
+      const op =
+        tool === 'fog'
+          ? fogBrush === 'reveal'
+            ? fogPainted(cell)
+              ? 'remove'
+              : 'add'
+            : 'remove'
+          : painted(brush, cell)
+            ? 'remove'
+            : 'add';
       dragRef.current = { kind: 'paint', op, last: cell.join(',') };
-      applyCell(brush, cell, op);
+      if (tool === 'fog') applyFog(cell, op);
+      else applyCell(brush, cell, op);
       return;
     }
     // frame tool
@@ -366,7 +433,8 @@ export function SceneEditor({
       const cell = cellAt(e.clientX, e.clientY);
       if (cell && cell.join(',') !== d.last) {
         d.last = cell.join(',');
-        applyCell(brush, cell, d.op);
+        if (tool === 'fog') applyFog(cell, d.op);
+        else applyCell(brush, cell, d.op);
       }
     } else if (d.kind === 'token') {
       const uv = toUv(e.clientX, e.clientY);
@@ -449,6 +517,46 @@ export function SceneEditor({
               aria-hidden
             />
           )}
+
+          {cellPx && (
+            <FogLayer
+              fog={draft.fog}
+              left={0}
+              top={0}
+              width={baseW}
+              height={baseH}
+              cellPx={cellPx}
+              dm
+            />
+          )}
+
+          {/* region extents — so the Warden can see rooms that the
+              table can't, and which one the brush is shaping */}
+          {cellPx &&
+            tool === 'fog' &&
+            regions.map((region) =>
+              region.cells.map(([c, r]) => (
+                <div
+                  key={`${region.id}:${c},${r}`}
+                  className="pointer-events-none absolute"
+                  style={{
+                    left: c * cellPx,
+                    top: r * cellPx,
+                    width: cellPx,
+                    height: cellPx,
+                    border: `${Math.max(1, cellPx * 0.04)}px solid ${
+                      region.id === regionEditId
+                        ? 'rgba(251,191,36,0.85)'
+                        : 'rgba(125,211,252,0.45)'
+                    }`,
+                    background:
+                      region.id === regionEditId
+                        ? 'rgba(251,191,36,0.12)'
+                        : 'rgba(125,211,252,0.07)',
+                  }}
+                />
+              )),
+            )}
 
           {frame && (
             <div
@@ -656,6 +764,24 @@ export function SceneEditor({
             ⊕
           </button>
           <button
+            className={toolBtn(tool === 'fog')}
+            onClick={() => {
+              if (!cols) return;
+              setTool('fog');
+              setShowFog(true);
+              if (!fog.on) setFog({ on: true });
+            }}
+            disabled={!cols}
+            title={
+              cols
+                ? 'fog (G) — paint what the posse can see'
+                : 'set the map width first — fog uses inch tiles'
+            }
+            aria-label="fog tool"
+          >
+            <span className={cols ? '' : 'opacity-30'}>🌫</span>
+          </button>
+          <button
             className={toolBtn(showGrid)}
             onClick={() => {
               const next = !showGrid;
@@ -668,6 +794,25 @@ export function SceneEditor({
             ▦
           </button>
         </div>
+
+        {tool === 'fog' && (
+          <div className={`flex flex-col gap-1 p-1 ${panel}`}>
+            {(['reveal', 'cover'] as const).map((m) => (
+              <button
+                key={m}
+                className={`rounded-lg px-1 py-2 text-[10px] leading-tight ${
+                  fogBrush === m
+                    ? 'bg-amber-700 text-stone-950'
+                    : 'text-stone-300 hover:bg-stone-800'
+                }`}
+                onClick={() => setFogBrush(m)}
+                aria-label={`fog brush ${m}`}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
 
         {tool === 'paint' && (
           <div className={`flex flex-col gap-1 p-1 ${panel}`}>
@@ -923,12 +1068,152 @@ export function SceneEditor({
               </div>
             </div>
           )}
-          <button
-            className={`self-start px-3 py-2 font-mono text-xs text-stone-300 ${panel}`}
-            onClick={() => setShowScene(!showScene)}
-          >
-            scene {showScene ? '▾' : '▸'}
-          </button>
+          {showFog && (
+            <div className={`w-72 space-y-2 p-3 ${panel}`}>
+              <div className="flex items-center gap-2">
+                <button
+                  className={`rounded-lg px-2.5 py-1.5 font-mono text-xs ${
+                    fog.on
+                      ? 'bg-amber-700 text-stone-950'
+                      : 'bg-stone-800 text-stone-300'
+                  }`}
+                  onClick={() => {
+                    mark();
+                    setFog({ on: !fog.on });
+                  }}
+                  title={
+                    fog.on ? 'lift the fog entirely' : 'cover the map with fog'
+                  }
+                >
+                  {fog.on ? 'fog on' : 'fog off'}
+                </button>
+                <button
+                  className="rounded-lg bg-stone-800 px-2.5 py-1.5 font-mono text-xs text-stone-300 hover:bg-stone-700"
+                  onClick={() => {
+                    mark();
+                    setFog({
+                      on: true,
+                      revealed: [],
+                      regions: regions.map((r) => ({ ...r, revealed: false })),
+                    });
+                  }}
+                  title="hide everything again"
+                >
+                  cover all
+                </button>
+                <button
+                  className="ml-auto rounded-lg px-2 py-1.5 font-mono text-xs text-amber-300 hover:bg-stone-800"
+                  onClick={addRegion}
+                  title="paint a new area you can reveal in one tap"
+                >
+                  + area
+                </button>
+              </div>
+
+              {regions.length === 0 ? (
+                <p className="text-xs leading-snug text-stone-600">
+                  paint freeform with the fog tool, or make an “area” for a room
+                  you'll reveal in one tap when the posse walks in
+                </p>
+              ) : (
+                <div className="max-h-52 space-y-1 overflow-y-auto">
+                  {regions.map((region) => (
+                    <div key={region.id} className="flex items-center gap-1">
+                      <button
+                        className={`rounded px-2 py-1 text-xs ${
+                          region.revealed
+                            ? 'bg-emerald-800/70 text-emerald-100'
+                            : 'bg-stone-800 text-stone-400'
+                        }`}
+                        onClick={() => {
+                          mark();
+                          setFog({
+                            on: true,
+                            regions: regions.map((r) =>
+                              r.id === region.id
+                                ? { ...r, revealed: !r.revealed }
+                                : r,
+                            ),
+                          });
+                        }}
+                        title={
+                          region.revealed
+                            ? 'the table can see this area — tap to hide it again'
+                            : 'reveal this area to the table'
+                        }
+                      >
+                        {region.revealed ? 'shown' : 'hidden'}
+                      </button>
+                      <input
+                        className="min-w-0 flex-1 bg-transparent text-sm text-stone-200 focus:outline-none"
+                        value={region.name}
+                        onChange={(e) =>
+                          setFog({
+                            regions: regions.map((r) =>
+                              r.id === region.id
+                                ? { ...r, name: e.target.value }
+                                : r,
+                            ),
+                          })
+                        }
+                        aria-label={`area name ${region.name}`}
+                      />
+                      <span className="shrink-0 font-mono text-[10px] text-stone-600">
+                        {region.cells.length}
+                      </span>
+                      <button
+                        className={`rounded px-1.5 py-1 text-xs ${
+                          regionEditId === region.id
+                            ? 'bg-amber-700 text-stone-950'
+                            : 'text-stone-500 hover:bg-stone-800'
+                        }`}
+                        onClick={() => {
+                          setRegionEditId(
+                            regionEditId === region.id ? null : region.id,
+                          );
+                          setTool('fog');
+                        }}
+                        title="shape this area — paint its tiles"
+                        aria-label={`shape ${region.name}`}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        className="rounded px-1.5 py-1 text-xs text-stone-500 hover:bg-red-950 hover:text-red-300"
+                        onClick={() => {
+                          mark();
+                          if (regionEditId === region.id) setRegionEditId(null);
+                          setFog({
+                            regions: regions.filter((r) => r.id !== region.id),
+                          });
+                        }}
+                        aria-label={`delete ${region.name}`}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              className={`px-3 py-2 font-mono text-xs text-stone-300 ${panel}`}
+              onClick={() => setShowScene(!showScene)}
+            >
+              scene {showScene ? '▾' : '▸'}
+            </button>
+            <button
+              className={`px-3 py-2 font-mono text-xs ${panel} ${
+                fog.on ? 'text-amber-300' : 'text-stone-300'
+              }`}
+              onClick={() => setShowFog(!showFog)}
+            >
+              fog{fog.on ? ' · on' : ''} {showFog ? '▾' : '▸'}
+            </button>
+          </div>
         </div>
 
         <div className="pointer-events-auto flex flex-col items-end gap-2">
@@ -984,7 +1269,11 @@ export function SceneEditor({
 
       {/* ---------------- hint ---------------- */}
       <p className="pointer-events-none absolute inset-x-0 bottom-14 text-center font-mono text-[11px] text-stone-600">
-        {tool === 'paint'
+        {tool === 'fog'
+          ? editingRegion
+            ? `shaping “${editingRegion.name}” — drag to add tiles, tap one to remove · done when its outline looks right`
+            : `drag to ${fogBrush} fog · make an area in the fog panel to reveal a whole room at once`
+          : tool === 'paint'
           ? `drag to paint ${brush}${secret ? ' behind the screen' : ''} · tap a painted tile to erase`
           : tool === 'pan'
             ? 'drag to move your view · scroll to zoom'

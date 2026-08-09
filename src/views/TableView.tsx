@@ -7,6 +7,7 @@ import { ConnectionHint } from '../components/ConnectionHint';
 import { GridOverlay } from '../components/GridOverlay';
 import { tokenShapeStyle, zoneStyle } from '../components/token-visuals';
 import { TileZones } from '../components/TileZones';
+import { FogLayer } from '../components/FogLayer';
 
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the active scene (framed per its view + true
@@ -207,6 +208,17 @@ export function TableView({ campaignId }: { campaignId: string }) {
               </div>
             );
           })}
+        {/* fog sits above tokens and ground: unexplored means unseen */}
+        {rect && nat && pxPerMapInch && (
+          <FogLayer
+            fog={scene?.fog}
+            left={rect.left}
+            top={rect.top}
+            width={nat.w * rect.scale}
+            height={nat.h * rect.scale}
+            cellPx={pxPerMapInch}
+          />
+        )}
         <GridOverlay grid={campaign?.data.grid} />
       </main>
     );

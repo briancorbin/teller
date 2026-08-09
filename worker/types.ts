@@ -136,9 +136,23 @@ export type TileZone = {
  * No vision simulation, ever — the Warden's finger is the vision
  * system (docs/BATTLEMAP.md).
  */
+/**
+ * A named area — a room, a canyon mouth, the far bank — painted once
+ * during prep and revealed with one tap when the posse walks in.
+ */
+export type FogRegion = {
+  id: string;
+  name: string;
+  cells: [number, number][];
+  revealed: boolean;
+};
+
 export type Fog = {
   on: boolean;
+  /** Freeform painted reveals, outside any region. */
   revealed: [number, number][];
+  /** DM-only structure: flattened away before this reaches the table. */
+  regions?: FogRegion[];
 };
 
 export type Scene = {

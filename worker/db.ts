@@ -96,6 +96,19 @@ export function publicScene(data: CampaignData): Scene | null {
     ...scene,
     tokens: (scene.tokens ?? []).filter((t) => !t.hidden),
     zones: (scene.zones ?? []).filter((z) => !z.hidden),
+    // Fog is flattened to plain revealed cells: the table has no need
+    // for the shape or name of a room nobody has walked into yet.
+    fog: scene.fog
+      ? {
+          on: scene.fog.on,
+          revealed: [
+            ...(scene.fog.revealed ?? []),
+            ...(scene.fog.regions ?? [])
+              .filter((r) => r.revealed)
+              .flatMap((r) => r.cells),
+          ],
+        }
+      : undefined,
   };
 }
 
