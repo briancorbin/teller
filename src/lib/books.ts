@@ -12,6 +12,21 @@
 
 const DIR = 'books';
 
+/**
+ * Split a search snippet into plain and matched runs.
+ *
+ * The server fences matched words in \x02…\x03 (see `BookHit`), so this is
+ * a split rather than a re-search: the highlight lands on what FTS5
+ * actually matched, stem and all — "grappled" lights up for "grapple",
+ * which searching the string for the typed term could never do.
+ */
+export function splitSnippet(snippet: string): { text: string; hit: boolean }[] {
+  return snippet
+    .split(/\x02([^\x03]*)\x03/)
+    .map((text, i) => ({ text, hit: i % 2 === 1 }))
+    .filter((run) => run.text);
+}
+
 async function booksDir(): Promise<FileSystemDirectoryHandle> {
   const root = await navigator.storage.getDirectory();
   return root.getDirectoryHandle(DIR, { create: true });

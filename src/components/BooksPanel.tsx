@@ -8,6 +8,7 @@ import {
   localBookIds,
   opfsSupported,
   saveLocalBook,
+  splitSnippet,
 } from '../lib/books';
 import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui';
 
@@ -25,6 +26,7 @@ export function BooksPanel({ system }: { system: string }) {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<BookHit[] | null>(null);
+  const [total, setTotal] = useState(0);
   const [open, setOpen] = useState<{ url: string; name: string; page: number } | null>(
     null,
   );
@@ -82,8 +84,9 @@ export function BooksPanel({ system }: { system: string }) {
   const search = async () => {
     if (query.trim().length < 2) return setHits(null);
     try {
-      const { hits } = await api.searchBooks(system, query.trim());
+      const { hits, total } = await api.searchBooks(system, query.trim());
       setHits(hits);
+      setTotal(total);
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     }
@@ -140,6 +143,13 @@ export function BooksPanel({ system }: { system: string }) {
           {hits.length === 0 && (
             <p className="text-sm text-stone-600">nothing found</p>
           )}
+          {/* Best-first, so a truncated list is a shortlist, not a cliff —
+              but say so, because "too broad" is a real answer. */}
+          {total > hits.length && (
+            <p className="font-mono text-[11px] text-stone-600">
+              best {hits.length} of {total} pages
+            </p>
+          )}
           {hits.map((hit) => (
             <button
               key={`${hit.bookId}-${hit.page}`}
@@ -150,7 +160,15 @@ export function BooksPanel({ system }: { system: string }) {
                 {hit.bookName} · p.{hit.page}
               </span>
               <span className="block text-xs leading-snug text-stone-400">
-                {hit.snippet}
+                {splitSnippet(hit.snippet).map((run, i) =>
+                  run.hit ? (
+                    <mark key={i} className="bg-transparent font-semibold text-stone-100">
+                      {run.text}
+                    </mark>
+                  ) : (
+                    <span key={i}>{run.text}</span>
+                  ),
+                )}
               </span>
             </button>
           ))}

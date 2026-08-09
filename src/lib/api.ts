@@ -291,7 +291,7 @@ export const api = {
     }),
 
   searchBooks: (system: string, q: string) =>
-    req<{ hits: BookHit[] }>(
+    req<{ hits: BookHit[]; total: number }>(
       `/api/books/search?system=${encodeURIComponent(system)}&q=${encodeURIComponent(q)}`,
     ),
 

@@ -357,7 +357,14 @@ export type Book = {
   createdAt: string;
 };
 
-/** One search result: which book, which page, and what it says there. */
+/**
+ * One search result: which book, which page, and what it says there.
+ *
+ * `snippet` carries the matched words fenced in \x02…\x03 so the console
+ * can highlight them — see `splitSnippet` in `src/lib/books.ts`. Render it
+ * raw and the fences are invisible, which is the point of using control
+ * characters: forgetting to split degrades, it doesn't break.
+ */
 export type BookHit = {
   bookId: string;
   bookName: string;

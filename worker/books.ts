@@ -5,9 +5,9 @@ import type { Book, BookHit } from './types';
 // packs, and it never ships (rule 4).
 //
 // Extraction happens in the browser at upload time and arrives here as
-// plain page text. Search is a LIKE over those pages: unglamorous, but a
-// home instance holds a handful of books, and it means no FTS migration
-// and no ranking to explain.
+// plain page text. Search is FTS5 over those pages (migration 0006): whole
+// words, stemmed, ranked by bm25. Mid-session you get one question and one
+// glance, so the right page has to be the first one.
 
 type BookRow = {
   id: string;
@@ -33,16 +33,38 @@ export function toBook(row: BookRow): Book {
 const newId = () =>
   `bok_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
 
-/** A window of text around the match, so a hit reads like a sentence. */
-function snippet(text: string, needle: string, span = 90): string {
-  const at = text.toLowerCase().indexOf(needle.toLowerCase());
-  if (at < 0) return text.slice(0, span * 2).trim();
-  const start = Math.max(0, at - span);
-  const end = Math.min(text.length, at + needle.length + span);
-  return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${
-    end < text.length ? '…' : ''
-  }`;
+/**
+ * Turn what someone typed into an FTS5 expression.
+ *
+ * Raw input can't go near MATCH: `d20 "AC` is a syntax error, and `NOT`
+ * is an operator, so a stray word would quietly change the question. So
+ * the query is rebuilt from its words — every term quoted as a literal
+ * phrase, all of them required. Punctuation is dropped rather than
+ * escaped, since none of it means anything to a tokenizer anyway.
+ */
+function ftsQuery(q: string): string | null {
+  const terms = q
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}']+/u)
+    .filter(Boolean)
+    .slice(0, 12);
+  if (!terms.length) return null;
+  const quoted = terms.map((t) => `"${t.replace(/"/g, '')}"`);
+  const all = quoted.join(' AND ');
+  if (quoted.length < 2) return all;
+
+  // Same results, better order. Every page still has to contain every
+  // term, but a page where the words sit TOGETHER also matches the phrase
+  // branch, and bm25 scores a page once per phrase it matched — so "heavy
+  // cover" surfaces the rule that defines it above the wagon that has
+  // some. Without this, bm25's length normalisation puts the short stat
+  // block first.
+  const phrase = `"${terms.map((t) => t.replace(/"/g, '')).join(' ')}"`;
+  return `(${phrase}) OR (${all})`;
 }
+
+/** How many hits we'll return. Ranked, so this is "the best N", not "the first N". */
+const HIT_LIMIT = 40;
 
 export async function bookRoutes(
   request: Request,
@@ -61,26 +83,44 @@ export async function bookRoutes(
     if (!dm) return err('DM key required', 401);
     const q = (url.searchParams.get('q') ?? '').trim();
     const system = url.searchParams.get('system');
-    if (q.length < 2) return json({ hits: [] });
+    const match = q.length < 2 ? null : ftsQuery(q);
+    if (!match) return json({ hits: [], total: 0 });
+
+    const from = `FROM book_fts
+        JOIN book_pages p ON p.rowid = book_fts.rowid
+        JOIN books b ON b.id = p.book_id
+       WHERE book_fts MATCH ?1 ${system ? 'AND b.system = ?2' : ''}`;
+    const binds = system ? [match, system] : [match];
+
+    // char(2)/char(3) fence the matched words inside the snippet so the
+    // console can highlight them. Control characters, deliberately: they
+    // can't collide with anything a PDF's text layer contains, and if one
+    // ever escaped to the DOM it would render as nothing.
     const rows = await env.DB.prepare(
-      `SELECT p.book_id, p.page, p.text, b.name
-         FROM book_pages p JOIN books b ON b.id = p.book_id
-        WHERE p.text LIKE ? ${system ? 'AND b.system = ?' : ''}
-        ORDER BY b.name, p.page
-        LIMIT 60`,
+      `SELECT p.book_id, p.page, b.name,
+              snippet(book_fts, 0, char(2), char(3), '…', 18) AS snip
+         ${from}
+       ORDER BY bm25(book_fts)
+       LIMIT ${HIT_LIMIT}`,
     )
-      .bind(...[`%${q}%`, ...(system ? [system] : [])])
+      .bind(...binds)
       .all();
+
+    // Ranking makes the cap honest, but only if you can see you hit it.
+    const counted = await env.DB.prepare(`SELECT COUNT(*) AS n ${from}`)
+      .bind(...binds)
+      .first<{ n: number }>();
+
     const hits: BookHit[] = rows.results.map((r) => {
-      const row = r as { book_id: string; page: number; text: string; name: string };
+      const row = r as { book_id: string; page: number; name: string; snip: string };
       return {
         bookId: row.book_id,
         bookName: row.name,
         page: row.page,
-        snippet: snippet(row.text, q),
+        snippet: row.snip,
       };
     });
-    return json({ hits });
+    return json({ hits, total: counted?.n ?? hits.length });
   }
 
   if (pathname === '/api/books' && method === 'GET') {
@@ -129,10 +169,16 @@ export async function bookRoutes(
     if (pages.length) {
       // Batched: a rulebook is hundreds of pages and one statement each
       // would be hundreds of round trips.
+      //
+      // Upsert rather than INSERT OR REPLACE: REPLACE resolves a conflict
+      // by deleting the row without firing the delete trigger, which would
+      // strand the old text in the search index. DO UPDATE is a real
+      // update, so the index follows.
       await env.DB.batch(
         pages.map((p) =>
           env.DB.prepare(
-            'INSERT OR REPLACE INTO book_pages (book_id, page, text) VALUES (?, ?, ?)',
+            `INSERT INTO book_pages (book_id, page, text) VALUES (?, ?, ?)
+             ON CONFLICT (book_id, page) DO UPDATE SET text = excluded.text`,
           ).bind(bookId, p.page, p.text),
         ),
       );
