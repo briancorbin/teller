@@ -162,9 +162,22 @@ a room, short-lived, and it only ever means "adopt this screen", never
 stream can't send headers), use its **handle** — `sha-256(id)`, which
 identifies but never authorises.
 
-No user tables, no OAuth, no sessions — this is a home game. (SSE
-streams are unauthenticated in v0: they carry initiative labels only.
-Keep secrets out of the stream.)
+**Accounts are allowed, but never required** (Brian, 2026-08-09,
+replacing a blanket "no accounts" that shipped in the foundation commit
+and was never actually a decision). A campaign must always be playable
+with nothing but the DM's key and screens that pair by code — showing
+up at a friend's table must never mean signing up for anything. Any
+identity layer is additive on top of that, for the things it genuinely
+unlocks: a character that follows a player between tables, a screen a
+player owns and carries, history across campaigns.
+
+Prefer the smallest thing that does the job. A character sheet carried
+ON the player's own device gets "walk in and your character loads"
+without a server owning anyone's character; reach for real accounts when
+the requirement is genuinely cross-device or cross-table, not before.
+
+(SSE streams are unauthenticated in v0: they carry initiative labels
+only. Keep secrets out of the stream.)
 
 ### 8. Schema: few real columns + JSON `data` blob
 
