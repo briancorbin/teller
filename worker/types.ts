@@ -70,10 +70,26 @@ export type SceneView = {
 };
 
 /**
+ * A token: a ground marker on a scene — deliberately dumb (no vision,
+ * no auras-as-data). Position in map space (u/v ∈ 0..1), size in
+ * physical inches. characterId links it to a character, unlocking
+ * reactive render effects on the table (turn glow, wound tint).
+ */
+export type Token = {
+  id: string;
+  label: string;
+  u: number;
+  v: number;
+  sizeInches: number;
+  color: string;
+  characterId?: string | null;
+};
+
+/**
  * A scene: a battle map or splash image for the table TV.
  * widthInches = the map's intended physical width (publisher-stated);
  * with the display's calibrated ppi it makes true-scale rendering
- * possible. fog/tokens arrive in later battlemap phases.
+ * possible. Fog arrives in the next battlemap phase.
  */
 export type Scene = {
   id: string;
@@ -81,6 +97,7 @@ export type Scene = {
   name: string;
   widthInches?: number;
   view?: SceneView;
+  tokens?: Token[];
 };
 
 export type CampaignData = {
@@ -246,6 +263,12 @@ export type PublicCharacter = {
     fields: Field[];
     counters: Counter[];
     tags: string[];
+    /**
+     * Qualitative state derived server-side from the first max-bearing
+     * counter — the table may know a wolf is Bloodied, NEVER its
+     * numbers. Drives reactive token effects.
+     */
+    vitality?: 'healthy' | 'bloodied' | 'critical';
   };
 };
 

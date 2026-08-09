@@ -679,6 +679,11 @@ export function DmView({ campaignId }: { campaignId: string }) {
               combatRunning={(session?.turn ?? null) !== null}
               ppi={campaign.data.grid?.ppi}
               tableDisplay={campaign.data.tableDisplay}
+              characters={characters.map((c) => ({
+                id: c.id,
+                name: c.name,
+                kind: c.kind,
+              }))}
               onClose={() => setEditingSceneId(null)}
               onSave={(next) => {
                 const maps = (campaign.data.maps ?? []).map((s) =>

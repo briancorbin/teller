@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Campaign, PublicCharacter } from '../../worker/types';
 import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
@@ -8,22 +8,31 @@ import { GridOverlay } from '../components/GridOverlay';
 
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the active scene (framed per its view + true
-// scale when calibrated), the grid overlay, idle branding otherwise.
-// All control lives on the console; state arrives over SSE.
-// Coordinate rules: docs/BATTLEMAP.md.
+// scale when calibrated), token ground-markers with reactive effects,
+// the grid overlay, idle branding otherwise. All control lives on the
+// console; state arrives over SSE. Coordinate rules: docs/BATTLEMAP.md.
 
 export function TableView({ campaignId }: { campaignId: string }) {
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [characters, setCharacters] = useState<PublicCharacter[]>([]);
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
+  const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
 
   useWakeLock();
+
+  useEffect(() => {
+    const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const refetch = useCallback(() => {
     api
       .publicCampaign(campaignId)
-      .then(({ campaign }: { campaign: Campaign; characters: PublicCharacter[] }) =>
-        setCampaign(campaign),
-      )
+      .then(({ campaign, characters }) => {
+        setCampaign(campaign);
+        setCharacters(characters);
+      })
       .catch(() => {});
   }, [campaignId]);
 
@@ -39,8 +48,12 @@ export function TableView({ campaignId }: { campaignId: string }) {
     }).catch(() => {});
   }, [campaignId]);
 
-  const { connected } = useSession(campaignId, (id) => {
-    if (id === 'campaign') refetch();
+  // Any poke (scene switch, counter tick → vitality change) refreshes;
+  // debounced so a burst of console taps costs one fetch.
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { session, connected } = useSession(campaignId, () => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    refetchTimer.current = setTimeout(refetch, 300);
   });
 
   const scene = campaign?.data.scene ?? null;
@@ -49,15 +62,6 @@ export function TableView({ campaignId }: { campaignId: string }) {
 
   // Natural dimensions belong to the current image only.
   useEffect(() => setNat(null), [mapKey]);
-
-  // True scale needs all three facts: the display's calibrated ppi,
-  // the scene's declared physical width, and the image's pixel width.
-  const ppi = campaign?.data.grid?.ppi;
-  const view = scene?.view;
-  const trueScale =
-    view?.mode === 'true' && scene?.widthInches && ppi && nat
-      ? ((ppi * scene.widthInches) / nat.w) * (view.zoom || 1)
-      : null;
 
   // Measure via ref AND onLoad: a cached image can complete before
   // React attaches the load listener, so onLoad alone silently misses.
@@ -71,8 +75,41 @@ export function TableView({ campaignId }: { campaignId: string }) {
     }
   };
 
+  // One geometry for both modes: where the map sits on the glass.
+  const ppi = campaign?.data.grid?.ppi;
+  const view = scene?.view;
+  let rect: { left: number; top: number; scale: number } | null = null;
+  if (nat) {
+    if (view?.mode === 'true' && scene?.widthInches && ppi) {
+      const scale = ((ppi * scene.widthInches) / nat.w) * (view.zoom || 1);
+      rect = {
+        scale,
+        left: vp.w / 2 - view.cu * nat.w * scale,
+        top: vp.h / 2 - view.cv * nat.h * scale,
+      };
+    } else {
+      const scale = Math.min(vp.w / nat.w, vp.h / nat.h);
+      rect = {
+        scale,
+        left: (vp.w - nat.w * scale) / 2,
+        top: (vp.h - nat.h * scale) / 2,
+      };
+    }
+  }
+
+  // Tokens size in MAP inches so they stay glued to the ground in
+  // either mode (in true scale a 1" token IS 1" of glass).
+  const pxPerMapInch =
+    rect && nat && scene?.widthInches
+      ? (rect.scale * nat.w) / scene.widthInches
+      : null;
+
+  const turnCharacterId =
+    session && session.turn !== null
+      ? (session.initiative[session.turn]?.characterId ?? null)
+      : null;
+
   if (mapUrl) {
-    const framed = trueScale !== null && nat !== null && view !== undefined;
     return (
       <main className="relative h-screen overflow-hidden bg-black">
         <ConnectionHint connected={connected} />
@@ -82,22 +119,58 @@ export function TableView({ campaignId }: { campaignId: string }) {
           alt=""
           ref={measure}
           onLoad={(e) => measure(e.currentTarget)}
-          className={
-            framed
-              ? 'absolute max-w-none'
-              : 'absolute inset-0 h-full w-full object-contain'
-          }
+          className="absolute max-w-none"
           style={
-            framed
+            rect && nat
               ? {
-                  width: nat.w * trueScale,
-                  height: nat.h * trueScale,
-                  left: `calc(50vw - ${view.cu * nat.w * trueScale}px)`,
-                  top: `calc(50vh - ${view.cv * nat.h * trueScale}px)`,
+                  width: nat.w * rect.scale,
+                  height: nat.h * rect.scale,
+                  left: rect.left,
+                  top: rect.top,
                 }
-              : undefined
+              : { visibility: 'hidden' }
           }
         />
+        {rect &&
+          nat &&
+          (scene?.tokens ?? []).map((token) => {
+            const size = pxPerMapInch
+              ? token.sizeInches * pxPerMapInch
+              : 24;
+            const linked = token.characterId
+              ? characters.find((c) => c.id === token.characterId)
+              : null;
+            const vitality = linked?.data.vitality;
+            const isTurn =
+              token.characterId != null && token.characterId === turnCharacterId;
+            const glow = isTurn
+              ? `0 0 ${size * 0.6}px ${size * 0.2}px rgba(251,191,36,0.75)`
+              : vitality === 'critical'
+                ? `0 0 ${size * 0.5}px ${size * 0.15}px rgba(220,38,38,0.8)`
+                : vitality === 'bloodied'
+                  ? `0 0 ${size * 0.35}px ${size * 0.1}px rgba(220,38,38,0.5)`
+                  : undefined;
+            return (
+              <div
+                key={token.id}
+                className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 font-mono font-bold text-stone-950 ${
+                  isTurn || vitality === 'critical' ? 'animate-pulse' : ''
+                } ${vitality === 'bloodied' || vitality === 'critical' ? 'border-red-900' : 'border-stone-950/80'}`}
+                style={{
+                  left: rect.left + token.u * nat.w * rect.scale,
+                  top: rect.top + token.v * nat.h * rect.scale,
+                  width: size,
+                  height: size,
+                  backgroundColor: token.color,
+                  boxShadow: glow,
+                  fontSize: Math.max(9, size * 0.28),
+                  transition: 'left 300ms, top 300ms',
+                }}
+              >
+                {token.label.slice(0, 2)}
+              </div>
+            );
+          })}
         <GridOverlay grid={campaign?.data.grid} />
       </main>
     );

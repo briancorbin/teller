@@ -83,6 +83,20 @@ export function publicCounters(counters: Counter[]): Counter[] {
   return counters.filter((c) => !c.hidden);
 }
 
+/**
+ * Qualitative wound state from the first max-bearing counter (the
+ * vitality-by-convention slot). A STATE, not a number — safe to show
+ * the table even for NPCs.
+ */
+function vitalityOf(
+  counters: Counter[],
+): 'healthy' | 'bloodied' | 'critical' | undefined {
+  const vital = counters.find((c) => c.max !== null && c.max > 0);
+  if (!vital) return undefined;
+  const ratio = vital.current / vital.max!;
+  return ratio <= 0.25 ? 'critical' : ratio <= 0.5 ? 'bloodied' : 'healthy';
+}
+
 export function toPublicCharacter(row: CharacterRow): PublicCharacter {
   const character = toCharacter(row);
   const npc = character.kind === 'npc';
@@ -98,6 +112,7 @@ export function toPublicCharacter(row: CharacterRow): PublicCharacter {
       fields: npc ? [] : character.data.fields,
       counters: npc ? [] : publicCounters(character.data.counters),
       tags: character.data.tags,
+      vitality: vitalityOf(character.data.counters),
     },
   };
 }
