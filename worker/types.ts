@@ -78,6 +78,12 @@ export type CampaignData = {
   /** Which scene the table is showing. Falls back to legacy `map`. */
   activeMapId?: string | null;
   /**
+   * Table grid overlay, controlled from the console (the table is
+   * passive glass). ppi = pixels per true inch on the table display —
+   * calibrated by holding a mini base in a square and nudging ±.
+   */
+  grid?: { on: boolean; ppi: number };
+  /**
    * Handout library — DM-only. The list never leaves via /public
    * (staged spoilers must not leak); only the ACTIVE handout does.
    */

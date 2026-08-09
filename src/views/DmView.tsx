@@ -72,6 +72,20 @@ export function DmView({ campaignId }: { campaignId: string }) {
     api.patchCharacter(id, patch).catch(() => refetch());
   };
 
+  // Functional update so rapid ± taps never compute from a stale base;
+  // the PATCH sends the absolute value, so replays are harmless.
+  const nudgeGrid = (delta: number) => {
+    setCampaign((prev) => {
+      if (!prev) return prev;
+      const grid = {
+        on: true,
+        ppi: Math.max(10, (prev.data.grid?.ppi ?? 40) + delta),
+      };
+      api.patchCampaign(prev.id, { data: { grid } }).catch(() => refetch());
+      return { ...prev, data: { ...prev.data, grid } };
+    });
+  };
+
   const addCharacter = async () => {
     if (!newName.trim()) return;
     await api.createCharacter(campaignId, newName.trim(), newKind).catch((e) =>
@@ -321,6 +335,56 @@ export function DmView({ campaignId }: { campaignId: string }) {
                   );
                 })}
               </div>
+            )}
+          </div>
+
+          <div className={`${card} space-y-2`}>
+            <div className="flex items-center justify-between">
+              <span className={sectionLabel}>Table grid</span>
+              <button
+                className={`rounded-md px-2 py-1 text-sm transition-colors ${
+                  campaign.data.grid?.on
+                    ? 'bg-amber-700 text-stone-950'
+                    : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
+                }`}
+                onClick={() => {
+                  const grid = {
+                    ppi: campaign.data.grid?.ppi ?? 40,
+                    on: !campaign.data.grid?.on,
+                  };
+                  setCampaign({ ...campaign, data: { ...campaign.data, grid } });
+                  api.patchCampaign(campaign.id, { data: { grid } }).catch(() => refetch());
+                }}
+              >
+                {campaign.data.grid?.on ? 'on' : 'off'}
+              </button>
+            </div>
+            {campaign.data.grid?.on && (
+              <>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    className="h-8 w-8 rounded-lg bg-stone-800 text-lg text-stone-200 hover:bg-stone-700"
+                    aria-label="smaller squares"
+                    onClick={() => nudgeGrid(-0.5)}
+                  >
+                    −
+                  </button>
+                  <span className="font-mono text-sm text-stone-400">
+                    {(campaign.data.grid?.ppi ?? 40).toFixed(1)} px/in
+                  </span>
+                  <button
+                    className="h-8 w-8 rounded-lg bg-stone-800 text-lg text-stone-200 hover:bg-stone-700"
+                    aria-label="larger squares"
+                    onClick={() => nudgeGrid(0.5)}
+                  >
+                    +
+                  </button>
+                </div>
+                <p className="text-xs leading-snug text-stone-600">
+                  hold a mini base in any square on the table and nudge ± until
+                  it fits exactly
+                </p>
+              </>
             )}
           </div>
 

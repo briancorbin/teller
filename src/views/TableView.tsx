@@ -43,7 +43,7 @@ export function TableView({ campaignId }: { campaignId: string }) {
           alt=""
           className="absolute inset-0 h-full w-full object-contain"
         />
-        <GridOverlay />
+        <GridOverlay grid={campaign?.data.grid} />
       </main>
     );
   }

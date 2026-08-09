@@ -436,6 +436,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         data: {
           vocabulary: campaign.data.vocabulary,
           counters: publicCounters(campaign.data.counters),
+          grid: campaign.data.grid,
           // Active scene wins; legacy single-map pointer is the fallback.
           map:
             (campaign.data.maps ?? []).find(
@@ -488,6 +489,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         body.data?.activeMapId !== undefined
           ? body.data.activeMapId
           : campaign.data.activeMapId,
+      grid: body.data?.grid !== undefined ? body.data.grid : campaign.data.grid,
     };
     await env.DB.prepare('UPDATE campaigns SET name = ?, data = ? WHERE id = ?')
       .bind(body.name ?? campaign.name, JSON.stringify(next), campaign.id)
