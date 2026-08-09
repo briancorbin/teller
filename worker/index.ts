@@ -13,6 +13,7 @@ import {
   actorOf,
   canDm,
   canEditCharacter,
+  canWatch,
   displayRoutes,
   resolveDisplay,
   type Auth,
@@ -20,6 +21,7 @@ import {
 import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
 import { bundleFilename, exportCampaign } from './bundle';
+import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
 import type {
   Calibration,
@@ -898,6 +900,17 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ characters: created }, 201);
   }
 
+  // A screen asking for permission to listen. Any role the DM adopted
+  // into this campaign may have one — a table TV needs turn order as
+  // much as the console does.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/stream-ticket$/);
+  if (m && method === 'POST') {
+    if (!canWatch(auth, m[1])) return err('not part of this table', 401);
+    if (!env.DM_KEY) return err('this instance has no key set', 500);
+    const ticket = await mintTicket(env.DM_KEY, m[1], STREAM_MINUTES);
+    return json({ ticket });
+  }
+
   // Live session — SSE stream + initiative ops, forwarded to the DO.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/(stream|session)$/);
   if (m) {
@@ -908,6 +921,16 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         method: 'POST',
         body: JSON.stringify(op),
       });
+    }
+    // Listening requires a ticket.
+    //
+    // This stream used to be open to anyone who knew a campaign id —
+    // a fair trade when the only way to reach it was to be in the room,
+    // and an untenable one the moment a host can be exposed through a
+    // tunnel. `EventSource` can't send headers, so the proof rides in
+    // the URL (see tickets.ts).
+    if (!(await checkTicket(env.DM_KEY, m[1], url.searchParams.get('t')))) {
+      return err('a ticket is required to listen', 401);
     }
     // The stream carries the caller's opaque handle (never its id), so
     // the DO can aim an event at one screen instead of the whole room.

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Calibration, SessionState, StreamEvent } from '../../worker/types';
+import { api } from './api';
 
 /**
  * Subscribe to a campaign's live session over SSE.
@@ -32,12 +33,45 @@ export function useSession(
 
   useEffect(() => {
     if (!campaignId) return;
-    const url = `/api/campaigns/${campaignId}/stream${
-      handle ? `?display=${encodeURIComponent(handle)}` : ''
-    }`;
-    const source = new EventSource(url);
-    source.onopen = () => setConnected(true);
-    source.onerror = () => setConnected(false);
+    let source: EventSource | null = null;
+    let retry: ReturnType<typeof setTimeout> | null = null;
+    let closed = false;
+    let backoff = 1000;
+
+    // Listening needs a ticket, because EventSource can't send headers.
+    // It expires, and the browser's own reconnect would then retry a 401
+    // forever — so reconnection is ours: fetch a fresh ticket, open a
+    // fresh stream, and back off if the host is simply gone.
+    const connect = async () => {
+      if (closed) return;
+      try {
+        const { ticket } = await api.streamTicket(campaignId);
+        if (closed) return;
+        const params = new URLSearchParams({ t: ticket });
+        if (handle) params.set('display', handle);
+        source = new EventSource(`/api/campaigns/${campaignId}/stream?${params}`);
+        wire(source);
+      } catch {
+        setConnected(false);
+        retry = setTimeout(connect, backoff);
+        backoff = Math.min(backoff * 2, 30_000);
+      }
+    };
+
+    const reconnect = () => {
+      setConnected(false);
+      source?.close();
+      source = null;
+      retry = setTimeout(connect, backoff);
+      backoff = Math.min(backoff * 2, 30_000);
+    };
+
+    const wire = (source: EventSource) => {
+    source.onopen = () => {
+      setConnected(true);
+      backoff = 1000;
+    };
+    source.onerror = () => reconnect();
     source.onmessage = (message) => {
       setConnected(true);
       const event = JSON.parse(message.data) as StreamEvent;
@@ -53,7 +87,14 @@ export function useSession(
         screenRef.current?.onCalibration?.(event.calibration);
       }
     };
-    return () => source.close();
+    };
+
+    void connect();
+    return () => {
+      closed = true;
+      if (retry) clearTimeout(retry);
+      source?.close();
+    };
   }, [campaignId, handle]);
 
   return { session, connected };

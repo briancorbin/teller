@@ -1,5 +1,6 @@
 import type { Env } from './db';
 import type { Book, BookHit } from './types';
+import { BOOK_MINUTES, checkTicket, mintTicket } from './tickets';
 
 // Rulebooks. The DM's own PDFs, in the DM's own instance — content, like
 // packs, and it never ships (rule 4).
@@ -72,59 +73,9 @@ function ftsQuery(q: string): string | null {
 /** How many hits we'll return. Ranked, so this is "the best N", not "the first N". */
 const HIT_LIMIT = 40;
 
-// A ticket to read one book.
-//
-// The PDF viewer is an <iframe>, and an iframe sends no headers — so the
-// key can't ride along, and fetching the file into a blob first would
-// throw away the range streaming that makes opening page 184 of a 200MB
-// rulebook instant. So the console asks for a ticket (with the key) and
-// puts that in the URL.
-//
-// It's an HMAC over the book id and an expiry, signed with the one
-// secret: nothing to store, nothing to clean up, useless for any other
-// book, and dead within the hour. A URL that leaks into history buys
-// someone an hour of one book they'd have needed the id of anyway.
-const TICKET_MINUTES = 60;
-
-async function ticketKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign', 'verify'],
-  );
-}
-
-async function sign(secret: string, bookId: string, expires: number): Promise<string> {
-  const signature = await crypto.subtle.sign(
-    'HMAC',
-    await ticketKey(secret),
-    new TextEncoder().encode(`${bookId}.${expires}`),
-  );
-  return [...new Uint8Array(signature)]
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('')
-    .slice(0, 32);
-}
-
-async function mintTicket(secret: string, bookId: string): Promise<string> {
-  const expires = Date.now() + TICKET_MINUTES * 60_000;
-  return `${expires}.${await sign(secret, bookId, expires)}`;
-}
-
-async function checkTicket(
-  secret: string,
-  bookId: string,
-  ticket: string | null,
-): Promise<boolean> {
-  const [expires, presented] = (ticket ?? '').split('.');
-  if (!expires || !presented) return false;
-  if (!Number(expires) || Number(expires) < Date.now()) return false;
-  // Signed over the expiry that was presented — otherwise the check
-  // would compare against a different message and never match.
-  return (await sign(secret, bookId, Number(expires))) === presented;
-}
+// Reading a book uses a ticket (see tickets.ts): an iframe sends no
+// headers, and fetching the file into a blob first would throw away the
+// ranged reads that make opening page 184 instant.
 
 export async function bookRoutes(
   request: Request,
@@ -254,14 +205,12 @@ export async function bookRoutes(
     // No secret means nothing can be signed, and an unsigned ticket would
     // be a URL that lets anyone read the book. Refuse rather than weaken.
     if (!env.DM_KEY) return err('this instance has no key set', 500);
-    return json({ url: `/api/books/${m[1]}/file?t=${await mintTicket(env.DM_KEY, m[1])}` });
+    return json({ url: `/api/books/${m[1]}/file?t=${await mintTicket(env.DM_KEY, m[1], BOOK_MINUTES)}` });
   }
 
   m = pathname.match(/^\/api\/books\/([^/]+)\/file$/);
   if (m && (method === 'GET' || method === 'HEAD')) {
-    const ticketed = env.DM_KEY
-      ? await checkTicket(env.DM_KEY, m[1], url.searchParams.get('t'))
-      : false;
+    const ticketed = await checkTicket(env.DM_KEY, m[1], url.searchParams.get('t'));
     if (!dm && !ticketed) return err('DM key required', 401);
     const row = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
       .bind(m[1])

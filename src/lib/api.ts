@@ -369,6 +369,18 @@ export const api = {
     URL.revokeObjectURL(url);
   },
 
+  /**
+   * Permission to listen to a campaign's live session.
+   *
+   * EventSource can't send headers, so the proof rides in the URL. Any
+   * screen the DM adopted into this campaign may have one — a table TV
+   * needs turn order as much as the console does.
+   */
+  streamTicket: (campaignId: string) =>
+    req<{ ticket: string }>(`/api/campaigns/${campaignId}/stream-ticket`, {
+      method: 'POST',
+    }),
+
   sessionOp: (campaignId: string, op: SessionOp) =>
     req<SessionState>(
       `/api/campaigns/${campaignId}/session`,

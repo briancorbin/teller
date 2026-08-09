@@ -108,6 +108,19 @@ export function canDm(auth: Auth, campaignId?: string): boolean {
 }
 
 /**
+ * May this caller listen to a campaign's live session?
+ *
+ * Anyone the DM has adopted into it. Every role belongs at the table —
+ * a table TV and a badge need turn order as much as the console does —
+ * so this is deliberately broader than `canDm`. What it is NOT is open
+ * to the world, which is what the stream used to be.
+ */
+export function canWatch(auth: Auth, campaignId: string): boolean {
+  if (auth.key) return true;
+  return auth.display?.campaignId === campaignId;
+}
+
+/**
  * May this caller edit this character? The DM may edit anyone; a seat
  * may edit the one character it was pointed at, and nobody else.
  */
