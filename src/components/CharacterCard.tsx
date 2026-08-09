@@ -14,6 +14,7 @@ export function CharacterCard({
   onPatch,
   onDelete,
   onDuplicate,
+  onSaveBlueprint,
   lookup,
 }: {
   character: Character;
@@ -21,6 +22,8 @@ export function CharacterCard({
   onPatch: (patch: { name?: string; data?: Partial<CharacterData> }) => void;
   onDelete: () => void;
   onDuplicate?: () => void;
+  /** NPCs only: keep this sheet in the bestiary to stamp out later. */
+  onSaveBlueprint?: () => void;
   lookup?: RuleLookup;
 }) {
   // No seat link and no QR any more: a player's screen joins like every
@@ -45,6 +48,15 @@ export function CharacterCard({
           <span className="rounded bg-stone-800 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-stone-400">
             npc
           </span>
+        )}
+        {onSaveBlueprint && (
+          <button
+            className={btnGhost}
+            onClick={onSaveBlueprint}
+            title="save to the bestiary — stamp copies of this into a fight later"
+          >
+            ⌂
+          </button>
         )}
         {onDuplicate && (
           <button

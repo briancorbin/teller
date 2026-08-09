@@ -15,6 +15,14 @@ teller exists because Foundry/Arkenforge are built for *remote* play
 in-person tool is presentation + bookkeeping software, not a rules
 simulator.
 
+**Prep is in scope** (Brian, 2026-08-09). The thesis governs PLAY — what
+happens at the table stays physical — but building encounters, bestiaries
+and reference libraries beforehand is a fair thing for teller to grow
+into, and it feeds the table rather than competing with it. What stays
+out is unchanged and is what actually matters: no rules engine (rule 1),
+and no rules CONTENT in the repo or distributed to anyone (rule 4).
+Reference and prep live per-instance, in the DM's own books.
+
 ## Relationship to the-shed-next
 
 Standalone on purpose (the sidewalk precedent): own repo, own infra,

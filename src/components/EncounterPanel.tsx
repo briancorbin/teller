@@ -5,6 +5,7 @@ import type {
   Counter,
   EncounterState,
   InitiativeEntry,
+  NpcBlueprint,
   SessionOp,
   SessionState,
 } from '../../worker/types';
@@ -53,21 +54,28 @@ export function EncounterPanel({
   session,
   characters,
   states,
+  npcs,
   tokenLinks,
   onOp,
   onPatchCharacter,
   onDropToken,
+  onSpawn,
 }: {
   session: SessionState | null;
   characters: Character[];
   states: EncounterState[];
+  /** The bestiary — stamp these out into the fight. */
+  npcs: NpcBlueprint[];
   /** Character ids that already have a token on the active scene. */
   tokenLinks: Set<string>;
   onOp: (op: SessionOp) => void;
   onPatchCharacter: (id: string, patch: { data?: Partial<CharacterData> }) => void;
   onDropToken: (characterId: string, label: string) => void;
+  onSpawn: (npcId: string, count: number) => void;
 }) {
   const [draft, setDraft] = useState('');
+  /** How many of the next thing you tap — set once, tap several. */
+  const [count, setCount] = useState(1);
   const initiative = session?.initiative ?? [];
   const turn = session?.turn ?? null;
   const running = turn !== null;
@@ -257,6 +265,43 @@ export function EncounterPanel({
           );
         })}
       </ol>
+
+      {npcs.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="font-mono text-[11px] uppercase tracking-wider text-stone-600">
+            bestiary
+          </span>
+          <span className="flex items-center gap-0.5">
+            <button
+              className={btnGhost}
+              onClick={() => setCount((n) => Math.max(1, n - 1))}
+              aria-label="fewer"
+            >
+              −
+            </button>
+            <span className="w-6 text-center font-mono text-xs text-stone-300">
+              ×{count}
+            </span>
+            <button
+              className={btnGhost}
+              onClick={() => setCount((n) => Math.min(20, n + 1))}
+              aria-label="more"
+            >
+              +
+            </button>
+          </span>
+          {npcs.map((n) => (
+            <button
+              key={n.id}
+              className={btnGhost}
+              onClick={() => onSpawn(n.id, count)}
+              title={`add ${count} × ${n.name} to the fight`}
+            >
+              + {n.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-1.5">
         {unlisted.map((c) => (

@@ -202,6 +202,13 @@ export const api = {
   deleteCharacter: (id: string) =>
     req<{ ok: true }>(`/api/characters/${id}`, { method: 'DELETE' }),
 
+  /** Stamp a bestiary entry out into real characters. */
+  spawn: (campaignId: string, npcId: string, count: number) =>
+    req<{ characters: Character[] }>(`/api/campaigns/${campaignId}/spawn`, {
+      method: 'POST',
+      body: JSON.stringify({ npcId, count }),
+    }),
+
   duplicateCharacter: (id: string) =>
     req<Character>(`/api/characters/${id}/duplicate`, { method: 'POST' }),
 

@@ -21,6 +21,7 @@ import { getTemplate, templates } from './templates';
 import type {
   Calibration,
   Campaign,
+  Character,
   CharacterData,
   Counter,
   RulesPack,
@@ -510,6 +511,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       vocabulary: body.data?.vocabulary ?? campaign.data.vocabulary,
       counters: body.data?.counters ?? campaign.data.counters,
       states: body.data?.states ?? campaign.data.states,
+      npcs: body.data?.npcs ?? campaign.data.npcs,
       reference: body.data?.reference ?? campaign.data.reference,
       activeHandoutId:
         body.data?.activeHandoutId !== undefined
@@ -763,6 +765,62 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       }),
     });
     return json({ ok: true });
+  }
+
+
+  // Stamp a blueprint out into real characters. One request so a group
+  // arrives together; what comes back is ordinary characters — editable,
+  // deletable, and no longer linked to the blueprint.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/spawn$/);
+  if (m && method === 'POST') {
+    const campaignId = m[1];
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const body = await request.json<{ npcId?: string; count?: number }>();
+    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(campaignId)
+      .first();
+    if (!row) return err('campaign not found', 404);
+    const campaign = toCampaign(row as never);
+    const blueprint = (campaign.data.npcs ?? []).find((n) => n.id === body.npcId);
+    if (!blueprint) return err('npc not found', 404);
+    const count = Math.min(20, Math.max(1, Math.round(body.count ?? 1)));
+
+    const created: Character[] = [];
+    for (let i = 0; i < count; i++) {
+      const id = newId('chr');
+      // Numbered only when there is more than one — "Coyote" alone
+      // shouldn't become "Coyote 1".
+      const name = count > 1 ? `${blueprint.name} ${i + 1}` : blueprint.name;
+      const data: CharacterData = {
+        fields: structuredClone(blueprint.fields),
+        // Fresh identities per copy, or they'd share ids — and full
+        // where there's a max: a blueprint is a starting kit, so
+        // stamping a wounded sheet shouldn't mint wounded creatures.
+        // Bounded counters fill; unbounded ones keep what was saved.
+        counters: blueprint.counters.map((c) => ({
+          ...c,
+          id: newId('ctr'),
+          current: c.max !== null && c.max > 0 ? c.max : c.current,
+        })),
+        tags: [...blueprint.tags],
+        notes: '',
+      };
+      await env.DB.prepare(
+        'INSERT INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
+      )
+        .bind(id, campaignId, name, 'npc', JSON.stringify(data))
+        .run();
+      await logEvent(env, campaignId, id, actorOf(auth), 'character.created', {
+        name,
+        spawnedFrom: blueprint.id,
+      });
+      const fresh = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+        .bind(id)
+        .first();
+      created.push(toCharacter(fresh as never));
+    }
+    await poke(env, campaignId, 'campaign');
+    return json({ characters: created }, 201);
   }
 
   // Live session — SSE stream + initiative ops, forwarded to the DO.

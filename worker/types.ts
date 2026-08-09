@@ -61,6 +61,23 @@ export type CharacterData = {
   notes: string;
 };
 
+/**
+ * A reusable NPC: the same generic primitives a character has, minus
+ * identity. Stamping one out creates real characters that are editable
+ * and disposable like any other — the blueprint is a starting kit, not
+ * a live link (same relationship templates have to campaigns).
+ *
+ * Blueprints are per-instance content, like packs: they may hold what
+ * the DM's own books say, and they never ship in the repo (rule 4).
+ */
+export type NpcBlueprint = {
+  id: string;
+  name: string;
+  fields: Field[];
+  counters: Counter[];
+  tags: string[];
+};
+
 export type Character = {
   id: string;
   campaignId: string;
@@ -213,6 +230,8 @@ export type CampaignData = {
    * editable afterwards like everything else.
    */
   states?: EncounterState[];
+  /** The bestiary: NPCs to stamp out. Per-instance content, never shipped. */
+  npcs?: NpcBlueprint[];
   /**
    * Warden's reference text — house rules, pasted rules excerpts,
    * table notes. Lives ONLY in the campaign's own database (personal

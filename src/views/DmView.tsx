@@ -129,6 +129,23 @@ export function DmView({
       .catch(loadTableScreen);
   };
 
+  /** Keep an NPC sheet in the bestiary. A blueprint is a starting kit,
+   *  not a live link — editing the copy later never touches the original. */
+  const saveBlueprint = (character: Character) => {
+    const npcs = [
+      ...(campaign?.data.npcs ?? []).filter((n) => n.name !== character.name),
+      {
+        id: newLocalId('npc'),
+        name: character.name,
+        fields: structuredClone(character.data.fields),
+        counters: structuredClone(character.data.counters),
+        tags: [...character.data.tags],
+      },
+    ];
+    setCampaign((prev) => (prev ? { ...prev, data: { ...prev.data, npcs } } : prev));
+    api.patchCampaign(campaignId, { data: { npcs } }).catch(() => refetch());
+  };
+
   const activateScene = (id: string | null) => {
     setCampaign((prev) =>
       prev ? { ...prev, data: { ...prev.data, activeMapId: id } } : prev,
@@ -241,11 +258,53 @@ export function DmView({
       ],
     });
   };
+  // Stamp out a group, put it in the order, and get it onto the map —
+  // one tap, because that's the moment a fight starts.
+  const spawnGroup = async (npcId: string, count: number) => {
+    try {
+      const { characters: made } = await api.spawn(campaignId, npcId, count);
+      await api.sessionOp(campaignId, {
+        op: 'set',
+        initiative: [
+          ...(session?.initiative ?? []),
+          ...made.map((c) => ({
+            id: newLocalId('ini'),
+            characterId: c.id,
+            label: c.name,
+          })),
+        ],
+      });
+      if (liveScene) {
+        // Fanned out rather than stacked, so they can be dragged apart.
+        onSceneChange({
+          ...liveScene,
+          tokens: [
+            ...(liveScene.tokens ?? []),
+            ...made.map((c, i) => ({
+              id: newLocalId('tok'),
+              label: c.name,
+              u: 0.5 + ((i % 5) - 2) * 0.04,
+              v: 0.5 + Math.floor(i / 5) * 0.06,
+              sizeInches: 1,
+              color: '#f87171',
+              characterId: c.id,
+            })),
+          ],
+        });
+      }
+      refetch();
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    }
+  };
+
   const encounterPanel = (
     <EncounterPanel
       session={session}
       characters={characters}
       states={campaign.data.states ?? []}
+      npcs={campaign.data.npcs ?? []}
+      onSpawn={spawnGroup}
       tokenLinks={tokenLinks}
       onOp={(op) => api.sessionOp(campaignId, op).catch(() => refetch())}
       onPatchCharacter={patchCharacter}
@@ -745,6 +804,11 @@ export function DmView({
                     .duplicateCharacter(character.id)
                     .then(() => refetch())
                     .catch((e) => setError(String(e instanceof Error ? e.message : e)))
+                }
+                onSaveBlueprint={
+                  character.kind === 'npc'
+                    ? () => saveBlueprint(character)
+                    : undefined
                 }
               />
             ))}
