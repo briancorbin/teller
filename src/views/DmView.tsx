@@ -237,10 +237,25 @@ export function DmView({ campaignId }: { campaignId: string }) {
 
           <div className={`${card} space-y-2`}>
             <div className="flex items-center justify-between">
-              <span className={sectionLabel}>Battle map</span>
+              <span className={sectionLabel}>Scenes</span>
               <div className="flex gap-1">
+                {(campaign.data.activeMapId || campaign.data.map) && (
+                  <button
+                    className="rounded-md px-2 py-1 text-sm text-stone-400 transition-colors hover:bg-stone-800 hover:text-stone-200"
+                    onClick={() => {
+                      const clears: Promise<unknown>[] = [
+                        api.patchCampaign(campaign.id, { data: { activeMapId: null } }),
+                      ];
+                      if (campaign.data.map) clears.push(api.removeMap(campaignId));
+                      Promise.all(clears).then(() => refetch());
+                    }}
+                    title="table goes dark (idle mark)"
+                  >
+                    clear
+                  </button>
+                )}
                 <label className="cursor-pointer rounded-md px-2 py-1 text-sm text-stone-400 transition-colors hover:bg-stone-800 hover:text-stone-200">
-                  {campaign.data.map ? 'replace' : 'upload'}
+                  + upload
                   <input
                     type="file"
                     accept="image/*"
@@ -249,34 +264,63 @@ export function DmView({ campaignId }: { campaignId: string }) {
                       const file = e.target.files?.[0];
                       if (!file) return;
                       api
-                        .uploadMap(campaignId, file)
+                        .uploadScene(campaignId, file)
                         .then(() => refetch())
                         .catch((err2) =>
                           setError(String(err2 instanceof Error ? err2.message : err2)),
                         );
+                      e.target.value = '';
                     }}
                   />
                 </label>
-                {campaign.data.map && (
-                  <button
-                    className="rounded-md px-2 py-1 text-sm text-stone-400 transition-colors hover:bg-red-950 hover:text-red-300"
-                    onClick={() => api.removeMap(campaignId).then(refetch)}
-                  >
-                    clear
-                  </button>
-                )}
               </div>
             </div>
-            {campaign.data.map ? (
-              <img
-                src={`/api/maps/${campaign.data.map.key}`}
-                alt="battle map"
-                className="max-h-40 w-full rounded-md object-cover"
-              />
-            ) : (
+            {(campaign.data.maps ?? []).length === 0 ? (
               <p className="text-sm text-stone-600">
-                no map — upload one and it appears on the table TV
+                no scenes yet — upload battle maps & splash art; tap one to put
+                it on the table TV
               </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {(campaign.data.maps ?? []).map((scene) => {
+                  const active = campaign.data.activeMapId === scene.id;
+                  return (
+                    <div key={scene.id} className="relative">
+                      <button
+                        className={`w-full rounded-lg text-left ${
+                          active ? 'ring-2 ring-amber-500' : 'hover:opacity-80'
+                        }`}
+                        onClick={() =>
+                          api
+                            .patchCampaign(campaign.id, {
+                              data: { activeMapId: active ? null : scene.id },
+                            })
+                            .then(() => refetch())
+                        }
+                        title={active ? 'on the table — tap to clear' : 'put on the table TV'}
+                      >
+                        <img
+                          src={`/api/maps/${scene.key}`}
+                          alt={scene.name}
+                          className="h-24 w-full rounded-lg object-cover"
+                        />
+                        <span className="block truncate px-0.5 text-xs text-stone-400">
+                          {scene.name}
+                        </span>
+                      </button>
+                      <button
+                        className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-stone-950/80 text-xs text-stone-400 hover:text-red-300"
+                        onClick={() =>
+                          api.deleteScene(campaignId, scene.id).then(() => refetch())
+                        }
+                        aria-label={`delete ${scene.name}`}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
 

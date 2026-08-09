@@ -112,6 +112,30 @@ export const api = {
   removeMap: (campaignId: string) =>
     req<{ ok: true }>(`/api/campaigns/${campaignId}/map`, { method: 'DELETE' }, true),
 
+  uploadScene: async (campaignId: string, file: File) => {
+    const name = file.name.replace(/\.[^.]+$/, '');
+    const res = await fetch(
+      `/api/campaigns/${campaignId}/maps?name=${encodeURIComponent(name)}`,
+      {
+        method: 'POST',
+        headers: { 'x-teller-key': getDmKey(), 'content-type': file.type },
+        body: file,
+      },
+    );
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `HTTP ${res.status}`);
+    }
+    return res.json() as Promise<{ scene: Handout }>;
+  },
+
+  deleteScene: (campaignId: string, sceneId: string) =>
+    req<{ ok: true }>(
+      `/api/campaigns/${campaignId}/maps/${sceneId}`,
+      { method: 'DELETE' },
+      true,
+    ),
+
   uploadHandout: async (campaignId: string, file: File) => {
     const name = file.name.replace(/\.[^.]+$/, '');
     const res = await fetch(

@@ -68,8 +68,15 @@ export type CampaignData = {
    * use); never ships in templates and never leaves via /public.
    */
   reference?: string;
-  /** Active battle map (R2 object key). v0: one map per campaign. */
+  /**
+   * Legacy single-map pointer (pre-scene-library). Still honored as a
+   * fallback when no scene is active; new uploads go to `maps`.
+   */
   map?: { key: string };
+  /** Scene library: named battle maps / splash art for the table TV. */
+  maps?: Handout[];
+  /** Which scene the table is showing. Falls back to legacy `map`. */
+  activeMapId?: string | null;
   /**
    * Handout library — DM-only. The list never leaves via /public
    * (staged spoilers must not leak); only the ACTIVE handout does.

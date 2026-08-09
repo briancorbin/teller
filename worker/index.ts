@@ -271,6 +271,69 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
+  // Scene library: named battle maps / splash art for the table TV.
+  // Same shape as handouts; the active one renders on /table.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/maps$/);
+  if (m && method === 'POST') {
+    if (!dm) return err('DM key required', 401);
+    const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!campaignRow) return err('campaign not found', 404);
+    const campaign = toCampaign(campaignRow as never);
+    const contentType = request.headers.get('content-type') ?? '';
+    if (!contentType.startsWith('image/')) return err('image body required', 400);
+    const ext = contentType.split('/')[1]?.split('+')[0] ?? 'img';
+    const key = `map/${campaign.id}/${crypto.randomUUID().replace(/-/g, '').slice(0, 16)}.${ext}`;
+    await env.MAPS.put(key, request.body, { httpMetadata: { contentType } });
+    const name = new URL(request.url).searchParams.get('name')?.trim() || 'Scene';
+    const scene = {
+      id: `scn_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`,
+      key,
+      name,
+    };
+    const next = {
+      ...campaign.data,
+      maps: [...(campaign.data.maps ?? []), scene],
+    };
+    await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+      .bind(JSON.stringify(next), campaign.id)
+      .run();
+    await logEvent(env, campaign.id, null, 'dm', 'campaign.updated', {
+      patch: { scene },
+      before: { name: campaign.name, data: campaign.data },
+    });
+    await poke(env, campaign.id, 'campaign');
+    return json({ scene }, 201);
+  }
+
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/maps\/([^/]+)$/);
+  if (m && method === 'DELETE') {
+    if (!dm) return err('DM key required', 401);
+    const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(m[1])
+      .first();
+    if (!campaignRow) return err('campaign not found', 404);
+    const campaign = toCampaign(campaignRow as never);
+    const sceneId = m[2];
+    // Pointer only — objects stay (undo-safe; storage is trivial here).
+    const next = {
+      ...campaign.data,
+      maps: (campaign.data.maps ?? []).filter((s) => s.id !== sceneId),
+      activeMapId:
+        campaign.data.activeMapId === sceneId ? null : campaign.data.activeMapId,
+    };
+    await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+      .bind(JSON.stringify(next), campaign.id)
+      .run();
+    await logEvent(env, campaign.id, null, 'dm', 'campaign.updated', {
+      patch: { removeScene: sceneId },
+      before: { name: campaign.name, data: campaign.data },
+    });
+    await poke(env, campaign.id, 'campaign');
+    return json({ ok: true });
+  }
+
   // Handouts: an image library the DM pushes to player-facing surfaces.
   // Library is DM-only; only the ACTIVE handout leaves via /public.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/handouts$/);
@@ -373,7 +436,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         data: {
           vocabulary: campaign.data.vocabulary,
           counters: publicCounters(campaign.data.counters),
-          map: campaign.data.map,
+          // Active scene wins; legacy single-map pointer is the fallback.
+          map:
+            (campaign.data.maps ?? []).find(
+              (s) => s.id === campaign.data.activeMapId,
+            ) ?? campaign.data.map ?? null,
           handout:
             (campaign.data.handouts ?? []).find(
               (h) => h.id === campaign.data.activeHandoutId,
@@ -417,6 +484,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         body.data?.activeHandoutId !== undefined
           ? body.data.activeHandoutId
           : campaign.data.activeHandoutId,
+      activeMapId:
+        body.data?.activeMapId !== undefined
+          ? body.data.activeMapId
+          : campaign.data.activeMapId,
     };
     await env.DB.prepare('UPDATE campaigns SET name = ?, data = ? WHERE id = ?')
       .bind(body.name ?? campaign.name, JSON.stringify(next), campaign.id)
