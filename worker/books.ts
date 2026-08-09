@@ -141,13 +141,21 @@ export async function bookRoutes(
   // a row and an id, not an upload.
   if (pathname === '/api/books' && method === 'POST') {
     if (!dm) return err('DM key required', 401);
-    const body = await request.json<{ system?: string; name?: string }>();
+    const body = await request.json<{ system?: string; name?: string; id?: string }>();
     const system = (body.system ?? '').trim();
     const name = (body.name ?? '').trim() || 'Untitled';
     if (!system) return err('system required', 400);
-    const id = newId();
+
+    // A card names its books by the hash of their bytes, so the same card
+    // in another panel — or the same rulebook on someone else's card —
+    // means the same id. Adopting one twice is therefore a no-op rather
+    // than a duplicate, which is what makes plugging a card in repeatable.
+    const given = (body.id ?? '').trim();
+    if (given && !/^bok_[a-z0-9]{6,32}$/.test(given)) return err('bad book id', 400);
+    const id = given || newId();
     await env.DB.prepare(
-      'INSERT INTO books (id, system, name) VALUES (?, ?, ?)',
+      `INSERT INTO books (id, system, name) VALUES (?, ?, ?)
+       ON CONFLICT (id) DO UPDATE SET name = excluded.name`,
     )
       .bind(id, system, name)
       .run();

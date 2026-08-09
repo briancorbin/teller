@@ -278,10 +278,12 @@ export const api = {
   books: (system?: string) =>
     req<Book[]>(`/api/books${system ? `?system=${encodeURIComponent(system)}` : ''}`),
 
-  registerBook: (system: string, name: string) =>
+  // `id` is supplied when the book came off a card, which names books by
+  // their content — so adopting the same card twice lands on one row.
+  registerBook: (system: string, name: string, id?: string) =>
     req<{ book: Book }>('/api/books', {
       method: 'POST',
-      body: JSON.stringify({ system, name }),
+      body: JSON.stringify({ system, name, id }),
     }),
 
   indexPages: (bookId: string, pages: { page: number; text: string }[], done = false) =>

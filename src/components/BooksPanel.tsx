@@ -10,6 +10,12 @@ import {
   saveLocalBook,
   splitSnippet,
 } from '../lib/books';
+import {
+  libraryBookIndex,
+  libraryBookUrl,
+  probeLibraries,
+  type Library,
+} from '../lib/loader';
 import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui';
 
 // Rulebooks. Import one and it stays on this device; searching finds the
@@ -18,6 +24,13 @@ import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui';
 // Rendering is the browser's own PDF viewer over a blob URL, which is
 // why there's no viewer code here: #page=N is a thing browsers already
 // do well, and it means no second renderer to maintain.
+//
+// A book can reach this screen two ways. Imported, and it lives in this
+// browser's own storage. Or it's in a LIBRARY the loader serves from
+// loopback — a folder on this machine, or a card you plugged in — in which
+// case the viewer streams it, which is how a hundred-megabyte rulebook
+// opens at page 184 without being held in memory whole. Either way the
+// file never touches a server.
 
 export function BooksPanel({ system }: { system: string }) {
   const [books, setBooks] = useState<Book[]>([]);
@@ -27,9 +40,13 @@ export function BooksPanel({ system }: { system: string }) {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<BookHit[] | null>(null);
   const [total, setTotal] = useState(0);
-  const [open, setOpen] = useState<{ url: string; name: string; page: number } | null>(
-    null,
-  );
+  const [open, setOpen] = useState<{
+    url: string;
+    name: string;
+    page: number;
+    blob: boolean;
+  } | null>(null);
+  const [libraries, setLibraries] = useState<Library[] | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
   const load = useCallback(() => {
@@ -38,10 +55,32 @@ export function BooksPanel({ system }: { system: string }) {
   }, [system]);
   useEffect(load, [load]);
 
+  // Drives come and go while the console stays open — that's the whole
+  // gesture. Polling loopback every few seconds costs nothing, and it
+  // means plugging a card in is the only step there is.
+  useEffect(() => {
+    let live = true;
+    const tick = () => void probeLibraries().then((l) => live && setLibraries(l));
+    tick();
+    const timer = setInterval(tick, 5000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // Where a given book can be read from right now, if anywhere.
+  const served = new Map(
+    (libraries ?? []).flatMap((lib) =>
+      lib.books.map((book) => [book.id, { lib, book }] as const),
+    ),
+  );
+  const known = new Set(books.map((b) => b.id));
+
   // Blob URLs are handles to memory; letting them pile up leaks the book.
   useEffect(() => {
     return () => {
-      if (open) URL.revokeObjectURL(open.url);
+      if (open?.blob) URL.revokeObjectURL(open.url);
     };
   }, [open]);
 
@@ -93,15 +132,61 @@ export function BooksPanel({ system }: { system: string }) {
   };
 
   const openAt = async (bookId: string, page: number, name: string) => {
+    const close = () => {
+      if (open?.blob) URL.revokeObjectURL(open.url);
+    };
+
+    // The loader wins when it has the book: it serves ranges, so the viewer
+    // pulls the pages it's showing. The imported copy has to become a blob
+    // first, and a blob of a 100MB rulebook is 100MB of memory to read one
+    // page of it.
+    const from = served.get(bookId);
+    if (from) {
+      close();
+      setOpen({ url: libraryBookUrl(from.lib.id, bookId), name, page, blob: false });
+      return;
+    }
+
     const file = await getLocalBook(bookId);
     if (!file) {
       setError(
-        `"${name}" was imported on a different screen. Import your copy here to read it.`,
+        `"${name}" isn't on this screen — it was imported somewhere else. Import your copy here, or put it in a library the loader can see.`,
       );
       return;
     }
-    if (open) URL.revokeObjectURL(open.url);
-    setOpen({ url: URL.createObjectURL(file), name, page });
+    close();
+    setOpen({ url: URL.createObjectURL(file), name, page, blob: true });
+  };
+
+  /**
+   * Take a book the loader is serving and make it searchable.
+   *
+   * Only the page text goes up, which is the same bargain every book here
+   * makes: the index is teller's, the PDF stays yours. Ids come from the
+   * file's own bytes, so doing this twice — or on another panel — lands on
+   * the same row instead of a duplicate.
+   */
+  const adopt = async (lib: Library, book: { id: string; name: string }) => {
+    setError('');
+    try {
+      setBusy(`adding ${book.name}…`);
+      const pages = await libraryBookIndex(lib.id, book.id);
+      await api.registerBook(system, book.name, book.id);
+      for (let i = 0; i < pages.length; i += 25) {
+        const batch = pages.slice(i, i + 25);
+        setBusy(`adding ${book.name} — page ${i + batch.length} of ${pages.length}`);
+        await api.indexPages(book.id, batch);
+      }
+      await api.indexPages(book.id, [], true);
+      setBusy('');
+      if (!pages.length) {
+        setError(`${book.name} has no text layer — it's a scan, so search can't find anything in it. It's still readable here.`);
+      }
+      load();
+    } catch (e) {
+      setBusy('');
+      setError(String(e instanceof Error ? e.message : e));
+    }
   };
 
   if (!opfsSupported()) {
@@ -180,13 +265,17 @@ export function BooksPanel({ system }: { system: string }) {
           <li key={book.id} className="flex items-center gap-2">
             <button
               className="min-w-0 flex-1 truncate text-left text-sm text-stone-200 hover:text-stone-50 disabled:text-stone-600"
-              disabled={!here.has(book.id)}
+              disabled={!here.has(book.id) && !served.has(book.id)}
               onClick={() => openAt(book.id, 1, book.name)}
             >
               {book.name}
             </button>
             <span className="font-mono text-[11px] text-stone-600">
-              {here.has(book.id) ? `${book.pages}p` : 'not on this screen'}
+              {served.has(book.id)
+                ? served.get(book.id)!.lib.name
+                : here.has(book.id)
+                  ? `${book.pages}p`
+                  : 'not on this screen'}
             </span>
             <button
               className={`${btnGhost} hover:text-red-300`}
@@ -206,6 +295,59 @@ export function BooksPanel({ system }: { system: string }) {
           <li className="text-sm text-stone-600">no books yet</li>
         )}
       </ul>
+
+      {/* Books the loader can see that teller hasn't been told about. They
+          are already readable — that needs nothing from the server. Adding
+          one only puts its page text in search. */}
+      {(libraries ?? []).map((lib) => {
+        const fresh = lib.books.filter((b) => !known.has(b.id));
+        if (!fresh.length) return null;
+        return (
+          <div key={lib.id} className="space-y-1 border-t border-stone-800 pt-2">
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[11px] text-amber-400">
+                {lib.removable ? '⏏ ' : ''}
+                {lib.name}
+              </span>
+              {fresh.length > 1 && (
+                <button
+                  className={btnGhost}
+                  disabled={!!busy}
+                  onClick={async () => {
+                    for (const book of fresh) await adopt(lib, book);
+                  }}
+                >
+                  add all {fresh.length}
+                </button>
+              )}
+            </div>
+            {fresh.map((book) => (
+              <div key={book.id} className="flex items-center gap-2">
+                <button
+                  className="min-w-0 flex-1 truncate text-left text-sm text-stone-200 hover:text-stone-50"
+                  onClick={() => openAt(book.id, 1, book.name)}
+                >
+                  {book.name}
+                </button>
+                {book.indexing ? (
+                  <span className="font-mono text-[11px] text-stone-600">
+                    reading {book.indexing.done}/{book.indexing.total}
+                  </span>
+                ) : (
+                  <button
+                    className={btnGhost}
+                    disabled={!!busy || !book.indexed}
+                    title={book.indexed ? 'make this searchable' : 'still being read'}
+                    onClick={() => adopt(lib, book)}
+                  >
+                    + search
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        );
+      })}
 
       <div className="flex items-center gap-2">
         <input
@@ -234,7 +376,7 @@ export function BooksPanel({ system }: { system: string }) {
             <button
               className={`${btn} ml-auto`}
               onClick={() => {
-                URL.revokeObjectURL(open.url);
+                if (open.blob) URL.revokeObjectURL(open.url);
                 setOpen(null);
               }}
             >
