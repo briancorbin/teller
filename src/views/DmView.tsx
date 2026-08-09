@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Campaign, Character, CharacterData, PackRecord } from '../../worker/types';
+import type {
+  Campaign,
+  Character,
+  CharacterData,
+  PackRecord,
+  Scene,
+} from '../../worker/types';
 import { api, getDmKey, setDmKey } from '../lib/api';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
@@ -23,7 +29,6 @@ const PANES = ['session', 'map', 'characters', 'library'] as const;
 export function DmView({ campaignId }: { campaignId: string }) {
   const pane = new URLSearchParams(window.location.search).get('pane');
   const showSession = pane === null || pane === 'session';
-  const showMap = pane === null || pane === 'map';
   const showCharacters = pane === null || pane === 'characters';
   const showLibrary = pane === null || pane === 'library';
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -33,9 +38,9 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
-  const [editingSceneId, setEditingSceneId] = useState<string | null>(null);
   const [tvDiagonal, setTvDiagonal] = useState('');
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sceneSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refetch = useCallback(() => {
     api
@@ -98,6 +103,27 @@ export function DmView({ campaignId }: { campaignId: string }) {
   const panGrid = (dx: number, dy: number) =>
     patchGrid((g) => ({ ...g, ox: (g.ox ?? 0) + dx, oy: (g.oy ?? 0) + dy }));
 
+  const activateScene = (id: string | null) => {
+    setCampaign((prev) =>
+      prev ? { ...prev, data: { ...prev.data, activeMapId: id } } : prev,
+    );
+    api.patchCampaign(campaignId, { data: { activeMapId: id } }).catch(() => refetch());
+  };
+
+  // Live scene edits: optimistic locally, debounced to the wire so a
+  // paint drag or a framing drag is one write.
+  const onSceneChange = (next: Scene) => {
+    setCampaign((prev) => {
+      if (!prev) return prev;
+      const maps = (prev.data.maps ?? []).map((s) => (s.id === next.id ? next : s));
+      if (sceneSaveTimer.current) clearTimeout(sceneSaveTimer.current);
+      sceneSaveTimer.current = setTimeout(() => {
+        api.patchCampaign(campaignId, { data: { maps } }).catch(() => refetch());
+      }, 400);
+      return { ...prev, data: { ...prev.data, maps } };
+    });
+  };
+
   const addCharacter = async () => {
     if (!newName.trim()) return;
     await api.createCharacter(campaignId, newName.trim(), newKind).catch((e) =>
@@ -130,6 +156,102 @@ export function DmView({ campaignId }: { campaignId: string }) {
   }
 
   const gm = campaign.data.vocabulary.gm ?? 'DM';
+
+  const paneNav = (
+    <nav className="flex flex-wrap gap-1.5" aria-label="console panes">
+      <a
+        className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
+          pane === null
+            ? 'bg-amber-700 text-stone-950'
+            : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+        }`}
+        href={`/dm/${campaignId}`}
+      >
+        full
+      </a>
+      {PANES.map((p) => (
+        <a
+          key={p}
+          className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
+            pane === p
+              ? 'bg-amber-700 text-stone-950'
+              : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+          }`}
+          href={`/dm/${campaignId}?pane=${p}`}
+        >
+          {p}
+        </a>
+      ))}
+    </nav>
+  );
+
+  // The map pane IS the workshop for whatever scene is on the table:
+  // choose a scene on the console, shape it here. A dedicated station
+  // (DM-screen panel) can sit on this URL all session.
+  if (pane === 'map') {
+    const active = (campaign.data.maps ?? []).find(
+      (s) => s.id === campaign.data.activeMapId,
+    );
+    return (
+      <main className="flex h-screen flex-col gap-3 p-3">
+        <ConnectionHint connected={connected} />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
+          {paneNav}
+          {active && (
+            <button
+              className="ml-auto font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
+              onClick={() => activateScene(null)}
+              title="clear the table (goes to the idle mark)"
+            >
+              clear table
+            </button>
+          )}
+        </div>
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl border border-stone-800">
+          {active ? (
+            <SceneEditor
+              key={active.id}
+              scene={active}
+              combatRunning={(session?.turn ?? null) !== null}
+              ppi={campaign.data.grid?.ppi}
+              tableDisplay={campaign.data.tableDisplay}
+              characters={characters.map((c) => ({
+                id: c.id,
+                name: c.name,
+                kind: c.kind,
+              }))}
+              onChange={onSceneChange}
+            />
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-5 p-8">
+              <p className="text-stone-500">
+                nothing on the table — put a scene up to shape it
+              </p>
+              <div className="grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-3">
+                {(campaign.data.maps ?? []).map((scene) => (
+                  <button
+                    key={scene.id}
+                    className="rounded-lg text-left hover:opacity-80"
+                    onClick={() => activateScene(scene.id)}
+                  >
+                    <img
+                      src={`/api/maps/${scene.key}`}
+                      alt={scene.name}
+                      className="h-24 w-full rounded-lg object-cover"
+                    />
+                    <span className="block truncate px-0.5 text-xs text-stone-400">
+                      {scene.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-4 sm:p-6">
@@ -192,31 +314,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
         </span>
       </header>
 
-      <nav className="flex flex-wrap gap-1.5" aria-label="console panes">
-        <a
-          className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
-            pane === null
-              ? 'bg-amber-700 text-stone-950'
-              : 'bg-stone-900 text-stone-400 hover:text-stone-200'
-          }`}
-          href={`/dm/${campaignId}`}
-        >
-          full
-        </a>
-        {PANES.map((p) => (
-          <a
-            key={p}
-            className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
-              pane === p
-                ? 'bg-amber-700 text-stone-950'
-                : 'bg-stone-900 text-stone-400 hover:text-stone-200'
-            }`}
-            href={`/dm/${campaignId}?pane=${p}`}
-          >
-            {p}
-          </a>
-        ))}
-      </nav>
+      {paneNav}
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 
@@ -229,7 +327,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
               : 'mx-auto max-w-2xl space-y-6'
         }
       >
-        {(showSession || showMap || showLibrary) && (
+        {(showSession || showLibrary) && (
         <div className="space-y-6">
           {showSession && (
           <InitiativePanel
@@ -289,21 +387,27 @@ export function DmView({ campaignId }: { campaignId: string }) {
           </>
           )}
 
-          {showMap && (
+          {showSession && (
           <>
           <div className={`${card} space-y-2`}>
             <div className="flex items-center justify-between">
               <span className={sectionLabel}>Scenes</span>
               <div className="flex gap-1">
+                {campaign.data.activeMapId && (
+                  <a
+                    className="rounded-md px-2 py-1 text-sm text-amber-300/80 transition-colors hover:bg-stone-800 hover:text-amber-300"
+                    href={`/dm/${campaignId}?pane=map`}
+                    title="shape the live scene — framing, tokens, ground effects"
+                  >
+                    edit ↗
+                  </a>
+                )}
                 {(campaign.data.activeMapId || campaign.data.map) && (
                   <button
                     className="rounded-md px-2 py-1 text-sm text-stone-400 transition-colors hover:bg-stone-800 hover:text-stone-200"
                     onClick={() => {
-                      const clears: Promise<unknown>[] = [
-                        api.patchCampaign(campaign.id, { data: { activeMapId: null } }),
-                      ];
-                      if (campaign.data.map) clears.push(api.removeMap(campaignId));
-                      Promise.all(clears).then(() => refetch());
+                      activateScene(null);
+                      if (campaign.data.map) api.removeMap(campaignId).then(refetch);
                     }}
                     title="table goes dark (idle mark)"
                   >
@@ -346,13 +450,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
                         className={`w-full rounded-lg text-left ${
                           active ? 'ring-2 ring-amber-500' : 'hover:opacity-80'
                         }`}
-                        onClick={() =>
-                          api
-                            .patchCampaign(campaign.id, {
-                              data: { activeMapId: active ? null : scene.id },
-                            })
-                            .then(() => refetch())
-                        }
+                        onClick={() => activateScene(active ? null : scene.id)}
                         title={active ? 'on the table — tap to clear' : 'put on the table TV'}
                       >
                         <img
@@ -373,14 +471,15 @@ export function DmView({ campaignId }: { campaignId: string }) {
                       >
                         ✕
                       </button>
-                      <button
+                      <a
                         className="absolute left-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-stone-950/80 text-xs text-stone-400 hover:text-amber-300"
-                        onClick={() => setEditingSceneId(scene.id)}
-                        aria-label={`edit ${scene.name} — scale & framing`}
-                        title="scale & framing"
+                        href={`/dm/${campaignId}?pane=map`}
+                        onClick={() => activateScene(scene.id)}
+                        aria-label={`edit ${scene.name} in the map workshop`}
+                        title="put it up and shape it in the map workshop"
                       >
                         ✎
-                      </button>
+                      </a>
                     </div>
                   );
                 })}
@@ -667,37 +766,6 @@ export function DmView({ campaignId }: { campaignId: string }) {
         )}
       </div>
 
-      {editingSceneId &&
-        (() => {
-          const scene = (campaign.data.maps ?? []).find(
-            (s) => s.id === editingSceneId,
-          );
-          if (!scene) return null;
-          return (
-            <SceneEditor
-              scene={scene}
-              combatRunning={(session?.turn ?? null) !== null}
-              ppi={campaign.data.grid?.ppi}
-              tableDisplay={campaign.data.tableDisplay}
-              characters={characters.map((c) => ({
-                id: c.id,
-                name: c.name,
-                kind: c.kind,
-              }))}
-              onClose={() => setEditingSceneId(null)}
-              onSave={(next) => {
-                const maps = (campaign.data.maps ?? []).map((s) =>
-                  s.id === next.id ? next : s,
-                );
-                setCampaign({ ...campaign, data: { ...campaign.data, maps } });
-                api
-                  .patchCampaign(campaign.id, { data: { maps } })
-                  .catch(() => refetch());
-                setEditingSceneId(null);
-              }}
-            />
-          );
-        })()}
     </main>
   );
 }
