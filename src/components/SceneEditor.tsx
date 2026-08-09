@@ -22,6 +22,7 @@ import { GRID_COLORS, GRID_DEFAULTS, GridOverlay } from './GridOverlay';
 
 const DEFAULT_VIEW: SceneView = { mode: 'fit', zoom: 1, cu: 0.5, cv: 0.5 };
 const SNAP_PREF = 'teller.editor.snap';
+const AREAS_PREF = 'teller.editor.areas';
 
 const TOKEN_SIZES = [0.5, 1, 2, 3, 4, 6, 8];
 const TOKEN_SHAPES = ['circle', 'square', 'triangle'] as const;
@@ -87,6 +88,10 @@ export function SceneEditor({
   // Personal workshop preference (not scene data — the table never
   // needs to know how you placed a token, only where it ended up).
   const [snap, setSnap] = useState(() => localStorage.getItem(SNAP_PREF) !== '0');
+  /** Draw fog-area outlines whatever tool you're holding. */
+  const [showAreas, setShowAreas] = useState(
+    () => localStorage.getItem(AREAS_PREF) !== '0',
+  );
   const [showTokens, setShowTokens] = useState(false);
   const [showScene, setShowScene] = useState(false);
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
@@ -343,7 +348,7 @@ export function SceneEditor({
       cells: [] as [number, number][],
       revealed: false,
     };
-    setFog({ on: true, regions: [...regions, region] });
+    setFog({ regions: [...regions, region] });
     setRegionEditId(region.id);
     setTool('fog');
     setFogBrush('reveal');
@@ -591,7 +596,7 @@ export function SceneEditor({
           {/* region extents — so the Warden can see rooms that the
               table can't, and which one the brush is shaping */}
           {cellPx &&
-            tool === 'fog' &&
+            (tool === 'fog' || showAreas) &&
             regions.map((region) =>
               region.cells.map(([c, r]) => (
                 <div
@@ -781,7 +786,7 @@ export function SceneEditor({
             <span className={view.locked ? 'opacity-40' : ''}>▣</span>
           </button>
           <button
-            className={`${toolBtn(false)} ${view.locked ? 'text-amber-300' : 'text-stone-500'}`}
+            className={toolBtn(!!view.locked)}
             onClick={() => setView({ locked: !view.locked })}
             title={
               view.locked
@@ -825,9 +830,10 @@ export function SceneEditor({
             className={toolBtn(tool === 'fog')}
             onClick={() => {
               if (!cols) return;
+              // Reaching for the tool must never black out the table —
+              // fog goes on only when you say so, in the panel.
               setTool('fog');
               setShowFog(true);
-              if (!fog.on) setFog({ on: true });
             }}
             disabled={!cols}
             title={
@@ -840,9 +846,9 @@ export function SceneEditor({
             <span className={cols ? '' : 'opacity-30'}>🌫</span>
           </button>
           <button
-            className={`${toolBtn(false)} ${
-              snap && cols ? 'text-amber-300' : 'text-stone-500'
-            }`}
+            // Emoji ignore text colour, so an active toggle has to
+            // change its background to read as on.
+            className={toolBtn(snap && !!cols)}
             onClick={() => {
               const next = !snap;
               setSnap(next);
@@ -911,7 +917,7 @@ export function SceneEditor({
             ))}
             <button
               className={`mt-1 flex h-9 w-11 items-center justify-center rounded-lg text-sm ${
-                secret ? 'bg-stone-800 text-amber-300' : 'text-stone-500 hover:bg-stone-800'
+                secret ? 'bg-amber-700' : 'hover:bg-stone-800'
               }`}
               onClick={() => setSecret(!secret)}
               aria-label={secret ? 'painting hidden' : 'painting visible'}
@@ -1299,6 +1305,21 @@ export function SceneEditor({
                   cover all
                 </button>
                 <button
+                  className={`rounded-lg px-2.5 py-1.5 font-mono text-xs ${
+                    showAreas
+                      ? 'bg-stone-700 text-stone-100'
+                      : 'bg-stone-800 text-stone-400'
+                  }`}
+                  onClick={() => {
+                    const next = !showAreas;
+                    setShowAreas(next);
+                    localStorage.setItem(AREAS_PREF, next ? '1' : '0');
+                  }}
+                  title="outline your areas on the map whatever tool you're using (console only)"
+                >
+                  areas
+                </button>
+                <button
                   className="ml-auto rounded-lg px-2 py-1.5 font-mono text-xs text-amber-300 hover:bg-stone-800"
                   onClick={addRegion}
                   title="paint a new area you can reveal in one tap"
@@ -1325,7 +1346,6 @@ export function SceneEditor({
                         onClick={() => {
                           mark();
                           setFog({
-                            on: true,
                             regions: regions.map((r) =>
                               r.id === region.id
                                 ? { ...r, revealed: !r.revealed }
@@ -1555,7 +1575,9 @@ export function SceneEditor({
         {tool === 'fog'
           ? editingRegion
             ? `shaping “${editingRegion.name}” — drag to add tiles, tap one to remove · done when its outline looks right`
-            : `drag to ${fogBrush} fog · make an area in the fog panel to reveal a whole room at once`
+            : `drag to ${fogBrush} fog${
+                fog.on ? '' : ' · fog is OFF — turn it on in the fog panel to show it'
+              } · make an area to reveal a whole room at once`
           : tool === 'paint'
           ? `drag to paint ${brush}${secret ? ' behind the screen' : ''} · tap a painted tile to erase`
           : tool === 'pan'
