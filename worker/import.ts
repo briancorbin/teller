@@ -93,7 +93,7 @@ export type ImportResult = {
 export async function apply(
   env: Env,
   buffer: ArrayBuffer,
-  opts: { campaignId?: string; sections?: string[] },
+  opts: { campaignId?: string; sections?: string[]; name?: string },
 ): Promise<ImportResult> {
   const files = await readZip(buffer);
   const manifest = await readJson<BundleManifest>(files, 'teller.json');
@@ -133,7 +133,10 @@ export async function apply(
     campaign = toCampaign(row as never);
   } else {
     const id = newId('cmp');
-    const name = incoming?.name ?? manifest.name ?? 'Imported campaign';
+    // What you call your table is yours to decide. A starter bundle
+    // shouldn't dictate the name of every campaign built from it.
+    const name =
+      opts.name?.trim() || incoming?.name || manifest.name || 'Imported campaign';
     const data: CampaignData = {
       vocabulary: incoming?.vocabulary ?? {},
       counters: incoming?.counters ?? [],

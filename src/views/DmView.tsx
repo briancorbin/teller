@@ -17,6 +17,7 @@ import { ConnectionHint } from '../components/ConnectionHint';
 import { SceneEditor } from '../components/SceneEditor';
 import { CounterSection } from '../components/CounterSection';
 import { BooksPanel } from '../components/BooksPanel';
+import { BundleImport } from '../components/BundleImport';
 import { DisplaysPanel } from '../components/DisplaysPanel';
 import { EncounterPanel } from '../components/EncounterPanel';
 import { RulesPanel } from '../components/RulesPanel';
@@ -771,6 +772,16 @@ export function DmView({
 
           {showLibrary && (
           <>
+          {/* Layering onto a table you're already running: a module, a
+              bestiary, more maps. Landing does the make-a-campaign half. */}
+          <BundleImport
+            campaignId={campaign.id}
+            onDone={() => {
+              refetch();
+              loadPacks();
+            }}
+          />
+
           <RulesPanel packs={packs} onUploaded={loadPacks} />
 
           <div className={`${card} space-y-2`}>

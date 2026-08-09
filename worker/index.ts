@@ -282,6 +282,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       const result = await applyBundle(env, await request.arrayBuffer(), {
         campaignId: url.searchParams.get('campaign') ?? undefined,
         sections: sections ? sections.split(',').filter(Boolean) : undefined,
+        name: url.searchParams.get('name') ?? undefined,
       });
       await logEvent(env, result.campaignId, null, 'dm', 'bundle.imported', {
         applied: result.applied,

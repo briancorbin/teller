@@ -349,10 +349,14 @@ export const api = {
   inspectBundle: (file: File) =>
     req<BundleSummary>('/api/bundles/inspect', { method: 'POST', body: file }),
 
-  importBundle: (file: File, opts: { campaignId?: string; sections?: string[] } = {}) => {
+  importBundle: (
+    file: File,
+    opts: { campaignId?: string; sections?: string[]; name?: string } = {},
+  ) => {
     const params = new URLSearchParams();
     if (opts.campaignId) params.set('campaign', opts.campaignId);
     if (opts.sections) params.set('sections', opts.sections.join(','));
+    if (opts.name) params.set('name', opts.name);
     const query = params.toString();
     return req<{ campaignId: string; applied: string[]; skipped: string[] }>(
       `/api/bundles/import${query ? `?${query}` : ''}`,
