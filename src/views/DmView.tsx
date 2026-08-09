@@ -14,12 +14,16 @@ import { RulesPanel } from '../components/RulesPanel';
 
 // ?pane= renders a focused slice of the console — one slice per future
 // DM-screen panel, useful today across iPad + phone:
-//   session    → initiative · notices · map · handouts
+//   session    → initiative · notices · handouts
+//   map        → scenes · table grid (everything the table TV shows)
 //   characters → the character grid
 //   library    → rules · reference · party resources
+const PANES = ['session', 'map', 'characters', 'library'] as const;
+
 export function DmView({ campaignId }: { campaignId: string }) {
   const pane = new URLSearchParams(window.location.search).get('pane');
   const showSession = pane === null || pane === 'session';
+  const showMap = pane === null || pane === 'map';
   const showCharacters = pane === null || pane === 'characters';
   const showLibrary = pane === null || pane === 'library';
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -188,6 +192,32 @@ export function DmView({ campaignId }: { campaignId: string }) {
         </span>
       </header>
 
+      <nav className="flex flex-wrap gap-1.5" aria-label="console panes">
+        <a
+          className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
+            pane === null
+              ? 'bg-amber-700 text-stone-950'
+              : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+          }`}
+          href={`/dm/${campaignId}`}
+        >
+          full
+        </a>
+        {PANES.map((p) => (
+          <a
+            key={p}
+            className={`rounded-full px-2.5 py-0.5 font-mono text-xs transition-colors ${
+              pane === p
+                ? 'bg-amber-700 text-stone-950'
+                : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+            }`}
+            href={`/dm/${campaignId}?pane=${p}`}
+          >
+            {p}
+          </a>
+        ))}
+      </nav>
+
       {error && <p className="text-sm text-red-400">{error}</p>}
 
       <div
@@ -199,7 +229,7 @@ export function DmView({ campaignId }: { campaignId: string }) {
               : 'mx-auto max-w-2xl space-y-6'
         }
       >
-        {(showSession || showLibrary) && (
+        {(showSession || showMap || showLibrary) && (
         <div className="space-y-6">
           {showSession && (
           <InitiativePanel
@@ -256,7 +286,11 @@ export function DmView({ campaignId }: { campaignId: string }) {
               </button>
             </div>
           </div>
+          </>
+          )}
 
+          {showMap && (
+          <>
           <div className={`${card} space-y-2`}>
             <div className="flex items-center justify-between">
               <span className={sectionLabel}>Scenes</span>
@@ -453,7 +487,11 @@ export function DmView({ campaignId }: { campaignId: string }) {
               </>
             )}
           </div>
+          </>
+          )}
 
+          {showSession && (
+          <>
           <div className={`${card} space-y-2`}>
             <div className="flex items-center justify-between">
               <span className={sectionLabel}>Handouts</span>
