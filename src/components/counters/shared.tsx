@@ -1,4 +1,4 @@
-import type { Counter, Field } from '../../../worker/types';
+import type { Counter, Field, SystemTemplate } from '../../../worker/types';
 
 // The parts every counter layout is built from.
 //
@@ -21,6 +21,12 @@ export type CounterViewProps = {
    * layouts take them over is declared in `seat-layouts.ts`.
    */
   fields?: Field[];
+  /**
+   * The system's dice, for layouts that draw a pool rather than print
+   * it. Declared data, not knowledge: `parsePool` reads "3B1G" against
+   * whatever faces the system says it has (rule 2).
+   */
+  dice?: SystemTemplate['dice'];
 };
 
 /** Clamped to [0, max]. A counter never goes negative or past its ceiling. */

@@ -1,4 +1,5 @@
-import type { Counter, Field } from '../../../worker/types';
+import type { Counter } from '../../../worker/types';
+import { SkillPanel } from '../sheet/SkillPanel';
 import {
   Bar,
   bumped,
@@ -142,24 +143,7 @@ function SheetGauge({
   );
 }
 
-/** A stat box: value large, name small beneath, like every printed sheet. */
-function StatBox({ field }: { field: Field }) {
-  return (
-    <div className="min-w-0 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5 text-center">
-      {/* A stat's value isn't always a die pool — "Marshal" and "Normal"
-          live in these boxes too, and at a fixed size they ran straight
-          out of the sides. Wraps and steps down instead of clipping. */}
-      <div className="break-words font-mono text-[clamp(0.75rem,3.5cqw,1.125rem)] leading-tight text-stone-100">
-        {field.value || '—'}
-      </div>
-      <div className="text-[9px] uppercase tracking-[0.15em] text-stone-500">
-        {field.label}
-      </div>
-    </div>
-  );
-}
-
-export function Sheet({ counters, onChange, fields = [] }: CounterViewProps) {
+export function Sheet({ counters, onChange, fields = [], dice }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
@@ -173,24 +157,7 @@ export function Sheet({ counters, onChange, fields = [] }: CounterViewProps) {
         // which is the one liberty paper doesn't have to take.
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(15rem, 1fr))' }}
       >
-        {fields.length > 0 && (
-          <section
-            className="flex flex-col gap-1.5"
-            style={{ containerType: 'inline-size' }}
-          >
-            <h2 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-stone-500">
-              Skills
-            </h2>
-            <div
-              className="grid gap-1.5"
-              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(5.5rem, 1fr))' }}
-            >
-              {fields.map((field) => (
-                <StatBox key={field.key} field={field} />
-              ))}
-            </div>
-          </section>
-        )}
+        <SkillPanel fields={fields} dice={dice} />
 
         {gauges.length > 0 && (
           <section className="flex min-h-0 flex-col gap-1.5" style={{ containerType: 'inline-size' }}>

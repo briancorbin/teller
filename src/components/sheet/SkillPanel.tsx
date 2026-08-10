@@ -1,0 +1,161 @@
+import type { Field, SystemTemplate } from '../../../worker/types';
+import { parsePool } from '../../../worker/dice';
+
+// The skills block, arranged like the printed sheet.
+//
+// On paper it is: the skill's name in orange, right-aligned against a
+// vertical rule, and to the right of that rule a TRACK OF BOXES — one
+// per die in the pool — with a starburst separating the two kinds. So
+// "3B1G" isn't notation you decode, it's three boxes, a star, one box.
+// That's the bit worth copying: the sheet shows a pool as a quantity you
+// can see rather than a code you parse.
+//
+// **No publisher text.** The sheet also prints a descriptor under each
+// skill ("convince, barter, intimidate, calm") and a quick-build hint.
+// Both are the publisher's prose, so neither is in here — that's the
+// skin layer, and it belongs in a pack (TEL-63). The panel leaves room
+// for them and renders nothing when nobody supplies them.
+//
+// **No game knowledge either** (rule 2). The letters are not hardcoded:
+// `parsePool` reads the value against the faces the SYSTEM declares, so
+// a system with d6s and d10s gets its own track for free, and one with
+// no dice declared falls back to showing the value as written.
+
+/**
+ * The sheet's mark between one kind of die and the next.
+ *
+ * Drawn here rather than lifted out of the PDF. The book's own glyph is
+ * their artwork; a starburst is a starburst, and this one costs nothing
+ * to ship in a public repo (rule 4). If Boylei ever wants their actual
+ * mark on this panel, that arrives in a pack as the skin.
+ */
+function Starburst({ size = 14 }: { size?: number }) {
+  const points = Array.from({ length: 8 }, (_, i) => {
+    const a = (i * Math.PI) / 4;
+    return `${50 + 48 * Math.cos(a)},${50 + 48 * Math.sin(a)}`;
+  });
+  const inner = Array.from({ length: 8 }, (_, i) => {
+    const a = (i * Math.PI) / 4 + Math.PI / 8;
+    return `${50 + 18 * Math.cos(a)},${50 + 18 * Math.sin(a)}`;
+  });
+  const d = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p} L ${inner[i]}`)
+    .join(' ');
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      width={size}
+      height={size}
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <path d={`${d} Z`} fill="#f59e0b" />
+    </svg>
+  );
+}
+
+/** One die in the pool, as a box you can count. */
+function DieBox({ kind, index }: { kind: string; index: number }) {
+  // The first declared die is the plain one; anything after it is the
+  // upgraded kind. Which is which comes from the system's own ordering,
+  // not from knowing that WiW calls them Black and Gold.
+  const upgraded = index > 0;
+  return (
+    <span
+      title={kind}
+      className={`h-4 w-4 shrink-0 rounded-[2px] border ${
+        upgraded
+          ? 'border-amber-400 bg-amber-500'
+          : 'border-stone-300 bg-stone-200'
+      }`}
+    />
+  );
+}
+
+function SkillRow({
+  field,
+  dice,
+}: {
+  field: Field;
+  dice?: SystemTemplate['dice'];
+}) {
+  const kinds = dice ? Object.keys(dice.faces) : [];
+  const pool = dice ? parsePool(field.value ?? '', dice.faces) : [];
+
+  return (
+    <div className="flex items-start gap-2.5 py-1">
+      {/* Name right-aligned against the rule, as printed. */}
+      <div className="w-[6.5rem] shrink-0 text-right">
+        <div className="text-[clamp(0.8rem,4cqw,1.15rem)] font-bold uppercase leading-tight tracking-wide text-amber-500">
+          {field.label}
+        </div>
+      </div>
+
+      <div className="w-px self-stretch bg-stone-600" />
+
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
+        {pool.length > 0 ? (
+          pool.map(({ die, count }, i) => (
+            <span key={die} className="flex items-center gap-1">
+              {i > 0 && <Starburst />}
+              {Array.from({ length: count }, (_, n) => (
+                <DieBox key={n} kind={die} index={kinds.indexOf(die)} />
+              ))}
+            </span>
+          ))
+        ) : (
+          // Not every stat is a pool — Trade says "Marshal", Speed says
+          // "Normal". Those get their words, not an empty track.
+          <span className="break-words font-mono text-sm text-stone-200">
+            {field.value || '—'}
+          </span>
+        )}
+        {pool.length > 0 && (
+          <span className="ml-1 font-mono text-[11px] text-stone-500">
+            {field.value}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function SkillPanel({
+  fields,
+  dice,
+  title = 'Skills',
+}: {
+  fields: Field[];
+  dice?: SystemTemplate['dice'];
+  /** The sheet's own heading for this block, when a pack supplies one. */
+  title?: string;
+}) {
+  if (!fields.length) return null;
+
+  return (
+    <section
+      // `self-start` so the panel hugs its rows. On paper it's a fixed
+      // block near the top of the page, not a column that grows to meet
+      // the bottom of the sheet.
+      className="relative self-start rounded-md border border-stone-600/80 p-3"
+      style={{ containerType: 'inline-size' }}
+    >
+      {/* The printed panel is a ruled box with a centred heading between
+          two short rules. Cheap to echo, and it's what makes the block
+          read as a panel rather than a list. */}
+      <header className="mb-1 flex items-center justify-center gap-2">
+        <span className="h-px w-6 bg-amber-600/70" />
+        <h2 className="text-[clamp(0.75rem,3.2cqw,1rem)] font-bold uppercase tracking-[0.2em] text-stone-100">
+          {title}
+        </h2>
+        <span className="h-px w-6 bg-amber-600/70" />
+      </header>
+
+      <div className="divide-y divide-stone-800/80">
+        {fields.map((field) => (
+          <SkillRow key={field.key} field={field} dice={dice} />
+        ))}
+      </div>
+    </section>
+  );
+}

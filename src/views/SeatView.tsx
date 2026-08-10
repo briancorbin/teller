@@ -408,6 +408,7 @@ export function SeatView({
                 big
                 counters={character.data.counters}
                 fields={fields}
+                dice={template?.dice}
                 onChange={(counters) => patch({ counters })}
               />
             </FitBox>
