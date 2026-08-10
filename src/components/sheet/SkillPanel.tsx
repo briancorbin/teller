@@ -170,11 +170,14 @@ export function SkillPanel({
   dice,
   title = 'Skills',
   lookup,
+  note,
 }: {
   fields: Field[];
   dice?: SystemTemplate['dice'];
   /** The sheet's own heading for this block, when a pack supplies one. */
   title?: string;
+  /** The line the sheet sets under that heading. Pack-supplied only. */
+  note?: string;
   /** Finds a skill's pack entry, so its description can open on tap. */
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
 }) {
@@ -192,7 +195,7 @@ export function SkillPanel({
     //
     // The frame, corner ticks and heading now come from `SheetPanel`,
     // which every block on the page shares.
-    <SheetPanel title={title} className="relative w-full">
+    <SheetPanel title={title} note={note} className="relative w-full">
       <div className="divide-y divide-stone-800/80">
         {fields.map((field) => (
           <SkillRow

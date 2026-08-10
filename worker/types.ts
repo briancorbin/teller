@@ -571,6 +571,24 @@ export type RulesPack = {
   version: number;
   sections: PackSection[];
   /**
+   * Panel heading → the line the printed sheet sets beneath it.
+   *
+   * The character sheet captions every block — "practice & master with
+   * Prestige" under SKILLS, "relieved by rolling with the associated
+   * Skill" under STATUSES. They are genuinely useful (each one answers
+   * the question the panel raises) and they are just as genuinely the
+   * publisher's prose, so they cannot ship in this repo (rule 4). This
+   * is the skin layer TEL-63 describes, and it is why `SheetPanel` has
+   * always taken a `note` it had no way to fill.
+   *
+   * Keyed by the heading the panel already displays, so nothing has to
+   * agree on a separate vocabulary of panel ids: a caption is offered to
+   * whatever block calls itself that. Later packs win, matching how
+   * every other pack collision resolves. No entry, no caption, and the
+   * panel is exactly as it was.
+   */
+  notes?: Record<string, string>;
+  /**
    * The bestiary this pack brings. Having the pack means having the
    * foes, the way having the book on a shelf does — instead of every
    * new campaign starting empty.

@@ -112,6 +112,7 @@ export function StatusPanel({
   tags,
   onChange,
   title,
+  note,
   relievers = [],
 }: {
   /** The declared list, from the pack. Empty means no panel. */
@@ -119,6 +120,8 @@ export function StatusPanel({
   tags: string[];
   onChange: (next: string[]) => void;
   title: string;
+  /** The line the sheet sets under the heading. Pack-supplied only. */
+  note?: string;
   /**
    * The Skills that can relieve a status — the declared skill block.
    *
@@ -187,7 +190,7 @@ export function StatusPanel({
     : undefined;
 
   return (
-    <SheetPanel title={title} className="relative">
+    <SheetPanel title={title} note={note} className="relative">
       <div className="divide-y divide-stone-800/70">
         {[...declared, ...loose].map((row) => (
           <StatusRow

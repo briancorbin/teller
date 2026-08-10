@@ -44,6 +44,17 @@ import {
 const RING_LIMIT = 12;
 
 /**
+ * What the skills block calls itself.
+ *
+ * The one heading on this card teller supplies rather than reads off the
+ * data — Health and Grit are counter names, Statuses is the campaign's
+ * own word. It's named here because it's both the heading AND the key a
+ * pack's caption is looked up under, and two copies of a string that
+ * must match is one copy too many.
+ */
+const SKILLS_TITLE = 'Skills';
+
+/**
  * The sheet's own control: the numbers, marked up to where you are.
  *
  * Tapping the number you're already on steps back one, so the ring can
@@ -165,6 +176,7 @@ export function Sheet({
   conditions = [],
   conditionsLabel = 'Conditions',
   lookup,
+  note,
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -241,7 +253,16 @@ export function Sheet({
           stack, in the same order. */}
       <div className="flex min-h-0 flex-1 flex-wrap content-start gap-2">
         <div className="flex min-w-[13rem] flex-1 flex-col gap-2 self-start">
-          <SkillPanel fields={skills} dice={dice} lookup={lookup} />
+          {/* Title passed explicitly rather than left to the default, so
+              the heading and the caption are looked up under one string
+              instead of two that have to stay equal. */}
+          <SkillPanel
+            fields={skills}
+            dice={dice}
+            lookup={lookup}
+            title={SKILLS_TITLE}
+            note={note?.(SKILLS_TITLE)}
+          />
           {rest.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {rest.map((field) => (
@@ -272,6 +293,7 @@ export function Sheet({
                 counter={counter}
                 pinned={pinnedTo(counter)}
                 onChange={update}
+                note={note?.(counter.name)}
               />
             ))}
             <div
@@ -299,6 +321,7 @@ export function Sheet({
               tags={tags}
               onChange={onTags}
               title={conditionsLabel}
+              note={note?.(conditionsLabel)}
               relievers={skills.map((f) => f.label)}
             />
           </div>

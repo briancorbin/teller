@@ -53,6 +53,8 @@ export type CounterViewProps = {
   conditionsLabel?: string;
   /** Finds a pack entry by name, so descriptions can open on tap. */
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
+  /** The caption a pack sets under a panel heading, keyed by that heading. */
+  note?: (title: string) => string | undefined;
 };
 
 /** Clamped to [0, max]. A counter never goes negative or past its ceiling. */

@@ -7,7 +7,7 @@ import type {
   SystemTemplate,
 } from '../../worker/types';
 import { api } from '../lib/api';
-import { useRuleLookup, useRuleSection } from '../lib/rules';
+import { usePanelNote, useRuleLookup, useRuleSection } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import {
@@ -61,6 +61,9 @@ export function SeatView({
   // anything here knowing either word.
   const conditionsLabel = campaign?.data.vocabulary.conditions ?? 'Conditions';
   const conditions = useRuleSection(packs, conditionsLabel);
+  // The sheet's own captions under each heading. Publisher prose, so
+  // the pack is the only place they can come from (rule 4).
+  const note = usePanelNote(packs);
   const [template, setTemplate] = useState<SystemTemplate | null>(null);
   const [tally, setTally] = useState<Record<string, number>>({});
   const [picking, setPicking] = useState(false);
@@ -424,6 +427,7 @@ export function SeatView({
                 conditions={conditions}
                 conditionsLabel={conditionsLabel}
                 lookup={lookup}
+                note={note}
                 onChange={(counters) => patch({ counters })}
               />
             </FitBox>

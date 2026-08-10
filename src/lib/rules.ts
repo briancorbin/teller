@@ -19,6 +19,25 @@ export function useRuleLookup(packs: PackRecord[]): RuleLookup {
 }
 
 /**
+ * The caption a pack sets under a panel heading, if any.
+ *
+ * The sheet's own subtitles — "practice & master with Prestige" — which
+ * are the publisher's words and so live only in the reader's pack. Later
+ * packs win, as everywhere else.
+ */
+export function usePanelNote(packs: PackRecord[]): (title: string) => string | undefined {
+  return useMemo(() => {
+    const map = new Map<string, string>();
+    for (const record of packs) {
+      for (const [title, note] of Object.entries(record.pack.notes ?? {})) {
+        map.set(title.trim().toLowerCase(), note);
+      }
+    }
+    return (title: string) => map.get(title.trim().toLowerCase());
+  }, [packs]);
+}
+
+/**
  * Every entry in one named section, across every loaded pack.
  *
  * This is how a sheet block gets its CONTENT without the repo carrying
