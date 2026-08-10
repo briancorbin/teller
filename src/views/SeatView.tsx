@@ -10,28 +10,51 @@ import { api } from '../lib/api';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
-import { card, input, sectionLabel } from '../lib/ui';
+import { layoutOf, SEAT_LAYOUTS, type SeatLayout } from '../lib/seat-layouts';
 import { ConnectionHint } from '../components/ConnectionHint';
-import { CounterSection } from '../components/CounterSection';
-import { FieldSection } from '../components/FieldSection';
+import { COUNTER_VIEWS } from '../components/counters';
+import { FitBox } from '../components/FitBox';
 import { TagSection } from '../components/TagSection';
 
-// The player's card. Two layouts from one component:
-//  - portrait card (phones) — default flex-col
-//  - instrument strip (the future 1920×515 rail panels) — a max-height
-//    media query flips the root row-wise. Keep every control reachable
-//    in both.
+// The player's card.
+//
+// Two rules govern everything here.
+//
+// **It never scrolls.** Not down, not sideways. A seat is a fixed piece
+// of glass — a phone in a hand, a 1920×515 panel screwed to the table
+// rail — and scrolling means the number you need is somewhere else at
+// the moment you need it. So the card fits the screen: fluid grids
+// first, and `FitBox` scaling as the backstop when a character has more
+// counters than the glass has room for.
+//
+// **The arrangement is a question, not an answer.** Nobody knows what a
+// seat should look like yet, so there are five and the player picks. See
+// `src/lib/seat-layouts.ts`. The choice is stored on the DISPLAY, which
+// means it survives a reload and — the actual point — the DM can see
+// what each player chose.
 
-export function SeatView({ characterId }: { characterId: string }) {
+export function SeatView({
+  characterId,
+  displayId,
+  layout: assigned,
+}: {
+  characterId: string;
+  /** This screen, so it can remember how it likes to look. */
+  displayId?: string;
+  layout?: string | null;
+}) {
   const [character, setCharacter] = useState<Character | null>(null);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [packs, setPacks] = useState<PackRecord[]>([]);
   const [error, setError] = useState('');
   const lookup = useRuleLookup(packs);
-  /** This system's dice — the faces are what the tally offers. */
   const [template, setTemplate] = useState<SystemTemplate | null>(null);
-  /** Faces tapped so far this roll, e.g. { hit: 2, ace: 1 }. */
   const [tally, setTally] = useState<Record<string, number>>({});
+  const [picking, setPicking] = useState(false);
+  /** Optimistic, so tapping a layout is instant on a slow LAN. */
+  const [layout, setLayout] = useState<SeatLayout>(layoutOf(assigned));
+
+  useEffect(() => setLayout(layoutOf(assigned)), [assigned]);
 
   const refetch = useCallback(() => {
     api
@@ -68,13 +91,20 @@ export function SeatView({ characterId }: { characterId: string }) {
     api.patchCharacter(characterId, { data }).catch(() => refetch());
   };
 
+  const chooseLayout = (next: SeatLayout) => {
+    setLayout(next);
+    setPicking(false);
+    if (displayId) api.setLayout(displayId, next).catch(() => {});
+  };
+
   if (error) {
     return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-2 p-8">
+      <main className="flex h-[100dvh] flex-col items-center justify-center gap-2 overflow-hidden p-8">
         <h1 className="font-serif text-3xl">teller</h1>
         <p className="text-red-400">{error}</p>
         <p className="text-sm text-stone-500">
-          ask your {campaign?.data.vocabulary.gm ?? 'DM'} for a fresh seat link
+          ask your {campaign?.data.vocabulary.gm ?? 'DM'} to point this screen at a
+          character
         </p>
       </main>
     );
@@ -98,9 +128,6 @@ export function SeatView({ characterId }: { characterId: string }) {
    * Rolling for turn order. The dice are real and in the player's hand —
    * this only takes the number off them, which is the part that
    * otherwise gets shouted across a table and written down twice.
-   *
-   * A seat may report its OWN roll and nothing else; the server checks
-   * that the entry belongs to this character (rule 7).
    */
   const mine = initiative.find((e) => e.characterId === character.id);
   const takingRolls = Boolean(session?.rolling && mine);
@@ -111,11 +138,9 @@ export function SeatView({ characterId }: { characterId: string }) {
       .catch(() => {});
   };
 
-  // The distinct faces this system's dice can show, and what each is
-  // worth. Tapping faces beats typing a total: the arithmetic ("an Ace
-  // is two") is the bit that gets miscounted at the table, and it means
-  // teller never has to know about your bonuses — you already applied
-  // them by picking up more dice.
+  // Tapping faces beats typing a total: the arithmetic ("an Ace is two")
+  // is the bit that gets miscounted, and it means teller never has to
+  // know about bonuses — you applied them by picking up more dice.
   const dice = template?.dice;
   const faceList = dice
     ? [...new Set(Object.values(dice.faces).flat())].sort(
@@ -127,39 +152,84 @@ export function SeatView({ characterId }: { characterId: string }) {
     0,
   );
   const tapped = Object.values(tally).reduce((n, c) => n + c, 0);
-  /** What their sheet says, as a reminder — never as the truth. */
   const basePool = template?.initiative
     ? (character.data.fields.find((f) => f.key === template.initiative!.field)?.value ??
       '')
     : '';
 
+  const Counters = COUNTER_VIEWS[layout];
+  const fields = character.data.fields.filter((f) => f.key !== 'description');
+
   return (
     <main
-      className={`mx-auto flex min-h-screen max-w-2xl flex-col gap-4 p-4 ${
+      className={`flex h-[100dvh] w-full flex-col gap-2 overflow-hidden p-3 ${
         youreUp ? 'ring-4 ring-inset ring-amber-600' : ''
-      } [@media(max-height:560px)]:max-w-none [@media(max-height:560px)]:flex-row [@media(max-height:560px)]:items-stretch [@media(max-height:560px)]:gap-6 [@media(max-height:560px)]:overflow-hidden`}
+      }`}
     >
       <ConnectionHint connected={connected} />
-      <header className="shrink-0 [@media(max-height:560px)]:flex [@media(max-height:560px)]:w-56 [@media(max-height:560px)]:flex-col [@media(max-height:560px)]:justify-center">
-        <h1 className="font-serif text-3xl text-stone-100">{character.name}</h1>
-        {campaign && (
-          <p className="text-sm text-stone-500">{campaign.name}</p>
-        )}
+
+      {/* Identity. One line, so it costs the same on a rail as on a phone. */}
+      <header className="flex shrink-0 items-baseline gap-3">
+        <h1 className="min-w-0 truncate font-serif text-[clamp(1.25rem,4vh,2rem)] leading-tight text-stone-100">
+          {character.name}
+        </h1>
         {youreUp && (
-          <p className="mt-1 inline-block animate-pulse rounded bg-amber-700 px-2 py-0.5 text-sm font-semibold text-stone-950">
+          <span className="shrink-0 animate-pulse rounded bg-amber-700 px-2 py-0.5 text-xs font-semibold text-stone-950">
             YOU'RE UP
-          </p>
+          </span>
         )}
         {onDeck && (
-          <p className="mt-1 inline-block rounded bg-stone-800 px-2 py-0.5 text-sm text-amber-300">
+          <span className="shrink-0 rounded bg-stone-800 px-2 py-0.5 text-xs text-amber-300">
             on deck
-          </p>
+          </span>
         )}
+        <span className="min-w-0 flex-1 truncate text-xs text-stone-600">
+          {campaign?.name}
+        </span>
+        <button
+          type="button"
+          onClick={() => setPicking(!picking)}
+          aria-expanded={picking}
+          className="shrink-0 rounded-md px-2 py-1 text-xs text-stone-600 transition-colors hover:bg-stone-800 hover:text-stone-300"
+          title="how this card is arranged"
+        >
+          ▦ {SEAT_LAYOUTS.find((l) => l.id === layout)?.name}
+        </button>
       </header>
 
+      {/* The picker is deliberately in the player's reach, not buried in
+          the console: the whole point is that they try all five and tell
+          you which one they liked. */}
+      {picking && (
+        <div className="flex shrink-0 flex-wrap gap-1.5 rounded-lg bg-stone-900 p-2">
+          {SEAT_LAYOUTS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => chooseLayout(option.id)}
+              aria-pressed={option.id === layout}
+              className={`rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+                option.id === layout
+                  ? 'bg-amber-700 text-stone-950'
+                  : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+              }`}
+            >
+              <span className="font-medium">{option.name}</span>
+              <span
+                className={`ml-1.5 ${
+                  option.id === layout ? 'text-stone-800' : 'text-stone-500'
+                }`}
+              >
+                {option.blurb}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {takingRolls && (
-        <section className="shrink-0 rounded-lg bg-amber-950/40 p-3 ring-1 ring-amber-800">
-          <div className="flex items-baseline gap-2">
+        <section className="shrink-0 rounded-lg bg-amber-950/40 p-2 ring-1 ring-amber-800">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <p className="text-sm text-amber-200">
               Roll for turn order — tap each die you rolled.
             </p>
@@ -170,17 +240,11 @@ export function SeatView({ characterId }: { characterId: string }) {
             )}
           </div>
 
-          {/* Big targets: this gets tapped with a fingertip, on a rail
-              panel, mid-conversation. */}
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             {faceList.map((face) => (
               <button
                 key={face}
                 className="min-w-20 rounded-md bg-stone-800 px-3 py-2 text-left active:bg-stone-700"
-                // The count and the face read as separate scraps of text
-                // otherwise, so the button has no name at all in the
-                // accessibility tree — spotted by reading the tree rather
-                // than the screenshot.
                 aria-label={`add a ${face} — you have ${tally[face] ?? 0}`}
                 onClick={() => setTally((t) => ({ ...t, [face]: (t[face] ?? 0) + 1 }))}
               >
@@ -193,14 +257,9 @@ export function SeatView({ characterId }: { characterId: string }) {
                 </span>
               </button>
             ))}
-          </div>
-
-          <div className="mt-2 flex items-center gap-3">
-            <span className="font-mono text-2xl text-amber-300">
+            <span className="ml-1 font-mono text-2xl text-amber-300">
               {tallyTotal}
-              <span className="ml-1 text-xs text-stone-500">
-                {dice?.unit ?? 'total'}
-              </span>
+              <span className="ml-1 text-xs text-stone-500">{dice?.unit ?? 'total'}</span>
             </span>
             <button
               className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
@@ -212,17 +271,16 @@ export function SeatView({ characterId }: { characterId: string }) {
             >
               that's my roll
             </button>
-            {tapped > 0 && (
+            {tapped > 0 ? (
               <button
                 className="text-xs text-stone-500 underline-offset-2 hover:underline"
                 onClick={() => setTally({})}
               >
                 clear
               </button>
-            )}
-            {/* A blank roll is a real outcome, and tapping four Blanks to
-                say so would be silly. */}
-            {!tapped && (
+            ) : (
+              // A blank roll is a real outcome, and tapping four Blanks to
+              // say so would be silly.
               <button
                 className="text-xs text-stone-500 underline-offset-2 hover:underline"
                 onClick={() => submitRoll(0)}
@@ -230,78 +288,90 @@ export function SeatView({ characterId }: { characterId: string }) {
                 I rolled nothing
               </button>
             )}
-          </div>
-
-          {typeof mine?.score === 'number' && (
-            <p className="mt-2 text-xs text-stone-400">
-              Reported <span className="text-amber-300">{mine.score}</span> — tap a
-              new roll to correct it.
-            </p>
-          )}
-        </section>
-      )}
-
-      <div className="flex min-w-0 flex-1 flex-col gap-4 [@media(max-height:560px)]:flex-row [@media(max-height:560px)]:items-center [@media(max-height:560px)]:overflow-x-auto">
-        <FieldSection fields={character.data.fields} onChange={(fields) => patch({ fields })} />
-
-        <div className="[@media(max-height:560px)]:min-w-72 [@media(max-height:560px)]:flex-1">
-          <CounterSection
-            big
-            counters={character.data.counters}
-            onChange={(counters) => patch({ counters })}
-          />
-        </div>
-
-        <TagSection
-          tags={character.data.tags}
-          label={campaign?.data.vocabulary.conditions ?? 'Conditions'}
-          lookup={lookup}
-          onChange={(tags) => patch({ tags })}
-        />
-
-        <section className="space-y-2 [@media(max-height:560px)]:hidden">
-          <span className={sectionLabel}>Notes</span>
-          <textarea
-            className={`${input} min-h-16 w-full resize-y`}
-            defaultValue={character.data.notes}
-            onBlur={(e) =>
-              e.target.value !== character.data.notes && patch({ notes: e.target.value })
-            }
-            aria-label="notes"
-          />
-        </section>
-      </div>
-
-      {initiative.length > 0 && (
-        <footer
-          className={`${card} shrink-0 [@media(max-height:560px)]:flex [@media(max-height:560px)]:w-48 [@media(max-height:560px)]:flex-col [@media(max-height:560px)]:justify-center`}
-        >
-          <div className="mb-1 flex items-center justify-between">
-            <span className={sectionLabel}>Initiative</span>
-            {turn !== null && (
-              <span className="font-mono text-xs text-stone-500">
-                rd {session?.round}
+            {typeof mine?.score === 'number' && (
+              <span className="text-xs text-stone-400">
+                reported <span className="text-amber-300">{mine.score}</span>
               </span>
             )}
           </div>
-          <ol className="flex flex-wrap gap-1.5 [@media(max-height:560px)]:flex-col [@media(max-height:560px)]:gap-1 [@media(max-height:560px)]:overflow-y-auto">
-            {initiative.map((entry, index) => (
-              <li
-                key={entry.id}
-                className={`rounded px-2 py-0.5 text-sm ${
-                  index === turn
-                    ? 'bg-amber-700 font-medium text-stone-950'
-                    : entry.characterId === character.id
-                      ? 'bg-stone-800 text-amber-200'
-                      : 'bg-stone-900 text-stone-400'
-                }`}
-              >
-                {entry.label}
-              </li>
-            ))}
-          </ol>
-        </footer>
+        </section>
       )}
+
+      {/* The body. A row when the glass is wider than it is tall — a rail
+          panel or a desktop — and a column on a phone. Driven by aspect
+          rather than a pixel breakpoint, because 1920×515 and 1024×600
+          want the same treatment for the same reason. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 [@media(min-aspect-ratio:13/10)]:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+          <FitBox className="min-h-0 flex-1">
+            <Counters
+              big
+              counters={character.data.counters}
+              onChange={(counters) => patch({ counters })}
+            />
+          </FitBox>
+
+          {/* Stats are reference, not controls — one dense strip. */}
+          {fields.length > 0 && (
+            <div className="flex shrink-0 flex-wrap gap-1">
+              {fields.map((field) => (
+                <span
+                  key={field.key}
+                  className="rounded-md bg-stone-900 px-2 py-1 text-xs"
+                >
+                  <span className="font-mono text-stone-100">{field.value || '—'}</span>
+                  <span className="ml-1 uppercase tracking-wider text-stone-500">
+                    {field.label}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-col gap-2 [@media(min-aspect-ratio:13/10)]:w-56">
+          <TagSection
+            tags={character.data.tags}
+            label={campaign?.data.vocabulary.conditions ?? 'Conditions'}
+            lookup={lookup}
+            onChange={(tags) => patch({ tags })}
+          />
+
+          {initiative.length > 0 && (
+            <div className="min-h-0">
+              <div className="mb-1 flex items-baseline justify-between">
+                <span className="text-[11px] font-medium uppercase tracking-widest text-stone-500">
+                  Turn order
+                </span>
+                {turn !== null && (
+                  <span className="font-mono text-xs text-stone-600">
+                    rd {session?.round}
+                  </span>
+                )}
+              </div>
+              {/* Wraps rather than scrolls; FitBox catches a very long
+                  fight. Yours is highlighted so you can find it without
+                  reading every name. */}
+              <ol className="flex flex-wrap gap-1">
+                {initiative.map((entry, index) => (
+                  <li
+                    key={entry.id}
+                    className={`truncate rounded px-1.5 py-0.5 text-xs ${
+                      index === turn
+                        ? 'bg-amber-700 font-medium text-stone-950'
+                        : entry.characterId === character.id
+                          ? 'bg-stone-800 text-amber-200'
+                          : 'bg-stone-900 text-stone-500'
+                    }`}
+                  >
+                    {entry.label}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      </div>
     </main>
   );
 }

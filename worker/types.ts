@@ -591,8 +591,29 @@ export type DisplayRole =
 export type DisplayParams = {
   /** seat + badge: whose card this is. */
   characterId?: string | null;
-  /** console: which slice to render. null = the whole console. */
-  pane?: 'session' | 'map' | 'characters' | 'library' | 'displays' | null;
+  /**
+   * console: which slice to render. null = the whole console.
+   *
+   * Opaque here on purpose. The list of panes lives in `src/lib/panes.ts`
+   * and only there (rule 6) — this used to name five of them while that
+   * file listed seven, which is exactly the drift the rule exists to
+   * prevent. The server stores the preference; the client owns the
+   * vocabulary and validates it.
+   */
+  pane?: string | null;
+  /**
+   * seat: which arrangement of the card this screen wants.
+   *
+   * Same deal — `src/lib/seat-layouts.ts` is the list. Kept on the
+   * DISPLAY rather than in that device's own storage, and not because
+   * the server needs it: a beta test where the DM can't see what each
+   * player chose measures nothing. It's also why a player switching
+   * layouts on their phone doesn't change what anyone else sees.
+   *
+   * Unset means the default, and an unrecognised value renders the
+   * default too — a preference should never be able to blank a screen.
+   */
+  layout?: string | null;
 };
 
 export type Display = {
