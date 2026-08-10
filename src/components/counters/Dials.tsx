@@ -63,7 +63,10 @@ function Dial({
           </div>
         ) : (
           <Ring counter={counter} size={size}>
-            <Value counter={counter} className={big ? 'text-xl' : 'text-base'} />
+            <Value
+              counter={counter}
+              className={big ? 'text-xl' : 'text-base'}
+            />
           </Ring>
         )}
       </div>
@@ -104,13 +107,16 @@ export function Dials({ counters, onChange, big }: CounterViewProps) {
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col justify-center gap-3">
       {gauges.length > 0 && (
+        // A dial is a circle, so stretching its row just adds padding
+        // around it — the tile takes what it needs and the leftover
+        // height centres the block.
         <div
-          className="grid flex-1 gap-2"
+          className="grid gap-2"
           style={{
             gridTemplateColumns: `repeat(auto-fit, minmax(${big ? 10 : 7}rem, 1fr))`,
-            gridAutoRows: 'minmax(0, 1fr)',
+            gridAutoRows: 'minmax(0, max-content)',
           }}
         >
           {gauges.map((counter) => (

@@ -77,7 +77,7 @@ export function Ledger({ counters, onChange, big }: CounterViewProps) {
     // doesn't rearrange anything on your behalf. Columns instead of
     // rows once there's width for them.
     <div
-      className="grid min-h-0 flex-1 content-start gap-x-6"
+      className="grid min-h-0 flex-1 content-center gap-x-6"
       style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(22rem, 1fr))' }}
     >
       {counters.map((counter) => (

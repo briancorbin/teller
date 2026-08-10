@@ -43,7 +43,10 @@ function BigGauge({
       </div>
       {/* Sized in viewport units so it's genuinely big on a rail strip and
           still sane on a phone, without a breakpoint deciding for it. */}
-      <Value counter={counter} className="text-[clamp(2.5rem,9vh,5rem)] leading-none" />
+      <Value
+        counter={counter}
+        className="text-[clamp(2.5rem,9cqh,5rem)] leading-none"
+      />
       <Bar counter={counter} thick />
       <div className="flex gap-2">
         <Step
@@ -72,12 +75,14 @@ export function Focus({ counters, onChange, big }: CounterViewProps) {
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col justify-center gap-3">
+      {/* Bigger cap than Gauges — being large IS this layout — but still
+          a cap, or an iPad turns two counters into billboards. */}
       <div
-        className="grid flex-1 gap-3"
+        className="grid gap-3"
         style={{
           gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))',
-          gridAutoRows: 'minmax(0, 1fr)',
+          gridAutoRows: 'minmax(0, min(22rem, 52cqh))',
         }}
       >
         {gauges.map((counter) => (
@@ -98,14 +103,19 @@ export function Focus({ counters, onChange, big }: CounterViewProps) {
           {showRest && (
             <div
               className="mt-1.5 grid gap-1.5"
-              style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(13rem, 1fr))' }}
+              style={{
+                gridTemplateColumns: 'repeat(auto-fit, minmax(13rem, 1fr))',
+              }}
             >
               {tallies.map((counter) => (
                 <div
                   key={counter.id}
                   className="flex items-center gap-2 rounded-lg bg-stone-900/70 px-2.5 py-1.5"
                 >
-                  <Name counter={counter} className="min-w-0 flex-1 text-sm text-stone-400" />
+                  <Name
+                    counter={counter}
+                    className="min-w-0 flex-1 text-sm text-stone-400"
+                  />
                   <Value counter={counter} className="text-base" />
                   <Step
                     sign="−"

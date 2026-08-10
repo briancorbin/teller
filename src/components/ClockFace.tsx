@@ -12,12 +12,20 @@ export function ClockFace({
   size = 56,
   onClick,
   label,
+  className,
 }: {
   current: number;
   max: number;
   size?: number;
   onClick?: () => void;
   label?: string;
+  /**
+   * Lets a caller size the face with CSS instead of pixels — the svg has
+   * a viewBox, so `h-full w-auto` scales it to whatever box it's in.
+   * `size` alone can't cooperate with a fluid layout: a fixed 84px face
+   * in a row capped by viewport height overflowed its own tile.
+   */
+  className?: string;
 }) {
   const c = 50;
   const r = 46;
@@ -43,7 +51,7 @@ export function ClockFace({
       role="img"
       aria-label={label ?? `${current} of ${max}`}
       onClick={onClick}
-      className={onClick ? 'cursor-pointer select-none' : undefined}
+      className={`${onClick ? 'cursor-pointer select-none' : ''} ${className ?? ''}`}
     >
       {max <= 1 ? (
         <circle

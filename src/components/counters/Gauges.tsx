@@ -34,7 +34,15 @@ function GaugeTile({
 }) {
   const isClock = counter.display === 'clock';
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-stone-800 bg-stone-900/70 p-3">
+    // Its own measuring context. Sizing the number off the CARD's height
+    // was wrong the moment a character had five gauges instead of two:
+    // five tiles across share the width, so "7/12" was set from a tall
+    // card and ran straight out of a narrow tile. Inside here, `cqw` and
+    // `cqh` mean this tile — the box the text actually has to fit.
+    <div
+      className="flex flex-col gap-2 rounded-xl border border-stone-800 bg-stone-900/70 p-3"
+      style={{ containerType: 'size' }}
+    >
       <div className="flex items-baseline gap-2">
         <Name
           counter={counter}
@@ -44,11 +52,15 @@ function GaugeTile({
       </div>
 
       {isClock ? (
-        <div className="flex justify-center py-1">
+        // Sized by the box, not by a pixel count — a fixed face is what
+        // pushed this tile's buttons out through its own bottom edge on
+        // a short rail panel.
+        <div className="flex min-h-0 flex-1 justify-center py-1">
           <ClockFace
             current={counter.current}
             max={counter.max!}
             size={big ? 84 : 60}
+            className="h-full w-auto"
             onClick={() => onChange(bumped(counter, 1))}
             label={`${counter.name}: ${counter.current} of ${counter.max} — tap to advance`}
           />
@@ -58,12 +70,17 @@ function GaugeTile({
         // pinned below — a stretched tile should put its slack under the
         // number, not leave a hole beneath the controls.
         <div className="flex flex-1 flex-col justify-center gap-2">
-          {/* Fluid, so the number is readable from across a table on a
-              rail panel and still sane in a hand. A fixed size can only
-              be right for one of them. */}
+          {/* Fluid, so the number reads across a table on a rail panel
+              and still fits in a hand — and bounded by BOTH axes of the
+              tile, since "7/12" needs width that "6/6" doesn't. */}
           <Value
             counter={counter}
-            className={big ? 'text-[clamp(2rem,11vh,4rem)] leading-none' : 'text-2xl'}
+            className={big ? 'leading-none' : 'text-2xl'}
+            style={
+              big
+                ? { fontSize: 'clamp(1.25rem, min(34cqh, 24cqw), 4rem)' }
+                : undefined
+            }
           />
           <Bar counter={counter} thick={big} />
         </div>
@@ -105,7 +122,10 @@ function TallyRow({
     // nothing, so five rows read as anonymous "0/—".
     <div className="flex items-center gap-2 rounded-lg bg-stone-900/70 px-2.5 py-1">
       <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
-        <Name counter={counter} className="text-sm leading-snug text-stone-400" />
+        <Name
+          counter={counter}
+          className="text-sm leading-snug text-stone-400"
+        />
         <Value counter={counter} className={big ? 'text-lg' : 'text-base'} />
       </div>
       <Step
@@ -130,31 +150,51 @@ export function Gauges({ counters, onChange, big }: CounterViewProps) {
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3">
+    <div className="flex min-h-0 flex-1 flex-col justify-center gap-3">
       {gauges.length > 0 && (
         // auto-fit rather than a breakpoint: one column on a phone, four
-        // across a rail, and it never needs to know which it's on. The
-        // grid takes the leftover height and shares it between rows, so
-        // spare room becomes a bigger target instead of a gap.
+        // across a rail, and it never needs to know which it's on.
+        //
+        // Rows are CAPPED, not `1fr`. Letting them take all the leftover
+        // height is right on a 515px rail and ridiculous on an iPad,
+        // where two counters grew into half-metre slabs. The cap is the
+        // smaller of a comfortable touch size and a third of the glass,
+        // so short screens still fill and tall ones stay sane — the
+        // slack goes into centring the block instead. The viewport half
+        // of that cap is what keeps it PROPORTIONATE: a flat 14rem left
+        // an iPad two-thirds empty, which reads as broken rather than
+        // roomy.
         <div
-          className="grid flex-1 gap-2"
+          className="grid gap-2"
           style={{
             gridTemplateColumns: 'repeat(auto-fit, minmax(9rem, 1fr))',
-            gridAutoRows: 'minmax(0, 1fr)',
+            gridAutoRows: 'minmax(0, min(20rem, 30cqh))',
           }}
         >
           {gauges.map((counter) => (
-            <GaugeTile key={counter.id} counter={counter} big={big} onChange={update} />
+            <GaugeTile
+              key={counter.id}
+              counter={counter}
+              big={big}
+              onChange={update}
+            />
           ))}
         </div>
       )}
       {tallies.length > 0 && (
         <div
           className="grid gap-1.5"
-          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(12rem, 1fr))' }}
+          style={{
+            gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))',
+          }}
         >
           {tallies.map((counter) => (
-            <TallyRow key={counter.id} counter={counter} big={big} onChange={update} />
+            <TallyRow
+              key={counter.id}
+              counter={counter}
+              big={big}
+              onChange={update}
+            />
           ))}
         </div>
       )}

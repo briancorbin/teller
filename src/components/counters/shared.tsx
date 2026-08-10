@@ -48,7 +48,10 @@ export function isLow(counter: Counter): boolean {
 }
 
 /** Gauges first, tallies after, each keeping the order they were stored in. */
-export function split(counters: Counter[]): { gauges: Counter[]; tallies: Counter[] } {
+export function split(counters: Counter[]): {
+  gauges: Counter[];
+  tallies: Counter[];
+} {
   return {
     gauges: counters.filter(isGauge),
     tallies: counters.filter((c) => !isGauge(c)),
@@ -190,12 +193,15 @@ export function Ring({
 export function Value({
   counter,
   className = '',
+  style,
 }: {
   counter: Counter;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     <span
+      style={style}
       className={`whitespace-nowrap font-mono tabular-nums ${
         isLow(counter)
           ? 'text-red-400'
@@ -213,9 +219,27 @@ export function Value({
   );
 }
 
-export function Name({ counter, className = '' }: { counter: Counter; className?: string }) {
+/**
+ * A counter's name, in full.
+ *
+ * Never truncated — `truncate` is just "cut the text off" spelled as a
+ * utility class, and it was in here, so every layout inherited it. Two
+ * counters called "Prestige · Total" and "Prestige · Unclaimed" both
+ * render as "Prestig…" in a narrow column, which is worse than useless:
+ * it's two different things wearing the same label.
+ *
+ * Long names wrap and make the card taller, which `FitBox` answers by
+ * scaling. Smaller and complete beats bigger and guessing.
+ */
+export function Name({
+  counter,
+  className = '',
+}: {
+  counter: Counter;
+  className?: string;
+}) {
   return (
-    <span className={`truncate ${className}`}>
+    <span className={`break-words ${className}`}>
       {counter.name}
       {counter.hidden && <span className="ml-1 text-stone-600">· hidden</span>}
     </span>

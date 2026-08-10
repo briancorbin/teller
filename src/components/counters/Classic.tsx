@@ -1,7 +1,13 @@
 import type { Counter } from '../../../worker/types';
 import { ClockFace } from '../ClockFace';
 import { bigBtn, iconBtn } from '../../lib/ui';
-import { bumped, isBlank, isLow, Refill, type CounterViewProps } from './shared';
+import {
+  bumped,
+  isBlank,
+  isLow,
+  Refill,
+  type CounterViewProps,
+} from './shared';
 
 // Classic — what teller shipped first, kept verbatim as the control.
 //
@@ -23,7 +29,8 @@ function ClassicRow({
   big?: boolean;
   onChange: (next: Counter) => void;
 }) {
-  const clock = counter.display === 'clock' && counter.max !== null && counter.max > 0;
+  const clock =
+    counter.display === 'clock' && counter.max !== null && counter.max > 0;
 
   return (
     <div className="flex items-center gap-3">
@@ -59,9 +66,11 @@ function ClassicRow({
             <span className="text-stone-600">/{counter.max ?? '—'}</span>
           </div>
         )}
-        <div className="truncate text-xs text-stone-400">
+        <div className="break-words text-xs text-stone-400">
           {counter.name}
-          {counter.hidden && <span className="ml-1 text-stone-600">· hidden</span>}
+          {counter.hidden && (
+            <span className="ml-1 text-stone-600">· hidden</span>
+          )}
         </div>
       </div>
       <button
@@ -82,7 +91,12 @@ export function Classic({ counters, onChange, big }: CounterViewProps) {
   return (
     <div className="space-y-2">
       {counters.map((counter) => (
-        <ClassicRow key={counter.id} counter={counter} big={big} onChange={update} />
+        <ClassicRow
+          key={counter.id}
+          counter={counter}
+          big={big}
+          onChange={update}
+        />
       ))}
     </div>
   );
