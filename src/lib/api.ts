@@ -243,6 +243,12 @@ export const api = {
       { method: 'POST' },
     ),
 
+  /** Sweep every NPC off the table, whatever put it there. */
+  clearTable: (campaignId: string) =>
+    req<{ cleared: number }>(`/api/campaigns/${campaignId}/table/clear`, {
+      method: 'POST',
+    }),
+
   /** Take it back off — every creature it put there, and their markers. */
   clearEncounter: (campaignId: string, encounterId: string) =>
     req<{ cleared: number }>(

@@ -132,11 +132,14 @@ function PlacementRow({
 export function EncountersPanel({
   campaign,
   bestiary,
+  onTable,
   onChange,
   onDeployed,
 }: {
   campaign: Campaign;
   bestiary: SourcedNpc[];
+  /** How many NPCs are on the table right now, however they got there. */
+  onTable: number;
   onChange: (encounters: Encounter[]) => void;
   /** Deployed foes and what each rolled, so the caller can seat them
    *  in the turn order. Called with nothing when a fight is cleared. */
@@ -198,6 +201,20 @@ export function EncountersPanel({
     }
   };
 
+  /** Everything off, whatever put it there. */
+  const clearTable = async () => {
+    setBusy(true);
+    try {
+      const { cleared } = await api.clearTable(campaign.id);
+      setStatus(cleared ? `took ${cleared} off the table` : 'the table was already clear');
+      onDeployed();
+    } catch (e) {
+      setStatus(String(e instanceof Error ? e.message : e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const clear = async (encounter: Encounter) => {
     setBusy(true);
     try {
@@ -215,6 +232,23 @@ export function EncountersPanel({
     <section className={`${card} space-y-3`}>
       <div className="flex items-center justify-between">
         <span className={sectionLabel}>Prepared fights</span>
+        {/*
+          The blunt instrument, and deliberately so. Per-encounter clear
+          is precise and needs a foe to remember which fight it came
+          from; this one doesn't care. Strays, ad-hoc spawns, anything
+          left behind — if it's an NPC it's on the table, and the table
+          is being wiped. The party is never touched.
+        */}
+        {onTable > 0 && (
+          <button
+            className={`${btnGhost} text-red-300 hover:text-red-200`}
+            onClick={clearTable}
+            disabled={busy}
+            title="delete every NPC on the table — the party is never touched"
+          >
+            clear the table ({onTable})
+          </button>
+        )}
         <button className={btnGhost} onClick={create}>
           new encounter
         </button>

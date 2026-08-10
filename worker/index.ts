@@ -1133,6 +1133,75 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ticket });
   }
 
+  // Sweep the table: every NPC off, whatever put it there.
+  //
+  // Per-encounter clear is precise and depends on a foe remembering
+  // which fight it came from. This one doesn't care — a stray from an
+  // older build, something spawned ad-hoc, a fight cleared while you
+  // weren't looking. If it's an NPC it's on the table, and the table is
+  // being wiped.
+  //
+  // PCs are never touched: the party isn't scenery. A recurring NPC
+  // belongs in the bestiary as a blueprint and gets deployed when they
+  // turn up, so nothing durable lives here to lose.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/table\/clear$/);
+  if (m && method === 'POST') {
+    const campaignId = m[1];
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(campaignId)
+      .first();
+    if (!row) return err('campaign not found', 404);
+    const campaign = toCampaign(row as never);
+
+    const rows = await env.DB.prepare(
+      "SELECT id, name FROM characters WHERE campaign_id = ? AND kind = 'npc'",
+    )
+      .bind(campaignId)
+      .all();
+    const doomed = rows.results as { id: string; name: string }[];
+
+    for (const c of doomed) {
+      await env.DB.prepare('DELETE FROM characters WHERE id = ?').bind(c.id).run();
+    }
+
+    if (doomed.length) {
+      // Their markers go with them — a token pointing at a character
+      // that no longer exists is a ghost on the table.
+      const gone = new Set(doomed.map((c) => c.id));
+      const maps = (campaign.data.maps ?? []).map((scene) => ({
+        ...scene,
+        tokens: (scene.tokens ?? []).filter(
+          (t) => !(t.characterId && gone.has(t.characterId)),
+        ),
+      }));
+      await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+        .bind(JSON.stringify({ ...campaign.data, maps }), campaignId)
+        .run();
+
+      // And their places in the order, or the turn walks onto a corpse.
+      const state = await (
+        await sessionStub(env, campaignId).fetch('https://do/session')
+      ).json<SessionState>();
+      const initiative = state.initiative.filter(
+        (e) => !(e.characterId && gone.has(e.characterId)),
+      );
+      if (initiative.length !== state.initiative.length) {
+        await sessionStub(env, campaignId).fetch('https://do/session', {
+          method: 'POST',
+          body: JSON.stringify({ op: 'set', initiative }),
+        });
+      }
+
+      await logEvent(env, campaignId, null, actorOf(auth), 'table.cleared', {
+        removed: doomed.map((c) => c.name),
+      });
+      await poke(env, campaignId, 'campaign');
+    }
+
+    return json({ cleared: doomed.length });
+  }
+
   // Roll for everything the table isn't rolling for itself.
   //
   // Players roll real dice and report from their seats; nobody wants to

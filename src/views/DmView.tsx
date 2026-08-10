@@ -426,6 +426,7 @@ export function DmView({
       campaign={campaign}
       bestiary={bestiary}
       onChange={saveEncounters}
+      onTable={characters.filter((c) => c.kind === 'npc').length}
       onDeployed={seatDeployed}
     />
   );
