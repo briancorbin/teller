@@ -287,6 +287,40 @@ dedicated hardware doing the same thing. Nothing may ever *require* the
 panels or the table TV. Seat UI must work as a short-and-wide strip
 (~1920×515) AND as a phone portrait card.
 
+**The short-and-wide strip is the DESIGN TARGET, not merely a size that
+has to work** (Brian, 2026-08-10, weighing it against a 15.6" panel).
+Two reasons, and the first is the thesis:
+
+- **The panel must stay subordinate to the table.** A 15.6" screen at
+  every seat is a wall of glass around a table whose whole point is the
+  dice, the minis and the terrain on it. A 3.4"-tall bar sits under the
+  sightline and stays secondary. A screen that competes with the minis
+  has already lost the argument this project is making.
+- **515px of height forces the editorial question** — what does a player
+  need AT A GLANCE, mid-fight? A tall panel lets you dodge it, and
+  dodging it is how a seat becomes a dense card nobody reads. Designing
+  roomy-first and squeezing does not work: it produced a phone at scale
+  0.64 with 10px headings the same day this was decided.
+
+The corollary is structural, not optional: the seat is **several
+screens** (a segmented bar you can also swipe between), because the
+sheet's blocks do not fit one bar and never will. Deciding what earns a
+place on the FIRST screen is the design work; the rest is arrangement.
+
+**Two families of glass, and only one question tells them apart** —
+is it MOUNTED or HELD? (See `wide` in `src/views/SeatView.tsx`.) Mounted
+glass — rail panel, table TV, a propped tablet — has plentiful width and
+FIXED height, because nobody flicks a screwed-down panel and a shared
+screen must show everything at once: so it scales to fit and never
+scrolls. Held glass — a phone in a hand — has scarce width and ELASTIC
+height, because scrolling is free and universally understood: so it runs
+full-width at natural size and may scroll down. Neither ever scrolls
+sideways. That is one decision point instead of a per-device matrix, and
+there is deliberately no list of devices anywhere in the client.
+
+`FitBox`'s scale is a **diagnostic**: far below 1 means the layout is
+wrong for that glass, not that the glass is small.
+
 **A LAN host is served over plain HTTP, and that constrains the
 client.** Two consequences that have already bitten:
 
