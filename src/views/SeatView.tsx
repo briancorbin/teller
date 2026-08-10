@@ -19,7 +19,7 @@ import {
 } from '../lib/seat-layouts';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { COUNTER_VIEWS } from '../components/counters';
-import { FitBox } from '../components/FitBox';
+import { Fit } from '../components/FitBox';
 import { SEAT_SIZES, SizeFrame, type SeatSize } from '../components/SizeFrame';
 import { TagSection } from '../components/TagSection';
 
@@ -27,12 +27,21 @@ import { TagSection } from '../components/TagSection';
 //
 // Two rules govern everything here.
 //
-// **It never scrolls.** Not down, not sideways. A seat is a fixed piece
-// of glass — a phone in a hand, a 1920×515 panel screwed to the table
-// rail — and scrolling means the number you need is somewhere else at
-// the moment you need it. So the card fits the screen: fluid grids
-// first, and `FitBox` scaling as the backstop when a character has more
-// counters than the glass has room for.
+// **It never scrolls on glass nobody will touch.** Sideways, never, on
+// anything. Downwards depends on which KIND of screen it is, and that
+// turned out to be the only device question worth asking — see `wide`
+// below.
+//
+// The rule used to read "it never scrolls, full stop", which was learned
+// honestly on the rail panel and then over-applied to phones. A panel
+// screwed to the table genuinely can't scroll; a phone in a hand
+// obviously can, and refusing to let it meant `FitBox` squeezing the
+// card to 0.64 to avoid a gesture every human already knows. That cost
+// legibility AND the width the panels were asking for, to protect a
+// property nobody wanted on that device.
+//
+// So: fluid grids first, then `FitBox` on mounted glass, and on held
+// glass just let it be as tall as it is.
 //
 // **The arrangement is a question, not an answer.** Nobody knows what a
 // seat should look like yet, so there are five and the player picks. See
@@ -187,9 +196,37 @@ export function SeatView({
     : '';
 
   const Counters = COUNTER_VIEWS[layout];
-  // Wide-and-short glass lays out in a row. Read from the frame when one
-  // is forced, or the preview would keep answering for the real window
-  // and a simulated rail would render as a phone.
+  /**
+   * Is this glass MOUNTED, or is it held?
+   *
+   * The one question that decides the whole shape of the card, and the
+   * reason there is no per-device tuning here. It isn't really about
+   * aspect ratio — it's about which dimension is scarce and whether
+   * anybody will touch the screen:
+   *
+   *   * **Mounted** — the rail panel bolted to the table, a propped
+   *     tablet, the table TV. Width is plentiful and height is FIXED,
+   *     because nobody flicks a screwed-down panel and a screen the
+   *     whole table reads has to show everything at once. So: columns,
+   *     and `FitBox` scales to fit. This is where the no-scrolling rule
+   *     was actually learned.
+   *   * **Held** — a phone or tablet in someone's hand. Width is the
+   *     scarce thing and height is ELASTIC, because scrolling is free
+   *     and universally understood. So: one column, full width, natural
+   *     size, and it may scroll down.
+   *
+   * Scaling a held phone to fit was the worst of both: at 390x844 the
+   * card wanted 1163px of height in 744, so it rendered at 0.64 — the
+   * panels used 234px of a 390px screen and the headings came out at
+   * 10px. **A `FitBox` scale far below 1 is a diagnostic**: it means the
+   * layout is wrong for that glass, not that the glass is small.
+   *
+   * Neither family may EVER scroll sideways.
+   *
+   * Read from the forced frame when there is one, or the preview would
+   * keep answering for the real window and a simulated rail would
+   * render as a phone.
+   */
   const wide = size
     ? size.w / size.h >= 1.3
     : typeof window !== 'undefined' &&
@@ -199,9 +236,11 @@ export function SeatView({
   return (
     <SizeFrame size={size}>
       <main
-        className={`flex h-full w-full flex-col gap-2 overflow-hidden p-3 ${
-          youreUp ? 'ring-4 ring-inset ring-amber-600' : ''
-        }`}
+        // Held glass may scroll DOWN; mounted glass may not. Nothing may
+        // ever scroll sideways — see the note on `wide` above.
+        className={`flex h-full w-full flex-col gap-2 overflow-x-hidden p-3 ${
+          wide ? 'overflow-y-hidden' : 'overflow-y-auto'
+        } ${youreUp ? 'ring-4 ring-inset ring-amber-600' : ''}`}
       >
         <ConnectionHint connected={connected} />
 
@@ -410,10 +449,14 @@ export function SeatView({
           rather than a pixel breakpoint, because 1920×515 and 1024×600
           want the same treatment for the same reason. */}
         <div
-          className={`flex min-h-0 flex-1 gap-2 ${wide ? 'flex-row' : 'flex-col'}`}
+          className={`flex min-h-0 gap-2 ${wide ? 'flex-1 flex-row' : 'flex-col'}`}
         >
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-            <FitBox className="min-h-0 flex-1">
+            {/* `FitBox` only on mounted glass. On a phone it was solving
+                the wrong problem — squeezing a card that had somewhere
+                to go — and the squeeze cost both legibility and the
+                width the panels were asking for. */}
+            <Fit on={wide} className="min-h-0 flex-1">
               <Counters
                 big
                 counters={character.data.counters}
@@ -431,7 +474,7 @@ export function SeatView({
                 note={note}
                 onChange={(counters) => patch({ counters })}
               />
-            </FitBox>
+            </Fit>
 
             {/* Stats are reference, not controls — one dense strip.
                 Skipped when the layout places them itself, or the same

@@ -6,17 +6,26 @@ import {
   useState,
 } from 'react';
 
-// Make it fit. No scrollbars, either axis, ever.
+// Make it fit — on glass that has no other option.
 //
-// A seat is a fixed piece of glass — a phone in someone's hand, or a
-// panel screwed to the table rail — and scrolling it means the number
-// you need is somewhere else at the moment you need it. So the card
-// always fits the screen it's on.
+// A panel screwed to the table rail cannot scroll: nobody is going to
+// flick it, and a screen the whole table reads has to show everything at
+// once. So on MOUNTED glass the card is scaled until it fits.
+//
+// **This is the wrong tool for a phone**, which is why `Fit` exists
+// beside it. Held glass has somewhere to go — scrolling is free and
+// everyone already knows how — and squeezing it instead costs both
+// legibility and width. Measured at 390×844, a card wanting 1163px of
+// height in 744 rendered at 0.64: panels using 234px of a 390px screen,
+// and 16px headings coming out at 10px.
+//
+// So read the scale as a DIAGNOSTIC. Anything far below 1 means the
+// layout is wrong for that glass, not that the glass is small.
 //
 // The layouts do most of this themselves with fluid grids, because
 // content that fits honestly beats content that was shrunk. This is the
 // backstop for when honesty runs out: a character with twelve counters
-// on a phone in landscape.
+// on a rail panel.
 //
 // It NEVER scales up. `1` is the only scale where text renders exactly
 // as designed, and inflating a small card to fill a rail panel would
@@ -124,4 +133,25 @@ export function FitBox({
       </div>
     </div>
   );
+}
+
+/**
+ * `FitBox` on mounted glass, a plain box on held glass.
+ *
+ * The choice lives at the call site (`wide` in `SeatView`), but it is
+ * expressed here so nothing has to write the conditional-wrapper dance
+ * twice. Off, this renders exactly what it was given, at full width and
+ * natural size, and whatever contains it decides whether that scrolls.
+ */
+export function Fit({
+  on,
+  children,
+  className = '',
+}: {
+  on: boolean;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  if (!on) return <div className={className}>{children}</div>;
+  return <FitBox className={className}>{children}</FitBox>;
 }
