@@ -298,6 +298,36 @@ export function DmView({
       ],
     });
   };
+  /**
+   * A deployed fight walks onto the table AND into the turn order,
+   * carrying what teller rolled for it. Spawning from the bestiary has
+   * always done this; deploy not doing it was an inconsistency, and it
+   * left every foe stranded in the "not in the order yet" list.
+   *
+   * The order is still yours: these land as a proposal you can drag.
+   */
+  const seatDeployed = (
+    deployed?: {
+      characters: Character[];
+      rolls: Record<string, { total: number; faces: string[] }>;
+    },
+  ) => {
+    refetch();
+    if (!deployed?.characters.length) return;
+    const entries = deployed.characters.map((c) => ({
+      id: newLocalId('ini'),
+      characterId: c.id,
+      label: c.name,
+      score: deployed.rolls[c.id]?.total ?? null,
+    }));
+    api
+      .sessionOp(campaignId, {
+        op: 'set',
+        initiative: [...(session?.initiative ?? []), ...entries],
+      })
+      .catch(() => refetch());
+  };
+
   /** Say which printing of a foe this table uses (rule 1 over pack order). */
   const pickFoeSource = (npcId: string, packId: string) => {
     const foePicks = { ...(campaign?.data.foePicks ?? {}), [npcId]: packId };
@@ -361,7 +391,7 @@ export function DmView({
       campaign={campaign}
       bestiary={bestiary}
       onChange={saveEncounters}
-      onDeployed={refetch}
+      onDeployed={seatDeployed}
     />
   );
 
@@ -374,6 +404,15 @@ export function DmView({
       onSpawn={spawnGroup}
       tokenLinks={tokenLinks}
       onOp={(op) => api.sessionOp(campaignId, op).catch(() => refetch())}
+      onRollNpcs={() =>
+        // Open the phase — which clears every score — and immediately
+        // roll back in the ones nobody wants to roll by hand. One tap:
+        // the monsters are done, the seats are asked.
+        api
+          .sessionOp(campaignId, { op: 'rolling', on: true })
+          .then(() => api.rollNpcInitiative(campaignId))
+          .catch(() => refetch())
+      }
       onPatchCharacter={patchCharacter}
       onDropToken={dropToken}
     />

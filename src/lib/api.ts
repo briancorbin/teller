@@ -232,7 +232,13 @@ export const api = {
 
   /** Put a prepared fight on the table. Re-deploying resets it. */
   deployEncounter: (campaignId: string, encounterId: string) =>
-    req<{ characters: Character[]; missing: string[]; cleared: number }>(
+    req<{
+      characters: Character[];
+      missing: string[];
+      cleared: number;
+      /** What each foe rolled for turn order, by character id. */
+      rolls: Record<string, { total: number; faces: string[] }>;
+    }>(
       `/api/campaigns/${campaignId}/encounters/${encounterId}/deploy`,
       { method: 'POST' },
     ),
@@ -422,6 +428,13 @@ export const api = {
     req<{ ticket: string }>(`/api/campaigns/${campaignId}/stream-ticket`, {
       method: 'POST',
     }),
+
+  /** Roll turn order for every NPC in the list; players report their own. */
+  rollNpcInitiative: (campaignId: string) =>
+    req<{ session: SessionState; rolled: number }>(
+      `/api/campaigns/${campaignId}/initiative/roll`,
+      { method: 'POST' },
+    ),
 
   sessionOp: (campaignId: string, op: SessionOp) =>
     req<SessionState>(

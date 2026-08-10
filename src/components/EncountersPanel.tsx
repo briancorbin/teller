@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Campaign, Encounter, Placement, Scene } from '../../worker/types';
+import type { Campaign, Character, Encounter, Placement, Scene } from '../../worker/types';
 import type { SourcedNpc } from '../../worker/bestiary';
 import { api, newLocalId } from '../lib/api';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
@@ -138,7 +138,11 @@ export function EncountersPanel({
   campaign: Campaign;
   bestiary: SourcedNpc[];
   onChange: (encounters: Encounter[]) => void;
-  onDeployed: () => void;
+  /** Deployed foes and what each rolled, so the caller can seat them
+   *  in the turn order. Called with nothing when a fight is cleared. */
+  onDeployed: (
+    deployed?: { characters: Character[]; rolls: Record<string, { total: number; faces: string[] }> },
+  ) => void;
 }) {
   const encounters = campaign.data.encounters ?? [];
   const scenes: Scene[] = campaign.data.maps ?? [];
@@ -176,15 +180,17 @@ export function EncountersPanel({
     setBusy(true);
     setStatus('');
     try {
-      const { characters, missing, cleared } = await api.deployEncounter(
+      const { characters, missing, cleared, rolls } = await api.deployEncounter(
         campaign.id,
         encounter.id,
       );
       const parts = [`${characters.length} on the table`];
       if (cleared) parts.push(`cleared ${cleared} from last time`);
       if (missing.length) parts.push(`couldn’t find ${missing.length}`);
+      const rolled = Object.keys(rolls).length;
+      if (rolled) parts.push(`rolled for ${rolled}`);
       setStatus(parts.join(' · '));
-      onDeployed();
+      onDeployed({ characters, rolls });
     } catch (e) {
       setStatus(String(e instanceof Error ? e.message : e));
     } finally {

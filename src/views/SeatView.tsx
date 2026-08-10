@@ -74,6 +74,23 @@ export function SeatView({ characterId }: { characterId: string }) {
   const youreUp = current?.characterId === character.id;
   const onDeck = !youreUp && next?.characterId === character.id;
 
+  /**
+   * Rolling for turn order. The dice are real and in the player's hand —
+   * this only takes the number off them, which is the part that
+   * otherwise gets shouted across a table and written down twice.
+   *
+   * A seat may report its OWN roll and nothing else; the server checks
+   * that the entry belongs to this character (rule 7).
+   */
+  const mine = initiative.find((e) => e.characterId === character.id);
+  const takingRolls = Boolean(session?.rolling && mine);
+  const submitRoll = (score: number) => {
+    if (!mine) return;
+    api
+      .sessionOp(character.campaignId, { op: 'score', entryId: mine.id, score })
+      .catch(() => {});
+  };
+
   return (
     <main
       className={`mx-auto flex min-h-screen max-w-2xl flex-col gap-4 p-4 ${
@@ -97,6 +114,40 @@ export function SeatView({ characterId }: { characterId: string }) {
           </p>
         )}
       </header>
+
+      {takingRolls && (
+        <section className="shrink-0 rounded-lg bg-amber-950/40 p-3 ring-1 ring-amber-800">
+          <p className="text-sm text-amber-200">
+            Roll for turn order — tap what you got.
+          </p>
+          {/*
+            Big targets, because this gets tapped on a rail panel with a
+            fingertip mid-conversation. 0 is a real answer and has to be
+            as reachable as any other.
+          */}
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {Array.from({ length: 13 }, (_, n) => (
+              <button
+                key={n}
+                className={`min-w-11 rounded-md px-3 py-2 font-mono text-lg ${
+                  mine?.score === n
+                    ? 'bg-amber-600 text-stone-950'
+                    : 'bg-stone-800 text-stone-200 active:bg-stone-700'
+                }`}
+                onClick={() => submitRoll(n)}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
+          {typeof mine?.score === 'number' && (
+            <p className="mt-2 text-xs text-stone-400">
+              You reported <span className="text-amber-300">{mine.score}</span> —
+              tap another number to correct it.
+            </p>
+          )}
+        </section>
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col gap-4 [@media(max-height:560px)]:flex-row [@media(max-height:560px)]:items-center [@media(max-height:560px)]:overflow-x-auto">
         <FieldSection fields={character.data.fields} onChange={(fields) => patch({ fields })} />

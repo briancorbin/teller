@@ -61,6 +61,7 @@ export function EncounterPanel({
   onPatchCharacter,
   onDropToken,
   onSpawn,
+  onRollNpcs,
 }: {
   session: SessionState | null;
   characters: Character[];
@@ -73,6 +74,8 @@ export function EncounterPanel({
   onPatchCharacter: (id: string, patch: { data?: Partial<CharacterData> }) => void;
   onDropToken: (characterId: string, label: string) => void;
   onSpawn: (npcId: string, count: number) => void;
+  /** Open the rolling phase and roll for the monsters in one act. */
+  onRollNpcs: () => void;
 }) {
   const [draft, setDraft] = useState('');
   /** Rows opened to show the whole sheet. Running a monster shouldn't
@@ -133,6 +136,10 @@ export function EncounterPanel({
     });
   };
 
+  const rolling = session?.rolling ?? false;
+  /** Who hasn't reported a roll yet — null is "hasn't", not a real 0. */
+  const waiting = initiative.filter((e) => typeof e.score !== 'number');
+
   const unlisted = characters.filter(
     (c) => !initiative.some((e) => e.characterId === c.id),
   );
@@ -152,6 +159,45 @@ export function EncounterPanel({
         <p className="text-sm text-stone-600">
           add combatants, arrange to match the table, then start
         </p>
+      )}
+
+      {/*
+        Taking rolls. Players roll real dice and type what they got on
+        their own seat — the dice stay physical, only the arithmetic
+        goes virtual. teller has already rolled for anything it deployed.
+      */}
+      {initiative.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md bg-stone-900 px-2 py-1.5">
+          {rolling ? (
+            <>
+              <span className="font-mono text-xs text-amber-300">taking rolls</span>
+              <span className="font-mono text-[11px] text-stone-500">
+                {waiting.length
+                  ? `waiting on ${waiting.map((e) => e.label).join(', ')}`
+                  : 'everyone is in'}
+              </span>
+              <button
+                className={`${btn} ml-auto text-xs`}
+                onClick={() => onOp({ op: 'rolling', on: false })}
+              >
+                done
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="font-mono text-[11px] text-stone-600">
+                seats can enter their own initiative
+              </span>
+              <button
+                className={`${btn} ml-auto text-xs`}
+                onClick={() => onRollNpcs()}
+                title="clear every score and ask each seat for a fresh roll"
+              >
+                roll initiative
+              </button>
+            </>
+          )}
+        </div>
       )}
 
       <ol className="space-y-1.5">

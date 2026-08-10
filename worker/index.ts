@@ -34,6 +34,7 @@ import type {
   Counter,
   RulesPack,
   SessionOp,
+  SessionState,
   Token,
 } from './types';
 import { tokenColor } from './tokens';
@@ -1122,13 +1123,98 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ticket });
   }
 
+  // Roll for everything the table isn't rolling for itself.
+  //
+  // Players roll real dice and report from their seats; nobody wants to
+  // do that on behalf of six coyotes. So this fills in a score for every
+  // entry pointing at an NPC and leaves the PCs alone — which is also
+  // why opening the rolling phase can safely wipe the board: whatever
+  // teller rolled, teller can roll again.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/initiative\/roll$/);
+  if (m && method === 'POST') {
+    const campaignId = m[1];
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(campaignId)
+      .first();
+    if (!row) return err('campaign not found', 404);
+    const campaign = toCampaign(row as never);
+    const template = await getSystem(env, campaign.system);
+
+    const chars = await env.DB.prepare(
+      "SELECT * FROM characters WHERE campaign_id = ? AND kind = 'npc'",
+    )
+      .bind(campaignId)
+      .all();
+    const foes = new Map(
+      chars.results.map((r) => {
+        const c = toCharacter(r as never);
+        return [c.id, c];
+      }),
+    );
+
+    const state = await (
+      await sessionStub(env, campaignId).fetch('https://do/session')
+    ).json<SessionState>();
+
+    let rolled = 0;
+    const initiative = state.initiative.map((entry) => {
+      const foe = entry.characterId ? foes.get(entry.characterId) : undefined;
+      if (!foe) return entry;
+      const roll = rollInitiative(template, foe.data.fields);
+      if (!roll) return entry;
+      rolled += 1;
+      return { ...entry, score: roll.total };
+    });
+
+    // `set` deliberately does not sort — it's what dragging uses — so
+    // the ordering happens here, by the same rule the DO applies when a
+    // score lands: highest first, and anyone still to roll waits at the
+    // back rather than being assumed to have rolled nothing.
+    initiative.sort((a, b) => {
+      const x = typeof a.score === 'number' ? a.score : null;
+      const y = typeof b.score === 'number' ? b.score : null;
+      if (x === null && y === null) return 0;
+      if (x === null) return 1;
+      if (y === null) return -1;
+      return y - x;
+    });
+
+    const next = await sessionStub(env, campaignId).fetch('https://do/session', {
+      method: 'POST',
+      body: JSON.stringify({ op: 'set', initiative }),
+    });
+    const saved = await next.json<SessionState>();
+    return json({ session: saved, rolled });
+  }
+
   // Live session — SSE stream + initiative ops, forwarded to the DO.
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/(stream|session)$/);
   if (m) {
     if (m[2] === 'session' && method === 'POST') {
-      if (!dm(m[1])) return err('DM key required', 401);
+      const campaignId = m[1];
       const op = await request.json<SessionOp>();
-      return sessionStub(env, m[1]).fetch('https://do/session', {
+
+      // Everything about the fight is the DM's, with ONE exception: a
+      // player reports their own initiative roll from their own seat.
+      // That's the same authority a seat already has over its character
+      // (rule 7) — it isn't rearranging anything, it's saying what its
+      // dice showed, which is the one number nobody else can see.
+      if (!dm(campaignId)) {
+        if (op.op !== 'score') return err('DM key required', 401);
+        const current = await (
+          await sessionStub(env, campaignId).fetch('https://do/session')
+        ).json<SessionState>();
+        const entry = current.initiative.find((e) => e.id === op.entryId);
+        if (
+          !entry?.characterId ||
+          !canEditCharacter(auth, campaignId, entry.characterId)
+        ) {
+          return err('that roll is not yours to report', 403);
+        }
+      }
+
+      return sessionStub(env, campaignId).fetch('https://do/session', {
         method: 'POST',
         body: JSON.stringify(op),
       });
