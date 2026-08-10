@@ -75,6 +75,7 @@ export default function App() {
         pane={pane}
         onPane={choosePane}
         onLock={lock}
+        onLeave={forgetCampaign}
         onMissing={forgetCampaign}
       />
     ) : (

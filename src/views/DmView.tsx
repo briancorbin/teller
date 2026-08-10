@@ -32,6 +32,7 @@ export function DmView({
   pane,
   onPane,
   onLock,
+  onLeave,
   onMissing,
 }: {
   campaignId: string;
@@ -39,6 +40,12 @@ export function DmView({
   onPane: (pane: string | null) => void;
   /** Absent on a screen the DM promoted — it has no key to give up. */
   onLock?: () => void;
+  /**
+   * Back to the campaign list, keeping the key. Absent for the same
+   * reason `onLock` is: a screen the DM assigned to a campaign is what
+   * they said it is, and must not wander to a different one (rule 7).
+   */
+  onLeave?: () => void;
   /** The campaign is gone; forget it and show the list again. */
   onMissing?: () => void;
 }) {
@@ -556,6 +563,15 @@ export function DmView({
           {campaign.system} · {gm}'s console
         </span>
         <span className="ml-auto flex items-baseline gap-4">
+          {onLeave && (
+            <button
+              className="font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
+              onClick={onLeave}
+              title="back to the campaign list — the key stays put"
+            >
+              ← campaigns
+            </button>
+          )}
           <button
             className="font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
             onClick={() =>
