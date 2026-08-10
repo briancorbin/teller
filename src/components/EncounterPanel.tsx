@@ -434,13 +434,45 @@ export function EncounterPanel({
 
       <QuickSpawn npcs={npcs} onSpawn={onSpawn} />
 
-      <div className="flex flex-wrap gap-1.5">
-        {unlisted.map((c) => (
-          <button key={c.id} className={btnGhost} onClick={() => addEntry(c.name, c.id)}>
-            + {c.name}
-          </button>
-        ))}
-      </div>
+      {/*
+        These are NOT the bestiary above, and they used to look exactly
+        like it — identical chips, side by side, doing opposite things.
+        Bestiary "+ Bark Watcher" STAMPS OUT a new creature; here
+        "+ Bark Watcher 1" puts one that already exists into the order.
+        Hitting the wrong one mid-fight spawns a monster.
+
+        So: its own labelled section, split by who they are, because a
+        missing player and a missing monster are different oversights.
+      */}
+      {unlisted.length > 0 && (
+        <div className="space-y-2 rounded-md bg-stone-900/60 px-2 py-2">
+          <span className={sectionLabel}>On the table, not in the order</span>
+          {(
+            [
+              { label: 'players', of: unlisted.filter((c) => c.kind === 'pc') },
+              { label: 'foes', of: unlisted.filter((c) => c.kind !== 'pc') },
+            ] as const
+          )
+            .filter((group) => group.of.length > 0)
+            .map((group) => (
+              <div key={group.label} className="flex flex-wrap items-center gap-1.5">
+                <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-wide text-stone-600">
+                  {group.label}
+                </span>
+                {group.of.map((c) => (
+                  <button
+                    key={c.id}
+                    className={btnGhost}
+                    onClick={() => addEntry(c.name, c.id)}
+                    title={`put ${c.name} in the turn order`}
+                  >
+                    + {c.name}
+                  </button>
+                ))}
+              </div>
+            ))}
+        </div>
+      )}
 
       <div className="flex gap-2">
         <input

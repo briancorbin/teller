@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { SourcedNpc } from '../../worker/bestiary';
 import { useBooks } from '../lib/use-books';
-import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
+import { btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { BookReader, type BookTarget } from './BookReader';
 
 // The bestiary: everything you could put in front of the party.
@@ -246,7 +246,12 @@ export function QuickSpawn({
 }) {
   const [query, setQuery] = useState('');
   const [count, setCount] = useState(1);
-  const found = npcs.filter((n) => matches(n, query.trim())).slice(0, 8);
+  // Nothing until you ask. An always-on list of the first eight foes was
+  // just the alphabet — "Alligator Snapping Turtle" is not a suggestion,
+  // it's the top of a sorted array, and it filled the panel with noise
+  // you had to read past to reach the fight.
+  const asked = query.trim();
+  const found = asked ? npcs.filter((n) => matches(n, asked)).slice(0, 8) : [];
 
   if (!npcs.length) return null;
 
@@ -278,21 +283,41 @@ export function QuickSpawn({
           </button>
         </span>
       </div>
-      <div className="flex flex-wrap gap-1.5">
-        {found.map((n) => (
-          <button
-            key={n.id}
-            className={btn}
-            onClick={() => onSpawn(n.id, count)}
-            title={n.from ? `${n.name} — from ${n.from}` : n.name}
-          >
-            + {n.name}
-          </button>
-        ))}
-        {query && !found.length && (
-          <span className="text-sm text-stone-600">nothing by that name</span>
-        )}
-      </div>
+      {/* Results hang under the box like a dropdown, and clear when you
+          take one — you came here to add a foe, not to browse. */}
+      {asked && (
+        <ul className="overflow-hidden rounded-md bg-stone-900">
+          {found.map((n) => (
+            <li key={n.id}>
+              <button
+                className="flex w-full items-baseline gap-2 px-2 py-1.5 text-left hover:bg-stone-800"
+                onClick={() => {
+                  onSpawn(n.id, count);
+                  setQuery('');
+                }}
+              >
+                <span className="text-amber-400">+</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-stone-100">
+                  {n.name}
+                </span>
+                {count > 1 && (
+                  <span className="font-mono text-[11px] text-amber-400/80">
+                    ×{count}
+                  </span>
+                )}
+                <span className="font-mono text-[11px] text-stone-600">
+                  {n.from ?? 'yours'}
+                </span>
+              </button>
+            </li>
+          ))}
+          {!found.length && (
+            <li className="px-2 py-1.5 text-sm text-stone-600">
+              nothing by that name
+            </li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }
