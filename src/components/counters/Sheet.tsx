@@ -18,10 +18,21 @@ import {
 // Sheet — arranged like the paper.
 //
 // Read off the actual WiW character sheet rather than invented: skills
-// boxed down the left, the spendable resources in the middle, tallies
-// along the bottom where the sheet keeps wallet and scrap. A player who
-// has filled one of these in already knows where to look, which is worth
-// more than any arrangement I'd come up with.
+// boxed down the left, the spendable resources in the middle, statuses
+// down the right. A player who has filled one of these in already knows
+// where to look, which is worth more than any arrangement I'd come up
+// with.
+//
+// **It is built a block at a time, and shows only the blocks that are
+// built.** Anything without its proper home on the page — Wallet, Scrap,
+// Prestige, Speed — is HIDDEN here rather than improvised into a strip
+// of chips along the edge. Those chips were the difference between a
+// card that looked designed and one that looked like a to-do list.
+//
+// Hidden, emphatically not deleted. Every one of those is still a real
+// number on the character (rule 1): the console shows it, so do the
+// other five seat layouts, and each returns to this layout the moment
+// the page's lower half — gear, abilities, prestige — is drawn.
 //
 // Two devices are lifted directly because they're better than what we
 // had:
@@ -180,15 +191,14 @@ export function Sheet({
   lookup,
   note,
 }: CounterViewProps) {
-  const { gauges, tallies } = split(counters);
+  const { gauges } = split(counters);
   const update = (next: Counter) =>
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
 
   // The sheet's SKILLS panel is a declared set, not "every stat" — see
-  // `SystemTemplate.groups`. Anything outside it still has to appear
-  // somewhere, so the leftovers keep a strip of their own until they get
-  // the homes the page gives them (Trade names the character, Defense
-  // sits beside Health).
+  // `SystemTemplate.groups`. WiW's holds exactly Charm, Finesse,
+  // Intuition and Nerve; Trade names the character, Defense sits beside
+  // Health, and Speed has no block on this half of the page yet.
   const skillKeys = groups?.skills;
   const skills = skillKeys
     ? skillKeys
@@ -208,15 +218,6 @@ export function Sheet({
     (pins?.[counter.name] ?? [])
       .map((key) => fields.find((f) => f.key === key))
       .filter((f): f is Field => Boolean(f));
-
-  const allPinned = new Set(Object.values(pins ?? {}).flat());
-
-  const rest = fields.filter(
-    (f) =>
-      !(skillKeys ?? []).includes(f.key) &&
-      f.key !== titleKey &&
-      !allPinned.has(f.key),
-  );
 
   // A gauge with pinned fields gets the sheet's own panel for it; the
   // rest keep the generic tile. Nothing is game-specific — "has pins"
@@ -273,23 +274,12 @@ export function Sheet({
             title={SKILLS_TITLE}
             note={note?.(SKILLS_TITLE)}
           />
-          {rest.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {rest.map((field) => (
-                <span
-                  key={field.key}
-                  className="rounded-md bg-stone-900 px-2 py-1 text-xs"
-                >
-                  <span className="font-mono text-stone-100">
-                    {field.value || '—'}
-                  </span>
-                  <span className="ml-1 uppercase tracking-wider text-stone-500">
-                    {field.label}
-                  </span>
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Stats with no block of their own — Speed, for WiW — used to
+              hang here as loose chips. Same reasoning as the tallies
+              below: a chip strip is not the home the sheet gives them,
+              and improvising one is what made this look unfinished.
+              Hidden until the page has the block, not removed from the
+              character. */}
         </div>
 
         {gauges.length > 0 && (
@@ -346,39 +336,19 @@ export function Sheet({
         )}
       </div>
 
-      {/* The bottom of page two: wallet, scrap, supplies. Quiet, because
-          on the sheet they're a margin, not the middle. */}
-      {tallies.length > 0 && (
-        <div
-          className="grid shrink-0 gap-1.5"
-          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))' }}
-        >
-          {tallies.map((counter) => (
-            <div
-              key={counter.id}
-              className="flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1"
-            >
-              <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
-                <Name
-                  counter={counter}
-                  className="text-[10px] uppercase tracking-widest text-stone-500"
-                />
-                <Value counter={counter} className="text-base" />
-              </div>
-              <Step
-                sign="−"
-                label={`decrease ${counter.name}`}
-                onClick={() => update(bumped(counter, -1))}
-              />
-              <Step
-                sign="+"
-                label={`increase ${counter.name}`}
-                onClick={() => update(bumped(counter, 1))}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Wallet, Scrap and Prestige used to sit in a strip along here.
+          They're HIDDEN, not deleted — this layout is being built a block
+          at a time and they haven't reached theirs yet. On the printed
+          sheet they have real homes further down the page, next to the
+          gear and the abilities, and a generic chip strip pretending to
+          be that home is what made the card look unfinished.
+
+          Hidden rather than removed from the character on purpose. The
+          numbers are real (rule 1) — they're still on the console and on
+          every other seat layout, and they come back here the moment the
+          lower half of the page exists. Deleting the counters would have
+          taken them off the other five layouts too, and thrown the values
+          away to solve a layout problem. */}
     </div>
   );
 }
