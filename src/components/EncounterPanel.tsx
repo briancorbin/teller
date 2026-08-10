@@ -171,9 +171,15 @@ export function EncounterPanel({
           {rolling ? (
             <>
               <span className="font-mono text-xs text-amber-300">taking rolls</span>
-              <span className="font-mono text-[11px] text-stone-500">
+              {/* The names live on the rows now; this only has to say
+                  how many are left, and go quiet when none are. */}
+              <span
+                className={`font-mono text-[11px] ${
+                  waiting.length ? 'text-stone-400' : 'text-emerald-400'
+                }`}
+              >
                 {waiting.length
-                  ? `waiting on ${waiting.map((e) => e.label).join(', ')}`
+                  ? `${waiting.length} still to roll`
                   : 'everyone is in'}
               </span>
               <button
@@ -210,19 +216,59 @@ export function EncounterPanel({
             : undefined;
           const offers = character ? suggestions(character, states) : [];
           const isTurn = index === turn;
+          // Mid-roll, the LIST is the status board: a row still owed a
+          // number says so on the row, not in a sentence above it.
+          const owed = rolling && typeof entry.score !== 'number';
           return (
             <li
               key={entry.id}
               className={`space-y-1.5 rounded-md px-2 py-1.5 ${
-                isTurn
-                  ? 'bg-amber-900/40 text-amber-100 ring-1 ring-amber-700'
-                  : 'bg-stone-900 text-stone-300'
+                owed
+                  ? 'bg-stone-900 text-stone-300 ring-1 ring-amber-600/70'
+                  : isTurn
+                    ? 'bg-amber-900/40 text-amber-100 ring-1 ring-amber-700'
+                    : 'bg-stone-900 text-stone-300'
               }`}
             >
               <div className="flex items-center gap-1.5">
                 <span className="w-5 text-right font-mono text-xs text-stone-500">
                   {index + 1}
                 </span>
+
+                {/* The score sits where the position number would go
+                    once a fight is running: during rolls it's the thing
+                    you're scanning for. */}
+                {rolling &&
+                  (owed ? (
+                    <>
+                      <span
+                        className="animate-pulse rounded bg-amber-700 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-stone-950"
+                        title="hasn't rolled yet"
+                      >
+                        ROLL
+                      </span>
+                      {/* Not everyone has a panel in front of them. The
+                          Warden can take a number called across the
+                          table without leaving the order. */}
+                      <input
+                        className="w-12 rounded bg-stone-800 px-1 py-0.5 text-center font-mono text-xs text-stone-100 focus:outline-none"
+                        inputMode="numeric"
+                        placeholder="—"
+                        aria-label={`${entry.label} rolled`}
+                        onKeyDown={(e) => {
+                          if (e.key !== 'Enter') return;
+                          const n = Number(e.currentTarget.value.trim());
+                          if (!Number.isFinite(n)) return;
+                          onOp({ op: 'score', entryId: entry.id, score: n });
+                          e.currentTarget.value = '';
+                        }}
+                      />
+                    </>
+                  ) : (
+                    <span className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-[11px] text-amber-300">
+                      {entry.score}
+                    </span>
+                  ))}
                 {character ? (
                   <button
                     className="min-w-0 flex-1 truncate text-left text-sm hover:text-stone-100"
