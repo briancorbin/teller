@@ -69,6 +69,7 @@ async function* campaignEntries(
   const contains: string[] = ['campaign'];
 
   const npcs = data.npcs ?? [];
+  const encounters = data.encounters ?? [];
   const scenes = data.maps ?? [];
   const handouts = data.handouts ?? [];
 
@@ -83,6 +84,7 @@ async function* campaignEntries(
 
   if (template) contains.push('system');
   if (npcs.length) contains.push('bestiary');
+  if (encounters.length) contains.push('encounters');
   if (characters.length) contains.push('characters');
   if (packs.results.length) contains.push('pack');
   if (scenes.length) contains.push('scenes');
@@ -120,6 +122,10 @@ async function* campaignEntries(
   });
 
   if (npcs.length) yield jsonEntry('bestiary.json', npcs);
+  // Prepared fights. Most of what an adventure module actually is —
+  // and they're recipes, so they carry no live state and can be run
+  // again for the next group.
+  if (encounters.length) yield jsonEntry('encounters.json', encounters);
   if (characters.length) {
     yield jsonEntry(
       'characters.json',

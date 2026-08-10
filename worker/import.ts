@@ -7,12 +7,14 @@ import type {
   Campaign,
   CampaignData,
   CharacterData,
+  Encounter,
   EncounterState,
   Handout,
   NpcBlueprint,
   Scene,
   SystemTemplate,
 } from './types';
+import { bestiaryFor } from './bestiary';
 
 // Importing a `.tell` file: merge what's present, skip what isn't.
 //
@@ -61,6 +63,7 @@ export async function inspect(buffer: ArrayBuffer): Promise<BundleSummary> {
   if (files.has('system.json')) add('system', 1, 'the system itself');
   if (files.has('campaign.json')) add('campaign', 1, 'campaign settings');
   add('bestiary', await count('bestiary.json'), 'foe');
+  add('encounters', await count('encounters.json'), 'prepared fight');
   add('characters', await count('characters.json'), 'character');
   add('pack', await count('pack.json'), 'rules pack');
   add('scenes', await count('scenes.json'), 'map');
@@ -174,6 +177,46 @@ export async function apply(
     data.npcs = [...existing.values()];
     applied.push(`${added} foe${added === 1 ? '' : 's'}`);
     if (kept) skipped.push(`${kept} foe${kept === 1 ? '' : 's'} you already had`);
+  }
+
+  // Prepared fights. Same identity rule as blueprints: keyed by id, so
+  // re-importing updates nothing you already have.
+  //
+  // A placement points at a blueprint by id, which may live in a pack
+  // this host doesn't have. That's reported rather than repaired — an
+  // encounter that would deploy half-empty needs to say so BEFORE
+  // someone runs it at a table.
+  const encounters = await readJson<Encounter[]>(files, 'encounters.json');
+  if (encounters?.length && wants('encounters')) {
+    const existing = new Map((data.encounters ?? []).map((e) => [e.id, e]));
+    let added = 0;
+    let kept = 0;
+    for (const encounter of encounters) {
+      if (existing.has(encounter.id)) kept++;
+      else {
+        existing.set(encounter.id, encounter);
+        added++;
+      }
+    }
+    data.encounters = [...existing.values()];
+    applied.push(`${added} encounter${added === 1 ? '' : 's'}`);
+    if (kept) skipped.push(`${kept} encounter${kept === 1 ? '' : 's'} you already had`);
+
+    const reachable = new Set([
+      ...(data.npcs ?? []).map((n) => n.id),
+      ...(await bestiaryFor(env, system, data.npcs ?? [])).map((n) => n.id),
+    ]);
+    const unresolved = new Set<string>();
+    for (const encounter of encounters) {
+      for (const foe of encounter.foes ?? []) {
+        if (!reachable.has(foe.blueprintId)) unresolved.add(foe.blueprintId);
+      }
+    }
+    if (unresolved.size) {
+      skipped.push(
+        `${unresolved.size} foe${unresolved.size === 1 ? '' : 's'} these encounters need aren’t on this host — install the pack they came from`,
+      );
+    }
   }
 
   const scenes = await readJson<Scene[]>(files, 'scenes.json');
