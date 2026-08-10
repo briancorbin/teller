@@ -540,24 +540,6 @@ export function DmView({
                 ))}
               </select>
 
-              {/* Which fight you're arranging on this map. Only the
-                  encounters that name this scene — an encounter set
-                  somewhere else has no business being dragged here. */}
-              {editing && arrangeable.length > 0 && (
-                <select
-                  className="rounded-lg bg-stone-800 px-2 py-1.5 font-mono text-xs text-stone-300"
-                  value={arrangingId ?? ''}
-                  onChange={(e) => setArrangingId(e.target.value || null)}
-                  title="arrange a prepared fight on this map"
-                >
-                  <option value="">arrange no fight</option>
-                  {arrangeable.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      arranging: {e.name}
-                    </option>
-                  ))}
-                </select>
-              )}
 
               {editing &&
                 (isLive ? (
@@ -597,6 +579,9 @@ export function DmView({
                 kind: c.kind,
               }))}
               onChange={onSceneChange}
+              fights={arrangeable.map((e) => ({ id: e.id, name: e.name }))}
+              arrangingId={arrangingId}
+              onArrange={setArrangingId}
               placements={arranging?.foes}
               placementNames={blueprintNames}
               onPlacements={

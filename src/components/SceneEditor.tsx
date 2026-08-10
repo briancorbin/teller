@@ -58,6 +58,9 @@ export function SceneEditor({
   placements,
   onPlacements,
   placementNames,
+  fights,
+  arrangingId,
+  onArrange,
   live = true,
   onCalibrate,
   onChange,
@@ -87,6 +90,11 @@ export function SceneEditor({
   onPlacements?: (next: Placement[]) => void;
   /** Names for the placement pucks, resolved from the bestiary. */
   placementNames?: Map<string, string>;
+  /** Prepared fights staged on THIS map — the ones arrangeable here. */
+  fights?: { id: string; name: string }[];
+  /** Which one is being arranged, or null for map work. */
+  arrangingId?: string | null;
+  onArrange?: (id: string | null) => void;
   /** Whether this scene is the one currently on the table. */
   live?: boolean;
   /** Write the table display's calibration (px per true inch, per axis). */
@@ -982,6 +990,31 @@ export function SceneEditor({
           >
             ⊕
           </button>
+          {/*
+            Arranging a fight is a MODE, so it belongs with the modes —
+            it used to be a dropdown in the far corner labelled "arrange
+            no fight", which read like an instruction rather than a
+            state. Only offered when a prepared fight names this map;
+            with exactly one, turning it on picks it, because being made
+            to choose from a list of one is not a choice.
+          */}
+          {onArrange && (fights?.length ?? 0) > 0 && (
+            <button
+              className={toolBtn(Boolean(arrangingId))}
+              onClick={() =>
+                onArrange(arrangingId ? null : (fights![0]?.id ?? null))
+              }
+              title={
+                arrangingId
+                  ? 'stop arranging — back to working on the map'
+                  : `arrange a prepared fight on this map (${fights!.length})`
+              }
+              aria-label={arrangingId ? 'stop arranging' : 'arrange a fight'}
+              aria-pressed={Boolean(arrangingId)}
+            >
+              ♟
+            </button>
+          )}
           <button
             className={toolBtn(tool === 'fog')}
             onClick={() => {
@@ -1301,6 +1334,29 @@ export function SceneEditor({
       {/* ---------------- bottom bar ---------------- */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3">
         <div className="pointer-events-auto flex flex-col gap-2">
+          {/* Which fight, when this map stages more than one. With a
+              single fight there is nothing to pick and the rail button
+              already said which. */}
+          {onArrange && arrangingId && (fights?.length ?? 0) > 1 && (
+            <div className={`flex flex-wrap items-center gap-1.5 p-2 ${panel}`}>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-stone-500">
+                arranging
+              </span>
+              {fights!.map((f) => (
+                <button
+                  key={f.id}
+                  className={`rounded-md px-2 py-1 text-xs ${
+                    f.id === arrangingId
+                      ? 'bg-amber-700 text-stone-950'
+                      : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                  }`}
+                  onClick={() => onArrange(f.id)}
+                >
+                  {f.name}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Foes in this fight that aren't on the map yet. Opening the
               editor never places anything by itself — a map you only
               looked at shouldn't come away changed. Tap one and it
@@ -1827,7 +1883,7 @@ export function SceneEditor({
           {showTokens && (
             <div className={`max-h-64 w-56 overflow-y-auto p-2 ${panel}`}>
               {tokens.length === 0 && (
-                <p className="px-1 py-2 text-xs text-stone-600">nothing placed yet</p>
+                <p className="px-1 py-2 text-xs text-stone-600">no tokens on this map</p>
               )}
               {tokens.map((t) => (
                 <button
