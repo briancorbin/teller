@@ -49,7 +49,7 @@ function Starburst({ size = 14 }: { size?: number }) {
       aria-hidden="true"
       className="shrink-0"
     >
-      <path d={`${d} Z`} fill="#f59e0b" />
+      <path d={`${d} Z`} fill="var(--sheet-accent, #f59e0b)" />
     </svg>
   );
 }
@@ -102,7 +102,10 @@ function SkillRow({
     <div className="flex items-center gap-2.5 py-1">
       {/* Name right-aligned against the rule, as printed. */}
       <div className="w-[6.5rem] shrink-0 text-right">
-        <div className="text-[clamp(0.8rem,4cqw,1.15rem)] font-bold uppercase leading-tight tracking-wide text-amber-500">
+        <div
+          className="text-[clamp(0.8rem,4cqw,1.15rem)] font-bold uppercase leading-tight tracking-wide"
+          style={{ color: 'var(--sheet-accent, #f59e0b)' }}
+        >
           {field.label}
         </div>
       </div>
@@ -161,11 +164,17 @@ export function SkillPanel({
           two short rules. Cheap to echo, and it's what makes the block
           read as a panel rather than a list. */}
       <header className="mb-1 flex items-center justify-center gap-2">
-        <span className="h-px w-6 bg-amber-600/70" />
+        <span
+          className="h-px w-6"
+          style={{ background: 'var(--sheet-accent, #f59e0b)', opacity: 0.7 }}
+        />
         <h2 className="text-[clamp(0.75rem,3.2cqw,1rem)] font-bold uppercase tracking-[0.2em] text-stone-100">
           {title}
         </h2>
-        <span className="h-px w-6 bg-amber-600/70" />
+        <span
+          className="h-px w-6"
+          style={{ background: 'var(--sheet-accent, #f59e0b)', opacity: 0.7 }}
+        />
       </header>
 
       <div className="divide-y divide-stone-800/80">

@@ -29,6 +29,8 @@ export type CounterViewProps = {
   dice?: SystemTemplate['dice'];
   /** Which fields belong to which block of the sheet, when declared. */
   groups?: SystemTemplate['groups'];
+  /** Field value → accent colour, when the system themes its sheet. */
+  accents?: SystemTemplate['accents'];
 };
 
 /** Clamped to [0, max]. A counter never goes negative or past its ceiling. */

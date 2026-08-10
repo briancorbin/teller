@@ -128,7 +128,21 @@ const wiw: SystemTemplate = {
   },
   // The sheet's SKILLS panel, exactly. Defense is a pool as well but
   // belongs beside Health; Trade names the character; Speed is a word.
-  groups: { skills: ['charm', 'finesse', 'intuition', 'nerve'] },
+  groups: {
+    skills: ['charm', 'finesse', 'intuition', 'nerve'],
+    // The field that names the character's role, and picks the theme.
+    title: ['trade'],
+  },
+  // Read out of each pregen sheet's own fill colours, not eyeballed.
+  accents: {
+    Doctor: '#ff8a28',
+    Gunslinger: '#ff4d3e',
+    Hunter: '#3b9f43',
+    Marshal: '#50a9dc',
+    Mechanic: '#f25fad',
+    Prospector: '#ff755e',
+    Trapper: '#41ada3',
+  },
   // Guidebook, Turn Order: "the Warden will ask the players to roll with
   // Finesse to determine turn order. The player with the highest number
   // of Hits will go first."

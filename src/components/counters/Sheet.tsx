@@ -1,5 +1,6 @@
 import type { Counter } from '../../../worker/types';
 import { SkillPanel } from '../sheet/SkillPanel';
+import { TradePlate } from '../sheet/TradePlate';
 import {
   Bar,
   bumped,
@@ -69,10 +70,16 @@ function NumberRing({
             aria-label={`set ${counter.name} to ${n === counter.current ? n - 1 : n}`}
             aria-pressed={marked}
             className={`flex h-9 w-9 items-center justify-center rounded-full border font-mono text-sm transition-colors ${
-              marked
-                ? 'border-amber-500 bg-amber-600 text-stone-950'
-                : 'border-stone-700 text-stone-500 hover:border-stone-500'
+              marked ? 'text-stone-950' : 'border-stone-700 text-stone-500 hover:border-stone-500'
             }`}
+            style={
+              marked
+                ? {
+                    background: 'var(--sheet-accent, #f59e0b)',
+                    borderColor: 'var(--sheet-accent, #f59e0b)',
+                  }
+                : undefined
+            }
           >
             {n}
           </button>
@@ -149,6 +156,7 @@ export function Sheet({
   fields = [],
   dice,
   groups,
+  accents,
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -165,10 +173,30 @@ export function Sheet({
         .map((key) => fields.find((f) => f.key === key))
         .filter((f): f is NonNullable<typeof f> => Boolean(f))
     : fields;
-  const rest = skillKeys ? fields.filter((f) => !skillKeys.includes(f.key)) : [];
+  // The field that names the role, and with it the sheet's colour. Both
+  // declared: `groups.title` says which field, `accents` maps its value.
+  const titleKey = groups?.title?.[0];
+  const title = titleKey ? fields.find((f) => f.key === titleKey) : undefined;
+  const accent = (title?.value && accents?.[title.value.trim()]) || undefined;
+
+  const rest = fields.filter(
+    (f) => !(skillKeys ?? []).includes(f.key) && f.key !== titleKey,
+  );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
+    // The accent rides on a CSS variable rather than a prop threaded
+    // through every box: a themed sheet tints a dozen small things, and
+    // passing a colour to each of them is how one gets missed.
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-2"
+      style={
+        {
+          '--sheet-accent': accent ?? '#f59e0b',
+          containerType: 'inline-size',
+        } as React.CSSProperties
+      }
+    >
+      <TradePlate field={title} accent={accent} />
       <div
         className="grid min-h-0 flex-1 gap-2"
         // Skills column then resources, the sheet's own reading order.

@@ -481,6 +481,20 @@ export type SystemTemplate = {
    * disappears for want of a declaration.
    */
   groups?: Record<string, string[]>;
+  /**
+   * Field VALUE → accent colour, for systems whose sheets are themed.
+   *
+   * WiW prints a different colour per trade — the Doctor's sheet is
+   * orange, the Marshal's blue, the Hunter's green — and a player's card
+   * looking like their own sheet is most of why the sheet layout is
+   * worth having. Which field decides it is `groups.title`.
+   *
+   * A colour is not prose, so this is a template rather than a pack
+   * (rule 4) — though under TEL-63 it's arguably skin, and it can move
+   * to a pack later without anything here changing shape. An unlisted
+   * value just uses the default accent.
+   */
+  accents?: Record<string, string>;
 };
 
 // --- Rules packs ------------------------------------------------------------
