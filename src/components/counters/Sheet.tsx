@@ -1,5 +1,6 @@
 import type { Counter, Field } from '../../../worker/types';
 import { HealthPanel } from '../sheet/HealthPanel';
+import { Cylinder, dialable } from '../sheet/Cylinder';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
 import { TradePlate } from '../sheet/TradePlate';
@@ -171,6 +172,7 @@ export function Sheet({
   groups,
   accents,
   pins,
+  dials,
   tags = [],
   onTags,
   conditions = [],
@@ -220,7 +222,15 @@ export function Sheet({
   // rest keep the generic tile. Nothing is game-specific — "has pins"
   // is a fact about the declaration, not about Health.
   const panelled = gauges.filter((c) => pinnedTo(c).length > 0);
-  const plain = gauges.filter((c) => pinnedTo(c).length === 0);
+  // A counter the system asked to be drawn with a face of its own — and
+  // only when its shape suits one, so a declaration can't produce a
+  // hundred-chamber revolver.
+  const dialled = gauges.filter(
+    (c) => !pinnedTo(c).length && dials?.[c.name] === 'cylinder' && dialable(c),
+  );
+  const plain = gauges.filter(
+    (c) => !pinnedTo(c).length && !dialled.includes(c),
+  );
 
   return (
     // The accent rides on a CSS variable rather than a prop threaded
@@ -292,6 +302,14 @@ export function Sheet({
                 key={counter.id}
                 counter={counter}
                 pinned={pinnedTo(counter)}
+                onChange={update}
+                note={note?.(counter.name)}
+              />
+            ))}
+            {dialled.map((counter) => (
+              <Cylinder
+                key={counter.id}
+                counter={counter}
                 onChange={update}
                 note={note?.(counter.name)}
               />

@@ -509,6 +509,25 @@ export type SystemTemplate = {
    * every field keeps its place in the general stat strip.
    */
   pins?: Record<string, string[]>;
+  /**
+   * Counter NAME → the face teller draws it with.
+   *
+   * A revolver cylinder is about as system-specific as a control gets —
+   * spell slots are not bullets — so this cannot be inferred from the
+   * data and must never be keyed off a counter's name in code (rule 2).
+   * The system says which of its counters wears which face, the same way
+   * `states[].effect` already picks from the effects teller can render.
+   *
+   * The list is what teller knows how to DRAW, not what any game means:
+   *
+   *   * `cylinder` — a revolver's chambers, one per point, advancing a
+   *     click each time the value drops. Only sensible for a small max;
+   *     anything past `RING_LIMIT` falls back to the ordinary gauge.
+   *
+   * Undeclared counters keep the default treatment, so a system that
+   * says nothing loses nothing.
+   */
+  dials?: Record<string, 'cylinder'>;
 };
 
 // --- Rules packs ------------------------------------------------------------

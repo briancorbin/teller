@@ -148,6 +148,12 @@ const wiw: SystemTemplate = {
   pins: {
     Health: ['defense'],
   },
+  // The sheet draws Grit as a revolver cylinder — six numbered chambers
+  // — and it is the right control as well as the right picture: you
+  // spend Grit a point at a time and it reloads at the top of your turn.
+  dials: {
+    Grit: 'cylinder',
+  },
   // Guidebook, Turn Order: "the Warden will ask the players to roll with
   // Finesse to determine turn order. The player with the highest number
   // of Hits will go first."

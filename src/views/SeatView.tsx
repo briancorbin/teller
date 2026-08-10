@@ -422,6 +422,7 @@ export function SeatView({
                 groups={template?.groups}
                 accents={template?.accents}
                 pins={template?.pins}
+                dials={template?.dials}
                 tags={character.data.tags}
                 onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
                 conditions={conditions}

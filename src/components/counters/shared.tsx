@@ -38,6 +38,8 @@ export type CounterViewProps = {
   accents?: SystemTemplate['accents'];
   /** Counter name → field keys that belong inside that counter's panel. */
   pins?: SystemTemplate['pins'];
+  /** Counter name → the face to draw it with, when the system asks. */
+  dials?: SystemTemplate['dials'];
   /**
    * The character's conditions, for layouts that place them themselves.
    *
