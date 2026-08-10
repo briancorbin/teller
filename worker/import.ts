@@ -33,6 +33,15 @@ export type BundleSummary = {
   sections: { name: string; count: number; label: string }[];
   /** Set when the bundle needs a system this instance doesn't have. */
   missingSystem?: string;
+  /**
+   * A campaign on this host that came from the same bundle.
+   *
+   * Importing without a target always makes a NEW campaign, which for a
+   * module you've already loaded means a silent twin: same name, same
+   * maps, and the one you've actually been playing sitting next to it.
+   * Saying so lets the answer be "layer onto that one instead".
+   */
+  kin?: { id: string; name: string };
 };
 
 type PackEntry = { name: string; system: string; pack: unknown };
@@ -42,7 +51,27 @@ type BookEntry = { id: string; name: string; system: string };
 const newId = (prefix: string) =>
   `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
 
-export async function inspect(buffer: ArrayBuffer): Promise<BundleSummary> {
+/** Any campaign already descended from this bundle's campaign. */
+async function findKin(
+  env: Env,
+  originId: string | undefined,
+): Promise<{ id: string; name: string } | undefined> {
+  if (!originId) return undefined;
+  const rows = await env.DB.prepare('SELECT id, name, data FROM campaigns').all();
+  for (const r of rows.results as { id: string; name: string; data: string }[]) {
+    if (r.id === originId) return { id: r.id, name: r.name };
+    try {
+      if ((JSON.parse(r.data) as CampaignData).originId === originId) {
+        return { id: r.id, name: r.name };
+      }
+    } catch {
+      // Unparseable rows aren't kin to anything.
+    }
+  }
+  return undefined;
+}
+
+export async function inspect(buffer: ArrayBuffer, env: Env): Promise<BundleSummary> {
   const files = await readZip(buffer);
   const manifest = await readJson<BundleManifest>(files, 'teller.json');
   if (!manifest?.teller) {
@@ -77,6 +106,8 @@ export async function inspect(buffer: ArrayBuffer): Promise<BundleSummary> {
   if (!files.has('system.json')) {
     summary.missingSystem = manifest.requires?.system ?? manifest.system;
   }
+  const incoming = await readJson<{ id?: string }>(files, 'campaign.json');
+  summary.kin = await findKin(env, incoming?.id);
   return summary;
 }
 
@@ -121,10 +152,9 @@ export async function apply(
     );
   }
 
-  const incoming = await readJson<Partial<CampaignData> & { name?: string }>(
-    files,
-    'campaign.json',
-  );
+  const incoming = await readJson<
+    Partial<CampaignData> & { name?: string; id?: string }
+  >(files, 'campaign.json');
 
   // Find or make the campaign.
   let campaign: Campaign;
@@ -144,6 +174,10 @@ export async function apply(
       vocabulary: incoming?.vocabulary ?? {},
       counters: incoming?.counters ?? [],
       states: (incoming?.states as EncounterState[]) ?? [],
+      // Where it came from, so a later import of the same module can
+      // tell "layer onto the table I already started" apart from
+      // "start a second one".
+      originId: incoming?.id,
     };
     await env.DB.prepare(
       'INSERT INTO campaigns (id, name, system, data) VALUES (?, ?, ?, ?)',
@@ -301,18 +335,36 @@ export async function apply(
     }
   }
 
+  // Packs a bundle happens to carry NEVER overwrite one you have.
+  //
+  // This used to be `DO UPDATE`, which contradicted this file's own
+  // governing rule and had teeth: an adventure module bundles the core
+  // pack, so loading one would silently replace a core pack you'd spent
+  // an evening adding page references to — with whatever stale copy the
+  // module was built against.
+  //
+  // Uploading a pack yourself is intent and still replaces (see
+  // `PUT /api/packs`). Receiving one inside a module is not.
   const packs = await readJson<PackEntry[]>(files, 'pack.json');
   if (packs?.length && wants('pack')) {
+    let added = 0;
+    let kept = 0;
     for (const entry of packs) {
-      await env.DB.prepare(
+      const { meta } = await env.DB.prepare(
         `INSERT INTO packs (id, system, name, data) VALUES (?, ?, ?, ?)
-         ON CONFLICT (system, name) DO UPDATE SET data = excluded.data,
-           updated_at = datetime('now')`,
+         ON CONFLICT (system, name) DO NOTHING`,
       )
         .bind(newId('pak'), entry.system ?? system, entry.name, JSON.stringify(entry.pack))
         .run();
+      if (meta.changes) added++;
+      else kept++;
     }
-    applied.push(`${packs.length} rules pack${packs.length === 1 ? '' : 's'}`);
+    if (added) applied.push(`${added} rules pack${added === 1 ? '' : 's'}`);
+    if (kept) {
+      skipped.push(
+        `${kept} rules pack${kept === 1 ? '' : 's'} you already had — yours kept`,
+      );
+    }
   }
 
   // Books arrive as metadata plus a page index — searchable immediately,
@@ -323,6 +375,13 @@ export async function apply(
   // does this host have it? Anything missing is named rather than
   // silently absent — a campaign whose rulebook you don't own is a fact
   // you want at import time, not mid-session.
+  // Which books this table expects.
+  //
+  // This arrived and was thrown away: the code counted what was here,
+  // printed a line, and forgot. So nothing downstream could ever answer
+  // "which of my ten rulebooks does THIS campaign use" — and the answer
+  // was sitting in the bundle the whole time. Now it's kept, and the
+  // console can lead with them.
   const books = await readJson<BookEntry[]>(files, 'books.json');
   if (books?.length && wants('books')) {
     const here = await env.DB.prepare('SELECT id FROM books').all();
@@ -333,6 +392,14 @@ export async function apply(
     for (const book of missing) {
       skipped.push(`“${book.name}” — add the PDF to this host and it links up`);
     }
+
+    // Expected whether or not you have them: a reference you can't
+    // resolve yet is still the truth about what this adventure needs.
+    const expects = new Set([...(data.books ?? []), ...books.map((b) => b.id)]);
+    data.books = [...expects];
+    await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+      .bind(JSON.stringify(data), campaign.id)
+      .run();
   }
 
   return { campaignId: campaign.id, applied, skipped };

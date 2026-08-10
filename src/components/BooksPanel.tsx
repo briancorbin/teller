@@ -40,10 +40,25 @@ function Snippet({ text }: { text: string }) {
   );
 }
 
-export function BooksPanel({ system }: { system: string }) {
+export function BooksPanel({
+  system,
+  expects,
+  onExpects,
+}: {
+  system: string;
+  /** Book ids this campaign uses — see `CampaignData.books`. */
+  expects: string[];
+  onExpects: (ids: string[]) => void;
+}) {
   // The shelf is shared — a book added here shows up in the rules panel's
   // "you have this book" check without either panel knowing the other.
   const { books, refresh } = useBooks();
+  const [showAll, setShowAll] = useState(false);
+  const used = new Set(expects.filter((id) => books.some((b) => b.id === id)));
+  // Expected but absent: a reference you can't resolve yet is still the
+  // truth about what this adventure needs, so it's said out loud rather
+  // than quietly dropped.
+  const missing = expects.filter((id) => !books.some((b) => b.id === id));
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -127,8 +142,13 @@ export function BooksPanel({ system }: { system: string }) {
         </div>
       )}
 
+      {/* You own the shelf; this table only uses some of it. Ten
+          rulebooks in a list, seven of them two-page class sheets, is
+          noise when you're asking "what does THIS adventure need". So:
+          this campaign's books first, the rest one click away. Nothing
+          is hidden — the shelf is still yours. */}
       <ul className="space-y-1">
-        {books.map((book) => (
+        {(showAll ? books : books.filter((b) => used.has(b.id))).map((book) => (
           <li key={book.id} className="flex items-center gap-2">
             <button
               className="min-w-0 flex-1 truncate text-left text-sm text-stone-200 hover:text-stone-50"
@@ -140,11 +160,29 @@ export function BooksPanel({ system }: { system: string }) {
               {book.indexed ? `${book.pages}p` : 'reading…'}
             </span>
             <button
+              className={btnGhost}
+              title={
+                used.has(book.id)
+                  ? 'this campaign stops expecting this book'
+                  : 'this campaign uses this book'
+              }
+              onClick={() =>
+                onExpects(
+                  used.has(book.id)
+                    ? expects.filter((id) => id !== book.id)
+                    : [...expects, book.id],
+                )
+              }
+            >
+              {used.has(book.id) ? '★' : '☆'}
+            </button>
+            <button
               className={`${btnGhost} hover:text-red-300`}
               title="remove this book from the host"
               onClick={async () => {
                 if (!window.confirm(`Remove "${book.name}" from this host?`)) return;
                 await api.deleteBook(book.id).catch(() => {});
+                onExpects(expects.filter((id) => id !== book.id));
                 refresh();
               }}
             >
@@ -153,7 +191,28 @@ export function BooksPanel({ system }: { system: string }) {
           </li>
         ))}
         {books.length === 0 && <li className="text-sm text-stone-600">no books yet</li>}
+        {books.length > 0 && !showAll && used.size === 0 && (
+          <li className="text-sm text-stone-600">
+            this campaign hasn't claimed any of your books yet
+          </li>
+        )}
       </ul>
+
+      {books.length > used.size && (
+        <button className={btnGhost} onClick={() => setShowAll(!showAll)}>
+          {showAll
+            ? 'just this campaign’s books'
+            : `the rest of the shelf (${books.length - used.size})`}
+        </button>
+      )}
+
+      {missing.length > 0 && (
+        <p className="text-sm text-amber-500/80">
+          {missing.length} book{missing.length === 1 ? '' : 's'} this campaign expects
+          {missing.length === 1 ? " isn't" : " aren't"} on this host yet — add the PDF
+          and it links up by itself.
+        </p>
+      )}
 
       <div className="flex items-center gap-2">
         <input

@@ -305,6 +305,21 @@ export type CampaignData = {
   /** Prepared fights — see `Encounter`. Most of what a module is made of. */
   encounters?: Encounter[];
   /**
+   * Books this table expects, by content hash.
+   *
+   * The host owns the shelf; this says which of it matters HERE, so a
+   * console shows the two books this adventure uses instead of every
+   * rulebook you own. Seeded from a bundle's `books.json` on import and
+   * editable afterwards like everything else.
+   */
+  books?: string[];
+  /**
+   * The campaign this one was imported from, if any. Provenance for
+   * bundles: re-importing a module recognises its own kin and can offer
+   * to layer rather than making a twin. Never confers anything.
+   */
+  originId?: string;
+  /**
    * Warden's reference text — house rules, pasted rules excerpts,
    * table notes. Lives ONLY in the campaign's own database (personal
    * use); never ships in templates and never leaves via /public.

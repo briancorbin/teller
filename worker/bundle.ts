@@ -112,6 +112,10 @@ async function* campaignEntries(
   // and carrying one table's ppi to another table would be worse than
   // carrying nothing.
   yield jsonEntry('campaign.json', {
+    // Identity travels so a re-import can recognise its own kin and
+    // offer to layer, instead of silently producing a second campaign
+    // that looks identical and diverges from here on.
+    id: campaign.data.originId ?? campaign.id,
     name: campaign.name,
     system: campaign.system,
     vocabulary: data.vocabulary ?? {},

@@ -322,7 +322,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   if (pathname === '/api/bundles/inspect' && method === 'POST') {
     if (!dm()) return err('DM key required', 401);
     try {
-      return json(await inspectBundle(await request.arrayBuffer()));
+      return json(await inspectBundle(await request.arrayBuffer(), env));
     } catch (e) {
       return err(e instanceof Error ? e.message : 'could not read that file', 400);
     }
@@ -368,12 +368,22 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     )
       .bind(m[1])
       .all();
-    const characters = chars.results.map((r) => toCharacter(r as never));
+    const all = chars.results.map((r) => toCharacter(r as never));
     const template = await getSystem(env, campaign.system);
 
     // Sections are opt-out, so you can take the structure without the
     // hundred megabytes of art when all you want is the shape.
     const want = (name: string) => url.searchParams.get(name) !== '0';
+
+    // A bundle's job is to START a table, not to preserve one — the
+    // host's database is where a campaign continues to live. So by
+    // default this exports the module shape: the cast, the prepared
+    // fights, the maps. NPCs currently on the table are a fight in
+    // progress and belong to this table only; `?live=1` takes them
+    // anyway, for handing your actual game to someone else.
+    const live = url.searchParams.get('live') === '1';
+    const characters = live ? all : all.filter((c) => c.kind === 'pc');
+
     const body = exportCampaign(env, campaign, characters, template, {
       books: want('books'),
       assets: want('assets'),
@@ -648,6 +658,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       states: body.data?.states ?? campaign.data.states,
       npcs: body.data?.npcs ?? campaign.data.npcs,
       encounters: body.data?.encounters ?? campaign.data.encounters,
+      books: body.data?.books ?? campaign.data.books,
       reference: body.data?.reference ?? campaign.data.reference,
       activeHandoutId:
         body.data?.activeHandoutId !== undefined

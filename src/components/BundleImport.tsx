@@ -124,6 +124,17 @@ export function BundleImport({
             </p>
           )}
 
+          {/* Importing without a target always makes a NEW campaign. If
+              this module already produced one, that's a twin nobody
+              wants — say so while it's still a choice. */}
+          {bundle.summary.kin && !campaignId && (
+            <p className="text-sm text-amber-500/80">
+              You already started “{bundle.summary.kin.name}” from this — importing
+              here makes a second, separate table. To add to that one, open it and
+              import from inside.
+            </p>
+          )}
+
           {!campaignId && (
             <label className="block space-y-1">
               <span className={sectionLabel}>Call this campaign</span>

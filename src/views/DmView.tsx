@@ -812,7 +812,18 @@ export function DmView({
           </>
           )}
 
-          {showLibrary && <BooksPanel system={campaign.system} />}
+          {showLibrary && (
+            <BooksPanel
+              system={campaign.system}
+              expects={campaign.data.books ?? []}
+              onExpects={(books) => {
+                setCampaign((prev) =>
+                  prev ? { ...prev, data: { ...prev.data, books } } : prev,
+                );
+                api.patchCampaign(campaignId, { data: { books } }).catch(() => refetch());
+              }}
+            />
+          )}
 
           {showLibrary && (
           <>
