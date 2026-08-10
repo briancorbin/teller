@@ -411,6 +411,7 @@ export function SeatView({
                 dice={template?.dice}
                 groups={template?.groups}
                 accents={template?.accents}
+                pins={template?.pins}
                 onChange={(counters) => patch({ counters })}
               />
             </FitBox>

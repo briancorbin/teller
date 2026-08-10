@@ -31,6 +31,8 @@ export type CounterViewProps = {
   groups?: SystemTemplate['groups'];
   /** Field value → accent colour, when the system themes its sheet. */
   accents?: SystemTemplate['accents'];
+  /** Counter name → field keys that belong inside that counter's panel. */
+  pins?: SystemTemplate['pins'];
 };
 
 /** Clamped to [0, max]. A counter never goes negative or past its ceiling. */

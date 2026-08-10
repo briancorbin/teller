@@ -1,4 +1,5 @@
-import type { Counter } from '../../../worker/types';
+import type { Counter, Field } from '../../../worker/types';
+import { HealthPanel } from '../sheet/HealthPanel';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { TradePlate } from '../sheet/TradePlate';
 import {
@@ -157,6 +158,7 @@ export function Sheet({
   dice,
   groups,
   accents,
+  pins,
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -179,9 +181,28 @@ export function Sheet({
   const title = titleKey ? fields.find((f) => f.key === titleKey) : undefined;
   const accent = (title?.value && accents?.[title.value.trim()]) || undefined;
 
+  // Fields the system pinned into a counter's own panel (WiW: Defense
+  // lives inside HEALTH). Looked up per counter so a system can pin to
+  // several, and so a pin naming a field nobody has just does nothing.
+  const pinnedTo = (counter: Counter): Field[] =>
+    (pins?.[counter.name] ?? [])
+      .map((key) => fields.find((f) => f.key === key))
+      .filter((f): f is Field => Boolean(f));
+
+  const allPinned = new Set(Object.values(pins ?? {}).flat());
+
   const rest = fields.filter(
-    (f) => !(skillKeys ?? []).includes(f.key) && f.key !== titleKey,
+    (f) =>
+      !(skillKeys ?? []).includes(f.key) &&
+      f.key !== titleKey &&
+      !allPinned.has(f.key),
   );
+
+  // A gauge with pinned fields gets the sheet's own panel for it; the
+  // rest keep the generic tile. Nothing is game-specific — "has pins"
+  // is a fact about the declaration, not about Health.
+  const panelled = gauges.filter((c) => pinnedTo(c).length > 0);
+  const plain = gauges.filter((c) => pinnedTo(c).length === 0);
 
   return (
     // The accent rides on a CSS variable rather than a prop threaded
@@ -226,10 +247,15 @@ export function Sheet({
         </div>
 
         {gauges.length > 0 && (
-          <section className="flex min-h-0 flex-col gap-1.5" style={{ containerType: 'inline-size' }}>
-            <h2 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-stone-500">
-              Condition
-            </h2>
+          <section className="flex min-h-0 flex-col gap-2" style={{ containerType: 'inline-size' }}>
+            {panelled.map((counter) => (
+              <HealthPanel
+                key={counter.id}
+                counter={counter}
+                pinned={pinnedTo(counter)}
+                onChange={update}
+              />
+            ))}
             <div
               className="grid min-h-0 flex-1 gap-2"
               // A ring is as tall as it is; stretching the row just puts
@@ -240,7 +266,7 @@ export function Sheet({
                 gridAutoRows: 'minmax(0, max-content)',
               }}
             >
-              {gauges.map((counter) => (
+              {plain.map((counter) => (
                 <SheetGauge key={counter.id} counter={counter} onChange={update} />
               ))}
             </div>

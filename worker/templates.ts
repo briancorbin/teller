@@ -143,6 +143,11 @@ const wiw: SystemTemplate = {
     Prospector: '#ff755e',
     Trapper: '#41ada3',
   },
+  // The sheet prints Defense inside the HEALTH panel, in its own small
+  // box beside the max — so that's where it goes here too.
+  pins: {
+    Health: ['defense'],
+  },
   // Guidebook, Turn Order: "the Warden will ask the players to roll with
   // Finesse to determine turn order. The player with the highest number
   // of Hits will go first."

@@ -495,6 +495,20 @@ export type SystemTemplate = {
    * value just uses the default accent.
    */
   accents?: Record<string, string>;
+  /**
+   * Counter NAME → field keys that belong in that counter's own panel.
+   *
+   * Some stats aren't loose numbers, they're part of a resource's block:
+   * WiW prints Defense inside the HEALTH panel, because Defense is what
+   * you check before Health moves. A D&D sheet does the same with AC and
+   * hit points. Nothing about the data says so — the sheet does, and so
+   * does this.
+   *
+   * A pinned field is still an ordinary field: it's editable wherever
+   * fields are edited, and a system that pins nothing loses nothing —
+   * every field keeps its place in the general stat strip.
+   */
+  pins?: Record<string, string[]>;
 };
 
 // --- Rules packs ------------------------------------------------------------

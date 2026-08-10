@@ -1,5 +1,6 @@
 import type { Field, SystemTemplate } from '../../../worker/types';
 import { parsePool } from '../../../worker/dice';
+import { SheetPanel } from './SheetPanel';
 
 // The skills block, arranged like the printed sheet.
 //
@@ -152,36 +153,19 @@ export function SkillPanel({
   if (!fields.length) return null;
 
   return (
-    <section
-      // Full width of whatever column it's in; hugging the CONTENT is the
-      // parent's job. `self-start` here meant align-self on the cross
-      // axis, which in a flex column is horizontal — the panel collapsed
-      // to a sliver and every die box wrapped onto its own line.
-      className="relative w-full rounded-md border border-stone-600/80 p-3"
-      style={{ containerType: 'inline-size' }}
-    >
-      {/* The printed panel is a ruled box with a centred heading between
-          two short rules. Cheap to echo, and it's what makes the block
-          read as a panel rather than a list. */}
-      <header className="mb-1 flex items-center justify-center gap-2">
-        <span
-          className="h-px w-6"
-          style={{ background: 'var(--sheet-accent, #f59e0b)', opacity: 0.7 }}
-        />
-        <h2 className="text-[clamp(0.75rem,3.2cqw,1rem)] font-bold uppercase tracking-[0.2em] text-stone-100">
-          {title}
-        </h2>
-        <span
-          className="h-px w-6"
-          style={{ background: 'var(--sheet-accent, #f59e0b)', opacity: 0.7 }}
-        />
-      </header>
-
+    // Full width of whatever column it's in; hugging the CONTENT is the
+    // parent's job. `self-start` here meant align-self on the cross axis,
+    // which in a flex column is horizontal — the panel collapsed to a
+    // sliver and every die box wrapped onto its own line.
+    //
+    // The frame, corner ticks and heading now come from `SheetPanel`,
+    // which every block on the page shares.
+    <SheetPanel title={title} className="w-full">
       <div className="divide-y divide-stone-800/80">
         {fields.map((field) => (
           <SkillRow key={field.key} field={field} dice={dice} />
         ))}
       </div>
-    </section>
+    </SheetPanel>
   );
 }
