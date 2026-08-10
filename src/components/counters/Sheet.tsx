@@ -225,14 +225,22 @@ export function Sheet({
     >
       <TradePlate field={title} accent={accent} />
       {/* The page's three blocks, in the page's order: Skills, then the
-          vitals, then Statuses. A flex row rather than an auto-fit grid
-          because they are NOT equal — auto-fit gives every column the
-          same track, and Statuses is seven short rows that only ever
-          needed about two thirds of what Skills does. Wrapping is what
-          replaces the grid's collapse: on a phone they stack, in the
-          same order. */}
+          vitals, then Statuses.
+
+          The two OUTER columns are deliberately identical — same basis,
+          same grow, same minimum — because that is the only way the
+          middle one is actually centred. Give the sides different widths
+          and the vitals sit off-axis by half the difference, which on
+          this card reads as a mistake even when nobody can say why.
+          Symmetry costs Statuses a little width it doesn't need, and
+          buys a centre line the eye can trust.
+
+          A flex row rather than an auto-fit grid so the middle can be
+          wider than the sides — auto-fit hands every column the same
+          track. Wrapping replaces the grid's collapse: on a phone they
+          stack, in the same order. */}
       <div className="flex min-h-0 flex-1 flex-wrap content-start gap-2">
-        <div className="flex min-w-[14rem] flex-[1.15] flex-col gap-2 self-start">
+        <div className="flex min-w-[13rem] flex-1 flex-col gap-2 self-start">
           <SkillPanel fields={skills} dice={dice} lookup={lookup} />
           {rest.length > 0 && (
             <div className="flex flex-wrap gap-1">
@@ -255,7 +263,7 @@ export function Sheet({
 
         {gauges.length > 0 && (
           <section
-            className="flex min-w-[13rem] flex-[1.2] flex-col gap-2 self-start"
+            className="flex min-w-[13rem] flex-[1.35] flex-col gap-2 self-start"
             style={{ containerType: 'inline-size' }}
           >
             {panelled.map((counter) => (
@@ -282,9 +290,10 @@ export function Sheet({
             </div>
           </section>
         )}
-        {/* Third column, narrowest — seven short rows. */}
+        {/* Third column — matched to the first, not sized to its own
+            content, so the vitals stay on the centre line. */}
         {onTags && (
-          <div className="flex min-w-[10.5rem] flex-[0.8] flex-col gap-2 self-start">
+          <div className="flex min-w-[13rem] flex-1 flex-col gap-2 self-start">
             <StatusPanel
               entries={conditions}
               tags={tags}

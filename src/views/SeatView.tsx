@@ -450,30 +450,36 @@ export function SeatView({
             )}
           </div>
 
-          <div className={`flex shrink-0 flex-col gap-2 ${wide ? 'w-56' : ''}`}>
-            {/* Skipped when the layout draws its own conditions block —
-                the same statuses in two places on one card is worse than
-                either one alone. */}
-            {!ownsTags(layout) && (
+          {/* The sidebar exists only to hold the conditions strip, so a
+              layout that draws its own doesn't get the COLUMN either.
+              Rendering an empty `w-56` left 14rem of nothing down the
+              side of the card and everything else squeezed to fit beside
+              it — the emptiest possible use of the scarcest thing here.
+
+              This is why the guard moved out to wrap the div rather than
+              staying on the child: a container sized in advance keeps its
+              width whether or not anything ends up inside it. */}
+          {!ownsTags(layout) && (
+            <div className={`flex shrink-0 flex-col gap-2 ${wide ? 'w-56' : ''}`}>
               <TagSection
                 tags={character.data.tags}
                 label={conditionsLabel}
                 lookup={lookup}
                 onChange={(tags) => patch({ tags })}
               />
-            )}
 
-            {/* The turn-order list used to sit here, and it's gone for
-                now. A seat is one player's own card, and the roster of
-                everyone else in the fight is the room's information, not
-                theirs — it's on the table screen and the console, where
-                everybody can already see it.
+              {/* The turn-order list used to sit here, and it's gone for
+                  now. A seat is one player's own card, and the roster of
+                  everyone else in the fight is the room's information,
+                  not theirs — it's on the table screen and the console,
+                  where everybody can already see it.
 
-                What stays is everything aimed at THIS player: the ring
-                around the card when it's their turn, and the roll prompt
-                when the Warden asks for one. Those are addressed to them;
-                a list of seven names is just a thing to read. */}
-          </div>
+                  What stays is everything aimed at THIS player: the ring
+                  around the card when it's their turn, and the roll
+                  prompt when the Warden asks for one. Those are
+                  addressed to them; a list of names is a thing to read. */}
+            </div>
+          )}
         </div>
       </main>
     </SizeFrame>
