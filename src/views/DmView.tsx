@@ -23,6 +23,7 @@ import { BooksPanel } from '../components/BooksPanel';
 import { BundleImport } from '../components/BundleImport';
 import { DisplaysPanel } from '../components/DisplaysPanel';
 import { EncounterPanel } from '../components/EncounterPanel';
+import { EncountersPanel } from '../components/EncountersPanel';
 import { RulesPanel } from '../components/RulesPanel';
 
 export function DmView({
@@ -145,19 +146,32 @@ export function DmView({
       .catch(loadTableScreen);
   };
 
-  /** Keep an NPC sheet in the bestiary. A blueprint is a starting kit,
-   *  not a live link — editing the copy later never touches the original. */
+  /**
+   * Keep an NPC sheet in the bestiary. A blueprint is a starting kit,
+   * not a live link — editing the copy later never touches the original.
+   *
+   * Identity is the id, never the name. Keying on name meant renaming a
+   * foe left the old blueprint behind, and two different creatures that
+   * happened to share a name silently ate each other. So: a character
+   * that came from one of YOUR blueprints updates it in place; anything
+   * else becomes a new one. Pack blueprints are the publisher's and are
+   * never written back to — tuning one of those for a single fight
+   * belongs in that encounter, not in the bestiary.
+   */
   const saveBlueprint = (character: Character) => {
-    const npcs = [
-      ...(campaign?.data.npcs ?? []).filter((n) => n.name !== character.name),
-      {
-        id: newLocalId('npc'),
-        name: character.name,
-        fields: structuredClone(character.data.fields),
-        counters: structuredClone(character.data.counters),
-        tags: [...character.data.tags],
-      },
-    ];
+    const own = campaign?.data.npcs ?? [];
+    const from = character.data.blueprintId;
+    const mine = from ? own.find((n) => n.id === from) : undefined;
+    const blueprint = {
+      id: mine?.id ?? newLocalId('npc'),
+      name: character.name,
+      fields: structuredClone(character.data.fields),
+      counters: structuredClone(character.data.counters),
+      tags: [...character.data.tags],
+    };
+    const npcs = mine
+      ? own.map((n) => (n.id === mine.id ? blueprint : n))
+      : [...own, blueprint];
     setCampaign((prev) => (prev ? { ...prev, data: { ...prev.data, npcs } } : prev));
     api.patchCampaign(campaignId, { data: { npcs } }).catch(() => refetch());
   };
@@ -314,6 +328,24 @@ export function DmView({
     }
   };
 
+  /**
+   * Prepared fights live next to the running one, because they're the
+   * same noun at two moments: you prep an encounter, then one runs.
+   */
+  const encountersPanel = (
+    <EncountersPanel
+      campaign={campaign}
+      bestiary={bestiary}
+      onChange={(encounters) => {
+        setCampaign((prev) =>
+          prev ? { ...prev, data: { ...prev.data, encounters } } : prev,
+        );
+        api.patchCampaign(campaignId, { data: { encounters } }).catch(() => refetch());
+      }}
+      onDeployed={refetch}
+    />
+  );
+
   const encounterPanel = (
     <EncounterPanel
       session={session}
@@ -338,6 +370,7 @@ export function DmView({
           {paneNav}
         </div>
         {encounterPanel}
+        {encountersPanel}
       </main>
     );
   }

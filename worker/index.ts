@@ -1,6 +1,7 @@
 import { CampaignDO } from './campaign-do';
 import {
   logEvent,
+  newId,
   publicCounters,
   publicScene,
   toCampaign,
@@ -21,7 +22,7 @@ import {
 import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
 import { bundleFilename, exportCampaign } from './bundle';
-import { bestiaryFor, findBlueprint } from './bestiary';
+import { bestiaryFor, findBlueprint, stamp } from './bestiary';
 import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
 import type {
@@ -32,7 +33,9 @@ import type {
   Counter,
   RulesPack,
   SessionOp,
+  Token,
 } from './types';
+import { tokenColor } from './tokens';
 
 export { CampaignDO };
 
@@ -40,10 +43,6 @@ export { CampaignDO };
 
 const json = (data: unknown, status = 200) => Response.json(data, { status });
 const err = (message: string, status: number) => json({ error: message }, status);
-
-function newId(prefix: string): string {
-  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
-}
 
 function hasKey(request: Request, env: Env): boolean {
   const key = request.headers.get('x-teller-key');
@@ -70,6 +69,59 @@ function countersFrom(
     current: c.current ?? 0,
     max: c.max ?? null,
   }));
+}
+
+/**
+ * Take everything one encounter put on the table back off it.
+ *
+ * Creatures carry the encounter that deployed them, so this is the whole
+ * fight in one action rather than deleting seven corpses by hand — which
+ * was the only way before encounters existed.
+ *
+ * The filtering happens in JS rather than with `json_extract`, because
+ * the same code runs on D1 and on node:sqlite and route handlers stay
+ * runtime-agnostic (CLAUDE.md).
+ */
+async function clearEncounter(
+  env: Env,
+  campaign: Campaign,
+  encounterId: string,
+): Promise<number> {
+  const rows = await env.DB.prepare(
+    'SELECT id, data FROM characters WHERE campaign_id = ?',
+  )
+    .bind(campaign.id)
+    .all();
+
+  const doomed = new Set<string>();
+  for (const r of rows.results as { id: string; data: string }[]) {
+    try {
+      if ((JSON.parse(r.data) as CharacterData).encounterId === encounterId) {
+        doomed.add(r.id);
+      }
+    } catch {
+      // A row we can't parse isn't ours to delete.
+    }
+  }
+  if (!doomed.size) return 0;
+
+  for (const id of doomed) {
+    await env.DB.prepare('DELETE FROM characters WHERE id = ?').bind(id).run();
+  }
+
+  // Their markers go too — a token pointing at a character that no
+  // longer exists is a ghost on the table.
+  const maps = (campaign.data.maps ?? []).map((scene) => ({
+    ...scene,
+    tokens: (scene.tokens ?? []).filter(
+      (t) => !(t.characterId && doomed.has(t.characterId)),
+    ),
+  }));
+  await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+    .bind(JSON.stringify({ ...campaign.data, maps }), campaign.id)
+    .run();
+
+  return doomed.size;
 }
 
 // --- routes ----------------------------------------------------------------
@@ -595,6 +647,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       counters: body.data?.counters ?? campaign.data.counters,
       states: body.data?.states ?? campaign.data.states,
       npcs: body.data?.npcs ?? campaign.data.npcs,
+      encounters: body.data?.encounters ?? campaign.data.encounters,
       reference: body.data?.reference ?? campaign.data.reference,
       activeHandoutId:
         body.data?.activeHandoutId !== undefined
@@ -851,6 +904,133 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   }
 
 
+  // Put a prepared fight on the table.
+  //
+  // Deploying is a RESET, not an append: it clears any creatures this
+  // encounter previously put out, then stamps a fresh set. So running it
+  // twice is "start this fight again" — which is what a TPK retry wants —
+  // rather than silently doubling every foe.
+  //
+  // A placement whose blueprint can't be resolved is reported, never
+  // skipped in silence: a fight that comes up half-empty because a pack
+  // is missing must say so.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/encounters\/([^/]+)\/deploy$/);
+  if (m && method === 'POST') {
+    const [, campaignId, encounterId] = m;
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(campaignId)
+      .first();
+    if (!row) return err('campaign not found', 404);
+    const campaign = toCampaign(row as never);
+    const encounter = (campaign.data.encounters ?? []).find((e) => e.id === encounterId);
+    if (!encounter) return err('encounter not found', 404);
+
+    const cleared = await clearEncounter(env, campaign, encounterId);
+    const bestiary = await bestiaryFor(env, campaign.system, campaign.data.npcs ?? []);
+    const byId = new Map(bestiary.map((n) => [n.id, n]));
+
+    // Number only what repeats: three of one blueprint become "1..3",
+    // but a placement you named yourself keeps its name, and a lone foe
+    // is never "Bloodsucker 1".
+    const counts = new Map<string, number>();
+    for (const foe of encounter.foes) {
+      if (foe.name) continue;
+      counts.set(foe.blueprintId, (counts.get(foe.blueprintId) ?? 0) + 1);
+    }
+    const seen = new Map<string, number>();
+
+    const created: Character[] = [];
+    const missing: string[] = [];
+    const tokens: Token[] = [];
+
+    for (const [index, foe] of encounter.foes.entries()) {
+      const blueprint = byId.get(foe.blueprintId);
+      if (!blueprint) {
+        missing.push(foe.name ?? foe.blueprintId);
+        continue;
+      }
+      let name = foe.name ?? blueprint.name;
+      if (!foe.name && (counts.get(foe.blueprintId) ?? 0) > 1) {
+        const n = (seen.get(foe.blueprintId) ?? 0) + 1;
+        seen.set(foe.blueprintId, n);
+        name = `${blueprint.name} ${n}`;
+      }
+
+      const id = newId('chr');
+      const data: CharacterData = { ...stamp(blueprint, foe), encounterId };
+      await env.DB.prepare(
+        'INSERT INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
+      )
+        .bind(id, campaignId, name, 'npc', JSON.stringify(data))
+        .run();
+      await logEvent(env, campaignId, id, actorOf(auth), 'character.created', {
+        name,
+        spawnedFrom: blueprint.id,
+        encounterId,
+      });
+      const fresh = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+        .bind(id)
+        .first();
+      created.push(toCharacter(fresh as never));
+
+      // A placement only becomes a token when there's a board to put it
+      // on AND somewhere to put it. Mapless fights make none, which is
+      // the common case and not a degraded one.
+      if (encounter.sceneId && foe.u !== undefined && foe.v !== undefined) {
+        tokens.push({
+          id: newId('tok'),
+          label: name,
+          u: foe.u,
+          v: foe.v,
+          sizeInches: foe.sizeInches ?? 1,
+          color: tokenColor(index),
+          characterId: id,
+          hidden: foe.hidden ?? false,
+        });
+      }
+    }
+
+    if (tokens.length) {
+      const maps = (campaign.data.maps ?? []).map((scene) =>
+        scene.id === encounter.sceneId
+          ? { ...scene, tokens: [...(scene.tokens ?? []), ...tokens] }
+          : scene,
+      );
+      await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
+        .bind(JSON.stringify({ ...campaign.data, maps }), campaignId)
+        .run();
+    }
+
+    await logEvent(env, campaignId, encounterId, actorOf(auth), 'encounter.deployed', {
+      name: encounter.name,
+      foes: created.length,
+      missing,
+    });
+    await poke(env, campaignId, 'campaign');
+    return json({ characters: created, missing, cleared }, 201);
+  }
+
+  // Take a fight off the table — every creature it put there, and their
+  // markers, in one go. The encounter itself is untouched: it's a recipe.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/encounters\/([^/]+)\/clear$/);
+  if (m && method === 'POST') {
+    const [, campaignId, encounterId] = m;
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(campaignId)
+      .first();
+    if (!row) return err('campaign not found', 404);
+    const cleared = await clearEncounter(env, toCampaign(row as never), encounterId);
+    if (cleared) {
+      await logEvent(env, campaignId, encounterId, actorOf(auth), 'encounter.cleared', {
+        foes: cleared,
+      });
+      await poke(env, campaignId, 'campaign');
+    }
+    return json({ cleared });
+  }
+
   // Stamp a blueprint out into real characters. One request so a group
   // arrives together; what comes back is ordinary characters — editable,
   // deletable, and no longer linked to the blueprint.
@@ -881,20 +1061,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       // Numbered only when there is more than one — "Coyote" alone
       // shouldn't become "Coyote 1".
       const name = count > 1 ? `${blueprint.name} ${i + 1}` : blueprint.name;
-      const data: CharacterData = {
-        fields: structuredClone(blueprint.fields),
-        // Fresh identities per copy, or they'd share ids — and full
-        // where there's a max: a blueprint is a starting kit, so
-        // stamping a wounded sheet shouldn't mint wounded creatures.
-        // Bounded counters fill; unbounded ones keep what was saved.
-        counters: blueprint.counters.map((c) => ({
-          ...c,
-          id: newId('ctr'),
-          current: c.max !== null && c.max > 0 ? c.max : c.current,
-        })),
-        tags: [...blueprint.tags],
-        notes: '',
-      };
+      const data: CharacterData = stamp(blueprint);
       await env.DB.prepare(
         'INSERT INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
       )

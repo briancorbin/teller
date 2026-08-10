@@ -1,6 +1,5 @@
-import type { Env } from './db';
-import { toPackRecord } from './db';
-import type { NpcBlueprint } from './types';
+import { newId, toPackRecord, type Env } from './db';
+import type { CharacterData, NpcBlueprint, Placement } from './types';
 
 // Where foes come from.
 //
@@ -54,6 +53,47 @@ export async function bestiaryFor(
   for (const npc of own) byId.set(npc.id, npc);
 
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Stamp a blueprint into a character sheet.
+ *
+ * One place, because two callers need identical behaviour: spawning
+ * from the bestiary, and deploying a prepared fight. The only
+ * difference is the placement's diff, and a bare spawn is just a
+ * placement with nothing overridden.
+ *
+ * A blueprint is a starting kit, so bounded counters come out FULL —
+ * stamping a wounded sheet must not mint wounded creatures. Unbounded
+ * ones keep whatever was saved, because there's no "full" to mean.
+ */
+export function stamp(
+  blueprint: NpcBlueprint,
+  placement?: Pick<Placement, 'overrides' | 'tags' | 'blueprintId'>,
+): CharacterData {
+  const fieldOverrides = placement?.overrides?.fields ?? {};
+  const counterOverrides = placement?.overrides?.counters ?? {};
+
+  return {
+    fields: blueprint.fields.map((f) =>
+      f.key in fieldOverrides ? { ...f, value: fieldOverrides[f.key] } : { ...f },
+    ),
+    // Fresh identities per copy, or every creature would share counter ids.
+    counters: blueprint.counters.map((c) => {
+      const over = counterOverrides[c.name];
+      const max = over && 'max' in over ? (over.max ?? null) : c.max;
+      const full = max !== null && max > 0 ? max : c.current;
+      return {
+        ...c,
+        id: newId('ctr'),
+        max,
+        current: over?.current ?? full,
+      };
+    }),
+    tags: [...blueprint.tags, ...(placement?.tags ?? [])],
+    notes: '',
+    blueprintId: blueprint.id,
+  };
 }
 
 /** Find one foe by id, wherever it lives. */

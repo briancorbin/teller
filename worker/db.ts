@@ -13,6 +13,11 @@ import type {
   Scene,
 } from './types';
 
+/** Ids are opaque and unguessable; the prefix is for humans reading rows. */
+export function newId(prefix: string): string {
+  return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;
+}
+
 export type Env = {
   DB: D1Database;
   CAMPAIGN: DurableObjectNamespace;

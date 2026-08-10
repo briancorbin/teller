@@ -59,6 +59,17 @@ export type CharacterData = {
   counters: Counter[];
   tags: string[];
   notes: string;
+  /**
+   * The blueprint this was stamped from — PROVENANCE, not a live link.
+   * Editing the blueprint later never reaches back into creatures
+   * already on the table; this only answers "is saving this an update
+   * to my own blueprint, or a new creature?".
+   *
+   * Absent for PCs and for anything invented directly on the table.
+   */
+  blueprintId?: string;
+  /** The encounter that deployed this, so a fight can be cleared at once. */
+  encounterId?: string;
 };
 
 /**
@@ -224,6 +235,61 @@ export type Scene = {
   grid?: { on: boolean; color?: string; opacity?: number };
 };
 
+/**
+ * One creature in a prepared fight.
+ *
+ * Its own record, never a stack of three — because each one wants its
+ * own square, its own name, and its own answer to "is it hidden". A
+ * placement REFERENCES a blueprint and stores only the difference, so
+ * fixing a typo in the pack reaches every fight that didn't override
+ * that field.
+ */
+export type Placement = {
+  id: string;
+  /** Resolved through the campaign's bestiary — pack foes included. */
+  blueprintId: string;
+  /** "the leader", when this one isn't just another Bloodsucker. */
+  name?: string;
+  /** Field values and counter maxes that differ, keyed by field key / counter name. */
+  overrides?: {
+    fields?: Record<string, string>;
+    counters?: Record<string, { current?: number; max?: number | null }>;
+  };
+  /** Conditions it starts with — asleep, dug in, already wounded. */
+  tags?: string[];
+  /**
+   * Where it starts, in map space (see docs/BATTLEMAP.md). Only
+   * meaningful when the encounter names a scene; a mapless fight simply
+   * leaves them out. Never cells: `widthInches` can be corrected later
+   * and this must stay glued to the picture.
+   */
+  u?: number;
+  v?: number;
+  sizeInches?: number;
+  /** Behind the screen until revealed — an ambush that was always there. */
+  hidden?: boolean;
+};
+
+/**
+ * A prepared fight: who's in it, and where they start if there's a map.
+ *
+ * **Mapless is the default.** The table is the ground and the humans are
+ * the rules engine, so most fights happen on a mat or in description; a
+ * scene is enrichment, exactly as a book is to a pack. `sceneId` absent
+ * means "just bring me the foes".
+ *
+ * Deploying stamps out characters; the encounter itself is a recipe and
+ * stays pristine, so it can be run again for another group.
+ */
+export type Encounter = {
+  id: string;
+  name: string;
+  /** The prepared board this runs on, when it has one. */
+  sceneId?: string | null;
+  foes: Placement[];
+  notes?: string;
+};
+
 export type CampaignData = {
   /** UI strings per system — e.g. { gm: 'Warden' }. */
   vocabulary: Record<string, string>;
@@ -236,6 +302,8 @@ export type CampaignData = {
   states?: EncounterState[];
   /** The bestiary: NPCs to stamp out. Per-instance content, never shipped. */
   npcs?: NpcBlueprint[];
+  /** Prepared fights — see `Encounter`. Most of what a module is made of. */
+  encounters?: Encounter[];
   /**
    * Warden's reference text — house rules, pasted rules excerpts,
    * table notes. Lives ONLY in the campaign's own database (personal

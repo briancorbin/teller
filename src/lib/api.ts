@@ -230,6 +230,20 @@ export const api = {
       body: JSON.stringify({ npcId, count }),
     }),
 
+  /** Put a prepared fight on the table. Re-deploying resets it. */
+  deployEncounter: (campaignId: string, encounterId: string) =>
+    req<{ characters: Character[]; missing: string[]; cleared: number }>(
+      `/api/campaigns/${campaignId}/encounters/${encounterId}/deploy`,
+      { method: 'POST' },
+    ),
+
+  /** Take it back off — every creature it put there, and their markers. */
+  clearEncounter: (campaignId: string, encounterId: string) =>
+    req<{ cleared: number }>(
+      `/api/campaigns/${campaignId}/encounters/${encounterId}/clear`,
+      { method: 'POST' },
+    ),
+
   duplicateCharacter: (id: string) =>
     req<Character>(`/api/characters/${id}/duplicate`, { method: 'POST' }),
 
