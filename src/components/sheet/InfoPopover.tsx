@@ -56,23 +56,29 @@ export function InfoPopover({
     >
       <div className="flex items-baseline gap-2">
         <span
-          className="font-serif text-sm font-bold uppercase tracking-wide"
+          className="min-w-0 break-words font-serif text-sm font-bold uppercase tracking-wide"
           style={{ color: 'var(--sheet-accent, #f59e0b)' }}
         >
           {entry.name}
         </span>
-        {entry.meta && (
-          <span className="font-mono text-[11px] text-stone-400">{entry.meta}</span>
-        )}
         <button
           type="button"
           onClick={onClose}
           aria-label="close"
-          className="ml-auto -my-1 px-1.5 py-1 text-stone-500 transition-colors hover:text-stone-200"
+          className="-my-1 ml-auto shrink-0 px-1.5 py-1 text-stone-500 transition-colors hover:text-stone-200"
         >
           ✕
         </button>
       </div>
+      {/* Its own line, not a suffix. A status's meta is one word ("Nerve")
+          and a skill's is a four-verb list — sharing the title row meant
+          the long one got squeezed into a three-line column beside the
+          name. A subtitle costs nothing and never competes for width. */}
+      {entry.meta && (
+        <div className="mt-0.5 break-words font-mono text-[11px] text-stone-400">
+          {entry.meta}
+        </div>
+      )}
       <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-stone-300">
         {entry.text}
       </p>
