@@ -51,6 +51,7 @@ function PackBooks({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
   const shelf = shelfFor(record, books);
   const attached = new Set(record.pack.books ?? []);
   const spare = books.filter((b) => !attached.has(b.id));
@@ -100,23 +101,46 @@ function PackBooks({
         ))}
       </ul>
 
-      {spare.length > 0 && (
-        <select
-          className={`${input} mt-1 w-full text-xs`}
-          value=""
-          disabled={busy}
-          onChange={(e) =>
-            e.target.value && setBooks([...(record.pack.books ?? []), e.target.value])
-          }
-        >
-          <option value="">attach a book…</option>
-          {spare.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
-      )}
+      {/* Attaching is a thing you do once and then forget. A permanent
+          full-width "attach a book…" select can't tell "nothing attached
+          yet" from "attached, and this host happens to hold another
+          book" — so it sat under a finished pack looking like a chore.
+          Collapsed to a quiet link that opens the picker on purpose,
+          which is also what the header comment already promised: the
+          enrichment layer stays quiet when there's nothing to add. */}
+      {spare.length > 0 &&
+        (adding ? (
+          <div className="mt-1 flex items-center gap-1">
+            <select
+              className={`${input} min-w-0 flex-1 text-xs`}
+              value=""
+              disabled={busy}
+              autoFocus
+              onChange={(e) => {
+                if (!e.target.value) return;
+                setBooks([...(record.pack.books ?? []), e.target.value]);
+                setAdding(false);
+              }}
+            >
+              <option value="">choose a book…</option>
+              {spare.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
+            <button className={`${btnGhost} text-[11px]`} onClick={() => setAdding(false)}>
+              cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            className={`${btnGhost} mt-0.5 text-[11px] text-stone-600 hover:text-stone-300`}
+            onClick={() => setAdding(true)}
+          >
+            + attach {shelf.length ? 'another book' : 'a book'}
+          </button>
+        ))}
     </div>
   );
 }

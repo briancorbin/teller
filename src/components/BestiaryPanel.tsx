@@ -23,6 +23,26 @@ function matches(npc: SourcedNpc, needle: string): boolean {
   return npc.fields.some((f) => String(f.value).toLowerCase().includes(q));
 }
 
+/** The campaign's own, as opposed to any pack's. */
+const OWN = 'yours';
+
+/**
+ * Which shelf a foe sits on — and it can be more than one.
+ *
+ * A foe printed in both a core bestiary and the adventure that reprints
+ * it belongs to BOTH packs, so filtering to the adventure has to show it
+ * even when this table currently takes the core printing. Matching on
+ * `from` alone would hide it, because `from` names only the winner.
+ *
+ * A foe the campaign retuned keeps its pack sources (see `bestiaryFor`),
+ * so it answers to its pack AND to `yours`. That's not a bug to
+ * normalise away: it is exactly both of those things.
+ */
+function shelved(npc: SourcedNpc, source: string): boolean {
+  if (source === OWN) return !npc.from;
+  return npc.sources?.some((s) => s.pack === source) ?? false;
+}
+
 export function BestiaryPanel({
   npcs,
   onSpawn,
@@ -41,10 +61,27 @@ export function BestiaryPanel({
   const [open, setOpen] = useState<string | null>(null);
   const [count, setCount] = useState(1);
   const [reading, setReading] = useState<BookTarget | null>(null);
+  const [source, setSource] = useState<string | null>(null);
+
+  // Every shelf represented here, biggest first. Derived from the foes
+  // themselves rather than from the packs list, so a pack that brought
+  // rules but no bestiary never becomes a chip that filters to nothing.
+  const shelves = useMemo(() => {
+    const counts = new Map<string, number>();
+    const bump = (k: string) => counts.set(k, (counts.get(k) ?? 0) + 1);
+    for (const npc of npcs) {
+      if (!npc.from) bump(OWN);
+      for (const s of npc.sources ?? []) bump(s.pack);
+    }
+    return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [npcs]);
 
   const found = useMemo(
-    () => npcs.filter((n) => matches(n, query.trim())),
-    [npcs, query],
+    () =>
+      npcs.filter(
+        (n) => matches(n, query.trim()) && (!source || shelved(n, source)),
+      ),
+    [npcs, query, source],
   );
 
   return (
@@ -52,7 +89,7 @@ export function BestiaryPanel({
       <div className="flex items-center justify-between">
         <span className={sectionLabel}>Bestiary</span>
         <span className="font-mono text-[11px] text-stone-600">
-          {query ? `${found.length} of ${npcs.length}` : `${npcs.length} foes`}
+          {query || source ? `${found.length} of ${npcs.length}` : `${npcs.length} foes`}
         </span>
       </div>
 
@@ -82,6 +119,39 @@ export function BestiaryPanel({
           </button>
         </span>
       </div>
+
+      {/* One shelf needs no chooser — the label would only ever say
+          "everything". It appears when a second pack does. */}
+      {shelves.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1">
+          <button
+            className={`${btnGhost} font-mono text-[11px] ${
+              source ? 'text-stone-600' : 'text-amber-400'
+            }`}
+            onClick={() => setSource(null)}
+            aria-pressed={!source}
+          >
+            all
+          </button>
+          {shelves.map(([name, n]) => (
+            <button
+              key={name}
+              className={`${btnGhost} font-mono text-[11px] ${
+                source === name ? 'text-amber-400' : 'text-stone-600'
+              }`}
+              onClick={() => setSource(source === name ? null : name)}
+              aria-pressed={source === name}
+              title={
+                name === OWN
+                  ? 'foes this campaign wrote or retuned'
+                  : `foes printed in ${name}`
+              }
+            >
+              {name} <span className="text-stone-700">{n}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <ul className="space-y-1">
         {found.map((npc) => {
@@ -220,7 +290,11 @@ export function BestiaryPanel({
         })}
         {found.length === 0 && (
           <li className="text-sm text-stone-600">
-            {npcs.length ? 'nothing by that name' : 'no foes yet — a pack brings them'}
+            {!npcs.length
+              ? 'no foes yet — a pack brings them'
+              : query
+                ? `nothing by that name${source ? ` in ${source}` : ''}`
+                : `nothing in ${source}`}
           </li>
         )}
       </ul>
