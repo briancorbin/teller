@@ -1,4 +1,9 @@
-import type { Counter, Field, SystemTemplate } from '../../../worker/types';
+import type {
+  Counter,
+  Field,
+  PackEntry,
+  SystemTemplate,
+} from '../../../worker/types';
 
 // The parts every counter layout is built from.
 //
@@ -33,6 +38,21 @@ export type CounterViewProps = {
   accents?: SystemTemplate['accents'];
   /** Counter name → field keys that belong inside that counter's panel. */
   pins?: SystemTemplate['pins'];
+  /**
+   * The character's conditions, for layouts that place them themselves.
+   *
+   * Same bargain as `fields`: most layouts leave these to the card's own
+   * tag strip, and `Sheet` takes them over because the printed page has
+   * a STATUSES panel with a fixed list and a number in each box, which a
+   * row of chips can't be. Declared in `seat-layouts.ts`.
+   */
+  tags?: string[];
+  onTags?: (next: string[]) => void;
+  /** The pack entries for the conditions block, and its heading. */
+  conditions?: (PackEntry & { section?: string })[];
+  conditionsLabel?: string;
+  /** Finds a pack entry by name, so descriptions can open on tap. */
+  lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
 };
 
 /** Clamped to [0, max]. A counter never goes negative or past its ceiling. */

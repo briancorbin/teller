@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { PackEntry } from '../../worker/types';
+import { formatTag, parseTag } from '../lib/tags';
 import { input, sectionLabel } from '../lib/ui';
 
 // Conditions, statuses, trophies — any list of words on an entity.
@@ -12,11 +13,6 @@ import { input, sectionLabel } from '../lib/ui';
 //
 // When a `lookup` is provided (rules packs), tags with a matching
 // rules entry grow an ⓘ — tapping it opens the rule card inline.
-
-function parseTag(tag: string): { name: string; value: number | null } {
-  const m = tag.match(/^(.*?)\s+(\d+)$/);
-  return m ? { name: m[1], value: Number(m[2]) } : { name: tag, value: null };
-}
 
 export function TagSection({
   tags,
@@ -44,7 +40,7 @@ export function TagSection({
   const decrement = (tag: string) => {
     const { name, value } = parseTag(tag);
     if (value === null || value <= 1) return remove(tag);
-    onChange(tags.map((t) => (t === tag ? `${name} ${value - 1}` : t)));
+    onChange(tags.map((t) => (t === tag ? formatTag(name, value - 1) : t)));
   };
 
   const info = openInfo ? lookup?.(openInfo) : undefined;

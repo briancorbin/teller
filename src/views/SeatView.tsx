@@ -7,12 +7,13 @@ import type {
   SystemTemplate,
 } from '../../worker/types';
 import { api } from '../lib/api';
-import { useRuleLookup } from '../lib/rules';
+import { useRuleLookup, useRuleSection } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import {
   layoutOf,
   ownsFields,
+  ownsTags,
   SEAT_LAYOUTS,
   type SeatLayout,
 } from '../lib/seat-layouts';
@@ -54,6 +55,12 @@ export function SeatView({
   const [packs, setPacks] = useState<PackRecord[]>([]);
   const [error, setError] = useState('');
   const lookup = useRuleLookup(packs);
+  // What this table calls its conditions is the campaign's word, and it
+  // doubles as the name of the pack section that describes them — so a
+  // system saying "Statuses" gets the pack's "Statuses" section without
+  // anything here knowing either word.
+  const conditionsLabel = campaign?.data.vocabulary.conditions ?? 'Conditions';
+  const conditions = useRuleSection(packs, conditionsLabel);
   const [template, setTemplate] = useState<SystemTemplate | null>(null);
   const [tally, setTally] = useState<Record<string, number>>({});
   const [picking, setPicking] = useState(false);
@@ -412,6 +419,11 @@ export function SeatView({
                 groups={template?.groups}
                 accents={template?.accents}
                 pins={template?.pins}
+                tags={character.data.tags}
+                onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
+                conditions={conditions}
+                conditionsLabel={conditionsLabel}
+                lookup={lookup}
                 onChange={(counters) => patch({ counters })}
               />
             </FitBox>
@@ -439,12 +451,17 @@ export function SeatView({
           </div>
 
           <div className={`flex shrink-0 flex-col gap-2 ${wide ? 'w-56' : ''}`}>
-            <TagSection
-              tags={character.data.tags}
-              label={campaign?.data.vocabulary.conditions ?? 'Conditions'}
-              lookup={lookup}
-              onChange={(tags) => patch({ tags })}
-            />
+            {/* Skipped when the layout draws its own conditions block —
+                the same statuses in two places on one card is worse than
+                either one alone. */}
+            {!ownsTags(layout) && (
+              <TagSection
+                tags={character.data.tags}
+                label={conditionsLabel}
+                lookup={lookup}
+                onChange={(tags) => patch({ tags })}
+              />
+            )}
 
             {initiative.length > 0 && (
               <div className="min-h-0">

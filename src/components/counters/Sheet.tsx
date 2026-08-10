@@ -1,6 +1,7 @@
 import type { Counter, Field } from '../../../worker/types';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { SkillPanel } from '../sheet/SkillPanel';
+import { StatusPanel } from '../sheet/StatusPanel';
 import { TradePlate } from '../sheet/TradePlate';
 import {
   Bar,
@@ -159,6 +160,11 @@ export function Sheet({
   groups,
   accents,
   pins,
+  tags = [],
+  onTags,
+  conditions = [],
+  conditionsLabel = 'Conditions',
+  lookup,
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -218,15 +224,16 @@ export function Sheet({
       }
     >
       <TradePlate field={title} accent={accent} />
-      <div
-        className="grid min-h-0 flex-1 gap-2"
-        // Skills column then resources, the sheet's own reading order.
-        // It collapses to one column when there isn't width for two,
-        // which is the one liberty paper doesn't have to take.
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(15rem, 1fr))' }}
-      >
-        <div className="flex flex-col gap-2 self-start">
-          <SkillPanel fields={skills} dice={dice} />
+      {/* The page's three blocks, in the page's order: Skills, then the
+          vitals, then Statuses. A flex row rather than an auto-fit grid
+          because they are NOT equal — auto-fit gives every column the
+          same track, and Statuses is seven short rows that only ever
+          needed about two thirds of what Skills does. Wrapping is what
+          replaces the grid's collapse: on a phone they stack, in the
+          same order. */}
+      <div className="flex min-h-0 flex-1 flex-wrap content-start gap-2">
+        <div className="flex min-w-[14rem] flex-[1.15] flex-col gap-2 self-start">
+          <SkillPanel fields={skills} dice={dice} lookup={lookup} />
           {rest.length > 0 && (
             <div className="flex flex-wrap gap-1">
               {rest.map((field) => (
@@ -247,7 +254,10 @@ export function Sheet({
         </div>
 
         {gauges.length > 0 && (
-          <section className="flex min-h-0 flex-col gap-2" style={{ containerType: 'inline-size' }}>
+          <section
+            className="flex min-w-[13rem] flex-[1.2] flex-col gap-2 self-start"
+            style={{ containerType: 'inline-size' }}
+          >
             {panelled.map((counter) => (
               <HealthPanel
                 key={counter.id}
@@ -257,7 +267,7 @@ export function Sheet({
               />
             ))}
             <div
-              className="grid min-h-0 flex-1 gap-2"
+              className="grid min-h-0 gap-2"
               // A ring is as tall as it is; stretching the row just puts
               // a void above and below it. Content-sized rows keep the
               // boxes tight, which is also how they sit on paper.
@@ -271,6 +281,18 @@ export function Sheet({
               ))}
             </div>
           </section>
+        )}
+        {/* Third column, narrowest — seven short rows. */}
+        {onTags && (
+          <div className="flex min-w-[10.5rem] flex-[0.8] flex-col gap-2 self-start">
+            <StatusPanel
+              entries={conditions}
+              tags={tags}
+              onChange={onTags}
+              title={conditionsLabel}
+              relievers={skills.map((f) => f.label)}
+            />
+          </div>
         )}
       </div>
 

@@ -1,5 +1,7 @@
-import type { Field, SystemTemplate } from '../../../worker/types';
+import { useState } from 'react';
+import type { Field, PackEntry, SystemTemplate } from '../../../worker/types';
 import { parsePool } from '../../../worker/dice';
+import { InfoDot, InfoPopover } from './InfoPopover';
 import { SheetPanel } from './SheetPanel';
 
 // The skills block, arranged like the printed sheet.
@@ -84,9 +86,16 @@ function Slot({ die, bonus }: { die?: string; bonus?: boolean }) {
 function SkillRow({
   field,
   dice,
+  entry,
+  open,
+  onToggleInfo,
 }: {
   field: Field;
   dice?: SystemTemplate['dice'];
+  /** The pack's entry for this skill, when it has one. */
+  entry?: PackEntry & { section?: string };
+  open: boolean;
+  onToggleInfo: () => void;
 }) {
   const pool = dice ? parsePool(field.value ?? '', dice.faces) : [];
   // The dice this character owns, spread out one per slot, in the order
@@ -136,6 +145,17 @@ function SkillRow({
           </span>
         )}
       </div>
+
+      {/* The sheet prints "convince, barter, intimidate, calm" under each
+          skill. That's the publisher's prose, so it can only come from a
+          pack — and when one supplies it, it arrives on tap rather than
+          on the card, which is what keeps the panel the same height on a
+          phone as on a rail. No entry, no dot. */}
+      {entry?.text ? (
+        <InfoDot onClick={onToggleInfo} open={open} label={field.label} />
+      ) : (
+        <span className="h-6 w-6 shrink-0" aria-hidden="true" />
+      )}
     </div>
   );
 }
@@ -144,13 +164,20 @@ export function SkillPanel({
   fields,
   dice,
   title = 'Skills',
+  lookup,
 }: {
   fields: Field[];
   dice?: SystemTemplate['dice'];
   /** The sheet's own heading for this block, when a pack supplies one. */
   title?: string;
+  /** Finds a skill's pack entry, so its description can open on tap. */
+  lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
 }) {
+  const [openInfo, setOpenInfo] = useState<string | null>(null);
+
   if (!fields.length) return null;
+
+  const shown = openInfo ? lookup?.(openInfo) : undefined;
 
   return (
     // Full width of whatever column it's in; hugging the CONTENT is the
@@ -160,12 +187,23 @@ export function SkillPanel({
     //
     // The frame, corner ticks and heading now come from `SheetPanel`,
     // which every block on the page shares.
-    <SheetPanel title={title} className="w-full">
+    <SheetPanel title={title} className="relative w-full">
       <div className="divide-y divide-stone-800/80">
         {fields.map((field) => (
-          <SkillRow key={field.key} field={field} dice={dice} />
+          <SkillRow
+            key={field.key}
+            field={field}
+            dice={dice}
+            entry={lookup?.(field.label)}
+            open={openInfo === field.label}
+            onToggleInfo={() =>
+              setOpenInfo(openInfo === field.label ? null : field.label)
+            }
+          />
         ))}
       </div>
+
+      {shown && <InfoPopover entry={shown} onClose={() => setOpenInfo(null)} />}
     </SheetPanel>
   );
 }

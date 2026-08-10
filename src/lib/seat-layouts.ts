@@ -50,6 +50,13 @@ export const SEAT_LAYOUTS = [
      * the one thing that would stop it reading as the sheet.
      */
     ownsFields: true,
+    /**
+     * And the conditions, for the same reason. The page's STATUSES panel
+     * is the whole list with a Severity box on each — a menu of what can
+     * happen to you, not a report of what has. A strip of chips only
+     * shows the ones you've already got.
+     */
+    ownsTags: true,
   },
   {
     id: 'classic',
@@ -64,6 +71,12 @@ export type SeatLayout = (typeof SEAT_LAYOUTS)[number]['id'];
 export function ownsFields(id: SeatLayout): boolean {
   const found = SEAT_LAYOUTS.find((l) => l.id === id);
   return Boolean(found && 'ownsFields' in found && found.ownsFields);
+}
+
+/** Does this layout render the character's conditions itself? */
+export function ownsTags(id: SeatLayout): boolean {
+  const found = SEAT_LAYOUTS.find((l) => l.id === id);
+  return Boolean(found && 'ownsTags' in found && found.ownsTags);
 }
 
 /** The one a screen gets before anybody has an opinion. */
