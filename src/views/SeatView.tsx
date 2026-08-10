@@ -463,39 +463,16 @@ export function SeatView({
               />
             )}
 
-            {initiative.length > 0 && (
-              <div className="min-h-0">
-                <div className="mb-1 flex items-baseline justify-between">
-                  <span className="text-[11px] font-medium uppercase tracking-widest text-stone-500">
-                    Turn order
-                  </span>
-                  {turn !== null && (
-                    <span className="font-mono text-xs text-stone-600">
-                      rd {session?.round}
-                    </span>
-                  )}
-                </div>
-                {/* Wraps rather than scrolls; FitBox catches a very long
-                  fight. Yours is highlighted so you can find it without
-                  reading every name. */}
-                <ol className="flex flex-wrap gap-1">
-                  {initiative.map((entry, index) => (
-                    <li
-                      key={entry.id}
-                      className={`break-words rounded px-1.5 py-0.5 text-xs ${
-                        index === turn
-                          ? 'bg-amber-700 font-medium text-stone-950'
-                          : entry.characterId === character.id
-                            ? 'bg-stone-800 text-amber-200'
-                            : 'bg-stone-900 text-stone-500'
-                      }`}
-                    >
-                      {entry.label}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
+            {/* The turn-order list used to sit here, and it's gone for
+                now. A seat is one player's own card, and the roster of
+                everyone else in the fight is the room's information, not
+                theirs — it's on the table screen and the console, where
+                everybody can already see it.
+
+                What stays is everything aimed at THIS player: the ring
+                around the card when it's their turn, and the roll prompt
+                when the Warden asks for one. Those are addressed to them;
+                a list of seven names is just a thing to read. */}
           </div>
         </div>
       </main>
