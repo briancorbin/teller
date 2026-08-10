@@ -191,7 +191,7 @@ export function Sheet({
   lookup,
   note,
 }: CounterViewProps) {
-  const { gauges } = split(counters);
+  const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
 
@@ -229,9 +229,40 @@ export function Sheet({
   const dialled = gauges.filter(
     (c) => !pinnedTo(c).length && dials?.[c.name] === 'cylinder' && dialable(c),
   );
-  const plain = gauges.filter(
-    (c) => !pinnedTo(c).length && !dialled.includes(c),
+  /**
+   * Has this system said where anything goes on its sheet?
+   *
+   * The gate that lets this layout be built a block at a time without
+   * breaking systems it was never drawn for. A system that has declared
+   * homes is one whose sheet is being designed, so it gets EXACTLY the
+   * declared blocks and nothing else — an undrawn counter waits rather
+   * than appearing as a loose tile, because a designed page with three
+   * strays taped to the edge looks worse than a page missing a block.
+   *
+   * A system that has declared nothing has no sheet to be partway
+   * through, so it keeps the generic treatment and everything shows.
+   * That preserves the promise made for `groups`: nothing disappears for
+   * want of a declaration.
+   *
+   * The stakes are low either way — the counters are untouched, and
+   * every other layout still shows the lot.
+   */
+  const designed =
+    Object.keys(pins ?? {}).length > 0 || Object.keys(dials ?? {}).length > 0;
+
+  /** Fields with no block of their own. Only shown on an undesigned sheet. */
+  const allPinned = new Set(Object.values(pins ?? {}).flat());
+  const rest = fields.filter(
+    (f) =>
+      !(skillKeys ?? []).includes(f.key) &&
+      f.key !== titleKey &&
+      !allPinned.has(f.key),
   );
+
+  const plain = designed
+    ? []
+    : gauges.filter((c) => !pinnedTo(c).length && !dialled.includes(c));
+  const strays = designed ? [] : tallies;
 
   return (
     // The accent rides on a CSS variable rather than a prop threaded
@@ -275,11 +306,28 @@ export function Sheet({
             note={note?.(SKILLS_TITLE)}
           />
           {/* Stats with no block of their own — Speed, for WiW — used to
-              hang here as loose chips. Same reasoning as the tallies
-              below: a chip strip is not the home the sheet gives them,
-              and improvising one is what made this look unfinished.
-              Hidden until the page has the block, not removed from the
-              character. */}
+              hang here as loose chips, and don't any more for the same
+              reason as the counters. A system with no declared sheet
+              still shows everything: `ownsFields` is what makes the card
+              skip its own stat strip, and it only applies to layouts
+              that place fields themselves. */}
+          {!designed && rest.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {rest.map((field) => (
+                <span
+                  key={field.key}
+                  className="rounded-md bg-stone-900 px-2 py-1 text-xs"
+                >
+                  <span className="font-mono text-stone-100">
+                    {field.value || '—'}
+                  </span>
+                  <span className="ml-1 uppercase tracking-wider text-stone-500">
+                    {field.label}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {gauges.length > 0 && (
@@ -336,19 +384,41 @@ export function Sheet({
         )}
       </div>
 
-      {/* Wallet, Scrap and Prestige used to sit in a strip along here.
-          They're HIDDEN, not deleted — this layout is being built a block
-          at a time and they haven't reached theirs yet. On the printed
-          sheet they have real homes further down the page, next to the
-          gear and the abilities, and a generic chip strip pretending to
-          be that home is what made the card look unfinished.
-
-          Hidden rather than removed from the character on purpose. The
-          numbers are real (rule 1) — they're still on the console and on
-          every other seat layout, and they come back here the moment the
-          lower half of the page exists. Deleting the counters would have
-          taken them off the other five layouts too, and thrown the values
-          away to solve a layout problem. */}
+      {/* The generic strip, for a system with no declared sheet. WiW's
+          Wallet, Scrap and Prestige do NOT appear here — they have real
+          homes further down the printed page, and a chip strip pretending
+          to be that home is what made the card look unfinished. */}
+      {strays.length > 0 && (
+        <div
+          className="grid shrink-0 gap-1.5"
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))' }}
+        >
+          {strays.map((counter) => (
+            <div
+              key={counter.id}
+              className="flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1"
+            >
+              <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
+                <Name
+                  counter={counter}
+                  className="text-[10px] uppercase tracking-widest text-stone-500"
+                />
+                <Value counter={counter} className="text-base" />
+              </div>
+              <Step
+                sign="−"
+                label={`decrease ${counter.name}`}
+                onClick={() => update(bumped(counter, -1))}
+              />
+              <Step
+                sign="+"
+                label={`increase ${counter.name}`}
+                onClick={() => update(bumped(counter, 1))}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
