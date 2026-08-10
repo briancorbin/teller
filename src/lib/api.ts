@@ -264,6 +264,13 @@ export const api = {
   displays: (campaignId: string) =>
     req<Display[]>(`/api/campaigns/${campaignId}/displays`),
 
+  /** Move a screen to this campaign — it was always on this host. */
+  bringDisplay: (campaignId: string, displayId: string) =>
+    req<{ display: Display }>(
+      `/api/campaigns/${campaignId}/displays/${displayId}/bring`,
+      { method: 'POST' },
+    ),
+
   claimDisplay: (campaignId: string, code: string, name?: string) =>
     req<{ display: Display }>(`/api/campaigns/${campaignId}/displays/claim`, {
       method: 'POST',

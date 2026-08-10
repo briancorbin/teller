@@ -46,11 +46,39 @@ export function DisplaysPanel({
       .catch((e) => setError(String(e instanceof Error ? e.message : e)));
   }, [campaignId]);
 
+  // Only to name the campaign a stray screen is currently on — "on
+  // Dry Gulch" beats an opaque id when you're deciding whether to move it.
+  const [names, setNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api
+      .listCampaigns()
+      .then((cs) => setNames(Object.fromEntries(cs.map((c) => [c.id, c.name]))))
+      .catch(() => setNames({}));
+  }, []);
+
+  const bring = async (id: string) => {
+    try {
+      await api.bringDisplay(campaignId, id);
+      setError('');
+      load();
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    }
+  };
+
   useEffect(load, [load]);
   useEffect(() => {
     const timer = setInterval(load, 5000);
     return () => clearInterval(timer);
   }, [load]);
+
+  // This campaign's screens, and this host's screens pointed somewhere
+  // else. Unadopted ones (no campaign at all) stay out of both: they are
+  // showing a pairing code and arrive that way.
+  const mine = displays.filter((d) => d.campaignId === campaignId);
+  const elsewhere = displays.filter(
+    (d) => d.campaignId && d.campaignId !== campaignId,
+  );
 
   const claim = async () => {
     if (!code.trim()) return;
@@ -117,7 +145,68 @@ export function DisplaysPanel({
         </div>
       </section>
 
-      {displays.map((d) => {
+      {/*
+        Screens on this host but pointed at another campaign. They were
+        never lost — the console just used to filter them out, which made
+        adoption look permanent. Bringing one is a move, not a re-pair.
+
+        Unadopted screens are deliberately NOT here: those still arrive by
+        pairing code, so nobody can quietly absorb a stranger's screen
+        that happens to be on the same LAN.
+      */}
+      {elsewhere.length > 0 && (
+        <section className={`${card} space-y-2`}>
+          <div className="flex items-baseline gap-2">
+            <span className={sectionLabel}>on another campaign</span>
+            <span className="font-mono text-[11px] text-stone-600">
+              {elsewhere.length} screen{elsewhere.length > 1 ? 's' : ''}
+            </span>
+            {elsewhere.length > 1 && (
+              <button
+                className="ml-auto font-mono text-xs text-stone-500 underline-offset-2 hover:text-amber-300 hover:underline"
+                onClick={() => elsewhere.forEach((d) => void bring(d.id))}
+                title="move every one of them to this campaign"
+              >
+                bring all →
+              </button>
+            )}
+          </div>
+          <ul className="space-y-1">
+            {elsewhere.map((d) => (
+              <li key={d.id} className="flex items-center gap-2">
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{
+                    backgroundColor: isLive(d) ? d.color || '#f59e0b' : '#44403c',
+                  }}
+                  title={isLive(d) ? 'live' : `last seen ${d.lastSeenAt}`}
+                />
+                <span className="min-w-0 flex-1 truncate text-sm text-stone-300">
+                  {d.name || 'unnamed screen'}
+                </span>
+                <span className="font-mono text-[11px] text-stone-600">
+                  {d.role}
+                  {' · '}
+                  {names[d.campaignId ?? ''] ?? 'a campaign that’s gone'}
+                </span>
+                <button
+                  className="font-mono text-[11px] text-amber-400/90 underline-offset-2 hover:underline"
+                  onClick={() => void bring(d.id)}
+                  title={
+                    d.role === 'seat' || d.role === 'badge'
+                      ? 'move it here — it points at a character over there, so it arrives blank'
+                      : 'move it here'
+                  }
+                >
+                  bring here →
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {mine.map((d) => {
         const role = ROLES.find((r) => r.value === d.role);
         return (
           <section key={d.id} className={`${card} space-y-2`}>
@@ -234,7 +323,7 @@ export function DisplaysPanel({
         );
       })}
 
-      {displays.length === 0 && (
+      {mine.length === 0 && elsewhere.length === 0 && (
         <p className="px-1 text-sm text-stone-500">No screens yet.</p>
       )}
     </div>

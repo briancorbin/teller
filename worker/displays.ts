@@ -235,12 +235,50 @@ export async function displayRoutes(
   let m = pathname.match(/^\/api\/campaigns\/([^/]+)\/displays$/);
   if (m && method === 'GET') {
     if (!canDm(auth, m[1])) return err('DM key required', 401);
+    // EVERY screen on this host, not just this campaign's.
+    //
+    // A screen belongs to the room, and the room plays one game at a
+    // time — so a screen paired while running another campaign is still
+    // the same table TV, and hiding it was what made adoption look
+    // permanent (TEL-39). The caller groups by `campaignId`; filtering
+    // here is what left five screens stranded with no way back.
     const rows = await env.DB.prepare(
-      'SELECT * FROM displays WHERE campaign_id = ? ORDER BY created_at',
-    )
-      .bind(m[1])
-      .all();
+      'SELECT * FROM displays ORDER BY created_at',
+    ).all();
     return json(rows.results.map((r) => toDisplay(r as never)));
+  }
+
+  // Bring a screen to this campaign. Not "release then re-pair": the
+  // screen never stopped being yours, the console just couldn't see it.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/displays\/([^/]+)\/bring$/);
+  if (m && method === 'POST') {
+    const [, campaignId, displayId] = m;
+    if (!canDm(auth, campaignId)) return err('DM key required', 401);
+    const display = await readDisplay(env, displayId);
+    if (!display) return err('display not found', 404);
+    if (display.campaignId === campaignId) return json({ display });
+
+    // A seat or badge names a CHARACTER, and that character belongs to
+    // the campaign it's leaving. Carrying the pointer across would aim a
+    // screen at something that isn't here, so the job is dropped rather
+    // than faked — a screen with no job says so.
+    const points = display.role === 'seat' || display.role === 'badge';
+    const role: DisplayRole = points ? 'blank' : display.role;
+    const params = points ? {} : display.params;
+
+    await env.DB.prepare(
+      'UPDATE displays SET campaign_id = ?, role = ?, params = ? WHERE id = ?',
+    )
+      .bind(campaignId, role, JSON.stringify(params), displayId)
+      .run();
+
+    // Tell it on the stream it's CURRENTLY on — the old campaign's —
+    // because that's where it's still listening. Its heartbeat would
+    // catch up eventually; a screen in front of players shouldn't wait.
+    if (display.campaignId) {
+      await notify(env, display.campaignId, displayId, { type: 'assign' });
+    }
+    return json({ display: (await readDisplay(env, displayId))! });
   }
 
   // Adopt a waiting screen by the code it's showing.
