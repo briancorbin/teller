@@ -88,6 +88,8 @@ function CounterRow({
 
   const low =
     counter.max !== null && counter.max > 0 && counter.current / counter.max <= 0.25;
+  /** Nothing entered here yet — no ceiling, and nothing counted. */
+  const blank = counter.max === null && counter.current === 0;
   const refillable = counter.max !== null && counter.current < counter.max;
   const clock = counter.display === 'clock' && counter.max !== null && counter.max > 0;
 
@@ -110,13 +112,19 @@ function CounterRow({
         ) : (
           <div
             className={`font-mono tabular-nums ${big ? 'text-3xl' : 'text-xl'} ${
-              low ? 'text-red-400' : 'text-stone-100'
+              low ? 'text-red-400' : blank ? 'text-stone-600' : 'text-stone-100'
             }`}
           >
             {counter.current}
-            {counter.max !== null && (
-              <span className="text-stone-500">/{counter.max}</span>
-            )}
+            {/*
+              An unset ceiling is shown as "/—" rather than left off.
+              A bounded stat whose max nobody has filled in — Health on a
+              fresh character — otherwise renders as a bare "0", which
+              reads as a corpse instead of an empty field. The dash says
+              "no maximum", and a 0 under it is dimmed so a blank counter
+              looks blank rather than alarming.
+            */}
+            <span className="text-stone-600">/{counter.max ?? '—'}</span>
           </div>
         )}
         <div className="truncate text-xs text-stone-400">
