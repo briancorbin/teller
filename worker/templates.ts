@@ -71,7 +71,9 @@ const wiw: SystemTemplate = {
       { key: 'defense', label: 'Defense' },
     ],
     counters: [
-      { name: 'Health', max: null },
+      // Guidebook, character creation step 5: "Write '10' in the Max
+      // box of your Health panel." It is a starting value, not a blank.
+      { name: 'Health', current: 10, max: 10 },
       { name: 'Grit', current: 6, max: 6 },
       { name: 'Prestige · Total', current: 0, max: null },
       { name: 'Prestige · Unclaimed', current: 0, max: null },
@@ -104,6 +106,27 @@ const wiw: SystemTemplate = {
   campaign: {
     counters: [],
   },
+  // WiW's dice, as data (rule 4). Faces derived from the Guidebook's
+  // d6 conversion table — the twelve symbols across both dice are 5 Hit,
+  // 2 Ace, 3 Blank, 2 Spur, and Gold has "one more Hit and one less
+  // Blank than Black", which forces exactly this split.
+  //
+  // A Spur is rerolled only by a character with the matching Talent, so
+  // it is NOT listed under `reroll`: teller rolls for foes, and foes
+  // have no Talents. A player who does simply rolls again and types
+  // what they got.
+  dice: {
+    faces: {
+      B: ['hit', 'hit', 'ace', 'blank', 'blank', 'spur'],
+      G: ['hit', 'hit', 'hit', 'ace', 'blank', 'spur'],
+    },
+    values: { hit: 1, ace: 2, blank: 0, spur: 0 },
+    unit: 'Hits',
+  },
+  // Guidebook, Turn Order: "the Warden will ask the players to roll with
+  // Finesse to determine turn order. The player with the highest number
+  // of Hits will go first."
+  initiative: { field: 'finesse', highWins: true },
   states: [
     { name: 'Bloodied', effect: 'wound', suggest: { counter: 'Health', atOrBelow: 0.5 } },
     { name: 'Out of Grit', effect: 'daze', suggest: { counter: 'Grit', atOrBelow: 0 } },

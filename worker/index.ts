@@ -23,6 +23,7 @@ import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
 import { bundleFilename, exportCampaign } from './bundle';
 import { bestiaryFor, findBlueprint, stamp } from './bestiary';
+import { rollInitiative } from './dice';
 import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
 import type {
@@ -965,6 +966,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const created: Character[] = [];
     const missing: string[] = [];
     const tokens: Token[] = [];
+    // What each foe rolled for turn order, keyed by the character it
+    // made. The caller puts them in the list — the roll is the part a
+    // human doesn't want to do, the ordering is still theirs to change.
+    const rolls: Record<string, { total: number; faces: string[] }> = {};
+    const template = await getSystem(env, campaign.system);
 
     for (const [index, foe] of encounter.foes.entries()) {
       const blueprint = byId.get(foe.blueprintId);
@@ -995,6 +1001,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         .bind(id)
         .first();
       created.push(toCharacter(fresh as never));
+      const roll = rollInitiative(template, data.fields);
+      if (roll) rolls[id] = { total: roll.total, faces: roll.faces };
 
       // A placement only becomes a token when there's a board to put it
       // on AND somewhere to put it. Mapless fights make none, which is
@@ -1030,7 +1038,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       missing,
     });
     await poke(env, campaignId, 'campaign');
-    return json({ characters: created, missing, cleared }, 201);
+    return json({ characters: created, missing, cleared, rolls }, 201);
   }
 
   // Take a fight off the table — every creature it put there, and their

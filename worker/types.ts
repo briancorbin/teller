@@ -413,6 +413,30 @@ export type SystemTemplate = {
   };
   /** Starting kit of encounter states — vocabulary + thresholds only. */
   states?: EncounterState[];
+  /**
+   * How this system rolls, as DATA (rule 4, amended 2026-08-10).
+   *
+   * teller ships one small evaluator; a system arrives as a row rather
+   * than a code change. Faces are listed literally so a die is just its
+   * sides — no distributions to encode, and a system with a d20 or 2d6
+   * describes itself the same way.
+   */
+  dice?: {
+    /** Die letter → its faces, e.g. B: [hit, hit, ace, blank, blank, spur]. */
+    faces: Record<string, string[]>;
+    /** Face → what it's worth when the pool is totalled. */
+    values: Record<string, number>;
+    /** Faces rerolled until they become something else. */
+    reroll?: string[];
+    /** What a total is CALLED here — "Hits", "successes", "total". */
+    unit?: string;
+  };
+  /**
+   * Which field decides turn order, when the table wants teller to roll.
+   * Absent means this system doesn't roll for it and the list stays
+   * manual — which is still a perfectly good way to run a fight.
+   */
+  initiative?: { field: string; highWins?: boolean };
 };
 
 // --- Rules packs ------------------------------------------------------------
@@ -594,11 +618,27 @@ export type InitiativeEntry = {
   /** Linked character, or null for an ad-hoc row ("3 coyotes"). */
   characterId: string | null;
   label: string;
+  /**
+   * What they rolled, when anyone rolled. teller fills this in for foes
+   * it deployed; players type their own on their seat. Null means
+   * "hasn't rolled yet", which is what the console counts to know who
+   * it's still waiting on — distinct from a genuine 0.
+   */
+  score?: number | null;
 };
 
 export type SessionState = {
-  /** Manually ordered — teller never models any system's initiative rules. */
+  /**
+   * The order, and it is always the DM's to rearrange (rule 5). teller
+   * may propose one by rolling what the system declares; dragging beats
+   * anything it worked out.
+   */
   initiative: InitiativeEntry[];
+  /**
+   * Taking rolls right now: seats show a number pad, the console shows
+   * who it's still waiting on, and the list re-sorts as scores land.
+   */
+  rolling?: boolean;
   /** Index into initiative, or null when combat isn't running. */
   turn: number | null;
   round: number;
@@ -608,6 +648,10 @@ export type SessionState = {
 
 export type SessionOp =
   | { op: 'set'; initiative: InitiativeEntry[] }
+  /** Open or close the taking-rolls phase. Opening clears every score. */
+  | { op: 'rolling'; on: boolean }
+  /** One combatant's result — from a seat, or typed by the DM. */
+  | { op: 'score'; entryId: string; score: number | null }
   | { op: 'next' }
   | { op: 'prev' }
   | { op: 'end' }

@@ -1,4 +1,4 @@
-import type { SessionOp, SessionState, StreamEvent } from './types';
+import type { SessionOp, SessionState, StreamEvent, InitiativeEntry } from './types';
 
 // One campaign = one DO. Holds the LIVE session (initiative, turn,
 // round) and fans state out to every connected client over SSE.
@@ -104,7 +104,39 @@ export class CampaignDO {
       case 'end':
         s.turn = null;
         s.round = 1;
+        s.rolling = false;
         break;
+      case 'rolling':
+        // Opening the phase wipes every score: a new fight is a new
+        // roll, and a stale number left over from the last one would
+        // silently sort someone into the wrong place.
+        s.rolling = op.on;
+        if (op.on) {
+          s.initiative = s.initiative.map((e) => ({ ...e, score: null }));
+          s.turn = null;
+        }
+        break;
+      case 'score': {
+        // Scores arrive one at a time, from whichever seat rolled — so
+        // the list re-sorts on every arrival rather than waiting for
+        // everyone. Nobody has to be last.
+        s.initiative = s.initiative.map((e) =>
+          e.id === op.entryId ? { ...e, score: op.score } : e,
+        );
+        const scored = (e: InitiativeEntry) =>
+          typeof e.score === 'number' ? e.score : null;
+        s.initiative = [...s.initiative].sort((a, b) => {
+          const x = scored(a);
+          const y = scored(b);
+          // Nobody who hasn't rolled outranks somebody who has, and
+          // among the unrolled the order they were added is kept.
+          if (x === null && y === null) return 0;
+          if (x === null) return 1;
+          if (y === null) return -1;
+          return y - x;
+        });
+        break;
+      }
       case 'notice':
         s.notice = op.text?.trim() ? op.text.trim() : null;
         break;
