@@ -291,16 +291,36 @@ line explains the pivot, why seat tokens died, why books stopped living
 in browser storage, and why there is no cloud in the play path.
 
 Its companion, for content: **what a publisher wrote stays put; what you
-wrote travels.** A `.tell` bundle carries your campaign — characters,
-encounters, scenes, packs — and **references books by id, never carries
-them**. So a bundle stays small, holds no rules text, and is safe to hand
-to anyone. A rulebook is downloaded once, by the person who owns it, onto
-the machine that serves the table.
+wrote travels.** A bundle carries your campaign — characters, encounters,
+scenes — and **references books by id, never carries them**. A rulebook
+is downloaded once, by the person who owns it, onto the machine that
+serves the table.
+
+**That does not yet hold for packs, and it is the open gap.** A bundle
+carries pack bodies whole: exporting a WiW campaign yields ~124 KB of
+`pack.json` against 563 bytes of `books.json` — 96% of the file is
+distilled rules text and stat blocks. So a bundle is safe to hand to
+someone who owns the same books, and not otherwise. The manifest already
+marks it (`personal: true`) and nothing reads that. TEL-62 closes it:
+packs become `.pack` files on the host and a bundle *references* them,
+which is what turns the IP line into a property of the format instead of
+a rule someone has to remember.
 
 Bundle rules that follow from this (`worker/bundle.ts`, `worker/import.ts`):
 
 - **Sections, not types** — a bundle declares what it contains, so a
   system-only pack and a whole campaign are the same file format.
+- **The extension is a label; the manifest is the truth.** Settled
+  2026-08-09: ONE bundle format, renaming `.tell` → `.story`, with
+  "starting kit" vs "runnable adventure" **derived from `contains`,
+  never stored** — a declared kind goes stale the moment the bundle is
+  edited. No second extension for the kit case: that would track degree
+  of completeness, which is fuzzy (a kit that grows two encounters is
+  what?) and unfixable once someone holds the file. `.pack` gets its own
+  extension because it is a different KIND of thing — different folder,
+  lifecycle and identity scheme. **A new extension tracks a different
+  kind of thing, not a different degree of completeness.** Not yet
+  renamed in code; see TEL-62.
 - **Import layers onto a running table** rather than replacing it, and
   on a collision the **stored value wins** (rule 1 again — an import is
   a proposal, not an authority).
