@@ -816,7 +816,17 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
     const body = await request.json<{ name?: string; data?: Partial<CharacterData> }>();
     const patch = body.data ?? {};
+    // Spread FIRST, then overlay the editable keys.
+    //
+    // This used to enumerate the four editable fields and rebuild `data`
+    // from them, which silently dropped everything else on every edit —
+    // `encounterId` and `blueprintId` in particular. Damaging a deployed
+    // monster orphaned it from its fight, so `clear` walked straight
+    // past it and left a creature on the table that only a hand-delete
+    // could remove. Provenance is not editable, but it must SURVIVE an
+    // edit.
     const next: CharacterData = {
+      ...character.data,
       fields: patch.fields ?? character.data.fields,
       counters: patch.counters ?? character.data.counters,
       tags: patch.tags ?? character.data.tags,

@@ -27,6 +27,28 @@ import { EncounterPanel } from '../components/EncounterPanel';
 import { EncountersPanel } from '../components/EncountersPanel';
 import { RulesPanel } from '../components/RulesPanel';
 
+/**
+ * Who's in the characters pane, and why they're separable.
+ *
+ * `kind` alone isn't enough: a recurring NPC and a monster deployed into
+ * tonight's fight are both 'npc', but one is cast and the other is
+ * scenery with hit points. `encounterId` is what tells them apart — it's
+ * set by deploy and is the same field `clear` uses to sweep them away.
+ */
+const isDeployed = (c: Character) => Boolean(c.data.encounterId);
+
+const CAST_FILTERS: {
+  key: string;
+  label: string;
+  match: (c: Character) => boolean;
+}[] = [
+  { key: 'cast', label: 'party + cast', match: (c) => !isDeployed(c) },
+  { key: 'party', label: 'party', match: (c) => c.kind === 'pc' },
+  { key: 'npcs', label: 'cast', match: (c) => c.kind === 'npc' && !isDeployed(c) },
+  { key: 'table', label: 'on the table', match: isDeployed },
+  { key: 'all', label: 'everyone', match: () => true },
+];
+
 export function DmView({
   campaignId,
   pane,
@@ -59,6 +81,9 @@ export function DmView({
   const [bestiary, setBestiary] = useState<SourcedNpc[]>([]);
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
+  /** Default hides deployed monsters: they belong to the fight, not the cast. */
+  const [castFilter, setCastFilter] = useState('cast');
+  const [castQuery, setCastQuery] = useState('');
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
   /** The screen on table duty — it owns the calibration, not the campaign. */
@@ -327,6 +352,16 @@ export function DmView({
       })
       .catch(() => refetch());
   };
+
+  // Party first, then the recurring cast, then whatever's on the table —
+  // so position in the list means something even before you read a name.
+  const shownCast = characters
+    .filter((c) => CAST_FILTERS.find((f) => f.key === castFilter)?.match(c) ?? true)
+    .filter((c) => c.name.toLowerCase().includes(castQuery.trim().toLowerCase()))
+    .sort((a, b) => {
+      const rank = (c: Character) => (c.kind === 'pc' ? 0 : isDeployed(c) ? 2 : 1);
+      return rank(a) - rank(b);
+    });
 
   /** Say which printing of a foe this table uses (rule 1 over pack order). */
   const pickFoeSource = (npcId: string, packId: string) => {
@@ -984,8 +1019,49 @@ export function DmView({
 
         {showCharacters && (
         <div className="space-y-4">
+          {/*
+            Three kinds of person live here and they are not equals. The
+            party and the recurring cast are DURABLE. Monsters deployed
+            into a fight are transient — they arrive with an encounter
+            and vanish when it's cleared — and they already have a better
+            home in the Encounter pane, next to the turn order. So they
+            are one tap away rather than in the way.
+          */}
+          <div className={`${card} flex flex-wrap items-center gap-2`}>
+            {CAST_FILTERS.map((f) => {
+              const n = characters.filter((c) => f.match(c)).length;
+              const on = castFilter === f.key;
+              return (
+                <button
+                  key={f.key}
+                  className={`rounded-md px-2 py-1 font-mono text-xs ${
+                    on
+                      ? 'bg-amber-700 text-stone-950'
+                      : 'bg-stone-900 text-stone-400 hover:text-stone-200'
+                  }`}
+                  onClick={() => setCastFilter(f.key)}
+                  aria-pressed={on}
+                >
+                  {f.label} <span className="opacity-70">{n}</span>
+                </button>
+              );
+            })}
+            <input
+              className={`${input} ml-auto w-44`}
+              placeholder="find someone…"
+              value={castQuery}
+              onChange={(e) => setCastQuery(e.target.value)}
+              aria-label="find a character"
+            />
+          </div>
+
           <div className="grid gap-4 xl:grid-cols-2">
-            {characters.map((character) => (
+            {shownCast.length === 0 && (
+              <p className="text-sm text-stone-600">
+                {castQuery ? 'nobody by that name' : 'nobody here yet'}
+              </p>
+            )}
+            {shownCast.map((character) => (
               <CharacterCard
                 key={character.id}
                 character={character}
