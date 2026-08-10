@@ -470,7 +470,6 @@ export type RulesPack = {
  */
 export type Book = {
   id: string;
-  system: string;
   name: string;
   pages: number;
   indexed: boolean;

@@ -319,10 +319,9 @@ export const api = {
    * crypto.subtle doesn't exist on the plain-HTTP origin a table's host
    * serves from.
    */
-  addBook: (file: File, system: string) => {
+  addBook: (file: File) => {
     const params = new URLSearchParams({
       name: file.name.replace(/\.pdf$/i, ''),
-      system,
     });
     return req<{ book: Book; duplicate: boolean }>(`/api/books?${params}`, {
       method: 'POST',

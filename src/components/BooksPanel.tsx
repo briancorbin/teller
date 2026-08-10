@@ -41,11 +41,9 @@ function Snippet({ text }: { text: string }) {
 }
 
 export function BooksPanel({
-  system,
   expects,
   onExpects,
 }: {
-  system: string;
   /** Book ids this campaign uses — see `CampaignData.books`. */
   expects: string[];
   onExpects: (ids: string[]) => void;
@@ -71,7 +69,7 @@ export function BooksPanel({
     setError('');
     setBusy(`sending ${file.name}…`);
     try {
-      const { duplicate, book } = await api.addBook(file, system);
+      const { duplicate, book } = await api.addBook(file);
       setBusy('');
       if (duplicate) setError(`You already have “${book.name}” — same book, same bytes.`);
       refresh();

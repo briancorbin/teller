@@ -857,7 +857,6 @@ export function DmView({
 
           {showLibrary && (
             <BooksPanel
-              system={campaign.system}
               expects={campaign.data.books ?? []}
               onExpects={(books) => {
                 setCampaign((prev) =>

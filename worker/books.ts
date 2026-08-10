@@ -11,7 +11,8 @@ import { BOOK_MINUTES, checkTicket, mintTicket } from './tickets';
 //
 // The library is not scoped to a campaign or a system: you own the books,
 // campaigns refer to them by id. That's why a `.tell` file carries a
-// reference rather than a rulebook.
+// reference rather than a rulebook — and why migration 0008 dropped the
+// `system` column that used to claim otherwise.
 //
 // Reading the text is the HOST's job (see host/library.mjs), not the
 // worker's — that keeps pdfjs out of the runtime-agnostic half. Search is
@@ -21,7 +22,6 @@ import { BOOK_MINUTES, checkTicket, mintTicket } from './tickets';
 
 type BookRow = {
   id: string;
-  system: string;
   name: string;
   key: string | null;
   pages: number;
@@ -32,7 +32,6 @@ type BookRow = {
 export function toBook(row: BookRow): Book {
   return {
     id: row.id,
-    system: row.system,
     name: row.name,
     pages: row.pages,
     indexed: Boolean(row.indexed),
@@ -93,15 +92,17 @@ export async function bookRoutes(
   if (pathname === '/api/books/search' && method === 'GET') {
     if (!dm) return err('DM key required', 401);
     const q = (url.searchParams.get('q') ?? '').trim();
-    const system = url.searchParams.get('system');
     const match = q.length < 2 ? null : ftsQuery(q);
     if (!match) return json({ hits: [], total: 0 });
 
+    // Every book you own, always. Narrowing search is the campaign's job
+    // if it ever becomes one — by the books it claims, not by a label on
+    // the book (migration 0008).
     const from = `FROM book_fts
         JOIN book_pages p ON p.rowid = book_fts.rowid
         JOIN books b ON b.id = p.book_id
-       WHERE book_fts MATCH ?1 ${system ? 'AND b.system = ?2' : ''}`;
-    const binds = system ? [match, system] : [match];
+       WHERE book_fts MATCH ?1`;
+    const binds = [match];
 
     // char(2)/char(3) fence the matched words inside the snippet so the
     // console can highlight them. Control characters, deliberately: they
@@ -136,14 +137,9 @@ export async function bookRoutes(
 
   if (pathname === '/api/books' && method === 'GET') {
     if (!dm) return err('DM key required', 401);
-    const system = url.searchParams.get('system');
-    const rows = system
-      ? await env.DB.prepare(
-          'SELECT * FROM books WHERE system = ? ORDER BY created_at DESC',
-        )
-          .bind(system)
-          .all()
-      : await env.DB.prepare('SELECT * FROM books ORDER BY created_at DESC').all();
+    const rows = await env.DB.prepare(
+      'SELECT * FROM books ORDER BY created_at DESC',
+    ).all();
     return json(rows.results.map((r) => toBook(r as never)));
   }
 
@@ -158,7 +154,6 @@ export async function bookRoutes(
   if (pathname === '/api/books' && method === 'POST') {
     if (!dm) return err('DM key required', 401);
     const name = (url.searchParams.get('name') ?? '').trim() || 'Untitled';
-    const system = (url.searchParams.get('system') ?? '').trim();
 
     // Buffered to be hashed: there is no streaming digest in WebCrypto.
     // A rulebook is large but finite, and this is the one moment it's
@@ -185,9 +180,9 @@ export async function bookRoutes(
       httpMetadata: { contentType: 'application/pdf' },
     });
     await env.DB.prepare(
-      'INSERT INTO books (id, system, name, key, pages, indexed) VALUES (?, ?, ?, ?, 0, 0)',
+      'INSERT INTO books (id, name, key, pages, indexed) VALUES (?, ?, ?, 0, 0)',
     )
-      .bind(id, system, name, key)
+      .bind(id, name, key)
       .run();
     const row = await env.DB.prepare('SELECT * FROM books WHERE id = ?')
       .bind(id)
