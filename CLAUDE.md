@@ -23,9 +23,15 @@ simulator.
 happens at the table stays physical — but building encounters, bestiaries
 and reference libraries beforehand is a fair thing for teller to grow
 into, and it feeds the table rather than competing with it. What stays
-out is unchanged and is what actually matters: no rules engine (rule 1),
-and no rules CONTENT in the repo or distributed to anyone (rule 4).
-Reference and prep live per-instance, in the DM's own books.
+out is the thing that actually matters: **no publisher TEXT in the repo
+or distributed to anyone** (rule 4). Reference and prep live
+per-instance, in the DM's own books.
+
+"The humans are the rules engine" is about AUTHORITY, not arithmetic
+(amended 2026-08-10). teller may roll dice and derive defaults; every
+result lands somewhere a human can overrule it, and the table's ruling
+beats the book's. What it must never do is decide something nobody can
+change.
 
 ## Relationship to the-shed-next
 
@@ -79,16 +85,40 @@ It is no longer where play happens.
   don't design them again from this file.
 - **`packs/README.md`** — the pack format. The JSON itself is gitignored.
 
-## RULES — settled decisions; don't re-litigate
+## RULES
 
-### 1. Track, don't compute — override IS the architecture
+Each rule says where it came from, because that turned out to matter.
+Audited 2026-08-10: **seven of the nine original rules were written in a
+single sitting** — the foundation commit `6c5197c`, before any of this
+existed. Only two were learned from building. The file presented a
+two-day-old guess and a hard-won constraint in identical voice under a
+heading that said "don't re-litigate", and an assumption inherits no
+authority from being written down early.
 
-Every stat is a stored, hand-entered value. There is NO rules engine. If
-one ever exists, it only *proposes* defaults into the same slots; the
-stored value stays authoritative. Never build automation that a human
-can't override by just typing a number.
+So: *assumed* means it was a starting guess and is fair game. *Learned*
+means something broke, or shipped, and taught us this. Re-audit when a
+rule starts feeling like an obstacle rather than a floor.
+
+### 1. Override IS the architecture — never automate past a human
+
+*Learned (the variant/placement/foePicks work) from an assumed start.*
+
+Every stat is a stored value, and a human can always type over it.
+Computation is ALLOWED — it *proposes* into the same slots and the
+stored value stays authoritative. Roll dice, derive defaults, sort a
+list: fine. What's forbidden is automation with no override, or a
+number a human can't find and change.
+
+This was originally written as "track, don't compute — there is NO
+rules engine", which read as a ban on computing at all and was cited
+that way. It never was: the rule is about **who wins**, not about
+whether teller may do arithmetic.
 
 ### 2. Generic primitives, not game concepts
+
+*Assumed, and it earned its keep — Health, Grit, Prestige, ammo and
+spell slots are all just counters, and no game-specific column has ever
+been needed.*
 
 The character model is: `fields` (key/label/value), `counters`
 ({name, current, max}), `tags`, `notes`. HP, spell slots, Prestige, ammo,
@@ -97,6 +127,9 @@ column or type (no `hp`, no `spellSlots`). Counters can belong to a
 character or to the campaign (party resources).
 
 ### 3. Every mutation appends to the event log
+
+*Assumed, now load-bearing: `/undo` walks this log, so it stopped being
+a someday-feature the moment undo shipped.*
 
 The `events` table gets a row for every state change: who, what,
 payload. Never mutate without logging.
@@ -107,14 +140,31 @@ stepping back instead of fighting each other. What doesn't exist yet is
 a *readable* combat log or history for the DM (TEL-5) — the data is
 there, nothing renders it.
 
-### 4. System templates are data, never code — and never rules text
+### 4. Never publisher TEXT — mechanics are fine, and belong in the template
 
-A template = structure + vocabulary (field lists, counter names,
-"Warden" vs "DM"). NEVER rules content: no spell descriptions, no stat
-blocks, no game text. This is the IP bright line and what makes
-community templates safe. Templates are starting kits — after creation,
-everything is editable and the template is irrelevant. Every template
-carries `system` + `version` from day one.
+*Split 2026-08-10. The IP half is learned; the "no mechanics" half was
+assumed and is gone.*
+
+This rule used to say two things at once, and only one of them was ever
+about IP:
+
+- **The line that stays.** No publisher text in the repo, and none
+  distributed: no spell descriptions, no stat blocks, no prose lifted
+  from a book. That's expression, it's protected, and it's what
+  `packs/*.json` being gitignored enforces. Still live: a `.tell` is
+  currently ~96% pack text while claiming to be safe to hand to anyone
+  (TEL-62).
+- **The line that's gone.** "No mechanics in code" was never an IP
+  concern — game *mechanics* aren't protected, only their expression.
+  It was scope fear dressed as a legal rule, and it blocked things the
+  table actually wants, like rolling initiative.
+
+So a template = structure + vocabulary + **mechanics**: field lists,
+counter names, "Warden" vs "DM", and how this system rolls. Dice live
+in the `systems` row as DATA, so teller ships one small evaluator and a
+new system arrives as a row, not a code change. Templates are starting
+kits — after creation everything is editable. Every template carries
+`system` + `version` from day one.
 
 Templates live in the **`systems` table** (migration 0007), not in code.
 `worker/templates.ts` is a *seed* — `seedSystems` inserts with `INSERT
@@ -123,6 +173,9 @@ OR IGNORE`, so a counter someone renamed survives the next reboot
 teller are the same kind of thing and neither outranks the other.
 
 ### 4a. A pack is the unit of content
+
+*Learned, from building packs. Being reshaped by TEL-62 — a pack is
+headed for its own file on the host.*
 
 Rules CONTENT has a sanctioned home: **packs** — JSON uploaded to the
 instance's `packs` table. A pack carries the distilled rulings that come
@@ -145,14 +198,33 @@ possible only with a rightsholder's sanction, and even then the
 publisher distributes it themselves. What people do with files they
 have is between them and the publisher.
 
-### 5. Turn order is a manually ordered list — hard commitment
+### 5. Turn order is an ordered list + a current index
 
-teller never models any system's initiative *mechanics* (rolls, cards,
-popcorn). The table determines order physically; the DM drags the list
-to match. Output is always "an ordered list + current index"; that's
-universal across systems.
+*Assumed, and amended 2026-08-10 — the prohibition is gone.*
+
+The DATA SHAPE is the durable part and it stays: an ordered list and a
+current index, which is universal whether a system rolls, deals cards
+or passes popcorn. The DM can always drag, and dragging beats anything
+teller worked out (rule 1).
+
+What's gone is the sentence that said teller "never models any system's
+initiative mechanics — hard commitment". It was written on day one with
+nothing behind it, nothing in the codebase ever depended on it, and it
+forbade the single most requested piece of bookkeeping at the table:
+rolling for monsters. A system's dice live in its template (rule 4), so
+teller rolls what the system declares and writes the result into a list
+you can rearrange.
+
+Where the table's own rules differ from the book's, the TABLE wins —
+Brian's runs per-monster initiative although WiW says the Warden rolls
+once for all enemies. teller carries out the table's ruling; it does
+not enforce the publisher's.
 
 ### 6. Web-first; hardware is optional flare
+
+*Assumed, then largely rewritten by the local-first pivot. The "ONE url
+per table" framing and the plain-HTTP constraints below are learned —
+the six-connection limit cost a day.*
 
 **There is ONE url per table — the host's.** Every screen — phone,
 tablet, table TV, rail panel — opens the address `teller host` prints,
@@ -219,6 +291,9 @@ client.** Two consequences that have already bitten:
 
 ### 7. Auth: one key, and assignments — no accounts, no other secrets
 
+*Learned, building displays (`28d707d`). One of only two rules that came
+from experience rather than the opening sitting.*
+
 **There is exactly one secret in teller: `DM_KEY`.** It is the root of
 trust and the only thing that ever confers authority by being known.
 Everything else is an assignment: the server looks up what a display
@@ -272,6 +347,9 @@ Keep secrets out of the stream regardless.
 
 ### 8. Schema: few real columns + JSON `data` blob
 
+*Assumed; the serializer discipline in the second half is learned, from
+int-vs-boolean bugs across two engines.*
+
 Promote a blob key to a column only when a query needs it. Raw database
 rows never cross the API boundary — per-resource serializers in
 `worker/db.ts` (`toCampaign`, `toCharacter`) parse/coerce — so a route
@@ -284,6 +362,9 @@ goes *in*: D1 quietly accepts a JS boolean as a bind parameter and
 keep both edges honest and route code never learns which is running.
 
 ### 9. What lives on the host, and what travels
+
+*Learned, from the local-first pivot. The newest rule and the one that
+explains the most.*
 
 **State that more than one screen argues about lives on the host.
 Everything else lives as close to the person as possible.** That single
