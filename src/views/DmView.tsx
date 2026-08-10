@@ -28,25 +28,21 @@ import { EncountersPanel } from '../components/EncountersPanel';
 import { RulesPanel } from '../components/RulesPanel';
 
 /**
- * Who's in the characters pane, and why they're separable.
+ * Who's in the characters pane.
  *
- * `kind` alone isn't enough: a recurring NPC and a monster deployed into
- * tonight's fight are both 'npc', but one is cast and the other is
- * scenery with hit points. `encounterId` is what tells them apart — it's
- * set by deploy and is the same field `clear` uses to sweep them away.
+ * `kind` is the whole distinction now. A deployed monster used to carry
+ * the fight it came from, so "on the table" was a third category; deploy
+ * stopped leaving that behind — a stamped creature is just a creature —
+ * and the pane is simpler for it.
  */
-const isDeployed = (c: Character) => Boolean(c.data.encounterId);
-
 const CAST_FILTERS: {
   key: string;
   label: string;
   match: (c: Character) => boolean;
 }[] = [
-  { key: 'cast', label: 'party + cast', match: (c) => !isDeployed(c) },
-  { key: 'party', label: 'party', match: (c) => c.kind === 'pc' },
-  { key: 'npcs', label: 'cast', match: (c) => c.kind === 'npc' && !isDeployed(c) },
-  { key: 'table', label: 'on the table', match: isDeployed },
   { key: 'all', label: 'everyone', match: () => true },
+  { key: 'party', label: 'party', match: (c) => c.kind === 'pc' },
+  { key: 'foes', label: 'foes', match: (c) => c.kind === 'npc' },
 ];
 
 export function DmView({
@@ -81,8 +77,7 @@ export function DmView({
   const [bestiary, setBestiary] = useState<SourcedNpc[]>([]);
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
-  /** Default hides deployed monsters: they belong to the fight, not the cast. */
-  const [castFilter, setCastFilter] = useState('cast');
+  const [castFilter, setCastFilter] = useState('all');
   const [castQuery, setCastQuery] = useState('');
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
@@ -358,10 +353,7 @@ export function DmView({
   const shownCast = characters
     .filter((c) => CAST_FILTERS.find((f) => f.key === castFilter)?.match(c) ?? true)
     .filter((c) => c.name.toLowerCase().includes(castQuery.trim().toLowerCase()))
-    .sort((a, b) => {
-      const rank = (c: Character) => (c.kind === 'pc' ? 0 : isDeployed(c) ? 2 : 1);
-      return rank(a) - rank(b);
-    });
+    .sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'pc' ? -1 : 1));
 
   /** Say which printing of a foe this table uses (rule 1 over pack order). */
   const pickFoeSource = (npcId: string, packId: string) => {
@@ -1020,14 +1012,6 @@ export function DmView({
 
         {showCharacters && (
         <div className="space-y-4">
-          {/*
-            Three kinds of person live here and they are not equals. The
-            party and the recurring cast are DURABLE. Monsters deployed
-            into a fight are transient — they arrive with an encounter
-            and vanish when it's cleared — and they already have a better
-            home in the Encounter pane, next to the turn order. So they
-            are one tap away rather than in the way.
-          */}
           <div className={`${card} flex flex-wrap items-center gap-2`}>
             {CAST_FILTERS.map((f) => {
               const n = characters.filter((c) => f.match(c)).length;

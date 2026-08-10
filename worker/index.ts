@@ -73,58 +73,6 @@ function countersFrom(
   }));
 }
 
-/**
- * Take everything one encounter put on the table back off it.
- *
- * Creatures carry the encounter that deployed them, so this is the whole
- * fight in one action rather than deleting seven corpses by hand — which
- * was the only way before encounters existed.
- *
- * The filtering happens in JS rather than with `json_extract`, because
- * the same code runs on D1 and on node:sqlite and route handlers stay
- * runtime-agnostic (CLAUDE.md).
- */
-async function clearEncounter(
-  env: Env,
-  campaign: Campaign,
-  encounterId: string,
-): Promise<number> {
-  const rows = await env.DB.prepare(
-    'SELECT id, data FROM characters WHERE campaign_id = ?',
-  )
-    .bind(campaign.id)
-    .all();
-
-  const doomed = new Set<string>();
-  for (const r of rows.results as { id: string; data: string }[]) {
-    try {
-      if ((JSON.parse(r.data) as CharacterData).encounterId === encounterId) {
-        doomed.add(r.id);
-      }
-    } catch {
-      // A row we can't parse isn't ours to delete.
-    }
-  }
-  if (!doomed.size) return 0;
-
-  for (const id of doomed) {
-    await env.DB.prepare('DELETE FROM characters WHERE id = ?').bind(id).run();
-  }
-
-  // Their markers go too — a token pointing at a character that no
-  // longer exists is a ghost on the table.
-  const maps = (campaign.data.maps ?? []).map((scene) => ({
-    ...scene,
-    tokens: (scene.tokens ?? []).filter(
-      (t) => !(t.characterId && doomed.has(t.characterId)),
-    ),
-  }));
-  await env.DB.prepare('UPDATE campaigns SET data = ? WHERE id = ?')
-    .bind(JSON.stringify({ ...campaign.data, maps }), campaign.id)
-    .run();
-
-  return doomed.size;
-}
 
 // --- routes ----------------------------------------------------------------
 
@@ -955,7 +903,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const encounter = (campaign.data.encounters ?? []).find((e) => e.id === encounterId);
     if (!encounter) return err('encounter not found', 404);
 
-    const cleared = await clearEncounter(env, campaign, encounterId);
     const bestiary = await bestiaryFor(
       env,
       campaign.system,
@@ -997,7 +944,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       }
 
       const id = newId('chr');
-      const data: CharacterData = { ...stamp(blueprint, foe), encounterId };
+      const data: CharacterData = stamp(blueprint, foe);
       await env.DB.prepare(
         'INSERT INTO characters (id, campaign_id, name, kind, data) VALUES (?, ?, ?, ?, ?)',
       )
@@ -1006,7 +953,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       await logEvent(env, campaignId, id, actorOf(auth), 'character.created', {
         name,
         spawnedFrom: blueprint.id,
-        encounterId,
       });
       const fresh = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
         .bind(id)
@@ -1049,28 +995,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       missing,
     });
     await poke(env, campaignId, 'campaign');
-    return json({ characters: created, missing, cleared, rolls }, 201);
+    return json({ characters: created, missing, rolls }, 201);
   }
 
-  // Take a fight off the table — every creature it put there, and their
-  // markers, in one go. The encounter itself is untouched: it's a recipe.
-  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/encounters\/([^/]+)\/clear$/);
-  if (m && method === 'POST') {
-    const [, campaignId, encounterId] = m;
-    if (!dm(campaignId)) return err('DM key required', 401);
-    const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
-      .bind(campaignId)
-      .first();
-    if (!row) return err('campaign not found', 404);
-    const cleared = await clearEncounter(env, toCampaign(row as never), encounterId);
-    if (cleared) {
-      await logEvent(env, campaignId, encounterId, actorOf(auth), 'encounter.cleared', {
-        foes: cleared,
-      });
-      await poke(env, campaignId, 'campaign');
-    }
-    return json({ cleared });
-  }
 
   // Stamp a blueprint out into real characters. One request so a group
   // arrives together; what comes back is ordinary characters — editable,

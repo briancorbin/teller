@@ -68,8 +68,6 @@ export type CharacterData = {
    * Absent for PCs and for anything invented directly on the table.
    */
   blueprintId?: string;
-  /** The encounter that deployed this, so a fight can be cleared at once. */
-  encounterId?: string;
 };
 
 /**

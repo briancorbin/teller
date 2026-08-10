@@ -183,12 +183,11 @@ export function EncountersPanel({
     setBusy(true);
     setStatus('');
     try {
-      const { characters, missing, cleared, rolls } = await api.deployEncounter(
+      const { characters, missing, rolls } = await api.deployEncounter(
         campaign.id,
         encounter.id,
       );
       const parts = [`${characters.length} on the table`];
-      if (cleared) parts.push(`cleared ${cleared} from last time`);
       if (missing.length) parts.push(`couldn’t find ${missing.length}`);
       const rolled = Object.keys(rolls).length;
       if (rolled) parts.push(`rolled for ${rolled}`);
@@ -215,18 +214,6 @@ export function EncountersPanel({
     }
   };
 
-  const clear = async (encounter: Encounter) => {
-    setBusy(true);
-    try {
-      const { cleared } = await api.clearEncounter(campaign.id, encounter.id);
-      setStatus(cleared ? `took ${cleared} off the table` : 'nothing was out');
-      onDeployed();
-    } catch (e) {
-      setStatus(String(e instanceof Error ? e.message : e));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   return (
     <section className={`${card} space-y-3`}>
@@ -287,9 +274,6 @@ export function EncountersPanel({
                   onClick={() => deploy(encounter)}
                 >
                   deploy
-                </button>
-                <button className={btn} disabled={busy} onClick={() => clear(encounter)}>
-                  clear
                 </button>
               </div>
 

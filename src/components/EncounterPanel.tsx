@@ -140,8 +140,8 @@ export function EncounterPanel({
   /** Who hasn't reported a roll yet — null is "hasn't", not a real 0. */
   const waiting = initiative.filter((e) => typeof e.score !== 'number');
 
-  const unlisted = characters.filter(
-    (c) => !initiative.some((e) => e.characterId === c.id),
+  const unlistedPcs = characters.filter(
+    (c) => c.kind === 'pc' && !initiative.some((e) => e.characterId === c.id),
   );
 
   return (
@@ -435,42 +435,30 @@ export function EncounterPanel({
       <QuickSpawn npcs={npcs} onSpawn={onSpawn} />
 
       {/*
-        These are NOT the bestiary above, and they used to look exactly
-        like it — identical chips, side by side, doing opposite things.
-        Bestiary "+ Bark Watcher" STAMPS OUT a new creature; here
-        "+ Bark Watcher 1" puts one that already exists into the order.
-        Hitting the wrong one mid-fight spawns a monster.
+        Only people. Foes arrive in the order already — deploy seats what
+        it stamps, and a bestiary spawn does the same — so a foe down
+        here would mean something went wrong, not something to tidy up.
 
-        So: its own labelled section, split by who they are, because a
-        missing player and a missing monster are different oversights.
+        These are NOT the bestiary search above: that STAMPS OUT a new
+        creature, this seats one that already exists. They used to be
+        identical chips side by side, and hitting the wrong one mid-fight
+        spawned a monster.
       */}
-      {unlisted.length > 0 && (
-        <div className="space-y-2 rounded-md bg-stone-900/60 px-2 py-2">
-          <span className={sectionLabel}>On the table, not in the order</span>
-          {(
-            [
-              { label: 'players', of: unlisted.filter((c) => c.kind === 'pc') },
-              { label: 'foes', of: unlisted.filter((c) => c.kind !== 'pc') },
-            ] as const
-          )
-            .filter((group) => group.of.length > 0)
-            .map((group) => (
-              <div key={group.label} className="flex flex-wrap items-center gap-1.5">
-                <span className="w-14 shrink-0 font-mono text-[10px] uppercase tracking-wide text-stone-600">
-                  {group.label}
-                </span>
-                {group.of.map((c) => (
-                  <button
-                    key={c.id}
-                    className={btnGhost}
-                    onClick={() => addEntry(c.name, c.id)}
-                    title={`put ${c.name} in the turn order`}
-                  >
-                    + {c.name}
-                  </button>
-                ))}
-              </div>
+      {unlistedPcs.length > 0 && (
+        <div className="space-y-1.5 rounded-md bg-stone-900/60 px-2 py-2">
+          <span className={sectionLabel}>Not in the order yet</span>
+          <div className="flex flex-wrap gap-1.5">
+            {unlistedPcs.map((c) => (
+              <button
+                key={c.id}
+                className={btnGhost}
+                onClick={() => addEntry(c.name, c.id)}
+                title={`put ${c.name} in the turn order`}
+              >
+                + {c.name}
+              </button>
             ))}
+          </div>
         </div>
       )}
 

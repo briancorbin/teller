@@ -235,7 +235,6 @@ export const api = {
     req<{
       characters: Character[];
       missing: string[];
-      cleared: number;
       /** What each foe rolled for turn order, by character id. */
       rolls: Record<string, { total: number; faces: string[] }>;
     }>(
@@ -249,12 +248,6 @@ export const api = {
       method: 'POST',
     }),
 
-  /** Take it back off — every creature it put there, and their markers. */
-  clearEncounter: (campaignId: string, encounterId: string) =>
-    req<{ cleared: number }>(
-      `/api/campaigns/${campaignId}/encounters/${encounterId}/clear`,
-      { method: 'POST' },
-    ),
 
   duplicateCharacter: (id: string) =>
     req<Character>(`/api/characters/${id}/duplicate`, { method: 'POST' }),
