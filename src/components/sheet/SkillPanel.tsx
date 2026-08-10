@@ -54,21 +54,29 @@ function Starburst({ size = 14 }: { size?: number }) {
   );
 }
 
-/** One die in the pool, as a box you can count. */
-function DieBox({ kind, index }: { kind: string; index: number }) {
-  // The first declared die is the plain one; anything after it is the
-  // upgraded kind. Which is which comes from the system's own ordering,
-  // not from knowing that WiW calls them Black and Gold.
-  const upgraded = index > 0;
+/**
+ * One slot on the track.
+ *
+ * The printed sheet draws the WHOLE track and you write the die's letter
+ * into each slot you own. That distinction is the whole point: an empty
+ * slot and a slot that doesn't exist have to look different, and a
+ * player should be able to see "three of a possible six" without
+ * counting anything.
+ */
+function Slot({ die, bonus }: { die?: string; bonus?: boolean }) {
   return (
     <span
-      title={kind}
-      className={`h-4 w-4 shrink-0 rounded-[2px] border ${
-        upgraded
-          ? 'border-amber-400 bg-amber-500'
-          : 'border-stone-300 bg-stone-200'
+      className={`flex h-[1.35rem] w-[1.15rem] shrink-0 items-center justify-center rounded-[2px] border font-serif text-[0.8rem] italic leading-none ${
+        die
+          ? 'border-stone-200 bg-stone-200 text-stone-900'
+          : bonus
+            ? 'border-stone-500 bg-stone-800/40 text-transparent'
+            : 'border-stone-400 bg-transparent text-transparent'
       }`}
-    />
+      title={die ? die : 'empty'}
+    >
+      {die ?? '·'}
+    </span>
   );
 }
 
@@ -79,11 +87,19 @@ function SkillRow({
   field: Field;
   dice?: SystemTemplate['dice'];
 }) {
-  const kinds = dice ? Object.keys(dice.faces) : [];
   const pool = dice ? parsePool(field.value ?? '', dice.faces) : [];
+  // The dice this character owns, spread out one per slot, in the order
+  // the value was written: "3B1G" → B B B G.
+  const owned = pool.flatMap(({ die, count }) => Array.from({ length: count }, () => die));
+  const track = dice?.track ?? 0;
+  // A track only for things that ARE pools. "Marshal" and "Normal" live
+  // in these rows too, and a declared track was drawing them six empty
+  // boxes and throwing the word away.
+  const slots = owned.length ? Math.max(track, owned.length) : 0;
+  const bonus = dice?.trackBonus ?? 0;
 
   return (
-    <div className="flex items-start gap-2.5 py-1">
+    <div className="flex items-center gap-2.5 py-1">
       {/* Name right-aligned against the rule, as printed. */}
       <div className="w-[6.5rem] shrink-0 text-right">
         <div className="text-[clamp(0.8rem,4cqw,1.15rem)] font-bold uppercase leading-tight tracking-wide text-amber-500">
@@ -94,25 +110,25 @@ function SkillRow({
       <div className="w-px self-stretch bg-stone-600" />
 
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-        {pool.length > 0 ? (
-          pool.map(({ die, count }, i) => (
-            <span key={die} className="flex items-center gap-1">
-              {i > 0 && <Starburst />}
-              {Array.from({ length: count }, (_, n) => (
-                <DieBox key={n} kind={die} index={kinds.indexOf(die)} />
-              ))}
-            </span>
-          ))
+        {slots > 0 ? (
+          <>
+            {Array.from({ length: slots }, (_, i) => (
+              <Slot key={i} die={owned[i]} />
+            ))}
+            {bonus > 0 && (
+              <>
+                <Starburst />
+                {Array.from({ length: bonus }, (_, i) => (
+                  <Slot key={`b${i}`} die={owned[slots + i]} bonus />
+                ))}
+              </>
+            )}
+          </>
         ) : (
           // Not every stat is a pool — Trade says "Marshal", Speed says
           // "Normal". Those get their words, not an empty track.
           <span className="break-words font-mono text-sm text-stone-200">
             {field.value || '—'}
-          </span>
-        )}
-        {pool.length > 0 && (
-          <span className="ml-1 font-mono text-[11px] text-stone-500">
-            {field.value}
           </span>
         )}
       </div>
@@ -134,10 +150,11 @@ export function SkillPanel({
 
   return (
     <section
-      // `self-start` so the panel hugs its rows. On paper it's a fixed
-      // block near the top of the page, not a column that grows to meet
-      // the bottom of the sheet.
-      className="relative self-start rounded-md border border-stone-600/80 p-3"
+      // Full width of whatever column it's in; hugging the CONTENT is the
+      // parent's job. `self-start` here meant align-self on the cross
+      // axis, which in a flex column is horizontal — the panel collapsed
+      // to a sliver and every die box wrapped onto its own line.
+      className="relative w-full rounded-md border border-stone-600/80 p-3"
       style={{ containerType: 'inline-size' }}
     >
       {/* The printed panel is a ruled box with a centred heading between

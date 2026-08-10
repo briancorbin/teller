@@ -143,10 +143,29 @@ function SheetGauge({
   );
 }
 
-export function Sheet({ counters, onChange, fields = [], dice }: CounterViewProps) {
+export function Sheet({
+  counters,
+  onChange,
+  fields = [],
+  dice,
+  groups,
+}: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
+
+  // The sheet's SKILLS panel is a declared set, not "every stat" — see
+  // `SystemTemplate.groups`. Anything outside it still has to appear
+  // somewhere, so the leftovers keep a strip of their own until they get
+  // the homes the page gives them (Trade names the character, Defense
+  // sits beside Health).
+  const skillKeys = groups?.skills;
+  const skills = skillKeys
+    ? skillKeys
+        .map((key) => fields.find((f) => f.key === key))
+        .filter((f): f is NonNullable<typeof f> => Boolean(f))
+    : fields;
+  const rest = skillKeys ? fields.filter((f) => !skillKeys.includes(f.key)) : [];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
@@ -157,7 +176,26 @@ export function Sheet({ counters, onChange, fields = [], dice }: CounterViewProp
         // which is the one liberty paper doesn't have to take.
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(15rem, 1fr))' }}
       >
-        <SkillPanel fields={fields} dice={dice} />
+        <div className="flex flex-col gap-2 self-start">
+          <SkillPanel fields={skills} dice={dice} />
+          {rest.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {rest.map((field) => (
+                <span
+                  key={field.key}
+                  className="rounded-md bg-stone-900 px-2 py-1 text-xs"
+                >
+                  <span className="font-mono text-stone-100">
+                    {field.value || '—'}
+                  </span>
+                  <span className="ml-1 uppercase tracking-wider text-stone-500">
+                    {field.label}
+                  </span>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
 
         {gauges.length > 0 && (
           <section className="flex min-h-0 flex-col gap-1.5" style={{ containerType: 'inline-size' }}>

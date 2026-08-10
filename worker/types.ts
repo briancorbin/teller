@@ -443,6 +443,22 @@ export type SystemTemplate = {
     reroll?: string[];
     /** What a total is CALLED here — "Hits", "successes", "total". */
     unit?: string;
+    /**
+     * How many die slots a skill has on this system's sheet.
+     *
+     * A printed sheet draws the WHOLE track and you write a letter into
+     * each slot you own, so an empty slot and a slot that doesn't exist
+     * look different. Rendering only the dice a character HAS loses
+     * that: "3 of a possible 6" and "3, and that's all there is" become
+     * the same picture.
+     *
+     * Structure, not prose, so it's fair game for a template (rule 4).
+     * Absent means "no fixed track" and a pool renders as just its own
+     * dice — which is right for a system that doesn't work this way.
+     */
+    track?: number;
+    /** Slots past the track's mark, if the sheet prints any. */
+    trackBonus?: number;
   };
   /**
    * Which field decides turn order, when the table wants teller to roll.
@@ -450,6 +466,21 @@ export type SystemTemplate = {
    * manual — which is still a perfectly good way to run a fight.
    */
   initiative?: { field: string; highWins?: boolean };
+  /**
+   * Which fields belong to which block of this system's sheet.
+   *
+   * Arrangement, and it can't be inferred. WiW's SKILLS panel holds
+   * exactly Charm, Finesse, Intuition and Nerve — Defense is a die pool
+   * too but sits beside Health, Trade is the name at the top of the
+   * page, and Speed is a word. No heuristic separates those; the sheet
+   * simply says so, and so does this.
+   *
+   * Structure rather than prose, so a template is the right home for it
+   * (rule 4). A block nobody declares just isn't rendered, and fields in
+   * no block still show up in the card's general stat strip — nothing
+   * disappears for want of a declaration.
+   */
+  groups?: Record<string, string[]>;
 };
 
 // --- Rules packs ------------------------------------------------------------

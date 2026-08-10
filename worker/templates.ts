@@ -122,7 +122,13 @@ const wiw: SystemTemplate = {
     },
     values: { hit: 1, ace: 2, blank: 0, spur: 0 },
     unit: 'Hits',
+    // Six slots and one past the mark, as printed on the sheet.
+    track: 6,
+    trackBonus: 1,
   },
+  // The sheet's SKILLS panel, exactly. Defense is a pool as well but
+  // belongs beside Health; Trade names the character; Speed is a word.
+  groups: { skills: ['charm', 'finesse', 'intuition', 'nerve'] },
   // Guidebook, Turn Order: "the Warden will ask the players to roll with
   // Finesse to determine turn order. The player with the highest number
   // of Hits will go first."

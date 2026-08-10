@@ -27,6 +27,8 @@ export type CounterViewProps = {
    * whatever faces the system says it has (rule 2).
    */
   dice?: SystemTemplate['dice'];
+  /** Which fields belong to which block of the sheet, when declared. */
+  groups?: SystemTemplate['groups'];
 };
 
 /** Clamped to [0, max]. A counter never goes negative or past its ceiling. */
