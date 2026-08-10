@@ -18,6 +18,13 @@ import type { PackEntry } from '../../../worker/types';
 // rule, and a disclosure that grows the card is a disclosure that either
 // scrolls it or makes `FitBox` shrink everything else the moment someone
 // taps. Absolute positioning keeps the card exactly the size it was.
+//
+// **The thing itself is the target — there is no ⓘ.** A dot cost a
+// column in every panel that used one, and made the smallest thing in
+// the row the one carrying the rules text. Tapping the name is a bigger
+// target, needs no legend, and leaves the row exactly as wide as its
+// content. A name with nothing behind it is simply not a button, which
+// is also how a player learns which ones have more to say.
 
 export function InfoPopover({
   entry,
@@ -83,30 +90,5 @@ export function InfoPopover({
         {entry.text}
       </p>
     </div>
-  );
-}
-
-/** The affordance that opens one. Rendered only when there's text to show. */
-export function InfoDot({
-  onClick,
-  open,
-  label,
-}: {
-  onClick: () => void;
-  open: boolean;
-  label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={`what does ${label} do`}
-      aria-expanded={open}
-      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs transition-colors ${
-        open ? 'bg-stone-700 text-stone-100' : 'text-stone-500 hover:bg-stone-800 hover:text-stone-200'
-      }`}
-    >
-      ⓘ
-    </button>
   );
 }

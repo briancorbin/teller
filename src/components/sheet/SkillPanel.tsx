@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Field, PackEntry, SystemTemplate } from '../../../worker/types';
 import { parsePool } from '../../../worker/dice';
-import { InfoDot, InfoPopover } from './InfoPopover';
+import { InfoPopover } from './InfoPopover';
 import { SheetPanel } from './SheetPanel';
 
 // The skills block, arranged like the printed sheet.
@@ -110,15 +110,31 @@ function SkillRow({
 
   return (
     <div className="flex items-center gap-2.5 py-1">
-      {/* Name right-aligned against the rule, as printed. */}
-      <div className="w-[6.5rem] shrink-0 text-right">
-        <div
-          className="text-[clamp(0.8rem,4cqw,1.15rem)] font-bold uppercase leading-tight tracking-wide"
+      {/* Name right-aligned against the rule, as printed — and it IS the
+          disclosure. The sheet prints "convince, barter, intimidate,
+          calm" under each skill; that's the publisher's prose, so it can
+          only come from a pack, and when one supplies it the words
+          arrive on tap rather than on the card. That keeps the panel the
+          same height on a phone as on a rail.
+
+          The name rather than a separate ⓘ: the dot cost a column and
+          made the smallest target in the row the one carrying the text.
+          No entry, no target — the name just stops being a button. */}
+      <button
+        type="button"
+        disabled={!entry?.text}
+        onClick={onToggleInfo}
+        aria-expanded={open}
+        aria-label={entry?.text ? `what does ${field.label} do` : field.label}
+        className="w-[6.5rem] shrink-0 rounded px-1 py-0.5 text-right transition-colors enabled:hover:bg-stone-800/60 disabled:cursor-default"
+      >
+        <span
+          className="block break-words text-[clamp(0.8rem,4cqw,1.15rem)] font-bold uppercase leading-tight tracking-wide"
           style={{ color: 'var(--sheet-accent, #f59e0b)' }}
         >
           {field.label}
-        </div>
-      </div>
+        </span>
+      </button>
 
       <div className="w-px self-stretch bg-stone-600" />
 
@@ -145,17 +161,6 @@ function SkillRow({
           </span>
         )}
       </div>
-
-      {/* The sheet prints "convince, barter, intimidate, calm" under each
-          skill. That's the publisher's prose, so it can only come from a
-          pack — and when one supplies it, it arrives on tap rather than
-          on the card, which is what keeps the panel the same height on a
-          phone as on a rail. No entry, no dot. */}
-      {entry?.text ? (
-        <InfoDot onClick={onToggleInfo} open={open} label={field.label} />
-      ) : (
-        <span className="h-6 w-6 shrink-0" aria-hidden="true" />
-      )}
     </div>
   );
 }
