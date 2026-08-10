@@ -243,7 +243,12 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       characters: chars.results.map((r) => toCharacter(r as never)),
       // The whole shelf: what your packs bring plus what this campaign
       // wrote itself, with the campaign's own version winning.
-      bestiary: await bestiaryFor(env, campaign.system, campaign.data.npcs ?? []),
+      bestiary: await bestiaryFor(
+        env,
+        campaign.system,
+        campaign.data.npcs ?? [],
+        campaign.data.foePicks ?? {},
+      ),
     });
   }
 
@@ -659,6 +664,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       npcs: body.data?.npcs ?? campaign.data.npcs,
       encounters: body.data?.encounters ?? campaign.data.encounters,
       books: body.data?.books ?? campaign.data.books,
+      foePicks: body.data?.foePicks ?? campaign.data.foePicks,
       reference: body.data?.reference ?? campaign.data.reference,
       activeHandoutId:
         body.data?.activeHandoutId !== undefined
@@ -938,7 +944,12 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (!encounter) return err('encounter not found', 404);
 
     const cleared = await clearEncounter(env, campaign, encounterId);
-    const bestiary = await bestiaryFor(env, campaign.system, campaign.data.npcs ?? []);
+    const bestiary = await bestiaryFor(
+      env,
+      campaign.system,
+      campaign.data.npcs ?? [],
+      campaign.data.foePicks ?? {},
+    );
     const byId = new Map(bestiary.map((n) => [n.id, n]));
 
     // Number only what repeats: three of one blueprint become "1..3",
@@ -1062,6 +1073,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       campaign.system,
       campaign.data.npcs ?? [],
       body.npcId ?? '',
+      campaign.data.foePicks ?? {},
     );
     if (!blueprint) return err('npc not found', 404);
     const count = Math.min(20, Math.max(1, Math.round(body.count ?? 1)));

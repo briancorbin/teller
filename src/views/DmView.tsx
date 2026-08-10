@@ -298,6 +298,13 @@ export function DmView({
       ],
     });
   };
+  /** Say which printing of a foe this table uses (rule 1 over pack order). */
+  const pickFoeSource = (npcId: string, packId: string) => {
+    const foePicks = { ...(campaign?.data.foePicks ?? {}), [npcId]: packId };
+    setCampaign((prev) => (prev ? { ...prev, data: { ...prev.data, foePicks } } : prev));
+    api.patchCampaign(campaignId, { data: { foePicks } }).catch(() => refetch());
+  };
+
   // Stamp out a group, put it in the order, and get it onto the map —
   // one tap, because that's the moment a fight starts.
   const spawnGroup = async (npcId: string, count: number) => {
@@ -397,7 +404,12 @@ export function DmView({
           <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
           {paneNav}
         </div>
-        <BestiaryPanel npcs={bestiary} onSpawn={spawnGroup} />
+        <BestiaryPanel
+          npcs={bestiary}
+          onSpawn={spawnGroup}
+          picks={campaign.data.foePicks}
+          onPick={pickFoeSource}
+        />
       </main>
     );
   }

@@ -305,6 +305,18 @@ export type CampaignData = {
   /** Prepared fights — see `Encounter`. Most of what a module is made of. */
   encounters?: Encounter[];
   /**
+   * Which printing of a foe this table uses, when more than one pack
+   * carries it: npc id → pack id.
+   *
+   * A core bestiary and the adventure that reprints it are the common
+   * case, and they're usually identical — but when they aren't, the
+   * choice is the Warden's, not pack-sort-order's (rule 1). Absent
+   * means "whichever pack sorts first", which is the default, not a
+   * decision. An entry naming a pack that's since gone falls back to
+   * that default rather than breaking the foe.
+   */
+  foePicks?: Record<string, string>;
+  /**
    * Books this table expects, by content hash.
    *
    * The host owns the shelf; this says which of it matters HERE, so a

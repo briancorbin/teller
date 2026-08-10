@@ -26,9 +26,15 @@ function matches(npc: SourcedNpc, needle: string): boolean {
 export function BestiaryPanel({
   npcs,
   onSpawn,
+  picks,
+  onPick,
 }: {
   npcs: SourcedNpc[];
   onSpawn: (npcId: string, count: number) => void;
+  /** npc id → pack id this table uses, when a foe is printed twice. */
+  picks?: Record<string, string>;
+  /** Absent on a surface that may look but not decide. */
+  onPick?: (npcId: string, packId: string) => void;
 }) {
   const { books } = useBooks();
   const [query, setQuery] = useState('');
@@ -134,7 +140,8 @@ export function BestiaryPanel({
                     <button className={btnPrimary} onClick={() => onSpawn(npc.id, count)}>
                       add {count > 1 ? `${count} ` : ''}to the fight
                     </button>
-                    {book && (
+                    {/* One printing: the page is just a link. */}
+                    {book && (npc.sources?.length ?? 0) < 2 && (
                       <button
                         className={`${btnGhost} text-[11px] text-amber-400/90`}
                         onClick={() =>
@@ -145,6 +152,67 @@ export function BestiaryPanel({
                       </button>
                     )}
                   </div>
+
+                  {/* Printed more than once — a core bestiary and the
+                      adventure that reprints it. Show every printing and
+                      let the Warden say which one this table uses; the
+                      others stay one tap away. */}
+                  {(npc.sources?.length ?? 0) > 1 && (
+                    <div className="space-y-1 border-t border-stone-800 pt-2">
+                      <div className="font-mono text-[10px] uppercase tracking-wide text-stone-600">
+                        printed in {npc.sources!.length} books
+                      </div>
+                      {npc.sources!.map((s, i) => {
+                        const src = books.find((b) => b.id === s.book);
+                        // No pick stored means the default: the first.
+                        const chosen = picks?.[npc.id]
+                          ? picks[npc.id] === s.packId
+                          : i === 0;
+                        return (
+                          <div key={s.packId} className="flex items-center gap-2">
+                            {onPick ? (
+                              <button
+                                className={`${btnGhost} font-mono text-[11px] ${
+                                  chosen ? 'text-amber-400' : 'text-stone-600'
+                                }`}
+                                onClick={() => onPick(npc.id, s.packId)}
+                                title={
+                                  chosen
+                                    ? 'this printing is the one this table uses'
+                                    : 'use this printing instead'
+                                }
+                                aria-pressed={chosen}
+                              >
+                                {chosen ? '●' : '○'} {s.pack}
+                              </button>
+                            ) : (
+                              <span className="font-mono text-[11px] text-stone-500">
+                                {s.pack}
+                              </span>
+                            )}
+                            {src && s.page ? (
+                              <button
+                                className={`${btnGhost} ml-auto text-[11px] text-amber-400/90`}
+                                onClick={() =>
+                                  setReading({
+                                    bookId: src.id,
+                                    page: s.page!,
+                                    name: src.name,
+                                  })
+                                }
+                              >
+                                {src.name} · p.{s.page} →
+                              </button>
+                            ) : (
+                              <span className="ml-auto font-mono text-[11px] text-stone-700">
+                                {s.book ? 'book not on this host' : 'no page'}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
             </li>

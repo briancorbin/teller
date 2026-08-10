@@ -13,9 +13,25 @@ import type { CharacterData, NpcBlueprint, Placement } from './types';
 // so retuning a foe's Health for your table survives the pack being
 // updated underneath it.
 
+/**
+ * One place a foe is printed. The same creature appears in more than one
+ * book all the time — a core bestiary and the adventure that reprints it
+ * — and each printing has its own page. Keeping them all is what lets
+ * the console offer "Guidebook p.160 · Unlikely Duo p.36" instead of
+ * silently picking one and throwing the other away.
+ */
+export type NpcSource = {
+  packId: string;
+  pack: string;
+  book?: string;
+  page?: number;
+};
+
 export type SourcedNpc = NpcBlueprint & {
-  /** Which pack it came from, or undefined for the campaign's own. */
+  /** Which pack the WINNING copy came from; undefined for the campaign's own. */
   from?: string;
+  /** Every pack that carries this id, in merge order. */
+  sources?: NpcSource[];
 };
 
 /**
@@ -30,12 +46,16 @@ export async function bestiaryFor(
   env: Env,
   system: string,
   own: NpcBlueprint[] = [],
+  /** npc id → pack id the DM chose, when a foe is printed more than once. */
+  picks: Record<string, string> = {},
 ): Promise<SourcedNpc[]> {
   const rows = await env.DB.prepare('SELECT * FROM packs WHERE system = ? ORDER BY name')
     .bind(system)
     .all();
 
-  const byId = new Map<string, SourcedNpc>();
+  // Every printing, kept. Which one WINS is decided after, so that a
+  // pick can name a pack that happens to sort last.
+  const printings = new Map<string, { entry: SourcedNpc; source: NpcSource }[]>();
   for (const row of rows.results) {
     const record = toPackRecord(row as never);
     // A foe printed in a book belongs to that book. The pack knows which
@@ -44,13 +64,40 @@ export async function bestiaryFor(
     // named its own book.
     const book = record.pack.books?.[0];
     for (const npc of record.pack.npcs ?? []) {
-      // First pack wins over a later one; both lose to the campaign.
-      if (!byId.has(npc.id)) {
-        byId.set(npc.id, { ...npc, book: npc.book ?? book, from: record.pack.name });
-      }
+      const entry: SourcedNpc = {
+        ...npc,
+        book: npc.book ?? book,
+        from: record.pack.name,
+      };
+      const source: NpcSource = {
+        packId: record.id,
+        pack: record.pack.name,
+        book: entry.book,
+        page: npc.page,
+      };
+      const list = printings.get(npc.id);
+      if (list) list.push({ entry, source });
+      else printings.set(npc.id, [{ entry, source }]);
     }
   }
-  for (const npc of own) byId.set(npc.id, npc);
+
+  const byId = new Map<string, SourcedNpc>();
+  for (const [id, list] of printings) {
+    // The DM's pick outranks pack order (rule 1). An unresolvable pick —
+    // a pack since deleted or renamed — falls back rather than erroring:
+    // the foe still works, it's just the default printing again.
+    const picked = list.find((p) => p.source.packId === picks[id]);
+    const win = picked ?? list[0];
+    byId.set(id, { ...win.entry, sources: list.map((p) => p.source) });
+  }
+
+  // The campaign's own copy always wins the STATS — but it keeps the
+  // pack sources, so a retuned foe can still say where it came from and
+  // still open the page it was printed on.
+  for (const npc of own) {
+    const sources = printings.get(npc.id)?.map((p) => p.source);
+    byId.set(npc.id, sources?.length ? { ...npc, sources } : npc);
+  }
 
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -102,6 +149,7 @@ export async function findBlueprint(
   system: string,
   own: NpcBlueprint[],
   npcId: string,
+  picks: Record<string, string> = {},
 ): Promise<NpcBlueprint | undefined> {
-  return (await bestiaryFor(env, system, own)).find((n) => n.id === npcId);
+  return (await bestiaryFor(env, system, own, picks)).find((n) => n.id === npcId);
 }
