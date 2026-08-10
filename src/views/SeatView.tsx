@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Campaign, Character, CharacterData, PackRecord } from '../../worker/types';
+import type {
+  Campaign,
+  Character,
+  CharacterData,
+  PackRecord,
+  SystemTemplate,
+} from '../../worker/types';
 import { api } from '../lib/api';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
@@ -22,6 +28,10 @@ export function SeatView({ characterId }: { characterId: string }) {
   const [packs, setPacks] = useState<PackRecord[]>([]);
   const [error, setError] = useState('');
   const lookup = useRuleLookup(packs);
+  /** This system's dice — the faces are what the tally offers. */
+  const [template, setTemplate] = useState<SystemTemplate | null>(null);
+  /** Faces tapped so far this roll, e.g. { hit: 2, ace: 1 }. */
+  const [tally, setTally] = useState<Record<string, number>>({});
 
   const refetch = useCallback(() => {
     api
@@ -36,6 +46,16 @@ export function SeatView({ characterId }: { characterId: string }) {
   }, [characterId]);
 
   useEffect(refetch, [refetch]);
+
+  // The dice belong to the system, and `/api/templates` is open — a seat
+  // needs no key to learn what a die in this game looks like.
+  useEffect(() => {
+    if (!campaign) return;
+    api
+      .templates()
+      .then((all) => setTemplate(all.find((t) => t.system === campaign.system) ?? null))
+      .catch(() => setTemplate(null));
+  }, [campaign?.system]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useWakeLock();
   const { session, connected } = useSession(character?.campaignId ?? null, (id) => {
@@ -91,6 +111,28 @@ export function SeatView({ characterId }: { characterId: string }) {
       .catch(() => {});
   };
 
+  // The distinct faces this system's dice can show, and what each is
+  // worth. Tapping faces beats typing a total: the arithmetic ("an Ace
+  // is two") is the bit that gets miscounted at the table, and it means
+  // teller never has to know about your bonuses — you already applied
+  // them by picking up more dice.
+  const dice = template?.dice;
+  const faceList = dice
+    ? [...new Set(Object.values(dice.faces).flat())].sort(
+        (a, b) => (dice.values[b] ?? 0) - (dice.values[a] ?? 0),
+      )
+    : [];
+  const tallyTotal = Object.entries(tally).reduce(
+    (n, [face, count]) => n + (dice?.values[face] ?? 0) * count,
+    0,
+  );
+  const tapped = Object.values(tally).reduce((n, c) => n + c, 0);
+  /** What their sheet says, as a reminder — never as the truth. */
+  const basePool = template?.initiative
+    ? (character.data.fields.find((f) => f.key === template.initiative!.field)?.value ??
+      '')
+    : '';
+
   return (
     <main
       className={`mx-auto flex min-h-screen max-w-2xl flex-col gap-4 p-4 ${
@@ -117,33 +159,83 @@ export function SeatView({ characterId }: { characterId: string }) {
 
       {takingRolls && (
         <section className="shrink-0 rounded-lg bg-amber-950/40 p-3 ring-1 ring-amber-800">
-          <p className="text-sm text-amber-200">
-            Roll for turn order — tap what you got.
-          </p>
-          {/*
-            Big targets, because this gets tapped on a rail panel with a
-            fingertip mid-conversation. 0 is a real answer and has to be
-            as reachable as any other.
-          */}
+          <div className="flex items-baseline gap-2">
+            <p className="text-sm text-amber-200">
+              Roll for turn order — tap each die you rolled.
+            </p>
+            {basePool && (
+              <span className="font-mono text-[11px] text-stone-500">
+                sheet says {basePool} · roll any bonus dice too
+              </span>
+            )}
+          </div>
+
+          {/* Big targets: this gets tapped with a fingertip, on a rail
+              panel, mid-conversation. */}
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {Array.from({ length: 13 }, (_, n) => (
+            {faceList.map((face) => (
               <button
-                key={n}
-                className={`min-w-11 rounded-md px-3 py-2 font-mono text-lg ${
-                  mine?.score === n
-                    ? 'bg-amber-600 text-stone-950'
-                    : 'bg-stone-800 text-stone-200 active:bg-stone-700'
-                }`}
-                onClick={() => submitRoll(n)}
+                key={face}
+                className="min-w-20 rounded-md bg-stone-800 px-3 py-2 text-left active:bg-stone-700"
+                // The count and the face read as separate scraps of text
+                // otherwise, so the button has no name at all in the
+                // accessibility tree — spotted by reading the tree rather
+                // than the screenshot.
+                aria-label={`add a ${face} — you have ${tally[face] ?? 0}`}
+                onClick={() => setTally((t) => ({ ...t, [face]: (t[face] ?? 0) + 1 }))}
               >
-                {n}
+                <span className="font-mono text-lg text-stone-100">
+                  {tally[face] ?? 0}
+                </span>
+                <span className="ml-1.5 text-xs text-stone-400">{face}</span>
+                <span className="ml-1 text-[10px] text-stone-600">
+                  {(dice?.values[face] ?? 0) === 0 ? '·0' : `·${dice?.values[face]}`}
+                </span>
               </button>
             ))}
           </div>
+
+          <div className="mt-2 flex items-center gap-3">
+            <span className="font-mono text-2xl text-amber-300">
+              {tallyTotal}
+              <span className="ml-1 text-xs text-stone-500">
+                {dice?.unit ?? 'total'}
+              </span>
+            </span>
+            <button
+              className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
+              disabled={!tapped}
+              onClick={() => {
+                submitRoll(tallyTotal);
+                setTally({});
+              }}
+            >
+              that's my roll
+            </button>
+            {tapped > 0 && (
+              <button
+                className="text-xs text-stone-500 underline-offset-2 hover:underline"
+                onClick={() => setTally({})}
+              >
+                clear
+              </button>
+            )}
+            {/* A blank roll is a real outcome, and tapping four Blanks to
+                say so would be silly. */}
+            {!tapped && (
+              <button
+                className="text-xs text-stone-500 underline-offset-2 hover:underline"
+                onClick={() => submitRoll(0)}
+              >
+                I rolled nothing
+              </button>
+            )}
+          </div>
+
           {typeof mine?.score === 'number' && (
             <p className="mt-2 text-xs text-stone-400">
-              You reported <span className="text-amber-300">{mine.score}</span> —
-              tap another number to correct it.
+              Reported <span className="text-amber-300">{mine.score}</span> — tap a
+              new roll to correct it.
             </p>
           )}
         </section>
