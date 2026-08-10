@@ -94,19 +94,31 @@ export function SheetPanel({
       <Corner at="bl" />
       <Corner at="br" />
 
-      <header className="mb-1.5 flex items-center justify-center gap-1.5 px-2">
-        <Dart />
-        <h2 className="whitespace-nowrap font-serif text-[clamp(0.75rem,3.4cqw,1.05rem)] font-bold uppercase tracking-[0.14em] text-stone-100">
-          {title}
-        </h2>
-        <Dart flip />
-      </header>
+      {/* One block, so the gap between heading and caption is set once
+          and every panel gets the same one — and one margin below it, so
+          the gap from caption to content matches too.
 
-      {note && (
-        <p className="mb-1.5 text-center font-serif text-[clamp(0.6rem,2.4cqw,0.8rem)] italic text-stone-400">
-          {note}
-        </p>
-      )}
+          The sizes are FIXED rather than `cqw`. Every panel is its own
+          container, so container units sized each heading from its own
+          column: Health is the widest of the three and its title came
+          out visibly larger than the two beside it. A heading is chrome,
+          not content — it should read the same everywhere on the card,
+          and `FitBox` is what adapts the whole thing to the glass. */}
+      <div className="mb-2">
+        <header className="flex items-center justify-center gap-1.5 px-2">
+          <Dart />
+          <h2 className="whitespace-nowrap font-serif text-[1rem] font-bold uppercase leading-tight tracking-[0.14em] text-stone-100">
+            {title}
+          </h2>
+          <Dart flip />
+        </header>
+
+        {note && (
+          <p className="mt-1 text-center font-serif text-[0.75rem] italic leading-snug text-stone-400">
+            {note}
+          </p>
+        )}
+      </div>
 
       {children}
     </section>
