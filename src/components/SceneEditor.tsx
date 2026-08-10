@@ -163,6 +163,26 @@ export function SceneEditor({
     setPlacementDraft(JSON.parse(incoming) as Placement[]);
   }, [incoming]);
 
+  // Adopt a scene that changed UNDER us.
+  //
+  // `draft` is seeded once, so anything the server adds while this pane
+  // is open was invisible here — deploy would drop four tokens onto the
+  // map and the editor would still show none. Worse, the next pan
+  // committed the stale draft back and DELETED them: an edit made
+  // somewhere else, silently undone by looking at the map.
+  //
+  // Our own commits echo back through this prop, so adopting blindly
+  // would fight the person typing. The echo is recognisable — it equals
+  // what we last sent — and anything else came from elsewhere and wins.
+  const lastSentRef = useRef<string>(JSON.stringify(scene));
+  const incomingScene = JSON.stringify(scene);
+  useEffect(() => {
+    if (incomingScene === lastSentRef.current) return;
+    if (dragRef.current) return; // never yank the map out from under a finger
+    lastSentRef.current = incomingScene;
+    setDraft(JSON.parse(incomingScene) as Scene);
+  }, [incomingScene]);
+
   const setPlacement = (id: string, patch: Partial<Placement>) => {
     const next = placementsRef.current.map((p) =>
       p.id === id ? { ...p, ...patch } : p,
@@ -193,6 +213,9 @@ export function SceneEditor({
   const commit = (next: Scene) => {
     draftRef.current = next;
     setDraft(next);
+    // Remember what we sent, so the echo of this edit isn't mistaken for
+    // someone else's and adopted back over the next keystroke.
+    lastSentRef.current = JSON.stringify(next);
     onChange(next);
   };
   /** Local (not yet sent) edit — committed to the wire on pointer up. */
