@@ -1,6 +1,7 @@
 import type { Counter, Field } from '../../../worker/types';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
+import { Screens } from '../sheet/Screens';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
 import { TradePlate } from '../sheet/TradePlate';
@@ -151,7 +152,7 @@ function SheetGauge({
             <Value
               counter={counter}
               className="leading-none"
-              style={{ fontSize: 'clamp(1.25rem, 26cqw, 3.5rem)' }}
+              style={{ fontSize: '2rem' }}
             />
           </div>
           <Bar counter={counter} thick />
@@ -190,6 +191,7 @@ export function Sheet({
   conditionsLabel = 'Conditions',
   lookup,
   note,
+  strip = false,
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -259,42 +261,56 @@ export function Sheet({
       !allPinned.has(f.key),
   );
 
-  const plain = designed
-    ? []
-    : gauges.filter((c) => !pinnedTo(c).length && !dialled.includes(c));
+  /**
+   * Counters and stats with no block of their own yet.
+   *
+   * On a designed sheet these move to a screen of their own rather than
+   * being hidden — which is the whole reason the seat became several
+   * screens. On an undeclared one they stay where they always were, on
+   * the only screen there is.
+   */
+  const homeless = gauges.filter(
+    (c) => !pinnedTo(c).length && !dialled.includes(c),
+  );
+  const plain = designed ? [] : homeless;
   const strays = designed ? [] : tallies;
+  const spare = designed
+    ? { gauges: homeless, tallies, fields: rest }
+    : { gauges: [], tallies: [], fields: [] };
+  const hasSpare =
+    spare.gauges.length + spare.tallies.length + spare.fields.length > 0;
 
-  return (
-    // The accent rides on a CSS variable rather than a prop threaded
-    // through every box: a themed sheet tints a dozen small things, and
-    // passing a colour to each of them is how one gets missed.
-    <div
-      className="flex min-h-0 flex-1 flex-col gap-2"
-      style={
-        {
-          '--sheet-accent': accent ?? '#f59e0b',
-          containerType: 'inline-size',
-        } as React.CSSProperties
-      }
-    >
-      <TradePlate field={title} accent={accent} />
-      {/* The page's three blocks, in the page's order: Skills, then the
-          vitals, then Statuses.
+  // Screen one: the blocks the page has actually been drawn for.
+  const drawn = (
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {/* Every block is a SIBLING in one wrapping row, in the page's own
+          order: Skills, Health, Grit, Statuses.
 
-          The two OUTER columns are deliberately identical — same basis,
-          same grow, same minimum — because that is the only way the
-          middle one is actually centred. Give the sides different widths
-          and the vitals sit off-axis by half the difference, which on
-          this card reads as a mistake even when nobody can say why.
-          Symmetry costs Statuses a little width it doesn't need, and
-          buys a centre line the eye can trust.
+          Flat rather than nested, and that one change serves both kinds
+          of glass. On the rail bar there is width to spare and height is
+          the scarce thing, so four blocks side by side beat three with
+          two of them stacked — stacking spends the dimension there is
+          least of. On a phone the row simply wraps, and wrapping a flat
+          list gives the same single column a nested one did.
 
-          A flex row rather than an auto-fit grid so the middle can be
-          wider than the sides — auto-fit hands every column the same
-          track. Wrapping replaces the grid's collapse: on a phone they
-          stack, in the same order. */}
-      <div className="flex min-h-0 flex-1 flex-wrap content-start gap-2">
-        <div className="flex min-w-[13rem] flex-1 flex-col gap-2 self-start">
+          Symmetry still holds, it's just paired now: the outer two match
+          each other and the inner two match each other, so the
+          composition has a centre line even though no single panel sits
+          on it.
+
+          A flex row rather than an auto-fit grid because these are not
+          equal — auto-fit hands every column the same track, and Grit is
+          a circle while Skills is four rows of dice. */}
+      <div
+        className={`flex min-h-0 flex-1 flex-wrap gap-2 ${
+          strip ? 'items-stretch' : 'content-start'
+        }`}
+      >
+        <div
+          className={`flex min-w-[13rem] flex-[1.25] flex-col gap-2 ${
+            strip ? 'self-stretch' : 'self-start'
+          }`}
+        >
           {/* Title passed explicitly rather than left to the default, so
               the heading and the caption are looked up under one string
               instead of two that have to stay equal. */}
@@ -304,6 +320,7 @@ export function Sheet({
             lookup={lookup}
             title={SKILLS_TITLE}
             note={note?.(SKILLS_TITLE)}
+            fill={strip}
           />
           {/* Stats with no block of their own — Speed, for WiW — used to
               hang here as loose chips, and don't any more for the same
@@ -330,48 +347,90 @@ export function Sheet({
           )}
         </div>
 
-        {gauges.length > 0 && (
-          <section
-            className="flex min-w-[13rem] flex-[1.35] flex-col gap-2 self-start"
-            style={{ containerType: 'inline-size' }}
-          >
+        {/* On a STRIP each vital gets its own column, because 515px of
+            height cannot stack two panels and width is what there is
+            spare of. Anywhere taller they stack in one column, which is
+            how the page prints them and what a tablet has the height
+            for. Same components either way — only the arrangement and
+            Health's own orientation change. */}
+        {strip ? (
+          <>
             {panelled.map((counter) => (
-              <HealthPanel
+              <div
                 key={counter.id}
-                counter={counter}
-                pinned={pinnedTo(counter)}
-                onChange={update}
-                note={note?.(counter.name)}
-              />
+                className="flex min-w-[9rem] flex-[0.8] flex-col gap-2 self-stretch"
+              >
+                <HealthPanel
+                  counter={counter}
+                  pinned={pinnedTo(counter)}
+                  onChange={update}
+                  note={note?.(counter.name)}
+                  vertical
+                  fill
+                />
+              </div>
             ))}
             {dialled.map((counter) => (
-              <Cylinder
+              <div
                 key={counter.id}
-                counter={counter}
-                onChange={update}
-                note={note?.(counter.name)}
-              />
+                className="flex min-w-[10rem] flex-[0.85] flex-col gap-2 self-stretch"
+              >
+                <Cylinder
+                  counter={counter}
+                  onChange={update}
+                  note={note?.(counter.name)}
+                  fill
+                />
+              </div>
             ))}
-            <div
-              className="grid min-h-0 gap-2"
-              // A ring is as tall as it is; stretching the row just puts
-              // a void above and below it. Content-sized rows keep the
-              // boxes tight, which is also how they sit on paper.
-              style={{
-                gridTemplateColumns: 'repeat(auto-fit, minmax(10rem, 1fr))',
-                gridAutoRows: 'minmax(0, max-content)',
-              }}
-            >
-              {plain.map((counter) => (
-                <SheetGauge key={counter.id} counter={counter} onChange={update} />
+          </>
+        ) : (
+          (panelled.length > 0 || dialled.length > 0) && (
+            <section className="flex min-w-[13rem] flex-[1.35] flex-col gap-2 self-start">
+              {panelled.map((counter) => (
+                <HealthPanel
+                  key={counter.id}
+                  counter={counter}
+                  pinned={pinnedTo(counter)}
+                  onChange={update}
+                  note={note?.(counter.name)}
+                />
               ))}
-            </div>
-          </section>
+              {dialled.map((counter) => (
+                <Cylinder
+                  key={counter.id}
+                  counter={counter}
+                  onChange={update}
+                  note={note?.(counter.name)}
+                />
+              ))}
+            </section>
+          )
         )}
-        {/* Third column — matched to the first, not sized to its own
-            content, so the vitals stay on the centre line. */}
+        {plain.length > 0 && (
+          <div
+            className="grid min-w-[12rem] flex-1 gap-2 self-start"
+            // A ring is as tall as it is; stretching the row just puts
+            // a void above and below it. Content-sized rows keep the
+            // boxes tight, which is also how they sit on paper.
+            style={{
+              gridTemplateColumns: 'repeat(auto-fit, minmax(10rem, 1fr))',
+              gridAutoRows: 'minmax(0, max-content)',
+            }}
+          >
+            {plain.map((counter) => (
+              <SheetGauge key={counter.id} counter={counter} onChange={update} />
+            ))}
+          </div>
+        )}
+        {/* Matched to Skills, not sized to its own content, so the pair
+            of outer columns stays symmetric. */}
         {onTags && (
-          <div className="flex min-w-[13rem] flex-1 flex-col gap-2 self-start">
+          <div
+            className={`flex min-w-[13rem] flex-[1.25] flex-col gap-2 ${
+              strip ? 'self-stretch' : 'self-start'
+            }`}
+          >
             <StatusPanel
               entries={conditions}
               tags={tags}
@@ -379,15 +438,14 @@ export function Sheet({
               title={conditionsLabel}
               note={note?.(conditionsLabel)}
               relievers={skills.map((f) => f.label)}
+              fill={strip}
             />
           </div>
         )}
       </div>
 
-      {/* The generic strip, for a system with no declared sheet. WiW's
-          Wallet, Scrap and Prestige do NOT appear here — they have real
-          homes further down the printed page, and a chip strip pretending
-          to be that home is what made the card look unfinished. */}
+      {/* The generic strip, for a system with no declared sheet. On a
+          designed one these live on the spare screen instead. */}
       {strays.length > 0 && (
         <div
           className="grid shrink-0 gap-1.5"
@@ -419,6 +477,112 @@ export function Sheet({
           ))}
         </div>
       )}
+    </div>
+  );
+
+  /**
+   * Screen two: everything the page hasn't been drawn for yet.
+   *
+   * A holding pen, and named so — it is NOT a design, it's the honest
+   * answer to "where did my Wallet go" while the lower half of the sheet
+   * is still being built. As Weapons, Abilities and the rest get their
+   * blocks, they leave here for screens of their own and this shrinks to
+   * nothing, at which point the bar goes back to one segment and
+   * disappears on its own.
+   */
+  const spareScreen = (
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {spare.fields.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {spare.fields.map((field) => (
+            <span
+              key={field.key}
+              className="rounded-md bg-stone-900 px-2 py-1 text-xs"
+            >
+              <span className="font-mono text-stone-100">
+                {field.value || '—'}
+              </span>
+              <span className="ml-1 uppercase tracking-wider text-stone-500">
+                {field.label}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {spare.gauges.length > 0 && (
+        <div
+          className="grid gap-2"
+          style={{
+            gridTemplateColumns: 'repeat(auto-fit, minmax(10rem, 1fr))',
+            gridAutoRows: 'minmax(0, max-content)',
+          }}
+        >
+          {spare.gauges.map((counter) => (
+            <SheetGauge key={counter.id} counter={counter} onChange={update} />
+          ))}
+        </div>
+      )}
+
+      {spare.tallies.length > 0 && (
+        <div
+          className="grid shrink-0 gap-1.5"
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))' }}
+        >
+          {spare.tallies.map((counter) => (
+            <div
+              key={counter.id}
+              className="flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1"
+            >
+              <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
+                <Name
+                  counter={counter}
+                  className="text-[10px] uppercase tracking-widest text-stone-500"
+                />
+                <Value counter={counter} className="text-base" />
+              </div>
+              <Step
+                sign="−"
+                label={`decrease ${counter.name}`}
+                onClick={() => update(bumped(counter, -1))}
+              />
+              <Step
+                sign="+"
+                label={`increase ${counter.name}`}
+                onClick={() => update(bumped(counter, 1))}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    // The accent rides on a CSS variable rather than a prop threaded
+    // through every box: a themed sheet tints a dozen small things, and
+    // passing a colour to each of them is how one gets missed. It's on
+    // the ROOT so the segmented bar is tinted too — the bar belongs to
+    // the card, not to any one screen.
+    <div
+      className="flex min-h-0 flex-1 flex-col gap-2"
+      style={
+        {
+          '--sheet-accent': accent ?? '#f59e0b',
+          containerType: 'inline-size',
+        } as React.CSSProperties
+      }
+    >
+      {/* Outside the screens: whose card this is doesn't change when you
+          swipe, and it carries the colour. */}
+      <TradePlate field={title} accent={accent} />
+
+      <Screens
+        screens={[
+          { name: 'Sheet', render: () => drawn },
+          ...(hasSpare ? [{ name: 'More', render: () => spareScreen }] : []),
+        ]}
+      />
     </div>
   );
 }

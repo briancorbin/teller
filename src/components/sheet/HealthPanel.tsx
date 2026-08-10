@@ -1,5 +1,5 @@
 import type { Counter, Field } from '../../../worker/types';
-import { bumped, fill, isLow, Refill } from '../counters/shared';
+import { bumped, fill as fraction, isLow, Refill } from '../counters/shared';
 import { SheetPanel } from './SheetPanel';
 
 // The HEALTH block: the resource, flanked by the two numbers that bound
@@ -40,7 +40,7 @@ import { SheetPanel } from './SheetPanel';
  * things instead of one instrument. The font clamps below are all kept
  * under `height / 1.15` so nothing can outgrow it.
  */
-const BOX_H = 'clamp(2.6rem, 11cqw, 3.6rem)';
+const BOX_H = '3rem';
 
 /** One of the small flanking boxes: value big, label under it. */
 function StatBox({
@@ -62,7 +62,7 @@ function StatBox({
           borderColor: accented ? 'var(--sheet-accent, #f59e0b)' : '#a8a29e',
         }}
       >
-        <span className="whitespace-nowrap font-mono text-[clamp(0.85rem,3.4cqw,1.2rem)] tabular-nums text-stone-100">
+        <span className="whitespace-nowrap font-mono text-[1.1rem] tabular-nums text-stone-100">
           {value}
         </span>
       </div>
@@ -80,18 +80,23 @@ function Bump({
   sign,
   label,
   onClick,
+  grow,
 }: {
   sign: '−' | '+';
   label: string;
   onClick: () => void;
+  /** Share the width of the column rather than staying square. */
+  grow?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-label={label}
-      style={{ height: BOX_H, width: BOX_H }}
-      className="flex shrink-0 select-none items-center justify-center rounded-md border border-stone-600 bg-stone-800 text-2xl leading-none text-stone-200 transition-colors hover:bg-stone-700 active:bg-amber-600 active:text-stone-950"
+      style={grow ? { height: BOX_H } : { height: BOX_H, width: BOX_H }}
+      className={`flex select-none items-center justify-center rounded-md border border-stone-600 bg-stone-800 text-2xl leading-none text-stone-200 transition-colors hover:bg-stone-700 active:bg-amber-600 active:text-stone-950 ${
+        grow ? 'min-w-0 flex-1' : 'shrink-0'
+      }`}
     >
       {sign}
     </button>
@@ -104,6 +109,8 @@ export function HealthPanel({
   onChange,
   title,
   note,
+  vertical = false,
+  fill = false,
 }: {
   counter: Counter;
   /** Fields the system pinned to this counter — Defense, for WiW. */
@@ -113,12 +120,32 @@ export function HealthPanel({
   title?: string;
   /** Pack-supplied instruction line. Nothing in this repo supplies one. */
   note?: string;
+  /**
+   * Stack the row instead of laying it out across.
+   *
+   * Not a different design — the same five parts in the same order, read
+   * top-to-bottom instead of left-to-right. It exists because of what
+   * the rail bar measures: with four blocks side by side, Health took
+   * 430px of width while using 143px of a row 336px tall. Stacking
+   * spends the dimension there is spare of and hands ~200px back to the
+   * two blocks that are lists.
+   *
+   * Printed sheets lay it across, and on a phone so does this. The bar
+   * is the shape paper never had to deal with.
+   */
+  vertical?: boolean;
+  /** Grow to fill the column — see `SheetPanel`. */
+  fill?: boolean;
 }) {
   const low = isLow(counter);
 
   return (
-    <SheetPanel title={title ?? counter.name} note={note}>
-      <div className="flex items-start justify-center gap-2">
+    <SheetPanel title={title ?? counter.name} note={note} fill={fill}>
+      <div
+        className={`flex justify-center gap-2 ${
+          vertical ? 'flex-col items-stretch' : 'items-start'
+        }`}
+      >
         {counter.max !== null && (
           // Read-only here on purpose: raising a ceiling is a character
           // change, not a play action, and it belongs with the editor
@@ -128,12 +155,21 @@ export function HealthPanel({
         )}
 
         <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <div className="flex items-center gap-1.5">
-            <Bump
-              sign="−"
-              label={`decrease ${counter.name}`}
-              onClick={() => onChange(bumped(counter, -1))}
-            />
+          {/* Stacked, the controls move under the number rather than
+              flanking it — side-by-side steppers in a narrow column
+              would each be a sliver. */}
+          <div
+            className={`flex gap-1.5 ${
+              vertical ? 'flex-col items-stretch' : 'items-center'
+            }`}
+          >
+            {!vertical && (
+              <Bump
+                sign="−"
+                label={`decrease ${counter.name}`}
+                onClick={() => onChange(bumped(counter, -1))}
+              />
+            )}
             {/* The strip. Where the trail of struck-through numbers went
                 on paper, the current one simply lives. */}
             <div
@@ -152,16 +188,33 @@ export function HealthPanel({
                 // Capped so `fontSize × 1.15` stays inside `BOX_H` at
                 // both ends of the clamp — that's what keeps a fixed
                 // height from becoming a clipped one.
-                style={{ fontSize: 'clamp(1.3rem, 7cqw, 2.2rem)' }}
+                style={{ fontSize: '2rem' }}
               >
                 {counter.current}
               </span>
             </div>
-            <Bump
-              sign="+"
-              label={`increase ${counter.name}`}
-              onClick={() => onChange(bumped(counter, 1))}
-            />
+            {vertical ? (
+              <div className="flex gap-1.5">
+                <Bump
+                  sign="−"
+                  label={`decrease ${counter.name}`}
+                  onClick={() => onChange(bumped(counter, -1))}
+                  grow
+                />
+                <Bump
+                  sign="+"
+                  label={`increase ${counter.name}`}
+                  onClick={() => onChange(bumped(counter, 1))}
+                  grow
+                />
+              </div>
+            ) : (
+              <Bump
+                sign="+"
+                label={`increase ${counter.name}`}
+                onClick={() => onChange(bumped(counter, 1))}
+              />
+            )}
           </div>
 
           {counter.max !== null && (
@@ -170,7 +223,7 @@ export function HealthPanel({
                 <div
                   className="h-full rounded-full transition-[width] duration-200"
                   style={{
-                    width: `${fill(counter) * 100}%`,
+                    width: `${fraction(counter) * 100}%`,
                     background: low ? '#ef4444' : 'var(--sheet-accent, #f59e0b)',
                   }}
                 />

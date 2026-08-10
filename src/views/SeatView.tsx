@@ -231,6 +231,23 @@ export function SeatView({
     ? size.w / size.h >= 1.3
     : typeof window !== 'undefined' &&
       window.innerWidth / window.innerHeight >= 1.3;
+
+  /**
+   * Mounted glass, but a STRIP — too short to stack anything.
+   *
+   * Not a third family, and not an aspect ratio: it's one fact about
+   * height. A landscape tablet has 810px and can happily put Health
+   * above Grit; the rail bar has 515 and cannot — measured, the two of
+   * them stacked want about 590px once the plate, header and screen bar
+   * are counted. Below roughly 700 the card has to spend width instead,
+   * which is the dimension a strip has going spare.
+   *
+   * Keyed on the cause rather than on 3.73:1, because the reason a rail
+   * panel can't stack is that it is SHORT, not that it is long. A tall
+   * narrow screen would be wrong to treat as a strip and this says so.
+   */
+  const glassHeight = size ? size.h : typeof window !== 'undefined' ? window.innerHeight : 0;
+  const strip = wide && glassHeight > 0 && glassHeight < 700;
   const fields = character.data.fields.filter((f) => f.key !== 'description');
 
   return (
@@ -250,7 +267,7 @@ export function SeatView({
             name rendered vertically, a letter per line. Nothing here may
             clip, so anything that doesn't fit moves to the next line. */}
         <header className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 className="min-w-0 break-words font-serif text-[clamp(1.25rem,4cqh,2rem)] leading-tight text-stone-100">
+          <h1 className="min-w-0 break-words font-serif text-[1.6rem] leading-tight text-stone-100">
             {character.name}
           </h1>
           {youreUp && (
@@ -466,6 +483,7 @@ export function SeatView({
                 accents={template?.accents}
                 pins={template?.pins}
                 dials={template?.dials}
+                strip={strip}
                 tags={character.data.tags}
                 onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
                 conditions={conditions}

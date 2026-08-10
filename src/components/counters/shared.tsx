@@ -40,6 +40,8 @@ export type CounterViewProps = {
   pins?: SystemTemplate['pins'];
   /** Counter name → the face to draw it with, when the system asks. */
   dials?: SystemTemplate['dials'];
+  /** Mounted glass too short to stack anything — see `strip` in SeatView. */
+  strip?: boolean;
   /**
    * The character's conditions, for layouts that place them themselves.
    *

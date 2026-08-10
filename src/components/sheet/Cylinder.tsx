@@ -71,11 +71,14 @@ export function Cylinder({
   counter,
   onChange,
   note,
+  fill = false,
 }: {
   counter: Counter;
   onChange: (next: Counter) => void;
   /** The sheet's caption. Publisher prose, so pack-supplied only. */
   note?: string;
+  /** Grow to fill the column — see `SheetPanel`. */
+  fill?: boolean;
 }) {
   const max = counter.max!;
   const step = 360 / max;
@@ -117,7 +120,7 @@ export function Cylinder({
   });
 
   return (
-    <SheetPanel title={counter.name} note={note}>
+    <SheetPanel title={counter.name} note={note} fill={fill}>
       <div className="flex flex-col items-center gap-1">
         {/* No "2/6" readout. The lit chambers ARE the number, and a
             second copy of it beside them is the kind of redundancy that

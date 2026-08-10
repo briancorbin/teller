@@ -90,7 +90,7 @@ function StatusRow({
         className="min-w-0 flex-1 rounded px-1 py-0.5 text-left transition-colors enabled:hover:bg-stone-800/60 disabled:cursor-default"
       >
         <span
-          className={`block break-words font-serif text-[clamp(0.72rem,3cqw,0.95rem)] font-bold uppercase leading-tight tracking-wide ${
+          className={`block break-words font-serif text-[0.9rem] font-bold uppercase leading-tight tracking-wide ${
             on ? '' : 'opacity-55'
           }`}
           style={{ color: on ? 'var(--sheet-accent, #f59e0b)' : '#a8a29e' }}
@@ -114,6 +114,7 @@ export function StatusPanel({
   title,
   note,
   relievers = [],
+  fill = false,
 }: {
   /** The declared list, from the pack. Empty means no panel. */
   entries: (PackEntry & { section?: string })[];
@@ -122,6 +123,8 @@ export function StatusPanel({
   title: string;
   /** The line the sheet sets under the heading. Pack-supplied only. */
   note?: string;
+  /** Grow to fill the column — see `SheetPanel`. */
+  fill?: boolean;
   /**
    * The Skills that can relieve a status — the declared skill block.
    *
@@ -190,7 +193,7 @@ export function StatusPanel({
     : undefined;
 
   return (
-    <SheetPanel title={title} note={note} className="relative">
+    <SheetPanel title={title} note={note} fill={fill} className="relative">
       <div className="divide-y divide-stone-800/70">
         {[...declared, ...loose].map((row) => (
           <StatusRow

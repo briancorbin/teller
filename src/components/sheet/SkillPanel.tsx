@@ -126,10 +126,14 @@ function SkillRow({
         onClick={onToggleInfo}
         aria-expanded={open}
         aria-label={entry?.text ? `what does ${field.label} do` : field.label}
-        className="w-[6.5rem] shrink-0 rounded px-1 py-0.5 text-right transition-colors enabled:hover:bg-stone-800/60 disabled:cursor-default"
+        className="w-[7.5rem] shrink-0 rounded px-1 py-0.5 text-right transition-colors enabled:hover:bg-stone-800/60 disabled:cursor-default"
       >
         <span
-          className="block break-words text-[clamp(0.8rem,4cqw,1.15rem)] font-bold uppercase leading-tight tracking-wide"
+          // Capped at 1rem, and the column widened to match. At 1.15rem
+          // "INTUITION" was wider than the 6.5rem column and broke onto
+          // two lines — the label wraps rather than clipping, which is
+          // correct, but a skill name on two lines is still wrong.
+          className="block break-words text-[1rem] font-bold uppercase leading-tight tracking-wide"
           style={{ color: 'var(--sheet-accent, #f59e0b)' }}
         >
           {field.label}
@@ -171,6 +175,7 @@ export function SkillPanel({
   title = 'Skills',
   lookup,
   note,
+  fill = false,
 }: {
   fields: Field[];
   dice?: SystemTemplate['dice'];
@@ -178,6 +183,8 @@ export function SkillPanel({
   title?: string;
   /** The line the sheet sets under that heading. Pack-supplied only. */
   note?: string;
+  /** Grow to fill the column — see `SheetPanel`. */
+  fill?: boolean;
   /** Finds a skill's pack entry, so its description can open on tap. */
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
 }) {
@@ -195,7 +202,7 @@ export function SkillPanel({
     //
     // The frame, corner ticks and heading now come from `SheetPanel`,
     // which every block on the page shares.
-    <SheetPanel title={title} note={note} className="relative w-full">
+    <SheetPanel title={title} note={note} fill={fill} className="relative w-full">
       <div className="divide-y divide-stone-800/80">
         {fields.map((field) => (
           <SkillRow

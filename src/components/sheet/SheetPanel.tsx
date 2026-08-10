@@ -74,19 +74,31 @@ export function SheetPanel({
   note,
   children,
   className = '',
+  fill = false,
 }: {
   title: string;
   /** The sheet's instruction line. Publisher prose — pack-supplied only. */
   note?: string;
   children: React.ReactNode;
   className?: string;
+  /**
+   * Grow to fill the column instead of hugging the content.
+   *
+   * For the rail bar, where the blocks are different heights and hugging
+   * left the shortest one floating above a third of a panel of nothing.
+   * The frame stretches and the CONTENT centres inside it — stretching
+   * the content itself would just put the gaps somewhere else.
+   */
+  fill?: boolean;
 }) {
   return (
     <section
       // `inline-size`, never `size`: these panels take their height from
       // their contents, and size containment on both axes collapses them
       // to nothing.
-      className={`relative rounded-md border border-stone-600/80 px-3 py-2.5 ${className}`}
+      className={`relative rounded-md border border-stone-600/80 px-3 py-2.5 ${
+        fill ? 'flex h-full flex-col' : ''
+      } ${className}`}
       style={{ containerType: 'inline-size' }}
     >
       <Corner at="tl" />
@@ -98,12 +110,17 @@ export function SheetPanel({
           and every panel gets the same one — and one margin below it, so
           the gap from caption to content matches too.
 
-          The sizes are FIXED rather than `cqw`. Every panel is its own
-          container, so container units sized each heading from its own
-          column: Health is the widest of the three and its title came
-          out visibly larger than the two beside it. A heading is chrome,
-          not content — it should read the same everywhere on the card,
-          and `FitBox` is what adapts the whole thing to the glass. */}
+          **Every size on this sheet is FIXED**, here and in every panel.
+          Container-query type looked adaptive and behaved arbitrarily:
+          each panel is its own container, so a heading was scaled by the
+          width of whichever column it happened to land in, and HEALTH
+          came out visibly bigger than the SKILLS beside it. The same
+          fluid sizing made a phone's text shrink with the card instead
+          of staying readable.
+
+          A size chosen once is a size you can reason about. Fitting the
+          glass is the LAYOUT's job — wrap, stack, scroll, or scale as a
+          last resort — not the type's. */}
       <div className="mb-2">
         <header className="flex items-center justify-center gap-1.5 px-2">
           <Dart />
@@ -120,7 +137,11 @@ export function SheetPanel({
         )}
       </div>
 
-      {children}
+      {fill ? (
+        <div className="flex min-h-0 flex-1 flex-col justify-center">{children}</div>
+      ) : (
+        children
+      )}
     </section>
   );
 }

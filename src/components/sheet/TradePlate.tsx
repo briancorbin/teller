@@ -36,7 +36,7 @@ export function TradePlate({
           // `leading-none` clips the line box for uppercase display type
           // — the cap heights and the tracking need a little more room
           // than the font's own em box gives them.
-          className="font-serif text-[clamp(1rem,5cqw,1.9rem)] font-bold uppercase leading-[1.15] tracking-[0.12em]"
+          className="font-serif text-[1.6rem] font-bold uppercase leading-[1.15] tracking-[0.12em]"
           style={{ color: accent ?? '#f59e0b' }}
         >
           {value}
