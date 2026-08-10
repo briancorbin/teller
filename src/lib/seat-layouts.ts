@@ -40,6 +40,18 @@ export const SEAT_LAYOUTS = [
     blurb: 'The two you spend in a fight, huge. Everything else one tap away.',
   },
   {
+    id: 'sheet',
+    name: 'Sheet',
+    blurb: 'Arranged like the paper you already know.',
+    /**
+     * This one draws the stats itself, in their boxes, instead of
+     * leaving them to the strip along the bottom of the card — on paper
+     * the skills ARE the left-hand column, and moving them elsewhere is
+     * the one thing that would stop it reading as the sheet.
+     */
+    ownsFields: true,
+  },
+  {
     id: 'classic',
     name: 'Classic',
     blurb: 'What teller shipped first — the one to beat.',
@@ -47,6 +59,12 @@ export const SEAT_LAYOUTS = [
 ] as const;
 
 export type SeatLayout = (typeof SEAT_LAYOUTS)[number]['id'];
+
+/** Does this layout render the character's stats itself? */
+export function ownsFields(id: SeatLayout): boolean {
+  const found = SEAT_LAYOUTS.find((l) => l.id === id);
+  return Boolean(found && 'ownsFields' in found && found.ownsFields);
+}
 
 /** The one a screen gets before anybody has an opinion. */
 export const DEFAULT_LAYOUT: SeatLayout = 'gauges';

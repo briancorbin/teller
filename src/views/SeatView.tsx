@@ -10,7 +10,12 @@ import { api } from '../lib/api';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
-import { layoutOf, SEAT_LAYOUTS, type SeatLayout } from '../lib/seat-layouts';
+import {
+  layoutOf,
+  ownsFields,
+  SEAT_LAYOUTS,
+  type SeatLayout,
+} from '../lib/seat-layouts';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { COUNTER_VIEWS } from '../components/counters';
 import { FitBox } from '../components/FitBox';
@@ -190,8 +195,12 @@ export function SeatView({
       >
         <ConnectionHint connected={connected} />
 
-        {/* Identity. One line, so it costs the same on a rail as on a phone. */}
-        <header className="flex shrink-0 items-baseline gap-3">
+        {/* Identity. Wraps rather than squeezes: in a nowrap row the title
+            takes the width it wants and the neighbours get the remainder,
+            which on a phone was about one character — so the campaign
+            name rendered vertically, a letter per line. Nothing here may
+            clip, so anything that doesn't fit moves to the next line. */}
+        <header className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="min-w-0 break-words font-serif text-[clamp(1.25rem,4cqh,2rem)] leading-tight text-stone-100">
             {character.name}
           </h1>
@@ -205,35 +214,40 @@ export function SeatView({
               on deck
             </span>
           )}
-          <span className="min-w-0 flex-1 break-words text-xs text-stone-600">
+          {/* Whole name or next line, never letter-by-letter. */}
+          <span className="whitespace-nowrap text-xs text-stone-600">
             {campaign?.name}
           </span>
-          <button
-            type="button"
-            onClick={() => {
-              setSizing(!sizing);
-              setPicking(false);
-            }}
-            aria-expanded={sizing}
-            className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors hover:bg-stone-800 hover:text-stone-300 ${
-              size ? 'text-amber-400' : 'text-stone-600'
-            }`}
-            title="render as another device, to see how this lands"
-          >
-            ▭ {size ? size.name : 'Actual'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setPicking(!picking);
-              setSizing(false);
-            }}
-            aria-expanded={picking}
-            className="shrink-0 rounded-md px-2 py-1 text-xs text-stone-600 transition-colors hover:bg-stone-800 hover:text-stone-300"
-            title="how this card is arranged"
-          >
-            ▦ {SEAT_LAYOUTS.find((l) => l.id === layout)?.name}
-          </button>
+          {/* Kept together and pushed right, so the name wraps as a unit
+              instead of colliding with them. */}
+          <div className="ml-auto flex shrink-0 items-baseline gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setSizing(!sizing);
+                setPicking(false);
+              }}
+              aria-expanded={sizing}
+              className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors hover:bg-stone-800 hover:text-stone-300 ${
+                size ? 'text-amber-400' : 'text-stone-600'
+              }`}
+              title="render as another device, to see how this lands"
+            >
+              ▭ {size ? size.name : 'Actual'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPicking(!picking);
+                setSizing(false);
+              }}
+              aria-expanded={picking}
+              className="shrink-0 rounded-md px-2 py-1 text-xs text-stone-600 transition-colors hover:bg-stone-800 hover:text-stone-300"
+              title="how this card is arranged"
+            >
+              ▦ {SEAT_LAYOUTS.find((l) => l.id === layout)?.name}
+            </button>
+          </div>
         </header>
 
         {/* The picker is deliberately in the player's reach, not buried in
@@ -393,12 +407,15 @@ export function SeatView({
               <Counters
                 big
                 counters={character.data.counters}
+                fields={fields}
                 onChange={(counters) => patch({ counters })}
               />
             </FitBox>
 
-            {/* Stats are reference, not controls — one dense strip. */}
-            {fields.length > 0 && (
+            {/* Stats are reference, not controls — one dense strip.
+                Skipped when the layout places them itself, or the same
+                stats would appear twice on the card. */}
+            {fields.length > 0 && !ownsFields(layout) && (
               <div className="flex shrink-0 flex-wrap gap-1">
                 {fields.map((field) => (
                   <span

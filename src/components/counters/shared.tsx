@@ -1,4 +1,4 @@
-import type { Counter } from '../../../worker/types';
+import type { Counter, Field } from '../../../worker/types';
 
 // The parts every counter layout is built from.
 //
@@ -12,6 +12,15 @@ export type CounterViewProps = {
   onChange: (next: Counter[]) => void;
   /** Touch-sized targets (a seat, a rail panel) vs compact (the console). */
   big?: boolean;
+  /**
+   * The character's stats, for layouts that place them themselves.
+   *
+   * Most don't — the card puts them in a strip along the bottom. `Sheet`
+   * does, because on paper the skills ARE the left-hand column, and a
+   * layout that arranges everything except them isn't the sheet. Which
+   * layouts take them over is declared in `seat-layouts.ts`.
+   */
+  fields?: Field[];
 };
 
 /** Clamped to [0, max]. A counter never goes negative or past its ceiling. */

@@ -5,6 +5,7 @@ import { Dials } from './Dials';
 import { Focus } from './Focus';
 import { Gauges } from './Gauges';
 import { Ledger } from './Ledger';
+import { Sheet } from './Sheet';
 import type { CounterViewProps } from './shared';
 
 // id → renderer. The Record type is the enforcement: add a layout to
@@ -16,6 +17,7 @@ export const COUNTER_VIEWS: Record<SeatLayout, (p: CounterViewProps) => ReactEle
   dials: Dials,
   ledger: Ledger,
   focus: Focus,
+  sheet: Sheet,
   classic: Classic,
 };
 
