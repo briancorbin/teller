@@ -232,12 +232,15 @@ export function BestiaryPanel({
                       <div className="font-mono text-[10px] uppercase tracking-wide text-stone-600">
                         printed in {npc.sources!.length} books
                       </div>
-                      {npc.sources!.map((s, i) => {
+                      {npc.sources!.map((s) => {
                         const src = books.find((b) => b.id === s.book);
-                        // No pick stored means the default: the first.
-                        const chosen = picks?.[npc.id]
-                          ? picks[npc.id] === s.packId
-                          : i === 0;
+                        // The server says which printing won — it depends
+                        // on the campaign's pack ORDER, and a client that
+                        // guessed "the first one" was right by accident
+                        // until precedence became explicit.
+                        const chosen = npc.fromId
+                          ? npc.fromId === s.packId
+                          : picks?.[npc.id] === s.packId;
                         return (
                           <div key={s.packId} className="flex items-center gap-2">
                             {onPick ? (

@@ -26,6 +26,7 @@ import { DurableNamespace } from './durable.mjs';
 import { Assets } from './assets.mjs';
 import { migrate } from './migrate.mjs';
 import { sweep } from './library.mjs';
+import { sweep as sweepPacks } from './packs.mjs';
 
 // Resolved from this file, so the same layout works whether it's the
 // repo or an installed copy — `dist/`, `migrations/` and `host/` sit
@@ -171,8 +172,15 @@ export async function serve({ data = defaultData(), port = 4525 } = {}) {
     //
     // The same pass picks up PDFs dropped into the books folder by hand,
     // which is what the loader program used to be for.
+    //
+    // The pack shelf rides along on the same tick, for the same reason:
+    // a `.pack` dropped into the folder should just be there, without
+    // anyone restarting anything.
     const scan = () =>
-      sweep(db.raw, DATA).catch((e) => console.error(`  library: ${e.message}`));
+      Promise.all([
+        sweep(db.raw, DATA).catch((e) => console.error(`  library: ${e.message}`)),
+        sweepPacks(db.raw, DATA).catch((e) => console.error(`  packs: ${e.message}`)),
+      ]);
     void scan();
     setInterval(scan, 10_000).unref?.();
   });

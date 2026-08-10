@@ -81,6 +81,8 @@ export function DmView({
   const [castQuery, setCastQuery] = useState('');
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
+  /** Packs this campaign claims that the host doesn't hold. */
+  const [missingPacks, setMissingPacks] = useState<string[]>([]);
   /** The screen on table duty — it owns the calibration, not the campaign. */
   const [tableScreen, setTableScreen] = useState<Display | null>(null);
   // Which scene the map pane is shaping — independent of what's live.
@@ -93,10 +95,11 @@ export function DmView({
   const refetch = useCallback(() => {
     api
       .getCampaign(campaignId)
-      .then(({ campaign, characters, bestiary }) => {
+      .then(({ campaign, characters, bestiary, missingPacks }) => {
         setCampaign(campaign);
         setCharacters(characters);
         setBestiary(bestiary ?? []);
+        setMissingPacks(missingPacks ?? []);
         setError('');
       })
       .catch((e) => {
@@ -959,7 +962,18 @@ export function DmView({
             }}
           />
 
-          <RulesPanel packs={packs} onUploaded={loadPacks} />
+          <RulesPanel
+            packs={packs}
+            claim={campaign.data.packs}
+            missing={missingPacks}
+            onClaim={(ids) =>
+              api
+                .patchCampaign(campaign.id, { data: { packs: ids } })
+                .then(refetch)
+                .catch(() => refetch())
+            }
+            onUploaded={loadPacks}
+          />
 
           <div className={`${card} space-y-2`}>
             <span className={sectionLabel}>Reference</span>

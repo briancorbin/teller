@@ -3,7 +3,7 @@ import type { BundleSummary } from '../../worker/import';
 import { api } from '../lib/api';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
 
-// Opening a `.tell` file.
+// Opening a `.story` file.
 //
 // Two steps on purpose: choosing a file shows what's in it, and taking
 // it is a separate decision. Looking in a box and emptying it into your
@@ -70,13 +70,13 @@ export function BundleImport({
   return (
     <section className={`${card} space-y-3`}>
       <span className={sectionLabel}>
-        {campaignId ? 'Add from a .tell file' : 'Open a .tell file'}
+        {campaignId ? 'Add from a .story file' : 'Open a .story file'}
       </span>
 
       <input
         ref={fileRef}
         type="file"
-        accept=".tell,.zip,application/zip"
+        accept=".story,.tell,.zip,application/zip"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];

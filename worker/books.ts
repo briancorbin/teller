@@ -10,7 +10,7 @@ import { BOOK_MINUTES, checkTicket, mintTicket } from './tickets';
 // screen", no copy stranded in one browser's storage.
 //
 // The library is not scoped to a campaign or a system: you own the books,
-// campaigns refer to them by id. That's why a `.tell` file carries a
+// campaigns refer to them by id. That's why a `.story` file carries a
 // reference rather than a rulebook — and why migration 0008 dropped the
 // `system` column that used to claim otherwise.
 //
@@ -147,7 +147,7 @@ export async function bookRoutes(
   //
   // The host names it, not the client. A book's id is the sha-256 of its
   // own bytes, so two people who own the same rulebook derive the same
-  // id without coordinating — which is what lets a `.tell` file say
+  // id without coordinating — which is what lets a `.story` file say
   // "this campaign needs bok_a23d…" and have it resolve on any host that
   // has the book. A browser couldn't do this anyway: crypto.subtle
   // doesn't exist on the plain-HTTP origin a table's host serves from.

@@ -2,7 +2,8 @@ import type { Env } from './db';
 import { toCampaign } from './db';
 import { saveSystem, getSystem } from './systems';
 import { readZip, readJson, type ZipFile } from './unzip';
-import type { BundleManifest } from './bundle';
+import type { BundleManifest, PackRef } from './bundle';
+import { savePack } from './packs';
 import type {
   Campaign,
   CampaignData,
@@ -11,12 +12,13 @@ import type {
   EncounterState,
   Handout,
   NpcBlueprint,
+  RulesPack,
   Scene,
   SystemTemplate,
 } from './types';
 import { bestiaryFor } from './bestiary';
 
-// Importing a `.tell` file: merge what's present, skip what isn't.
+// Importing a `.story` file: merge what's present, skip what isn't.
 //
 // Two passes, because you should be able to see what's in a box before
 // you open it. `inspect` reads the manifest and counts what's inside;
@@ -33,6 +35,14 @@ export type BundleSummary = {
   sections: { name: string; count: number; label: string }[];
   /** Set when the bundle needs a system this instance doesn't have. */
   missingSystem?: string;
+  /**
+   * Packs it references that aren't on this host.
+   *
+   * Reported, never silently dropped — the books precedent. Importing
+   * anyway is fine and often right: the campaign works, the foes those
+   * packs bring just aren't there until you drop the `.pack` in.
+   */
+  missingPacks?: PackRef[];
   /**
    * A campaign on this host that came from the same bundle.
    *
@@ -75,7 +85,7 @@ export async function inspect(buffer: ArrayBuffer, env: Env): Promise<BundleSumm
   const files = await readZip(buffer);
   const manifest = await readJson<BundleManifest>(files, 'teller.json');
   if (!manifest?.teller) {
-    throw new Error('no teller.json — this zip is not a .tell bundle');
+    throw new Error('no teller.json — this zip is not a .story bundle');
   }
 
   const count = async (name: string) =>
@@ -94,7 +104,9 @@ export async function inspect(buffer: ArrayBuffer, env: Env): Promise<BundleSumm
   add('bestiary', await count('bestiary.json'), 'foe');
   add('encounters', await count('encounters.json'), 'prepared fight');
   add('characters', await count('characters.json'), 'character');
-  add('pack', await count('pack.json'), 'rules pack');
+  // Bundles written before TEL-62 carry pack bodies. Still readable —
+  // someone may be holding one — but nothing writes them any more.
+  add('pack', await count('pack.json'), 'rules pack (old format)');
   add('scenes', await count('scenes.json'), 'map');
   add('handouts', await count('handouts.json'), 'handout');
   add('books', await count('books.json'), 'book it expects', 'books it expects');
@@ -106,6 +118,18 @@ export async function inspect(buffer: ArrayBuffer, env: Env): Promise<BundleSumm
   if (!files.has('system.json')) {
     summary.missingSystem = manifest.requires?.system ?? manifest.system;
   }
+
+  // Packs this expects that aren't on this host. Answered BEFORE
+  // unpacking, because "you're missing the Guidebook" is something you
+  // want while deciding whether to import, not after an encounter
+  // deploys half-empty at the table.
+  const wanted = manifest.requires?.packs ?? [];
+  if (wanted.length) {
+    const here = await env.DB.prepare('SELECT id FROM packs').all();
+    const have = new Set((here.results as { id: string }[]).map((r) => r.id));
+    summary.missingPacks = wanted.filter((p) => !have.has(p.id));
+  }
+
   const incoming = await readJson<{ id?: string }>(files, 'campaign.json');
   summary.kin = await findKin(env, incoming?.id);
   return summary;
@@ -131,7 +155,7 @@ export async function apply(
 ): Promise<ImportResult> {
   const files = await readZip(buffer);
   const manifest = await readJson<BundleManifest>(files, 'teller.json');
-  if (!manifest?.teller) throw new Error('no teller.json — not a .tell bundle');
+  if (!manifest?.teller) throw new Error('no teller.json — not a .story bundle');
 
   const wants = (name: string) => !opts.sections || opts.sections.includes(name);
   const applied: string[] = [];
@@ -174,6 +198,10 @@ export async function apply(
       vocabulary: incoming?.vocabulary ?? {},
       counters: incoming?.counters ?? [],
       states: (incoming?.states as EncounterState[]) ?? [],
+      // Which printing this table uses where a foe is in two packs. A
+      // decision a person made about THIS campaign, so it travels with
+      // it — losing it would silently re-default every one of them.
+      foePicks: incoming?.foePicks ?? {},
       // Where it came from, so a later import of the same module can
       // tell "layer onto the table I already started" apart from
       // "start a second one".
@@ -192,6 +220,70 @@ export async function apply(
   }
 
   const data: CampaignData = { ...campaign.data };
+
+  // Packs are REFERENCED now, so importing them is a question rather
+  // than a copy: does this host have them? The claim is restored either
+  // way — a reference you can't resolve yet is still the truth about
+  // what this campaign runs on, and it starts working the moment the
+  // `.pack` lands in the folder.
+  const required = manifest.requires?.packs ?? [];
+  if (required.length && wants('packs')) {
+    const here = await env.DB.prepare('SELECT id FROM packs').all();
+    const have = new Set((here.results as { id: string }[]).map((r) => r.id));
+    const missing = required.filter((p) => !have.has(p.id));
+    const found = required.length - missing.length;
+    if (found) applied.push(`${found} of ${required.length} packs already on this host`);
+    for (const pack of missing) {
+      skipped.push(`“${pack.name}” v${pack.version} — add the .pack to this host`);
+    }
+    // Order matters and comes from the bundle: it's the precedence the
+    // campaign was built with. Merging with what's already claimed would
+    // scramble it, so an explicit list wins outright.
+    data.packs = required.map((p) => p.id);
+  }
+
+  // Legacy: a bundle written before TEL-62 carries pack bodies whole.
+  // Still accepted, because someone may be holding one — but it INSTALLS
+  // rather than overwrites, which was already the rule here and had
+  // teeth: an adventure module bundles the core pack, so loading one
+  // used to silently replace a pack you'd spent an evening adding page
+  // references to, with whatever stale copy the module was built
+  // against. `savePack(…, 'propose')` is that rule, moved somewhere it
+  // can't be forgotten.
+  const packs = await readJson<PackEntry[]>(files, 'pack.json');
+  if (packs?.length && wants('pack')) {
+    const outcomes = { added: 0, updated: 0, kept: 0 };
+    const claimed = new Set(data.packs ?? []);
+    for (const entry of packs) {
+      const body = {
+        system,
+        ...(entry.pack as { id?: string }),
+        name: entry.name,
+      } as RulesPack;
+      // A pre-TEL-62 pack has no id, and minting a fresh one every time
+      // would install a duplicate on each re-import — the exact
+      // duplication the old `(system, name)` unique index prevented. So
+      // for legacy bodies only, fall back to matching on name.
+      if (!body.id) {
+        const twin = await env.DB.prepare(
+          'SELECT id FROM packs WHERE system = ? AND name = ?',
+        )
+          .bind(body.system, body.name)
+          .first<{ id: string }>();
+        if (twin) body.id = twin.id;
+      }
+      const { pack, outcome } = await savePack(env, body, 'propose');
+      outcomes[outcome]++;
+      claimed.add(pack.id);
+    }
+    if (outcomes.added) applied.push(`${outcomes.added} rules pack${outcomes.added === 1 ? '' : 's'}`);
+    if (outcomes.kept) {
+      skipped.push(
+        `${outcomes.kept} rules pack${outcomes.kept === 1 ? '' : 's'} you already had — yours kept`,
+      );
+    }
+    data.packs = [...claimed];
+  }
 
   // Bestiary. Blueprints carry their ids, so re-importing an updated
   // bundle updates rather than duplicates — but only the ones nobody
@@ -236,9 +328,12 @@ export async function apply(
     applied.push(`${added} encounter${added === 1 ? '' : 's'}`);
     if (kept) skipped.push(`${kept} encounter${kept === 1 ? '' : 's'} you already had`);
 
+    // Against the campaign as it will be AFTER this import — including
+    // the packs it just claimed — or every foe from a pack installed
+    // moments ago would be reported missing.
     const reachable = new Set([
       ...(data.npcs ?? []).map((n) => n.id),
-      ...(await bestiaryFor(env, system, data.npcs ?? [])).map((n) => n.id),
+      ...(await bestiaryFor(env, { ...campaign, data })).map((n) => n.id),
     ]);
     const unresolved = new Set<string>();
     for (const encounter of encounters) {
@@ -332,38 +427,6 @@ export async function apply(
     applied.push(`${added} character${added === 1 ? '' : 's'}`);
     if (characters.length - added) {
       skipped.push(`${characters.length - added} already at this table`);
-    }
-  }
-
-  // Packs a bundle happens to carry NEVER overwrite one you have.
-  //
-  // This used to be `DO UPDATE`, which contradicted this file's own
-  // governing rule and had teeth: an adventure module bundles the core
-  // pack, so loading one would silently replace a core pack you'd spent
-  // an evening adding page references to — with whatever stale copy the
-  // module was built against.
-  //
-  // Uploading a pack yourself is intent and still replaces (see
-  // `PUT /api/packs`). Receiving one inside a module is not.
-  const packs = await readJson<PackEntry[]>(files, 'pack.json');
-  if (packs?.length && wants('pack')) {
-    let added = 0;
-    let kept = 0;
-    for (const entry of packs) {
-      const { meta } = await env.DB.prepare(
-        `INSERT INTO packs (id, system, name, data) VALUES (?, ?, ?, ?)
-         ON CONFLICT (system, name) DO NOTHING`,
-      )
-        .bind(newId('pak'), entry.system ?? system, entry.name, JSON.stringify(entry.pack))
-        .run();
-      if (meta.changes) added++;
-      else kept++;
-    }
-    if (added) applied.push(`${added} rules pack${added === 1 ? '' : 's'}`);
-    if (kept) {
-      skipped.push(
-        `${kept} rules pack${kept === 1 ? '' : 's'} you already had — yours kept`,
-      );
     }
   }
 

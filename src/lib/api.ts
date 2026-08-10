@@ -127,9 +127,13 @@ export const api = {
     ),
 
   getCampaign: (id: string) =>
-    req<{ campaign: Campaign; characters: Character[]; bestiary: SourcedNpc[] }>(
-      `/api/campaigns/${id}`,
-    ),
+    req<{
+      campaign: Campaign;
+      characters: Character[];
+      bestiary: SourcedNpc[];
+      /** Packs it claims that this host doesn't hold — named, not hidden. */
+      missingPacks: string[];
+    }>(`/api/campaigns/${id}`),
 
   patchCampaign: (id: string, patch: { name?: string; data?: Partial<CampaignData> }) =>
     req<Campaign>(
@@ -327,7 +331,7 @@ export const api = {
    *
    * The host names it — the id is the sha-256 of the bytes, so the same
    * rulebook is the same book on anyone's host, which is what lets a
-   * `.tell` file refer to it. The browser couldn't compute that anyway:
+   * `.story` file refer to it. The browser couldn't compute that anyway:
    * crypto.subtle doesn't exist on the plain-HTTP origin a table's host
    * serves from.
    */
@@ -369,7 +373,7 @@ export const api = {
   deletePack: (id: string) =>
     req<{ ok: true }>(`/api/packs/${id}`, { method: 'DELETE' }),
 
-  // --- .tell bundles -----------------------------------------------------
+  // --- .story bundles -----------------------------------------------------
   // A whole game in one file: import merges what's present and skips what
   // isn't, export is also the backup.
   inspectBundle: (file: File) =>
@@ -391,7 +395,7 @@ export const api = {
   },
 
   /**
-   * Download a campaign as a .tell file.
+   * Download a campaign as a .story file.
    *
    * Fetched rather than linked: export needs the key, and a plain
    * `<a download>` sends no headers — it would just 401. The key could
@@ -409,7 +413,7 @@ export const api = {
     const url = URL.createObjectURL(await res.blob());
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'campaign'}.tell`;
+    a.download = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'campaign'}.story`;
     document.body.appendChild(a);
     a.click();
     a.remove();

@@ -92,14 +92,14 @@ export function Landing({
                   <span className="truncate text-stone-100">{c.name}</span>
                   <span className="ml-3 font-mono text-xs text-stone-500">{c.system}</span>
                 </button>
-                {/* A .tell STARTS a table; it isn't a save file. Your
+                {/* A .story STARTS a table; it isn't a save file. Your
                     campaign continues to live in the host's database —
                     back that up by copying the folder. So this exports
                     the module shape: the cast, the prepared fights, the
                     maps, and not the fight currently in progress. */}
                 <button
                   className="rounded-md px-2 py-1 text-sm text-stone-600 transition-colors hover:bg-stone-800 hover:text-amber-400"
-                  title="save as a .tell — a starting point someone else can run"
+                  title="save as a .story — a starting point someone else can run"
                   onClick={() =>
                     api
                       .downloadBundle(c.id, c.name)

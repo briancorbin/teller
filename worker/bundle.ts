@@ -1,10 +1,11 @@
 import type { Env } from './db';
 import { toCampaign, toCharacter } from './db';
+import { packsFor } from './packs';
 import { getSystem, saveSystem } from './systems';
 import { zipStream, jsonEntry, type ZipEntry } from './zip';
 import type { Campaign, Character, SystemTemplate } from './types';
 
-// `.tell` files — a whole game in one file.
+// `.story` files — a whole game in one file.
 //
 // A bundle is a zip of OPTIONAL SECTIONS, and that's the entire design.
 // There are no bundle "types": a system bundle is one that carries
@@ -13,16 +14,35 @@ import type { Campaign, Character, SystemTemplate } from './types';
 // it's holding, because import is always the same operation — merge
 // what's present, skip what isn't.
 //
-// Books are the exception, and deliberately so: they are REFERENCED,
-// never carried. You own the rulebooks; campaigns point at them. That
-// keeps bundles small, stops the same PDF being stored twice, and means
-// a `.tell` file holds no rules content at all.
+// **What a publisher wrote stays put; what you wrote travels** (rule 9).
+// Books were always referenced rather than carried. Packs are too, as of
+// TEL-62 — and that closes a real hole, not a theoretical one: a bundle
+// used to carry pack bodies whole, which made a WiW export ~124 KB of
+// distilled rules text against 563 bytes of book references. 96% of the
+// file was the thing the format claimed not to contain.
+//
+// So this file no longer writes rules content of any kind. It writes a
+// `requires` list, and whoever opens it either has those packs or is
+// told exactly which ones they're missing. The IP line stops being a
+// rule someone has to remember and becomes a property of the format,
+// which is what the old comment here claimed while `pack.json` sat
+// directly beside it.
 //
 // Export is also the BACKUP. Once the campaign lives on a host under
 // your table there is no cloud copy, and a dead drive is a dead campaign
-// unless you've written one of these.
+// unless you've written one of these. Packs being referenced is the one
+// cost: back up `~/.teller/packs/` alongside the `.story`.
 
-export const BUNDLE_VERSION = 1;
+/** 2: packs are referenced, not carried. 1 carried them whole. */
+export const BUNDLE_VERSION = 2;
+
+/** A pack the bundle expects the opener to have. */
+export type PackRef = {
+  id: string;
+  /** For saying "you're missing the WiW Guidebook", not for matching. */
+  name: string;
+  version: number;
+};
 
 export type BundleManifest = {
   teller: number;
@@ -31,18 +51,42 @@ export type BundleManifest = {
   system: string;
   /** What a reader will find inside, so it can be shown before unpacking. */
   contains: string[];
-  /** Set when the bundle expects a system it does NOT itself provide. */
-  requires?: { system: string };
   /**
-   * True when this carries rules content of its own — a bestiary or a
-   * pack, both of which are somebody's stat blocks and rules text.
-   * Book references don't count: a reference is a name, not content.
+   * What this bundle needs and does NOT provide.
+   *
+   * `system` when it expects a system template it doesn't carry; `packs`
+   * for the rules content it references. Ordered, and the order is the
+   * precedence the campaign was built with — see `CampaignData.packs`.
+   */
+  requires?: { system?: string; packs?: PackRef[] };
+  /**
+   * True when this carries rules content of its own — a bestiary the
+   * campaign wrote, which is somebody's stat blocks either way.
+   *
+   * References don't count, and that's now the whole point: a bundle
+   * that only REFERENCES packs and books carries no publisher text, so
+   * this flag finally means what it says. It was set on packs too, and
+   * nothing ever read it.
    */
   personal: boolean;
   exportedAt: string;
 };
 
-type PackRow = { id: string; system: string; name: string; data: string };
+/**
+ * What kind of thing this bundle is — derived, never stored.
+ *
+ * A declared kind goes stale the moment the bundle is edited; a derived
+ * one can't lie. The console reads this to say "starting kit" versus
+ * "an adventure you can run tonight". The importer never branches on it:
+ * import is one operation regardless.
+ */
+export function bundleKind(contains: string[]): string {
+  const has = (s: string) => contains.includes(s);
+  if (has('encounters') || has('scenes')) return 'an adventure';
+  if (has('system')) return 'a starting kit';
+  return 'a campaign';
+}
+
 type BookRow = {
   id: string;
   name: string;
@@ -72,9 +116,11 @@ async function* campaignEntries(
   const scenes = data.maps ?? [];
   const handouts = data.handouts ?? [];
 
-  const packs = await env.DB.prepare('SELECT * FROM packs WHERE system = ?')
-    .bind(campaign.system)
-    .all();
+  // The packs this campaign RUNS ON, in its own precedence order —
+  // referenced, never carried. `packsFor` falls back to every pack for
+  // the system when the campaign hasn't declared a list, which is what
+  // makes this work for campaigns that predate the claim existing.
+  const packs = await packsFor(env, campaign);
   // The books this campaign CLAIMS, not every book on the host. A book
   // has no system to be selected by (migration 0008) and never did have
   // one worth trusting; `data.books` is the campaign saying which
@@ -94,7 +140,6 @@ async function* campaignEntries(
   if (npcs.length) contains.push('bestiary');
   if (encounters.length) contains.push('encounters');
   if (characters.length) contains.push('characters');
-  if (packs.results.length) contains.push('pack');
   if (scenes.length) contains.push('scenes');
   if (handouts.length) contains.push('handouts');
   if (books.results.length) contains.push('books');
@@ -105,11 +150,24 @@ async function* campaignEntries(
     system: campaign.system,
     contains,
     // Rules content is anything a publisher wrote. Structure isn't, and
-    // neither is a reference to a book you both happen to own.
-    personal: npcs.length > 0 || packs.results.length > 0,
+    // neither is a reference to a pack or a book you both happen to own.
+    personal: npcs.length > 0,
     exportedAt: new Date().toISOString(),
   };
-  if (!template) manifest.requires = { system: campaign.system };
+  if (!template || packs.length) {
+    manifest.requires = {
+      ...(template ? {} : { system: campaign.system }),
+      ...(packs.length
+        ? {
+            packs: packs.map((p) => ({
+              id: p.id,
+              name: p.name,
+              version: p.pack.version ?? 1,
+            })),
+          }
+        : {}),
+    };
+  }
 
   yield jsonEntry('teller.json', manifest);
 
@@ -131,6 +189,14 @@ async function* campaignEntries(
     states: data.states ?? [],
     reference: data.reference ?? '',
     activeMapId: data.activeMapId ?? null,
+    // The claim travels with the campaign, so an import lands with the
+    // same packs in the same precedence — the manifest's `requires` is
+    // for a human reading the box, this is what the importer restores.
+    packs: packs.map((p) => p.id),
+    // Which printing this table uses where a foe is in two packs. A
+    // decision a person made; it would be silently re-defaulted
+    // otherwise, which is rule 1 in miniature.
+    foePicks: data.foePicks ?? {},
   });
 
   if (npcs.length) yield jsonEntry('bestiary.json', npcs);
@@ -145,16 +211,6 @@ async function* campaignEntries(
         name: c.name,
         kind: c.kind,
         data: c.data,
-      })),
-    );
-  }
-  if (packs.results.length) {
-    yield jsonEntry(
-      'pack.json',
-      (packs.results as unknown as PackRow[]).map((p) => ({
-        name: p.name,
-        system: p.system,
-        pack: JSON.parse(p.data),
       })),
     );
   }
@@ -182,10 +238,11 @@ async function* campaignEntries(
   // "this expects the WiW Guidebook, bok_a23d…" and stays small enough
   // to email. Two consequences, both wanted:
   //
-  // A `.tell` file contains no rules content at all — no PDF, no page
-  // text — so it is genuinely safe to hand to someone. The IP line rule 4
-  // draws stops being a rule anyone has to remember and becomes a
-  // property of the format.
+  // A `.story` contains no rules content — no PDF, no page text, and
+  // since TEL-62 no pack bodies either — so it is safe to hand to
+  // someone. That claim used to sit here while `pack.json` was written
+  // twenty lines above it; it is true now because the packs left, not
+  // because the sentence was reworded.
   //
   // And because a book's id is the hash of its own bytes, a reference
   // resolves on any host that has that book, with no registry and no
@@ -210,14 +267,24 @@ export function exportCampaign(
   return zipStream(campaignEntries(env, campaign, characters, template, opts));
 }
 
-/** Filenames should look like what they are when they land in Downloads. */
+/**
+ * Filenames should look like what they are when they land in Downloads.
+ *
+ * `.story`, not `.tell`. The pun was nice and completely opaque; this
+ * explains itself. There is deliberately no second extension for the
+ * "starting kit" case — kit and adventure differ only in how FULL they
+ * are, which is fuzzy and unfixable once someone holds the file. A new
+ * extension tracks a different KIND of thing, which is why `.pack` earns
+ * one: different folder, different lifecycle, different identity scheme,
+ * and it never travels with a campaign.
+ */
 export function bundleFilename(campaign: Campaign): string {
   const slug =
     campaign.name
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-|-$/g, '') || 'campaign';
-  return `${slug}.tell`;
+  return `${slug}.story`;
 }
 
 export { getSystem, saveSystem, toCampaign, toCharacter };

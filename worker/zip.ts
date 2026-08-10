@@ -1,4 +1,4 @@
-// A zip writer, because a `.tell` file is a zip.
+// A zip writer, because a `.story` file is a zip.
 //
 // Written here rather than pulled in because the requirements are narrow
 // enough to be boring: STORE only, no compression. A books bundle is

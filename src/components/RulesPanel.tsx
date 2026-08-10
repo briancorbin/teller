@@ -145,11 +145,133 @@ function PackBooks({
   );
 }
 
+/**
+ * Which packs this table runs on, and in what order.
+ *
+ * The order is the point, not decoration. When two packs print the same
+ * foe and nobody has picked one, the LAST one wins — you name the base,
+ * then what goes on top. Before this existed the winner was whichever
+ * pack sorted first alphabetically, which decided real collisions by
+ * where a name happened to fall.
+ *
+ * No claim means "everything for this system", and that stays the
+ * default forever: a host with one pack should never make anyone tick a
+ * box. Touching this materialises the list, and from then on it's yours.
+ */
+function PackShelf({
+  available,
+  claim,
+  missing,
+  onClaim,
+}: {
+  available: PackRecord[];
+  claim?: string[];
+  missing: string[];
+  onClaim: (ids: string[]) => void;
+}) {
+  const byId = new Map(available.map((p) => [p.id, p]));
+  const explicit = claim?.length ? claim : null;
+  const order = explicit ?? available.map((p) => p.id);
+  const unclaimed = available.filter((p) => !order.includes(p.id));
+
+  const move = (i: number, by: number) => {
+    const next = [...order];
+    const j = i + by;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    onClaim(next);
+  };
+
+  if (!available.length && !missing.length) return null;
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline gap-2">
+        <span className="font-mono text-[10px] uppercase tracking-wider text-stone-600">
+          running on
+        </span>
+        {!explicit && (
+          <span className="text-[11px] text-stone-600">
+            every pack for this system
+          </span>
+        )}
+      </div>
+
+      <ol className="space-y-0.5">
+        {order.map((id, i) => {
+          const record = byId.get(id);
+          return (
+            <li key={id} className="flex items-center gap-1.5">
+              <span className="w-4 text-right font-mono text-[10px] text-stone-700">
+                {i + 1}
+              </span>
+              <span
+                className={`min-w-0 flex-1 truncate text-xs ${
+                  record ? 'text-stone-300' : 'text-red-300'
+                }`}
+              >
+                {record ? record.name : `${id} — not on this host`}
+              </span>
+              <button
+                className={`${btnGhost} text-[11px]`}
+                title="earlier — later packs win a collision"
+                disabled={i === 0}
+                onClick={() => move(i, -1)}
+              >
+                ↑
+              </button>
+              <button
+                className={`${btnGhost} text-[11px]`}
+                title="later — later packs win a collision"
+                disabled={i === order.length - 1}
+                onClick={() => move(i, 1)}
+              >
+                ↓
+              </button>
+              <button
+                className={`${btnGhost} text-[11px] hover:text-red-300`}
+                title="this table stops using this pack"
+                onClick={() => onClaim(order.filter((x) => x !== id))}
+              >
+                ✕
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+
+      {unclaimed.length > 0 && explicit && (
+        <select
+          className={`${input} w-full text-xs`}
+          value=""
+          onChange={(e) => e.target.value && onClaim([...order, e.target.value])}
+        >
+          <option value="">also use…</option>
+          {unclaimed.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      )}
+    </div>
+  );
+}
+
 export function RulesPanel({
   packs,
+  claim,
+  missing = [],
+  onClaim,
   onUploaded,
 }: {
+  /** Every pack on this host for this system. */
   packs: PackRecord[];
+  /** The campaign's ordered claim, if it has made one. */
+  claim?: string[];
+  /** Claimed pack ids this host doesn't hold. */
+  missing?: string[];
+  onClaim: (ids: string[]) => void;
   onUploaded: () => void;
 }) {
   const { books } = useBooks();
@@ -158,9 +280,18 @@ export function RulesPanel({
   const [status, setStatus] = useState('');
   const [reading, setReading] = useState<BookTarget | null>(null);
 
+  // What this TABLE runs on, not everything the host happens to hold.
+  // Searching the rules should answer from the books you're playing
+  // with — a pack you deliberately switched off shouldn't answer back.
+  const active = useMemo(() => {
+    if (!claim?.length) return packs;
+    const byId = new Map(packs.map((p) => [p.id, p]));
+    return claim.map((id) => byId.get(id)).filter((p): p is PackRecord => Boolean(p));
+  }, [packs, claim]);
+
   const entries = useMemo<Hit[]>(
     () =>
-      packs.flatMap((record) =>
+      active.flatMap((record) =>
         record.pack.sections.flatMap((section) =>
           section.entries.map((entry) => ({
             ...entry,
@@ -169,7 +300,7 @@ export function RulesPanel({
           })),
         ),
       ),
-    [packs],
+    [active],
   );
 
   const q = query.trim().toLowerCase();
@@ -201,24 +332,31 @@ export function RulesPanel({
       <div className="flex items-center justify-between">
         <span className={sectionLabel}>Rules</span>
         <label className={`${btnGhost} cursor-pointer`}>
-          upload pack
+          add a pack
           <input
             type="file"
-            accept="application/json,.json"
+            accept=".pack,application/json,.json"
             className="hidden"
             onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
           />
         </label>
       </div>
 
-      {packs.length === 0 ? (
+      {packs.length === 0 && !missing.length ? (
         <p className="text-sm text-stone-600">
-          no rules packs for this system yet — upload a pack .json
+          no rules packs for this system yet — drop a .pack into the packs folder,
+          or add one here
         </p>
       ) : (
         <>
+          <PackShelf
+            available={packs}
+            claim={claim}
+            missing={missing}
+            onClaim={onClaim}
+          />
           <div className="space-y-1">
-            {packs.map((record) => (
+            {active.map((record) => (
               <PackBooks
                 key={record.id}
                 record={record}

@@ -7,7 +7,7 @@ import { templates as builtins } from './templates';
 // `templates.ts` still holds the ones teller ships with, but only as
 // SEED data — the authority is the `systems` table. That's what rule 4
 // meant by "templates are data": a template is a document, so it can be
-// exported into a `.tell` file, carried on a stick, and imported into
+// exported into a `.story` file, carried on a stick, and imported into
 // someone else's instance without a pull request.
 //
 // What a template may contain is unchanged and non-negotiable: structure
@@ -82,7 +82,7 @@ export async function getSystem(
   return seeded ? toTemplate(seeded as never) : undefined;
 }
 
-/** Store a template — how a system arrives from a `.tell` bundle. */
+/** Store a template — how a system arrives from a `.story` bundle. */
 export async function saveSystem(env: Env, template: SystemTemplate): Promise<void> {
   await env.DB.prepare(
     `INSERT INTO systems (system, name, version, data, builtin)

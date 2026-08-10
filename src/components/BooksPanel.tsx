@@ -13,7 +13,7 @@ import { BookReader, type BookTarget } from './BookReader';
 // browser, and no "not on this screen".
 //
 // The library spans every system you own: WiW, D&D, whatever else. You
-// own the books; campaigns refer to them by id. Which is why a `.tell`
+// own the books; campaigns refer to them by id. Which is why a `.story`
 // file carries a reference and not a rulebook.
 //
 // The viewer is the browser's own PDF reader over a URL, which is why

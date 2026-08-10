@@ -3,7 +3,7 @@
 //   ~/.teller/books/bok_a23d630c48f7.pdf
 //
 // It is deliberately NOT scoped to a campaign or a system. You own the
-// books; campaigns refer to them. That's why a `.tell` file carries a
+// books; campaigns refer to them. That's why a `.story` file carries a
 // reference and not a rulebook: bundles stay small and shareable, the
 // same PDF is never stored twice, and nothing teller passes around ever
 // contains someone's rules text.

@@ -1,4 +1,4 @@
-// Reading a zip, which is the other half of `.tell`.
+// Reading a zip, which is the other half of `.story`.
 //
 // Entries are found through the central directory at the end of the
 // file rather than by walking local headers, because that's the only
@@ -37,7 +37,7 @@ export async function readZip(buffer: ArrayBuffer): Promise<Map<string, ZipFile>
       break;
     }
   }
-  if (eocd < 0) throw new Error("that doesn't look like a .tell file");
+  if (eocd < 0) throw new Error("that doesn't look like a .story file");
 
   const count = view.getUint16(eocd + 10, true);
   let offset = view.getUint32(eocd + 16, true);

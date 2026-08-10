@@ -324,6 +324,21 @@ export type CampaignData = {
    */
   books?: string[];
   /**
+   * The packs this campaign runs on, by id, **in precedence order**.
+   *
+   * The same shape as `books` and for the same reason: the host owns the
+   * shelf, the campaign says which of it applies here. This is what a
+   * bundle's `requires.packs` becomes on import, and what it's built
+   * from on export — so a `.story` can reference rules content instead
+   * of carrying it.
+   *
+   * The order is load-bearing. When two packs print the same foe and no
+   * `foePick` says otherwise, LATER WINS — you name the base, then what
+   * goes on top. Empty or absent means "everything for this system",
+   * which is what a one-pack host should never have to think about.
+   */
+  packs?: string[];
+  /**
    * The campaign this one was imported from, if any. Provenance for
    * bundles: re-importing a module recognises its own kin and can offer
    * to layer rather than making a twin. Never confers anything.
@@ -474,8 +489,26 @@ export type PackSection = {
  * page and the art. Enrichment, never a prerequisite.
  */
 export type RulesPack = {
+  /**
+   * Minted once, at authoring, and carried in the file forever.
+   *
+   * A book can hash its own bytes because a book is immutable. A pack is
+   * EDITED, so a content hash would mint a new identity every time a
+   * page number was corrected and break every reference to it. So this
+   * is random, assigned once, and stable across every later edit — the
+   * decision blueprints already made: identity is the id, never the name.
+   *
+   * Optional in the type only so a hand-written pack can omit it; the
+   * host mints one on ingest and writes it back into the file.
+   */
+  id?: string;
   system: string;
   name: string;
+  /**
+   * Bumped by whoever edits the pack. This is what makes `requires`
+   * meaningful — "the Guidebook, v3" is a real statement — and it's how
+   * the boot sweep decides whether a file on disk supersedes the row.
+   */
   version: number;
   sections: PackSection[];
   /**

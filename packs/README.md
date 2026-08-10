@@ -2,9 +2,13 @@
 
 A pack is **the unit of content** for a system: the distilled rulings
 that come up mid-game, and the bestiary that goes with them. Rulebook
-excerpts for your own table, or homebrew. Upload one through the
-console's Rules panel (or `PUT /api/packs`); it's searched live from the
-console and its foes appear in every campaign on that system.
+excerpts for your own table, or homebrew.
+
+**A pack is a file.** Drop a `.pack` into `~/.teller/packs/` and the host
+sweeps it in within ten seconds — no restart, no upload step. The Rules
+panel's "add a pack" does the same thing through the browser, and packs
+that arrived that way get written back out to the folder, so the folder
+is always the complete shelf and always something you can hand someone.
 
 A pack needs **no PDF at all** to be useful — most Wardens own paper.
 A book, when you have one, attaches by hash and adds the page and the
@@ -13,18 +17,20 @@ art. Enrichment, never a prerequisite.
 **Content never ships in this repo.** `*.json` here is gitignored on
 purpose: rulebook text is typically copyrighted, and your paste of it
 is personal use — the moment it's committed to a public repo it's
-redistribution. Keep pack files in this folder locally; upload them to
-your instance; git never sees them. (Homebrew you own the rights to
-can of course be shared anywhere.)
+redistribution. Keep authoring copies in this folder locally; the host's
+own shelf is `~/.teller/packs/`; git never sees either. (Homebrew you own
+the rights to can of course be shared anywhere.)
 
-Consequence worth knowing: a pack you build has **no version history**.
-Export a `.tell` now and then — it's the poor man's backup, and it's
-what a `.tell` is for.
+A `.story` **references** packs and never carries them, so back up
+`~/.teller/packs/` alongside your bundles — the bundle alone won't
+rebuild a table. That's the price of the file being safe to hand to
+anyone, and it's the same deal books have always had.
 
 ## Format
 
 ```json
 {
+  "id": "pak_4f1c9a2b7e03",
   "system": "wiw",
   "name": "My Guidebook Pack",
   "version": 1,
@@ -62,7 +68,38 @@ nothing else (rule 4).
 - `system` matches a template's system id (`wiw`, `dnd5e`, …).
 - `meta` is an optional short qualifier rendered next to the name
   (associated Skill, Grit cost, tier…).
-- Re-uploading a pack with the same `system` + `name` replaces it.
+
+### `id` — the pack's permanent name
+
+`pak_` + 12 random hex, **assigned once and never changed**. Leave it out
+and the host mints one on first sweep and writes it back into your file;
+after that it's yours forever.
+
+Deliberately *not* a content hash, unlike a book's id. A book never
+changes, so hashing its bytes is a perfect name for it. A pack gets
+edited — the day after the WiW pack was written, two page numbers were
+corrected — and a content hash would have minted a new identity for it
+and orphaned every reference. **Identity is the id, never the name**, so
+renaming a pack is just a rename, and two people's homebrew "Bestiary"
+don't collide.
+
+`version` is yours to bump. It's what makes a campaign's `requires` list
+a real statement, and it's how a file decides whether it supersedes what
+the host already has: a file only overwrites a stored pack when its
+version is strictly **greater**. Equal versions leave the stored one
+alone, because it may have been edited on the host and that edit is a
+person's decision (rule 1). Uploading through the console is explicit
+intent and always replaces.
+
+### Which packs a campaign uses
+
+A campaign declares its packs by id, **in precedence order**, in the
+console's Rules panel under "running on". When two packs print the same
+foe, **the later one wins** — name the base, then what layers on top.
+Per-foe exceptions are the "printed in 2 books" picker in the bestiary.
+
+Declare nothing and every pack for the system applies, in the order they
+arrived on the host. A one-pack host should never make anyone tick a box.
 
 ### `books` — which rulebook this is about
 
@@ -90,6 +127,18 @@ Ids must be **stable** — `npc_<system>_<name>` is the convention — and
 they're what a campaign's own copy collides with. On a collision **the
 campaign wins** (rule 1): retuning a foe for your table survives the
 pack being updated underneath it.
+
+**A reprint reuses the original's id.** When an adventure's appendix
+reprints a creature from the core book, give it the SAME id, not a fresh
+one. The id names the creature; it isn't a pointer. Both directions then
+work: the adventure pack alone is still self-sufficient (a complete foe,
+not a dangling reference), and holding both packs collapses them to one
+bestiary entry that can open either page instead of two entries with the
+same name.
+
+This is convention, not enforcement, and it's meant to be: a stranger's
+homebrew Bark Watcher carries its own id and shows up separately —
+which is correct, because it genuinely is a different creature.
 
 ### `page` — where it's printed
 

@@ -64,7 +64,7 @@ The local runtime is the one that matters (`bin/teller` → `host/cli.mjs`):
 - `teller key` / `teller where` / `teller version`.
 
 Data lives in `~/.teller/`: `teller.db`, `books/` (PDFs named by content
-hash), `map/`, `dm.key`.
+hash), `packs/` (`.pack` files named by minted id), `map/`, `dm.key`.
 
 - `pnpm dev` — Vite dev server (port 4525) with the worker + local D1/DO.
 - `pnpm db:migrate:local` / `db:migrate:remote` — D1 migrations. The host
@@ -151,9 +151,10 @@ about IP:
 - **The line that stays.** No publisher text in the repo, and none
   distributed: no spell descriptions, no stat blocks, no prose lifted
   from a book. That's expression, it's protected, and it's what
-  `packs/*.json` being gitignored enforces. Still live: a `.tell` is
-  currently ~96% pack text while claiming to be safe to hand to anyone
-  (TEL-62).
+  `packs/*.json` being gitignored enforces. **Closed 2026-08-10**
+  (TEL-62): a bundle used to be ~96% pack text while claiming to be safe
+  to hand to anyone; it now references packs instead of carrying them,
+  so the line is structural rather than remembered.
 - **The line that's gone.** "No mechanics in code" was never an IP
   concern — game *mechanics* aren't protected, only their expression.
   It was scope fear dressed as a legal rule, and it blocked things the
@@ -172,16 +173,29 @@ OR IGNORE`, so a counter someone renamed survives the next reboot
 (rule 1). A system added by a person and a system that shipped with
 teller are the same kind of thing and neither outranks the other.
 
-### 4a. A pack is the unit of content
+### 4a. A pack is the unit of content — and a file, with its own identity
 
-*Learned, from building packs. Being reshaped by TEL-62 — a pack is
-headed for its own file on the host.*
+*Learned, from building packs. Sharpened by TEL-62 (2026-08-10): a pack
+is now a distributable artifact, not a row in someone's database.*
 
-Rules CONTENT has a sanctioned home: **packs** — JSON uploaded to the
-instance's `packs` table. A pack carries the distilled rulings that come
-up mid-game AND the bestiary that goes with them; the campaign's foe
-list is the pack catalogue merged with the campaign's own, campaign
-winning on an id collision.
+Rules CONTENT has a sanctioned home: **packs**. A pack carries the
+distilled rulings that come up mid-game AND the bestiary that goes with
+them; the campaign's foe list is the pack catalogue merged with the
+campaign's own, campaign winning on an id collision.
+
+**A pack lives in `~/.teller/packs/` as a `.pack` file**, swept in on
+boot exactly like a book — drop one in and it's installed. It carries a
+**minted `pak_` id, assigned once at authoring and baked into the file**.
+Not a content hash: a book can hash its own bytes because a book is
+immutable, but a pack is edited, and hashing would rename it on every
+correction. Identity is the id, never the name (the lesson blueprints
+already taught).
+
+**A campaign declares which packs it runs on**, by id, **in precedence
+order** — and later wins on a collision, the way an import layers. That
+list is `campaign.data.packs`; with no list, every pack for the system
+applies, in arrival order. A host with one pack must never make anyone
+tick a box.
 
 A pack works with **no PDF at all**. A book is optional enrichment,
 attached by content hash: a book's id is `bok_` + sha-256 of its own
@@ -189,8 +203,8 @@ bytes, so two people who own the same rulebook derive the same id
 without coordinating and a reference resolves on any host that has it —
 no registry, no ids handed out by anyone.
 
-Pack files live in `packs/` locally and are **gitignored**: rulebook
-text is personal-use data in a private DB, never repo content. See
+Authoring copies live in `packs/` in the repo and are **gitignored**:
+rulebook text is personal-use data, never repo content. See
 `packs/README.md` for the format.
 
 **teller hosts no content.** Not packs, not books. Listing anything is
@@ -373,40 +387,50 @@ in browser storage, and why there is no cloud in the play path.
 
 Its companion, for content: **what a publisher wrote stays put; what you
 wrote travels.** A bundle carries your campaign — characters, encounters,
-scenes — and **references books by id, never carries them**. A rulebook
-is downloaded once, by the person who owns it, onto the machine that
-serves the table.
+scenes — and **references books AND packs by id, never carries them**. A
+rulebook is downloaded once, by the person who owns it, onto the machine
+that serves the table.
 
-**That does not yet hold for packs, and it is the open gap.** A bundle
-carries pack bodies whole: exporting a WiW campaign yields ~124 KB of
-`pack.json` against 563 bytes of `books.json` — 96% of the file is
-distilled rules text and stat blocks. So a bundle is safe to hand to
-someone who owns the same books, and not otherwise. The manifest already
-marks it (`personal: true`) and nothing reads that. TEL-62 closes it:
-packs become `.pack` files on the host and a bundle *references* them,
-which is what turns the IP line into a property of the format instead of
-a rule someone has to remember.
+**This now holds for packs too** (TEL-62, closed 2026-08-10). A bundle
+used to carry pack bodies whole: a WiW export was ~124 KB of `pack.json`
+against 563 bytes of `books.json` — 96% of the file was distilled rules
+text and stat blocks, sitting directly beneath a comment promising the
+format contained none. A `.story` now writes a `requires` list instead,
+and the same export is ~21 KB of structure with the rules text left on
+the host. Host content is books **and** packs; a campaign travels and
+references both.
+
+Two consequences worth keeping: **back up `~/.teller/packs/` alongside
+your `.story` files** — the bundle is no longer self-contained, which is
+the price of the IP line being structural. And a `.story` is only
+runnable by someone who has the packs it names, exactly as it has always
+been for books.
 
 Bundle rules that follow from this (`worker/bundle.ts`, `worker/import.ts`):
 
 - **Sections, not types** — a bundle declares what it contains, so a
   system-only pack and a whole campaign are the same file format.
-- **The extension is a label; the manifest is the truth.** Settled
-  2026-08-09: ONE bundle format, renaming `.tell` → `.story`, with
-  "starting kit" vs "runnable adventure" **derived from `contains`,
-  never stored** — a declared kind goes stale the moment the bundle is
-  edited. No second extension for the kit case: that would track degree
-  of completeness, which is fuzzy (a kit that grows two encounters is
-  what?) and unfixable once someone holds the file. `.pack` gets its own
-  extension because it is a different KIND of thing — different folder,
-  lifecycle and identity scheme. **A new extension tracks a different
-  kind of thing, not a different degree of completeness.** Not yet
-  renamed in code; see TEL-62.
+- **The extension is a label; the manifest is the truth.** ONE bundle
+  format, `.story` (renamed from `.tell` in TEL-62 — `.tell` was a nice
+  pun and completely opaque). "Starting kit" vs "runnable adventure" is
+  **derived from `contains`, never stored** (`bundleKind`) — a declared
+  kind goes stale the moment the bundle is edited. No second extension
+  for the kit case: that would track degree of completeness, which is
+  fuzzy (a kit that grows two encounters is what?) and unfixable once
+  someone holds the file. `.pack` gets its own extension because it is a
+  different KIND of thing — different folder, lifecycle and identity
+  scheme, and it never travels with a campaign. **A new extension tracks
+  a different kind of thing, not a different degree of completeness.**
+  `.tell` is still ACCEPTED on import; nothing writes one.
 - **Import layers onto a running table** rather than replacing it, and
   on a collision the **stored value wins** (rule 1 again — an import is
-  a proposal, not an authority).
-- A book that's referenced but absent is reported as missing, never
-  silently dropped: "you don't have this" beats forgetting it existed.
+  a proposal, not an authority). For packs that rule has a name and a
+  home: `PackOrigin` in `worker/packs.ts`. An upload is intent and
+  replaces; a file appearing on disk or a pack arriving inside something
+  else is a proposal, and may install or upgrade but never clobber.
+- A book or pack that's referenced but absent is reported as missing,
+  never silently dropped: "you don't have this" beats forgetting it
+  existed — and beats an encounter that deploys half-empty at the table.
 
 ## Deferred on purpose (documented so they aren't re-invented badly)
 

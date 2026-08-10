@@ -23,6 +23,7 @@ import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
 import { bundleFilename, exportCampaign } from './bundle';
 import { bestiaryFor, findBlueprint, stamp } from './bestiary';
+import { listPacks, missingPacks, packsFor, savePack } from './packs';
 import { rollInitiative } from './dice';
 import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
@@ -102,13 +103,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // Rules packs — uploaded reference content, DM-gated both ways.
   if (pathname === '/api/packs' && method === 'GET') {
     if (!dm()) return err('DM key required', 401);
-    const system = url.searchParams.get('system');
-    const rows = system
-      ? await env.DB.prepare('SELECT * FROM packs WHERE system = ? ORDER BY name')
-          .bind(system)
-          .all()
-      : await env.DB.prepare('SELECT * FROM packs ORDER BY system, name').all();
-    return json(rows.results.map((r) => toPackRecord(r as never)));
+    return json(await listPacks(env, url.searchParams.get('system') ?? undefined));
   }
 
   if (pathname === '/api/packs' && method === 'PUT') {
@@ -117,16 +112,12 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (!pack.system || !pack.name || !Array.isArray(pack.sections)) {
       return err('pack requires system, name, sections[]', 400);
     }
-    await env.DB.prepare(
-      `INSERT INTO packs (id, system, name, data) VALUES (?, ?, ?, ?)
-       ON CONFLICT(system, name) DO UPDATE SET data = excluded.data, updated_at = datetime('now')`,
-    )
-      .bind(newId('pack'), pack.system, pack.name, JSON.stringify(pack))
-      .run();
-    const row = await env.DB.prepare(
-      'SELECT * FROM packs WHERE system = ? AND name = ?',
-    )
-      .bind(pack.system, pack.name)
+    // Uploading is intent, so it replaces — see `PackOrigin`. The saved
+    // pack comes back carrying its id, which is how a file that was
+    // written without one learns its permanent name.
+    const { pack: saved } = await savePack(env, pack, 'upload');
+    const row = await env.DB.prepare('SELECT * FROM packs WHERE id = ?')
+      .bind(saved.id)
       .first();
     return json(toPackRecord(row as never), 201);
   }
@@ -193,12 +184,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       characters: chars.results.map((r) => toCharacter(r as never)),
       // The whole shelf: what your packs bring plus what this campaign
       // wrote itself, with the campaign's own version winning.
-      bestiary: await bestiaryFor(
-        env,
-        campaign.system,
-        campaign.data.npcs ?? [],
-        campaign.data.foePicks ?? {},
-      ),
+      bestiary: await bestiaryFor(env, campaign),
+      // Packs this campaign claims but this host doesn't hold. Named
+      // here rather than discovered when a deploy comes up short.
+      missingPacks: await missingPacks(env, campaign),
     });
   }
 
@@ -272,7 +261,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ undid: target.kind, entityId: target.entity_id });
   }
 
-  // Look inside a .tell file without unpacking it — what's in the box,
+  // Look inside a .story file without unpacking it — what's in the box,
   // with counts, so the choice of what to take is an informed one.
   if (pathname === '/api/bundles/inspect' && method === 'POST') {
     if (!dm()) return err('DM key required', 401);
@@ -305,7 +294,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
   }
 
-  // Export the whole campaign as a .tell bundle.
+  // Export the whole campaign as a .story bundle.
   //
   // Also the backup. Once teller runs on a host under your table there
   // is no copy anywhere else, so this file is the only thing standing
@@ -614,6 +603,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       npcs: body.data?.npcs ?? campaign.data.npcs,
       encounters: body.data?.encounters ?? campaign.data.encounters,
       books: body.data?.books ?? campaign.data.books,
+      packs: body.data?.packs ?? campaign.data.packs,
       foePicks: body.data?.foePicks ?? campaign.data.foePicks,
       reference: body.data?.reference ?? campaign.data.reference,
       activeHandoutId:
@@ -849,17 +839,14 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .bind(character.campaignId)
       .first();
     const campaign = campaignRow ? toCampaign(campaignRow as never) : null;
-    // Seats get the system's rules packs too — a valid seat token is a
-    // seat at the table, and the table gets to read the rules.
-    const packRows = campaign
-      ? await env.DB.prepare('SELECT * FROM packs WHERE system = ? ORDER BY name')
-          .bind(campaign.system)
-          .all()
-      : null;
+    // Seats get the rules packs too — a seat at the table is a seat at
+    // the table, and the table gets to read the rules. The campaign's
+    // own list, not every pack for the system: a player looking
+    // something up should see what THIS table runs on.
     return json({
       character,
       campaign,
-      packs: packRows ? packRows.results.map((r) => toPackRecord(r as never)) : [],
+      packs: campaign ? await packsFor(env, campaign) : [],
     });
   }
 
@@ -903,12 +890,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const encounter = (campaign.data.encounters ?? []).find((e) => e.id === encounterId);
     if (!encounter) return err('encounter not found', 404);
 
-    const bestiary = await bestiaryFor(
-      env,
-      campaign.system,
-      campaign.data.npcs ?? [],
-      campaign.data.foePicks ?? {},
-    );
+    const bestiary = await bestiaryFor(env, campaign);
     const byId = new Map(bestiary.map((n) => [n.id, n]));
 
     // Number only what repeats: three of one blueprint become "1..3",
@@ -1014,13 +996,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const campaign = toCampaign(row as never);
     // Foes come from the campaign OR from any pack for this system —
     // having the pack means having the monsters.
-    const blueprint = await findBlueprint(
-      env,
-      campaign.system,
-      campaign.data.npcs ?? [],
-      body.npcId ?? '',
-      campaign.data.foePicks ?? {},
-    );
+    const blueprint = await findBlueprint(env, campaign, body.npcId ?? '');
     if (!blueprint) return err('npc not found', 404);
     const count = Math.min(20, Math.max(1, Math.round(body.count ?? 1)));
 

@@ -1,5 +1,6 @@
-import { newId, toPackRecord, type Env } from './db';
-import type { CharacterData, NpcBlueprint, Placement } from './types';
+import { newId, type Env } from './db';
+import { packsFor } from './packs';
+import type { Campaign, CharacterData, NpcBlueprint, Placement } from './types';
 
 // Where foes come from.
 //
@@ -30,7 +31,17 @@ export type NpcSource = {
 export type SourcedNpc = NpcBlueprint & {
   /** Which pack the WINNING copy came from; undefined for the campaign's own. */
   from?: string;
-  /** Every pack that carries this id, in merge order. */
+  /**
+   * The winning pack's id.
+   *
+   * Sent rather than left to the client, because the default winner is
+   * a property of the campaign's pack ORDER and no surface should have
+   * to re-derive it. A console that guessed "the first source" was
+   * right only by accident, and stopped being right the moment
+   * precedence became explicit.
+   */
+  fromId?: string;
+  /** Every pack that carries this id, in precedence order. */
   sources?: NpcSource[];
 };
 
@@ -44,20 +55,20 @@ export type SourcedNpc = NpcBlueprint & {
  */
 export async function bestiaryFor(
   env: Env,
-  system: string,
-  own: NpcBlueprint[] = [],
-  /** npc id → pack id the DM chose, when a foe is printed more than once. */
-  picks: Record<string, string> = {},
+  campaign: Campaign,
 ): Promise<SourcedNpc[]> {
-  const rows = await env.DB.prepare('SELECT * FROM packs WHERE system = ? ORDER BY name')
-    .bind(system)
-    .all();
+  const own = campaign.data?.npcs ?? [];
+  /** npc id → pack id the DM chose, when a foe is printed more than once. */
+  const picks = campaign.data?.foePicks ?? {};
+  // In the campaign's declared order, which IS the precedence — not
+  // alphabetical, which is what it used to be and which decided real
+  // collisions by where a pack's name happened to fall.
+  const packs = await packsFor(env, campaign);
 
   // Every printing, kept. Which one WINS is decided after, so that a
   // pick can name a pack that happens to sort last.
   const printings = new Map<string, { entry: SourcedNpc; source: NpcSource }[]>();
-  for (const row of rows.results) {
-    const record = toPackRecord(row as never);
+  for (const record of packs) {
     // A foe printed in a book belongs to that book. The pack knows which
     // one, the foe usually doesn't, so resolve it here rather than
     // making every client re-derive it — and never overwrite a foe that
@@ -87,8 +98,14 @@ export async function bestiaryFor(
     // a pack since deleted or renamed — falls back rather than erroring:
     // the foe still works, it's just the default printing again.
     const picked = list.find((p) => p.source.packId === picks[id]);
-    const win = picked ?? list[0];
-    byId.set(id, { ...win.entry, sources: list.map((p) => p.source) });
+    // LAST wins by default, because the campaign's pack list reads like
+    // an import: name the base, then what goes on top of it.
+    const win = picked ?? list[list.length - 1];
+    byId.set(id, {
+      ...win.entry,
+      fromId: win.source.packId,
+      sources: list.map((p) => p.source),
+    });
   }
 
   // The campaign's own copy always wins the STATS — but it keeps the
@@ -146,10 +163,8 @@ export function stamp(
 /** Find one foe by id, wherever it lives. */
 export async function findBlueprint(
   env: Env,
-  system: string,
-  own: NpcBlueprint[],
+  campaign: Campaign,
   npcId: string,
-  picks: Record<string, string> = {},
 ): Promise<NpcBlueprint | undefined> {
-  return (await bestiaryFor(env, system, own, picks)).find((n) => n.id === npcId);
+  return (await bestiaryFor(env, campaign)).find((n) => n.id === npcId);
 }
