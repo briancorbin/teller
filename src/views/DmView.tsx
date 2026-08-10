@@ -4,6 +4,7 @@ import type {
   Character,
   CharacterData,
   Display,
+  Encounter,
   PackRecord,
   Scene,
 } from '../../worker/types';
@@ -57,6 +58,8 @@ export function DmView({
   const [tableScreen, setTableScreen] = useState<Display | null>(null);
   // Which scene the map pane is shaping — independent of what's live.
   const [editSceneId, setEditSceneId] = useState<string | null>(null);
+  /** The prepared fight being arranged on the map pane, if any. */
+  const [arrangingId, setArrangingId] = useState<string | null>(null);
   const refetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sceneSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -332,16 +335,18 @@ export function DmView({
    * Prepared fights live next to the running one, because they're the
    * same noun at two moments: you prep an encounter, then one runs.
    */
+  const saveEncounters = (encounters: Encounter[]) => {
+    setCampaign((prev) =>
+      prev ? { ...prev, data: { ...prev.data, encounters } } : prev,
+    );
+    api.patchCampaign(campaignId, { data: { encounters } }).catch(() => refetch());
+  };
+
   const encountersPanel = (
     <EncountersPanel
       campaign={campaign}
       bestiary={bestiary}
-      onChange={(encounters) => {
-        setCampaign((prev) =>
-          prev ? { ...prev, data: { ...prev.data, encounters } } : prev,
-        );
-        api.patchCampaign(campaignId, { data: { encounters } }).catch(() => refetch());
-      }}
+      onChange={saveEncounters}
       onDeployed={refetch}
     />
   );
@@ -416,6 +421,14 @@ export function DmView({
       scenes[0];
     const isLive = !!editing && editing.id === campaign.data.activeMapId;
 
+    // Arranging a fight is a mode you enter deliberately: a map you
+    // opened to paint fog on shouldn't sprout draggable foes.
+    const arrangeable = (campaign.data.encounters ?? []).filter(
+      (e) => editing && e.sceneId === editing.id,
+    );
+    const arranging = arrangeable.find((e) => e.id === arrangingId) ?? null;
+    const blueprintNames = new Map(bestiary.map((n) => [n.id, n.name]));
+
     const pickScene = (id: string) => setEditSceneId(id);
 
     return (
@@ -440,6 +453,25 @@ export function DmView({
                   </option>
                 ))}
               </select>
+
+              {/* Which fight you're arranging on this map. Only the
+                  encounters that name this scene — an encounter set
+                  somewhere else has no business being dragged here. */}
+              {editing && arrangeable.length > 0 && (
+                <select
+                  className="rounded-lg bg-stone-800 px-2 py-1.5 font-mono text-xs text-stone-300"
+                  value={arrangingId ?? ''}
+                  onChange={(e) => setArrangingId(e.target.value || null)}
+                  title="arrange a prepared fight on this map"
+                >
+                  <option value="">arrange no fight</option>
+                  {arrangeable.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      arranging: {e.name}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               {editing &&
                 (isLive ? (
@@ -479,6 +511,17 @@ export function DmView({
                 kind: c.kind,
               }))}
               onChange={onSceneChange}
+              placements={arranging?.foes}
+              placementNames={blueprintNames}
+              onPlacements={
+                arranging
+                  ? (foes) => saveEncounters(
+                      (campaign.data.encounters ?? []).map((e) =>
+                        e.id === arranging.id ? { ...e, foes } : e,
+                      ),
+                    )
+                  : undefined
+              }
             />
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 p-8">

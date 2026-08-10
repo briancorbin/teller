@@ -1,5 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Display, Scene, SceneView, Token, TokenEffect } from '../../worker/types';
+import type {
+  Display,
+  Placement,
+  Scene,
+  SceneView,
+  Token,
+  TokenEffect,
+} from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { input } from '../lib/ui';
 import {
@@ -48,6 +55,9 @@ export function SceneEditor({
   combatRunning,
   table,
   characters,
+  placements,
+  onPlacements,
+  placementNames,
   live = true,
   onCalibrate,
   onChange,
@@ -63,6 +73,20 @@ export function SceneEditor({
    */
   table?: Display | null;
   characters: { id: string; name: string; kind: 'pc' | 'npc' }[];
+  /**
+   * Foes of a prepared fight being arranged on this map.
+   *
+   * They are NOT tokens: nothing exists on the table yet. A placement is
+   * where a creature will START, drawn here so you can arrange an ambush
+   * the week before you run it. Deploying turns each one into a real
+   * character and a real token at this spot.
+   *
+   * Absent when the editor is just editing a map.
+   */
+  placements?: Placement[];
+  onPlacements?: (next: Placement[]) => void;
+  /** Names for the placement pucks, resolved from the bestiary. */
+  placementNames?: Map<string, string>;
   /** Whether this scene is the one currently on the table. */
   live?: boolean;
   /** Write the table display's calibration (px per true inch, per axis). */
@@ -115,10 +139,37 @@ export function SceneEditor({
   const dragRef = useRef<
     | { kind: 'pan'; x: number; y: number }
     | { kind: 'token'; id: string }
+    | { kind: 'placement'; id: string }
     | { kind: 'frame' }
     | { kind: 'paint'; op: 'add' | 'remove'; last: string | null }
     | null
   >(null);
+
+  // Placements are dragged live and written once on release, same as
+  // tokens — a write per pointer sample would be a write per pixel. So
+  // the drag runs against a local copy, and the parent hears about it
+  // when the finger comes up.
+  const [placementDraft, setPlacementDraft] = useState<Placement[]>(
+    placements ?? [],
+  );
+  const placementsRef = useRef(placementDraft);
+  placementsRef.current = placementDraft;
+
+  // Adopt what the parent has — but never mid-drag, or the foe under
+  // your finger snaps back to where the server last saw it.
+  const incoming = JSON.stringify(placements ?? []);
+  useEffect(() => {
+    if (dragRef.current?.kind === 'placement') return;
+    setPlacementDraft(JSON.parse(incoming) as Placement[]);
+  }, [incoming]);
+
+  const setPlacement = (id: string, patch: Partial<Placement>) => {
+    const next = placementsRef.current.map((p) =>
+      p.id === id ? { ...p, ...patch } : p,
+    );
+    placementsRef.current = next;
+    setPlacementDraft(next);
+  };
 
   const ppi = table?.ppi ?? undefined;
   const ppiY = table?.ppiY ?? undefined;
@@ -129,6 +180,8 @@ export function SceneEditor({
   const stretched = Boolean(ppi && ppiY && Math.abs(ppiY / ppi - 1) > 0.02);
   const tokens = draft.tokens ?? [];
   const selected = tokens.find((t) => t.id === selectedId) ?? null;
+  const selectedPlacement =
+    placementDraft.find((p) => p.id === selectedId && p.u !== undefined) ?? null;
 
   // --- live commit + undo ---------------------------------------------------
 
@@ -525,6 +578,13 @@ export function SceneEditor({
       const placed =
         e.altKey || !token ? uv : snapUv(uv.u, uv.v, token.sizeInches);
       setToken(d.id, placed, false);
+    } else if (d.kind === 'placement') {
+      const uv = toUv(e.clientX, e.clientY);
+      if (!uv) return;
+      const foe = (placementsRef.current ?? []).find((p) => p.id === d.id);
+      const placed =
+        e.altKey || !foe ? uv : snapUv(uv.u, uv.v, foe.sizeInches ?? 1);
+      setPlacement(d.id, placed);
     } else if (d.kind === 'frame') {
       const uv = toUv(e.clientX, e.clientY);
       if (uv) setView({ cu: uv.u, cv: uv.v }, false);
@@ -536,6 +596,7 @@ export function SceneEditor({
     dragRef.current = null;
     // one write for the whole drag, not one per pointer sample
     if (d?.kind === 'token' || d?.kind === 'frame') onChange(draftRef.current);
+    if (d?.kind === 'placement') onPlacements?.(placementsRef.current ?? []);
   };
 
   // --- derived table frame --------------------------------------------------
@@ -710,6 +771,50 @@ export function SceneEditor({
                   title={token.label}
                 >
                   {!zone && token.label.slice(0, 2)}
+                </button>
+              );
+            })}
+
+          {/* Prepared foes. Drawn dashed and translucent because they
+              are NOT on the table — nothing here exists until the
+              encounter is deployed. Confusing "will start here" with
+              "is here" mid-session would be the worst kind of wrong. */}
+          {placementDraft
+            .filter((p) => p.u !== undefined && p.v !== undefined)
+            .map((foe) => {
+              const s = px(foe.sizeInches ?? 1);
+              const label = foe.name ?? placementNames?.get(foe.blueprintId) ?? '?';
+              return (
+                <button
+                  key={foe.id}
+                  className={`absolute flex items-center justify-center rounded-full border-2 border-dashed font-mono font-bold text-stone-100 ${
+                    tool !== 'select' ? 'pointer-events-none' : ''
+                  } ${
+                    selectedId === foe.id
+                      ? 'border-amber-300 ring-2 ring-amber-300'
+                      : 'border-stone-200/70'
+                  }`}
+                  style={{
+                    left: (foe.u ?? 0) * baseW,
+                    top: (foe.v ?? 0) * baseH,
+                    width: s,
+                    height: s,
+                    fontSize: Math.max(8, s * 0.3),
+                    backgroundColor: 'rgba(28,25,23,0.55)',
+                    transform: 'translate(-50%, -50%)',
+                    opacity: foe.hidden ? 0.5 : 0.85,
+                  }}
+                  onPointerDown={(e) => {
+                    if (tool !== 'select') return;
+                    e.stopPropagation();
+                    capture(e);
+                    setSelectedId(foe.id);
+                    dragRef.current = { kind: 'placement', id: foe.id };
+                  }}
+                  aria-label={`placement ${label}`}
+                  title={`${label} — starts here when this encounter is deployed`}
+                >
+                  {label.slice(0, 2)}
                 </button>
               );
             })}
@@ -961,6 +1066,81 @@ export function SceneEditor({
         )}
       </div>
 
+      {/* ---------------- placement inspector ---------------- */}
+      {selectedPlacement && (
+        <div
+          className={`absolute bottom-20 left-1/2 flex max-w-[92vw] -translate-x-1/2 flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2 ${panel}`}
+        >
+          <span className="font-mono text-xs text-stone-300">
+            {selectedPlacement.name ??
+              placementNames?.get(selectedPlacement.blueprintId) ??
+              'foe'}
+          </span>
+          <span className="font-mono text-[10px] uppercase tracking-widest text-stone-600">
+            starts here
+          </span>
+          <button
+            className={`rounded-lg px-2.5 py-1.5 font-mono text-xs ${
+              selectedPlacement.hidden
+                ? 'bg-stone-800 text-amber-300'
+                : 'bg-stone-800 text-stone-400'
+            }`}
+            title="behind the screen until you reveal it"
+            onClick={() => {
+              const next = placementsRef.current.map((p) =>
+                p.id === selectedPlacement.id
+                  ? { ...p, hidden: p.hidden ? undefined : true }
+                  : p,
+              );
+              placementsRef.current = next;
+              setPlacementDraft(next);
+              onPlacements?.(next);
+            }}
+          >
+            {selectedPlacement.hidden ? 'hidden' : 'in the open'}
+          </button>
+          <select
+            className={input}
+            value={selectedPlacement.sizeInches ?? 1}
+            onChange={(e) => {
+              const next = placementsRef.current.map((p) =>
+                p.id === selectedPlacement.id
+                  ? { ...p, sizeInches: Number(e.target.value) }
+                  : p,
+              );
+              placementsRef.current = next;
+              setPlacementDraft(next);
+              onPlacements?.(next);
+            }}
+            aria-label="placement size"
+          >
+            {TOKEN_SIZES.map((s) => (
+              <option key={s} value={s}>
+                {s}"
+              </option>
+            ))}
+          </select>
+          {/* Off the map, not out of the fight — it still deploys, just
+              without a starting square. */}
+          <button
+            className="rounded-lg bg-stone-800 px-2.5 py-1.5 font-mono text-xs text-stone-400 hover:text-red-300"
+            onClick={() => {
+              const next = placementsRef.current.map((p) =>
+                p.id === selectedPlacement.id
+                  ? { ...p, u: undefined, v: undefined }
+                  : p,
+              );
+              placementsRef.current = next;
+              setPlacementDraft(next);
+              onPlacements?.(next);
+              setSelectedId(null);
+            }}
+          >
+            off the map
+          </button>
+        </div>
+      )}
+
       {/* ---------------- token inspector ---------------- */}
       {selected && (
         <div
@@ -1098,6 +1278,39 @@ export function SceneEditor({
       {/* ---------------- bottom bar ---------------- */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-3">
         <div className="pointer-events-auto flex flex-col gap-2">
+          {/* Foes in this fight that aren't on the map yet. Opening the
+              editor never places anything by itself — a map you only
+              looked at shouldn't come away changed. Tap one and it
+              lands at the middle of the frame, then you drag it. */}
+          {onPlacements && placementDraft.some((p) => p.u === undefined) && (
+            <div className={`flex max-w-md flex-wrap items-center gap-1.5 p-2 ${panel}`}>
+              <span className="font-mono text-[10px] uppercase tracking-widest text-stone-500">
+                not placed
+              </span>
+              {placementDraft
+                .filter((p) => p.u === undefined)
+                .map((foe) => (
+                  <button
+                    key={foe.id}
+                    className="rounded-md bg-stone-800 px-2 py-1 text-xs text-stone-200 transition-colors hover:bg-stone-700"
+                    onClick={() => {
+                      const placed = snap
+                        ? snapUv(view.cu, view.cv, foe.sizeInches ?? 1)
+                        : { u: view.cu, v: view.cv };
+                      const next = placementsRef.current.map((p) =>
+                        p.id === foe.id ? { ...p, ...placed } : p,
+                      );
+                      placementsRef.current = next;
+                      setPlacementDraft(next);
+                      onPlacements(next);
+                      setSelectedId(foe.id);
+                    }}
+                  >
+                    {foe.name ?? placementNames?.get(foe.blueprintId) ?? 'foe'}
+                  </button>
+                ))}
+            </div>
+          )}
           {showScene && (
             <div className={`flex flex-col gap-3 p-3 ${panel}`}>
               <label className="flex items-center gap-2">
