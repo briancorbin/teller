@@ -46,7 +46,7 @@ export type BundleSummary = {
 
 type PackEntry = { name: string; system: string; pack: unknown };
 type CharacterEntry = { name: string; kind: string; data: CharacterData };
-type BookEntry = { id: string; name: string; system: string };
+type BookEntry = { id: string; name: string };
 
 const newId = (prefix: string) =>
   `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`;

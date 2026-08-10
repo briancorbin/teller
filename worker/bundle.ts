@@ -45,7 +45,6 @@ export type BundleManifest = {
 type PackRow = { id: string; system: string; name: string; data: string };
 type BookRow = {
   id: string;
-  system: string;
   name: string;
   pages: number;
   /** Object-storage key, or null for a book the host doesn't hold. */
@@ -76,11 +75,20 @@ async function* campaignEntries(
   const packs = await env.DB.prepare('SELECT * FROM packs WHERE system = ?')
     .bind(campaign.system)
     .all();
-  const books = opts.books
-    ? await env.DB.prepare('SELECT * FROM books WHERE system = ?')
-        .bind(campaign.system)
-        .all()
-    : { results: [] as unknown[] };
+  // The books this campaign CLAIMS, not every book on the host. A book
+  // has no system to be selected by (migration 0008) and never did have
+  // one worth trusting; `data.books` is the campaign saying which
+  // rulebooks it expects, which is the only relationship that was ever
+  // true.
+  const claimed = data.books ?? [];
+  const books =
+    opts.books && claimed.length
+      ? await env.DB.prepare(
+          `SELECT * FROM books WHERE id IN (${claimed.map(() => '?').join(',')})`,
+        )
+          .bind(...claimed)
+          .all()
+      : { results: [] as unknown[] };
 
   if (template) contains.push('system');
   if (npcs.length) contains.push('bestiary');
@@ -187,7 +195,7 @@ async function* campaignEntries(
     const rows = books.results as unknown as BookRow[];
     yield jsonEntry(
       'books.json',
-      rows.map((b) => ({ id: b.id, name: b.name, system: b.system })),
+      rows.map((b) => ({ id: b.id, name: b.name })),
     );
   }
 }
