@@ -802,7 +802,18 @@ export type SystemTemplate = {
    * tags are editable everywhere (rule 1). `text` is the reminder shown
    * on the marker.
    */
-  marks?: { prefix: string; text?: string };
+  marks?: {
+    prefix: string;
+    text?: string;
+    /** The roster panel's own heading — "Talents". */
+    label?: string;
+    /**
+     * Every category the system sells, so the roster can show what's
+     * NOT owned too. A mark tag outside this list still renders —
+     * homebrew categories don't disappear for want of a declaration.
+     */
+    categories?: string[];
+  };
 };
 
 // --- Rules packs ------------------------------------------------------------

@@ -175,7 +175,31 @@ const wiw: SystemTemplate = {
   // family, Defense, Mechs, Forstalls — and that category rerolls
   // Spurs. Stored as a tag ("Talent: Rifles"), shown as the printed
   // sheet's ✶ box filling in.
-  marks: { prefix: 'Talent: ', text: 'rerolls Spurs' },
+  marks: {
+    prefix: 'Talent: ',
+    text: 'rerolls Spurs',
+    label: 'Talents',
+    // The full menu from p. 32, "organized by how they're used": the
+    // four Skills; weapons & items; Defense; Mechs; Forstalls.
+    categories: [
+      'Charm',
+      'Finesse',
+      'Intuition',
+      'Nerve',
+      'Rifles',
+      'Shotguns',
+      'Revolvers',
+      'Bows',
+      'Melee weapons',
+      'Mounted weapons',
+      'Explosives',
+      'Traps',
+      'First Aid',
+      'Defense',
+      'Mechs',
+      'Forstalls',
+    ],
+  },
   // Firing a weapon costs its Grit and consumes one of whatever special
   // ammo is chambered. Special ammo is a CHARACTER-level pool, fired
   // from any weapon that takes it (Guidebook p. 76; the pregens list it

@@ -6,6 +6,7 @@ import { ItemPanel } from '../sheet/ItemPanel';
 import { Reticle } from '../sheet/Reticle';
 import { Screens } from '../sheet/Screens';
 import { TallyPanel } from '../sheet/TallyPanel';
+import { TalentPanel } from '../sheet/TalentPanel';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
 import { TradePlate } from '../sheet/TradePlate';
@@ -318,8 +319,13 @@ export function Sheet({
         fields: rest,
       }
     : { gauges: [], tallies: [], fields: [] };
+  // The Talents roster rides on More for now — a panel built before its
+  // final screen is decided (blocks first, arrangement second). Moving
+  // it later is one line here.
+  const roster = Boolean(marks?.categories?.length) && Boolean(onTags);
   const hasSpare =
-    spare.gauges.length + spare.tallies.length + spare.fields.length > 0;
+    spare.gauges.length + spare.tallies.length + spare.fields.length > 0 ||
+    roster;
 
   // Screen one: the blocks the page has actually been drawn for.
   const drawn = (
@@ -540,6 +546,15 @@ export function Sheet({
    */
   const spareScreen = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {roster && (
+        <TalentPanel
+          marks={marks!}
+          tags={tags}
+          onTags={onTags}
+          note={note?.(marks!.label ?? marks!.prefix.trim())}
+          fill={strip}
+        />
+      )}
       {spare.fields.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {spare.fields.map((field) => (
