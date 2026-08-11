@@ -52,6 +52,22 @@ export type Field = {
   key: string;
   label: string;
   value: string;
+  /**
+   * Filing information: it matters when you're CHOOSING the thing, not
+   * while you're playing with it.
+   *
+   * A catalogue is two audiences wearing one shape. Picking a rifle off
+   * the page, Quality and Cost are most of the decision; mid-fight,
+   * "Used · $20.00" is noise sat above the dice you actually need. The
+   * split can't be derived — nothing about the string `"$20.00"` says
+   * it's shopping data — so the pack declares it, and every surface
+   * decides for itself: the picker shows everything, a play surface
+   * skips these.
+   *
+   * NOT a hidden flag. Nothing is withheld; it's a statement about
+   * which question the field answers.
+   */
+  filing?: boolean;
 };
 
 /**

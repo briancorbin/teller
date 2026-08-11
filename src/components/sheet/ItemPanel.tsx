@@ -186,7 +186,14 @@ export function ItemPanel({
   return (
     <SheetPanel title={item.name} fill={fill} className="w-full">
       <div className="flex flex-col gap-1">
-        {resolved.fields.map((field) => (
+        {/* Filing information stays in the catalogue, where you're
+            choosing the thing. Quality and Cost are most of the decision
+            at the gunsmith's and pure noise above the dice mid-fight —
+            so the pack says which is which and this surface skips them
+            (see `Field.filing`). */}
+        {resolved.fields
+          .filter((field) => !field.filing)
+          .map((field) => (
           <ItemRow
             key={field.key}
             label={field.label}
@@ -195,7 +202,7 @@ export function ItemPanel({
             overridden={field.overridden}
             derived={field.derived}
           />
-        ))}
+          ))}
 
         {/* What's bolted on, and how much room is left. The slot count
             is the book's own constraint and the thing a player actually
