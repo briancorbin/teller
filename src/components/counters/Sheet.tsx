@@ -193,6 +193,7 @@ export function Sheet({
   lookup,
   note,
   strip = false,
+  mounted = false,
   items = [],
   onItems,
   itemsLabel = 'Items',
@@ -623,6 +624,7 @@ export function Sheet({
       <TradePlate field={title} accent={accent} />
 
       <Screens
+        mounted={mounted}
         screens={[
           { name: 'Sheet', render: () => drawn },
           // Only when there is something to carry — an empty screen

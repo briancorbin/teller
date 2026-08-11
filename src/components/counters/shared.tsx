@@ -46,6 +46,14 @@ export type CounterViewProps = {
   /** Mounted glass too short to stack anything — see `strip` in SeatView. */
   strip?: boolean;
   /**
+   * Mounted glass: fixed height, scaled to fit, and it never scrolls.
+   *
+   * The one device question worth asking (`wide` in SeatView), passed
+   * down for the handful of decisions that genuinely turn on it — so
+   * far, whether the segmented bar has anything to stick to.
+   */
+  mounted?: boolean;
+  /**
    * The character's conditions, for layouts that place them themselves.
    *
    * Same bargain as `fields`: most layouts leave these to the card's own

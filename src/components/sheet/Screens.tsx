@@ -30,7 +30,14 @@ export type Screen = {
   render: () => React.ReactNode;
 };
 
-export function Screens({ screens }: { screens: Screen[] }) {
+export function Screens({
+  screens,
+  mounted = false,
+}: {
+  screens: Screen[];
+  /** Mounted glass: scaled to fit, and it never scrolls. */
+  mounted?: boolean;
+}) {
   const [at, setAt] = useState(0);
   const from = useRef<{ x: number; y: number } | null>(null);
 
@@ -77,13 +84,28 @@ export function Screens({ screens }: { screens: Screen[] }) {
         {screens[current].render()}
       </div>
 
-      {/* At the BOTTOM, and sticky. Hands rest at the near edge of a rail
-          panel and at the bottom of a phone, so that's where the control
-          that gets used every turn belongs — and sticky keeps it there
-          when a phone scrolls the card past it. */}
+      {/* At the BOTTOM. Hands rest at the near edge of a rail panel and
+          at the bottom of a phone, so that's where the control used every
+          turn belongs.
+
+          **Sticky only where the card scrolls**, which is held glass.
+          Mounted glass is scaled to fit and never scrolls, so there is
+          nothing for the bar to stick to — and it doesn't merely have no
+          job there, it actively breaks: `position: sticky` resolves its
+          offset against the scrollport in UNSCALED coordinates, then gets
+          scaled with everything else, so inside `FitBox` the bar pinned
+          about 40px above its own row and sat on top of the weapons
+          panels. It looked like an overlapping z-index bug; it was
+          sticky and a transform disagreeing about which pixels are which.
+
+          The condition is exactly the one that decides everything else
+          about glass (rule 6): mounted or held. Same question, no second
+          device matrix. */}
       <nav
         aria-label="screens"
-        className="sticky bottom-0 z-10 flex shrink-0 gap-1 rounded-lg bg-stone-950/85 p-1 backdrop-blur-sm"
+        className={`z-10 flex shrink-0 gap-1 rounded-lg bg-stone-950/85 p-1 backdrop-blur-sm ${
+          mounted ? '' : 'sticky bottom-0'
+        }`}
       >
         {screens.map((screen, i) => (
           <button

@@ -494,6 +494,7 @@ export function SeatView({
                 pins={template?.pins}
                 dials={template?.dials}
                 strip={strip}
+                mounted={wide}
                 tags={character.data.tags}
                 onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
                 items={character.data.items ?? []}
