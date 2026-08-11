@@ -814,7 +814,62 @@ export type SystemTemplate = {
      */
     categories?: string[];
   };
+  /**
+   * The system's progression purchases — WiW's Prestige spend menu.
+   *
+   * Each entry is a PROPOSING macro (rule 1): one tap debits `counter`
+   * and applies `effect` as ordinary field/counter/tag/item writes in a
+   * single PATCH — one event, one /undo, every result landing in a slot
+   * a person can type over. The fire button proved the shape; these are
+   * its bigger siblings. Nothing here ENFORCES the menu: an
+   * unaffordable purchase is disabled, never clamped, and the steppers
+   * remain the override. A limit the book states ("up to 5 times")
+   * lives in `text` as a reminder — counting past purchases would be
+   * bookkeeping nobody can see or correct.
+   *
+   * `tiers` are display-only milestones derived from `total` — never
+   * stored, so they can never go stale (the `bundleKind` lesson).
+   */
+  spends?: {
+    /** The counter every purchase debits — 'Prestige · Unclaimed'. */
+    counter: string;
+    /** The lifetime counter that measures progression, for tiers. */
+    total?: string;
+    /** The panel's heading — "Prestige". */
+    label?: string;
+    /** Milestone titles, by `total` threshold, ascending. */
+    tiers?: { name: string; at: number }[];
+    menu: {
+      name: string;
+      cost: number;
+      /** Mechanic reminder, incl. any book limit — shown, not enforced. */
+      text?: string;
+      /** What one purchase writes. Absent = debit only. */
+      effect?: SpendEffect;
+    }[];
+  };
 };
+
+/**
+ * What a progression purchase DOES, as data — the same discipline as
+ * `PoolEffect`: four operations cover WiW's whole menu, and each names
+ * its target by declaration rather than by a word in code (rule 2).
+ *
+ *   * `pool` — amend a die-pool FIELD the player chooses from a declared
+ *     group (`groups.skills`), with the same add/convert vocabulary
+ *     upgrades already use. Practice Skill converts, Master Skill adds.
+ *   * `max` — raise a counter's ceiling (Improve Health).
+ *   * `mark` — grant a `marks` category the player chooses (Develop
+ *     Talent); writes the same tag the roster panel toggles.
+ *   * `item` — add a catalogue entry of the named kind the player
+ *     chooses (Unlock Ability); the same reference-copy a picker makes.
+ */
+export type SpendEffect =
+  | { kind: 'pool'; group: string; op: 'add'; dice: string }
+  | { kind: 'pool'; group: string; op: 'convert'; from: string; to: string; count: number }
+  | { kind: 'max'; counter: string; amount: number }
+  | { kind: 'mark' }
+  | { kind: 'item'; itemKind: string };
 
 // --- Rules packs ------------------------------------------------------------
 // A pack is reference CONTENT (rulebook excerpts, homebrew) keyed to a

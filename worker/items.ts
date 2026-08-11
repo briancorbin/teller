@@ -120,6 +120,24 @@ function apply(counts: Counts, effect: PoolEffect, faces: Record<string, string[
   return next;
 }
 
+/**
+ * One effect against one pool STRING — the spend menu's arithmetic
+ * (Practice Skill converts a colour, Master Skill adds a die), sharing
+ * `apply`'s rules: convert only exchanges what's there, and a value
+ * that isn't a pool comes back untouched rather than mangled.
+ */
+export function amendPool(
+  value: string,
+  effect:
+    | { op: 'add'; dice: string }
+    | { op: 'convert'; from: string; to: string; count: number },
+  faces: Record<string, string[]>,
+): string {
+  if (!isPool(value, faces)) return value;
+  const next = apply(toCounts(value, faces), { ...effect, range: '' }, faces);
+  return toPool(next, faces);
+}
+
 export type DerivedField = Field & {
   /** True when a person typed this and the derivation stepped aside. */
   overridden?: boolean;

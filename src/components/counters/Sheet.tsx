@@ -7,6 +7,7 @@ import { Reticle } from '../sheet/Reticle';
 import { Screens } from '../sheet/Screens';
 import { TallyPanel } from '../sheet/TallyPanel';
 import { TalentPanel } from '../sheet/TalentPanel';
+import { PrestigePanel } from '../sheet/PrestigePanel';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
 import { TradePlate } from '../sheet/TradePlate';
@@ -201,6 +202,7 @@ export function Sheet({
   use,
   screens,
   marks,
+  spends,
   onSpend,
   items = [],
   onItems,
@@ -297,11 +299,19 @@ export function Sheet({
    * screens. On an undeclared one they stay where they always were, on
    * the only screen there is.
    */
+  // The spend menu rides on More beside the roster (blocks first,
+  // arrangement second), and its panel IS the home of the two counters
+  // it ledgers — so they're claimed out of the spare tallies below.
+  const spendPanel = Boolean(spends?.menu?.length);
   // A counter a declared screen claims (the Ace tally on Abilities) has
-  // a home there — it must not ALSO haunt the spare screen.
-  const claimedCounters = new Set(
-    (screens ?? []).flatMap((s) => s.counters ?? []),
-  );
+  // a home there — it must not ALSO haunt the spare screen. Same for
+  // the spend panel's ledger pair.
+  const claimedCounters = new Set([
+    ...(screens ?? []).flatMap((s) => s.counters ?? []),
+    ...(spendPanel
+      ? [spends!.counter, ...(spends!.total ? [spends!.total] : [])]
+      : []),
+  ]);
   const homeless = gauges.filter(
     (c) =>
       !pinnedTo(c).length &&
@@ -325,7 +335,8 @@ export function Sheet({
   const roster = Boolean(marks?.categories?.length) && Boolean(onTags);
   const hasSpare =
     spare.gauges.length + spare.tallies.length + spare.fields.length > 0 ||
-    roster;
+    roster ||
+    spendPanel;
 
   // Screen one: the blocks the page has actually been drawn for.
   const drawn = (
@@ -552,6 +563,24 @@ export function Sheet({
           tags={tags}
           onTags={onTags}
           note={note?.(marks!.label ?? marks!.prefix.trim())}
+          fill={strip}
+        />
+      )}
+      {spendPanel && (
+        <PrestigePanel
+          spends={spends!}
+          counters={counters}
+          fields={fields}
+          groups={groups}
+          tags={tags}
+          marks={marks}
+          items={items}
+          packs={packs}
+          ownCatalog={ownCatalog}
+          dice={dice}
+          onChange={update}
+          onSpend={onSpend}
+          note={note?.(spends!.label ?? spends!.counter)}
           fill={strip}
         />
       )}

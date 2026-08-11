@@ -72,13 +72,21 @@ export type CounterViewProps = {
   screens?: SystemTemplate['screens'];
   /** Tag-driven category marks (Talents), when the system declares them. */
   marks?: SystemTemplate['marks'];
+  /** The progression purchases (Prestige), when the system declares them. */
+  spends?: SystemTemplate['spends'];
   /**
-   * One write for a spend that touches counters AND items — the fire
-   * button debits Grit and an ammo pool together, and two separate
-   * patches would be two events and two undos for one squeeze of the
-   * trigger. Absent (alongside `onItems`) on read-only surfaces.
+   * One write for a spend that touches more than one part of the sheet —
+   * the fire button debits Grit and an ammo pool together, a Prestige
+   * purchase debits a counter and grants a tag or an item — and two
+   * separate patches would be two events and two undos for one act.
+   * Absent (alongside `onItems`) on read-only surfaces.
    */
-  onSpend?: (next: { counters?: Counter[]; items?: Item[] }) => void;
+  onSpend?: (next: {
+    counters?: Counter[];
+    items?: Item[];
+    fields?: Field[];
+    tags?: string[];
+  }) => void;
   itemsLabel?: string;
   /** The catalogue items may point into. */
   packs?: RulesPack[];

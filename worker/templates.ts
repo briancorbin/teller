@@ -219,6 +219,63 @@ const wiw: SystemTemplate = {
       { name: 'Aim', cost: 1, text: 'Reroll 1 die in your next Attack. Once per turn.' },
     ],
   },
+  // The Prestige spend menu (Guidebook p. 32) as proposing macros, and
+  // the six tiers (p. 33) as display-only milestones on Total. Costs,
+  // limits and tier thresholds are mechanics; the book's descriptions
+  // of what each tier FEELS like stay in the book. The stated limits
+  // ("up to 5 times") ride in `text` as reminders — counting past
+  // purchases would be invisible bookkeeping nobody could correct.
+  spends: {
+    counter: 'Prestige · Unclaimed',
+    total: 'Prestige · Total',
+    label: 'Prestige',
+    tiers: [
+      { name: 'Tenderfoot', at: 0 },
+      { name: 'Cowpoke', at: 10 },
+      { name: 'Trailblazer', at: 25 },
+      { name: 'Roughrider', at: 50 },
+      { name: 'Wrangler', at: 75 },
+      { name: 'Legend', at: 100 },
+    ],
+    menu: [
+      {
+        name: 'Practice Skill',
+        cost: 2,
+        text: 'Trade 1B for 1G on a skill of your choice.',
+        effect: { kind: 'pool', group: 'skills', op: 'convert', from: 'B', to: 'G', count: 1 },
+      },
+      {
+        name: 'Improve Health',
+        cost: 2,
+        text: '+1 max Health. Up to five times.',
+        effect: { kind: 'max', counter: 'Health', amount: 1 },
+      },
+      {
+        name: 'Develop Talent',
+        cost: 4,
+        text: 'Reroll Spurs for a whole category.',
+        effect: { kind: 'mark' },
+      },
+      {
+        name: 'Unlock Ability',
+        cost: 4,
+        text: 'One new ability of your choice.',
+        effect: { kind: 'item', itemKind: 'ability' },
+      },
+      {
+        name: 'Master Skill',
+        cost: 6,
+        text: 'Permanently add 1B to a skill. Up to three times.',
+        effect: { kind: 'pool', group: 'skills', op: 'add', dice: '1B' },
+      },
+      {
+        name: 'Ace-in-the-Hole 2',
+        cost: 6,
+        text: 'Your second Ace-in-the-Hole ability.',
+        effect: { kind: 'item', itemKind: 'ability' },
+      },
+    ],
+  },
   // Guidebook, Turn Order: "the Warden will ask the players to roll with
   // Finesse to determine turn order. The player with the highest number
   // of Hits will go first."
