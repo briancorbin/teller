@@ -159,6 +159,13 @@ const wiw: SystemTemplate = {
   dials: {
     Grit: 'cylinder',
   },
+  // Firing a weapon costs its Grit and consumes one of whatever special
+  // ammo is chambered. Special ammo is a CHARACTER-level pool, fired
+  // from any weapon that takes it (Guidebook p. 76; the pregens list it
+  // under ITEMS, not under a gun) — so the seat's fire button debits
+  // the Grit counter by the weapon's own grit field and decrements the
+  // loaded ammo item by one. Regular ammo is untracked, by the book.
+  use: { costField: 'grit', costCounter: 'Grit', consumesKind: 'ammo' },
   // Guidebook, Turn Order: "the Warden will ask the players to roll with
   // Finesse to determine turn order. The player with the highest number
   // of Hits will go first."

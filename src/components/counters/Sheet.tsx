@@ -1,4 +1,4 @@
-import type { Counter, Field } from '../../../worker/types';
+import type { Counter, Field, Item } from '../../../worker/types';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
@@ -194,6 +194,8 @@ export function Sheet({
   note,
   strip = false,
   mounted = false,
+  use,
+  onSpend,
   items = [],
   onItems,
   itemsLabel = 'Items',
@@ -574,6 +576,43 @@ export function Sheet({
    * same way the sheet's blocks do — three weapons across a rail bar,
    * one under another on a phone.
    */
+  /**
+   * The character's consumable pools, as the system names them
+   * (`use.consumesKind`). What a weapon's chamber select offers, and
+   * what a fire spends from — a character-level pool by the book: two
+   * weapons loaded with the same box of rounds spend from one count.
+   */
+  const pools = use?.consumesKind
+    ? items.filter((i) => i.kind === use.consumesKind)
+    : [];
+
+  /**
+   * One squeeze of the trigger: debit the cost counter, and one round
+   * off whatever's chambered — in a SINGLE write, so it's one event and
+   * one /undo. `bumped` clamps at zero the same as a stepper would;
+   * teller never invents Grit or rounds that aren't there, and never
+   * blocks the shot either — whether you could afford it is the
+   * table's argument, not teller's (rule 1).
+   */
+  const fire = (item: Item, cost: number) => {
+    if (!use || !onSpend) return;
+    const next: { counters?: Counter[]; items?: Item[] } = {};
+    if (counters.some((c) => c.name === use.costCounter)) {
+      next.counters = counters.map((c) =>
+        c.name === use.costCounter ? bumped(c, -cost) : c,
+      );
+    }
+    const pool = item.loaded ? pools.find((p) => p.id === item.loaded) : undefined;
+    if (pool && pool.counters.length) {
+      next.items = items.map((i) =>
+        i.id === pool.id
+          ? { ...i, counters: [bumped(i.counters[0], -1), ...i.counters.slice(1)] }
+          : i,
+      );
+    }
+    onSpend(next);
+  };
+
   const carried = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div
@@ -594,6 +633,9 @@ export function Sheet({
               packs={packs}
               ownCatalog={ownCatalog}
               fill={strip}
+              use={use}
+              ammo={pools}
+              onFire={onSpend ? (cost) => fire(item, cost) : undefined}
               onChange={(next) =>
                 onItems?.(items.map((i) => (i.id === next.id ? next : i)))
               }

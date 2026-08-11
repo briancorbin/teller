@@ -122,9 +122,21 @@ export type Item = {
    *
    * For sorting and for a person to read. NOTHING may branch on it:
    * the moment code says `kind === 'weapon'` this has become a
-   * game-specific type wearing a string.
+   * game-specific type wearing a string. (Comparing it against a kind
+   * the TEMPLATE declares — `use.consumesKind` — is the sanctioned
+   * pattern, the same way `dials` matches counter names.)
    */
   kind?: string;
+  /**
+   * The consumable currently chambered — another item's id.
+   *
+   * WiW's special ammo is a character-level pool fired from whichever
+   * weapon can take it (the pregens list it under ITEMS, not under a
+   * gun), so this is a SELECTION, not containment: two weapons loaded
+   * with the same box of rounds spend from the same count. Absent means
+   * regular ammo, which the system doesn't track.
+   */
+  loaded?: string;
 };
 
 /**
@@ -701,6 +713,35 @@ export type SystemTemplate = {
    * says nothing loses nothing.
    */
   dials?: Record<string, 'cylinder'>;
+  /**
+   * How USING an item spends things, when this system prices actions.
+   *
+   * WiW: firing a weapon costs its Grit and consumes one of whatever
+   * special ammo is chambered. All three names are this system's, so
+   * all three are declared rather than known (rule 2) — teller ships
+   * the arithmetic and never the words "fire", "Grit" or "ammo":
+   *
+   *   * `costField` — the item field holding the price ('grit'). An
+   *     item without the field, or with a non-numeric value in it,
+   *     simply gets no button — derived, like every other shape choice.
+   *   * `costCounter` — the character counter the price debits ('Grit').
+   *   * `consumesKind` — item kind offered as loadable consumables
+   *     ('ammo'). One is decremented per use when one is chambered;
+   *     absent means using an item only ever costs the counter.
+   *
+   * The button this drives is bookkeeping, not a resolver (rule 1): it
+   * decrements two counters through the same paths a finger on a
+   * stepper takes — event-logged, undoable, and correctable by tapping
+   * `+` when the table rules the shot didn't happen.
+   *
+   * A system that declares nothing loses nothing: no button, and items
+   * keep working as plain stat blocks.
+   */
+  use?: {
+    costField: string;
+    costCounter: string;
+    consumesKind?: string;
+  };
 };
 
 // --- Rules packs ------------------------------------------------------------

@@ -157,6 +157,9 @@ export function ItemPanel({
   ownCatalog,
   onChange,
   fill = false,
+  use,
+  ammo = [],
+  onFire,
 }: {
   item: Item;
   dice?: SystemTemplate['dice'];
@@ -166,6 +169,12 @@ export function ItemPanel({
   ownCatalog?: OwnCatalog;
   onChange: (next: Item) => void;
   fill?: boolean;
+  /** How using an item spends counters, when the system declares it. */
+  use?: SystemTemplate['use'];
+  /** The character's consumable pools — siblings this item can chamber. */
+  ammo?: Item[];
+  /** Spend this item's cost (and one of the chambered pool). */
+  onFire?: (cost: number) => void;
 }) {
   // Base stats from the catalogue, upgrades applied, anything a person
   // typed on top — see `worker/items.ts`. An item that points at nothing
@@ -182,6 +191,18 @@ export function ItemPanel({
       ...item,
       counters: item.counters.map((c) => (c.id === next.id ? next : c)),
     });
+
+  // The price of using this thing, read off the RESOLVED fields so a
+  // value somebody typed over the book's wins here too (rule 1). A
+  // non-numeric price gets no button — derived, like every other shape
+  // choice in this file — which is also what keeps the button off the
+  // ammo pools themselves: a box of rounds has no cost field.
+  const price = use
+    ? Number(resolved.fields.find((f) => f.key === use.costField)?.value)
+    : NaN;
+  const fireable = Boolean(onFire) && Number.isFinite(price) && price > 0;
+  // A pool that's gone missing (deleted, traded away) simply deselects.
+  const chambered = ammo.find((a) => a.id === item.loaded);
 
   return (
     <SheetPanel title={item.name} fill={fill} className="w-full">
@@ -203,6 +224,51 @@ export function ItemPanel({
             derived={field.derived}
           />
           ))}
+
+        {/* The trigger. One tap spends the item's declared cost and one
+            of whatever's chambered — bookkeeping through the same
+            counter arithmetic a stepper does, event-logged and undoable
+            (rule 1). The button says exactly what it will do rather
+            than a verb teller would have to know ("fire"? "swing"?):
+            the label IS the receipt. */}
+        {fireable && (
+          <div className="flex items-center gap-2 pt-1">
+            {use?.consumesKind && ammo.length > 0 && (
+              <select
+                className="h-9 min-w-0 flex-1 rounded-md border border-stone-700 bg-stone-900 px-2 text-[0.75rem] text-stone-200 focus:border-stone-500 focus:outline-none"
+                value={chambered?.id ?? ''}
+                onChange={(e) =>
+                  onChange({ ...item, loaded: e.target.value || undefined })
+                }
+                aria-label={`what ${item.name} is loaded with`}
+              >
+                {/* The untracked default — WiW doesn't count regular
+                    rounds, so there is nothing to decrement. */}
+                <option value="">—</option>
+                {ammo.map((pool) => (
+                  <option key={pool.id} value={pool.id}>
+                    {pool.name}
+                    {pool.counters[0] ? ` · ${pool.counters[0].current}` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
+            <button
+              type="button"
+              className="flex h-9 shrink-0 items-center justify-center rounded-md border-2 px-3 font-mono text-sm font-bold tracking-wider transition-colors active:bg-stone-800"
+              style={{
+                borderColor: 'var(--sheet-accent, #f59e0b)',
+                color: 'var(--sheet-accent, #f59e0b)',
+              }}
+              onClick={() => onFire?.(price)}
+              aria-label={`use ${item.name}: spend ${price} ${use?.costCounter}${
+                chambered ? ` and one ${chambered.name}` : ''
+              }`}
+            >
+              − {price} {use?.costCounter}
+            </button>
+          </div>
+        )}
 
         {/* What's bolted on, and how much room is left. The slot count
             is the book's own constraint and the thing a player actually

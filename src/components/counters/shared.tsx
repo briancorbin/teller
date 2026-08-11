@@ -66,6 +66,15 @@ export type CounterViewProps = {
   /** The things the character carries, for layouts that place them. */
   items?: Item[];
   onItems?: (next: Item[]) => void;
+  /** How using an item spends counters, when the system declares it. */
+  use?: SystemTemplate['use'];
+  /**
+   * One write for a spend that touches counters AND items — the fire
+   * button debits Grit and an ammo pool together, and two separate
+   * patches would be two events and two undos for one squeeze of the
+   * trigger. Absent (alongside `onItems`) on read-only surfaces.
+   */
+  onSpend?: (next: { counters?: Counter[]; items?: Item[] }) => void;
   itemsLabel?: string;
   /** The catalogue items may point into. */
   packs?: RulesPack[];
