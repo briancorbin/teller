@@ -222,7 +222,7 @@ Neutral. Abilities reference thresholds ("Helpful or better").
 - **Surface:** between-session, back-of-sheet — a later seat screen
   ("More") and/or console. Dice modifiers are physical 🎲.
 
-## 16. Prestige, tiers, achievements (p. 32–34) 🔶
+## 16. Prestige, tiers, achievements (p. 32–34) ✅
 
 Earn to 100 max. **Spend menu:** Practice Skill (2, exchange 1B→1G),
 Improve Health (2, +1 max, 5×), Develop Talent (4), Unlock Ability
@@ -231,11 +231,15 @@ Improve Health (2, +1 max, 5×), Develop Talent (4), Unlock Ability
 monster-size guidance. Achievements = named feats granting Titles;
 Jackpot = posse votes +1 Prestige at rest.
 
-- **Built:** the two counters (Total / Unclaimed) ✅.
-- **Candidate:** the spend menu is six PROPOSING macros (deduct
-  Unclaimed, apply the change, tag/unlock the thing) — rule 1 all the
-  way down. Tier could be derived from Total for display.
-- **Surface:** between-session; console + a later seat screen.
+- **Built (TEL-66):** the two counters ✅, and the menu as six
+  proposing macros — template key `spends` (counter / total /
+  tiers / menu with four generic effect ops: pool add/convert from
+  a group, counter max, mark grant, item add). `PrestigePanel`
+  rides on More; one combined PATCH per buy; tier derived from
+  Total, never stored; limits are reminder text, not checks.
+- **Not modelled:** Achievements/Titles (prose — pack territory);
+  Jackpot (a rest-time ritual, TEL-13's family).
+- **Surface:** the seat's More screen; console via ordinary counters.
 
 ## 17. Trapping & bait (p. 70–73) ⬜
 
