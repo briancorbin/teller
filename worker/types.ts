@@ -835,6 +835,15 @@ export type SystemTemplate = {
     counter: string;
     /** The lifetime counter that measures progression, for tiers. */
     total?: string;
+    /**
+     * Spending CLAIMS the points: a purchase credits `total` by the
+     * same amount it debits `counter`, so an award only ever touches
+     * the one box and the lifetime figure keeps itself (earned is
+     * always total + unclaimed). Left off for a system whose total is
+     * bumped at award time — crediting it again on spend would count
+     * every point twice. Brian's table runs WiW claimed (2026-08-11).
+     */
+    claims?: boolean;
     /** The panel's heading — "Prestige". */
     label?: string;
     /** Milestone titles, by `total` threshold, ascending. */

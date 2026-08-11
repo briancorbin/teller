@@ -89,8 +89,15 @@ export function PrestigePanel({
     amendCounters?: (debited: Counter[]) => Counter[],
   ) => {
     if (!onSpend) return;
+    // Under `claims`, the same purchase credits the lifetime counter:
+    // spending is what moves a point from unclaimed to claimed, so the
+    // award only ever touches one box and total keeps itself.
     const debited = counters.map((c) =>
-      c.name === spends.counter ? bumped(c, -spend.cost) : c,
+      c.name === spends.counter
+        ? bumped(c, -spend.cost)
+        : spends.claims && spends.total && c.name === spends.total
+          ? bumped(c, spend.cost)
+          : c,
     );
     onSpend({
       counters: amendCounters ? amendCounters(debited) : debited,

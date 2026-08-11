@@ -228,6 +228,11 @@ const wiw: SystemTemplate = {
   spends: {
     counter: 'Prestige · Unclaimed',
     total: 'Prestige · Total',
+    // The Warden awards into Unclaimed only; spending claims the
+    // points across. The book leaves the two-box protocol unwritten,
+    // and this way nothing is ever entered twice (the table's ruling,
+    // 2026-08-11). Lifetime earned = Total + Unclaimed.
+    claims: true,
     label: 'Prestige',
     tiers: [
       { name: 'Tenderfoot', at: 0 },
