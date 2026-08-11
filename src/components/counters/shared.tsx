@@ -68,6 +68,8 @@ export type CounterViewProps = {
   onItems?: (next: Item[]) => void;
   /** How using an item spends counters, when the system declares it. */
   use?: SystemTemplate['use'];
+  /** How carried items split into screens, when the system declares it. */
+  screens?: SystemTemplate['screens'];
   /**
    * One write for a spend that touches counters AND items — the fire
    * button debits Grit and an ammo pool together, and two separate

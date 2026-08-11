@@ -762,6 +762,30 @@ export type SystemTemplate = {
      */
     actions?: { name: string; cost: number; text?: string }[];
   };
+  /**
+   * How the sheet splits what a character CARRIES into screens.
+   *
+   * WiW's printed page gives Weapons and Abilities separate real
+   * estate, and 515px of rail can't hold both anyway — so the split is
+   * declared, by item kind, the same way `use.consumesKind` already
+   * names one kind without teller learning the word:
+   *
+   *   screens: [
+   *     { name: 'Weapons',   kinds: ['weapon', 'ammo'] },
+   *     { name: 'Abilities', kinds: ['ability'], counters: ['Aces'] },
+   *   ]
+   *
+   * `counters` names character counters shown as panels on that screen
+   * — WiW's Ace-in-the-Hole tally lives beside the abilities it
+   * unlocks. A named counter the character doesn't have simply doesn't
+   * render (declares nothing, loses nothing).
+   *
+   * Items whose kind no screen claims land on the FIRST screen rather
+   * than vanishing — nothing a person carries may disappear over a
+   * missing declaration. Undeclared entirely = one items screen,
+   * exactly as before.
+   */
+  screens?: { name: string; kinds: string[]; counters?: string[] }[];
 };
 
 // --- Rules packs ------------------------------------------------------------

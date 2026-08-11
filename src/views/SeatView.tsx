@@ -500,6 +500,7 @@ export function SeatView({
                 items={character.data.items ?? []}
                 onItems={ownsTags(layout) ? (items) => patch({ items }) : undefined}
                 use={template?.use}
+                screens={template?.screens}
                 onSpend={ownsTags(layout) ? (next) => patch(next) : undefined}
                 itemsLabel={campaign?.data.vocabulary.items ?? 'Items'}
                 packs={packs.map((p) => p.pack)}

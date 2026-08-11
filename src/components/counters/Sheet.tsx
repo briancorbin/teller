@@ -5,6 +5,7 @@ import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
 import { Reticle } from '../sheet/Reticle';
 import { Screens } from '../sheet/Screens';
+import { TallyPanel } from '../sheet/TallyPanel';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
 import { TradePlate } from '../sheet/TradePlate';
@@ -197,6 +198,7 @@ export function Sheet({
   strip = false,
   mounted = false,
   use,
+  screens,
   onSpend,
   items = [],
   onItems,
@@ -280,13 +282,27 @@ export function Sheet({
    * screens. On an undeclared one they stay where they always were, on
    * the only screen there is.
    */
+  // A counter a declared screen claims (the Ace tally on Abilities) has
+  // a home there — it must not ALSO haunt the spare screen.
+  const claimedCounters = new Set(
+    (screens ?? []).flatMap((s) => s.counters ?? []),
+  );
   const homeless = gauges.filter(
-    (c) => !pinnedTo(c).length && !dialled.includes(c),
+    (c) =>
+      !pinnedTo(c).length &&
+      !dialled.includes(c) &&
+      !claimedCounters.has(c.name),
   );
   const plain = designed ? [] : homeless;
-  const strays = designed ? [] : tallies;
+  const strays = designed
+    ? []
+    : tallies.filter((c) => !claimedCounters.has(c.name));
   const spare = designed
-    ? { gauges: homeless, tallies, fields: rest }
+    ? {
+        gauges: homeless,
+        tallies: tallies.filter((c) => !claimedCounters.has(c.name)),
+        fields: rest,
+      }
     : { gauges: [], tallies: [], fields: [] };
   const hasSpare =
     spare.gauges.length + spare.tallies.length + spare.fields.length > 0;
@@ -659,18 +675,44 @@ export function Sheet({
   };
 
   /**
-   * Weapons up top, pools beneath their own rule — the printed page's
-   * own split (weapon blocks, then the counted ammunition rows). The
-   * grouping is the template's `consumesKind`, not a kind teller knows.
+   * The carried screens, as the SYSTEM declares them (`screens` —
+   * WiW: Weapons, then Abilities with the Ace tally alongside). No
+   * declaration = one screen holding everything, exactly as before.
+   *
+   * A kind no screen claims lands on the FIRST screen rather than
+   * vanishing: nothing a person carries may disappear over a missing
+   * declaration (the `groups` promise again).
    */
-  const weapons = items.filter((i) => !pools.includes(i));
+  const shelfDefs: NonNullable<CounterViewProps['screens']> = screens?.length
+    ? screens
+    : [{ name: itemsLabel, kinds: [] }];
+  const claimedKinds = new Set((screens ?? []).flatMap((s) => s.kinds));
+  const shelfItems = (
+    def: (typeof shelfDefs)[number],
+    first: boolean,
+  ): Item[] =>
+    screens?.length
+      ? items.filter(
+          (i) =>
+            def.kinds.includes(i.kind ?? '') ||
+            (first && !claimedKinds.has(i.kind ?? '')),
+        )
+      : items;
 
-  const itemRow = (row: Item[]) => (
+  const itemRow = (
+    row: Item[],
+    lead?: React.ReactNode,
+    // The chamber select is offered only where the pools LIVE — an
+    // Ability is fireable (it costs Grit) but nothing loads into a
+    // speech. The fighting screen passes the pools; others pass none.
+    chamber: Item[] = [],
+  ) => (
     <div
       className={`flex min-h-0 flex-wrap gap-2 ${
         strip ? 'flex-1 items-stretch' : 'content-start'
       }`}
     >
+      {lead}
       {row.map((item) => (
         <div
           key={item.id}
@@ -685,7 +727,7 @@ export function Sheet({
             ownCatalog={ownCatalog}
             fill={strip}
             use={use}
-            ammo={pools}
+            ammo={chamber}
             extraCost={armedCost}
             available={available}
             onFire={onSpend ? (cost) => fire(item, cost) : undefined}
@@ -698,13 +740,12 @@ export function Sheet({
     </div>
   );
 
-  const carried = (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {/* The turn's moves, once for the whole screen — Aim is a global
-          once-per-turn Action (Guidebook p. 41), not a property of any
-          weapon. Arm the reticle and every trigger reprices; the spend
-          happens on the shot. */}
-      {acts.length > 0 && onSpend && (
+  /* The turn's moves, once per fighting screen — Aim is a global
+     once-per-turn Action (Guidebook p. 41), not a property of any
+     weapon. Arm the reticle and every trigger reprices; the spend
+     happens on the shot. It renders on the screen that holds the
+     consumable pools — data deciding again, not a screen name. */
+  const actionRow = acts.length > 0 && onSpend && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {acts.map((action) => {
             const isArmed = armed.includes(action.name);
@@ -749,22 +790,65 @@ export function Sheet({
               </div>
             );
           })}
-        </div>
-      )}
-      {itemRow(weapons)}
-      {pools.length > 0 && (
-        <>
-          <div className="flex items-center gap-2">
-            <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
-              {use?.consumesKind}
-            </span>
-            <div className="h-px flex-1 bg-stone-800" />
-          </div>
-          {itemRow(pools)}
-        </>
-      )}
     </div>
   );
+
+  /**
+   * One carried screen: its declared counters as panels in the same
+   * wrapping row as its items (the Ace tally stands beside the
+   * abilities it unlocks), consumable pools beneath their own rule —
+   * the printed page's split, grouped by the template's `consumesKind`.
+   */
+  const carriedScreen = (
+    def: (typeof shelfDefs)[number],
+    first: boolean,
+  ) => {
+    const mine = shelfItems(def, first);
+    const minePools = mine.filter((i) => pools.includes(i));
+    const mineRest = mine.filter((i) => !pools.includes(i));
+    const tallyPanels = (def.counters ?? [])
+      .map((name) => counters.find((c) => c.name === name))
+      .filter((c): c is Counter => Boolean(c))
+      .map((c) => (
+        <div
+          key={c.id}
+          className={`flex min-w-[15rem] flex-1 flex-col gap-2 ${
+            strip ? 'self-stretch' : 'self-start'
+          }`}
+        >
+          <TallyPanel
+            counter={c}
+            note={note?.(c.name)}
+            onChange={update}
+            fill={strip}
+          />
+        </div>
+      ));
+    const fighting =
+      !screens?.length ||
+      (use?.consumesKind != null && def.kinds.includes(use.consumesKind));
+    return (
+      <div className="flex min-h-0 flex-1 flex-col gap-2">
+        {fighting && actionRow}
+        {itemRow(
+          mineRest,
+          tallyPanels.length ? tallyPanels : undefined,
+          fighting ? pools : [],
+        )}
+        {minePools.length > 0 && (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
+                {use?.consumesKind}
+              </span>
+              <div className="h-px flex-1 bg-stone-800" />
+            </div>
+            {itemRow(minePools)}
+          </>
+        )}
+      </div>
+    );
+  };
 
   return (
     // The accent rides on a CSS variable rather than a prop threaded
@@ -789,11 +873,21 @@ export function Sheet({
         mounted={mounted}
         screens={[
           { name: 'Sheet', render: () => drawn },
-          // Only when there is something to carry — an empty screen
-          // advertises somewhere to go and then shows nothing.
-          ...(onItems && items.length > 0
-            ? [{ name: itemsLabel, render: () => carried }]
-            : []),
+          // A declared screen appears when it has something to show —
+          // items, or a claimed counter the character actually has. An
+          // empty screen advertises somewhere to go and then shows
+          // nothing.
+          ...shelfDefs.flatMap((def, i) => {
+            if (!onItems) return [];
+            const populated =
+              shelfItems(def, i === 0).length > 0 ||
+              (def.counters ?? []).some((name) =>
+                counters.some((c) => c.name === name),
+              );
+            return populated
+              ? [{ name: def.name, render: () => carriedScreen(def, i === 0) }]
+              : [];
+          }),
           ...(hasSpare ? [{ name: 'More', render: () => spareScreen }] : []),
         ]}
       />

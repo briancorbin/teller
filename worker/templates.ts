@@ -80,6 +80,10 @@ const wiw: SystemTemplate = {
       // box of your Health panel." It is a starting value, not a blank.
       { name: 'Health', current: 10, max: 10 },
       { name: 'Grit', current: 6, max: 6 },
+      // The Ace-in-the-Hole tally (p. 14): tick an Ace as you roll one
+      // in combat; either Ace-in-the-Hole Ability fires at 6 and zeroes
+      // it. Rest zeroes it too.
+      { name: 'Aces', current: 0, max: 6 },
       { name: 'Prestige · Total', current: 0, max: null },
       { name: 'Prestige · Unclaimed', current: 0, max: null },
       { name: 'Wallet ($)', current: 0, max: null },
@@ -159,6 +163,14 @@ const wiw: SystemTemplate = {
   dials: {
     Grit: 'cylinder',
   },
+  // The printed page gives Weapons and Abilities separate real estate;
+  // the seat does the same. The Ace-in-the-Hole tally (tick an Ace as
+  // you roll one, spend six to fire an Ace-in-the-Hole Ability) sits
+  // beside the abilities it unlocks.
+  screens: [
+    { name: 'Weapons', kinds: ['weapon', 'ammo'] },
+    { name: 'Abilities', kinds: ['ability'], counters: ['Aces'] },
+  ],
   // Firing a weapon costs its Grit and consumes one of whatever special
   // ammo is chambered. Special ammo is a CHARACTER-level pool, fired
   // from any weapon that takes it (Guidebook p. 76; the pregens list it
