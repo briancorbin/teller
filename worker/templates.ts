@@ -219,6 +219,28 @@ const wiw: SystemTemplate = {
       { name: 'Aim', cost: 1, text: 'Reroll 1 die in your next Attack. Once per turn.' },
     ],
   },
+  // Reputation (Guidebook p. 119): per-faction standing on one
+  // five-step ladder, modifying Charm rolls with that faction — in the
+  // player's hand, never applied by teller. The factions themselves are
+  // world content and live in the pack's "Factions" section; this is
+  // only the scale. Horse bonds (p. 104) reuse these steps and will be
+  // a second entry here when mounts arrive (TEL-72's neighbour).
+  ladders: [
+    {
+      prefix: 'rep_',
+      label: 'Reputation',
+      section: 'Factions',
+      text: 'applies to Charm rolls with that faction',
+      steps: [
+        { label: 'Hostile', mod: '−2B' },
+        { label: 'Suspicious', mod: '−1B' },
+        { label: 'Neutral', mod: '+0B' },
+        { label: 'Helpful', mod: '+1B' },
+        { label: 'Revered', mod: '+2B' },
+      ],
+      defaultStep: 'Neutral',
+    },
+  ],
   // The Prestige spend menu (Guidebook p. 32) as proposing macros, and
   // the six tiers (p. 33) as display-only milestones on Total. Costs,
   // limits and tier thresholds are mechanics; the book's descriptions

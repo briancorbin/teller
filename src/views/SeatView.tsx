@@ -503,6 +503,24 @@ export function SeatView({
                 screens={template?.screens}
                 marks={template?.marks}
                 spends={template?.spends}
+                ladders={template?.ladders}
+                onFields={
+                  ownsTags(layout)
+                    ? (next) =>
+                        // The card was given fields minus the
+                        // description; it must ride back on every write
+                        // or the first standing tap deletes it (the
+                        // StatusPanel lesson, same shape).
+                        patch({
+                          fields: [
+                            ...next,
+                            ...character.data.fields.filter(
+                              (f) => f.key === 'description',
+                            ),
+                          ],
+                        })
+                    : undefined
+                }
                 onSpend={ownsTags(layout) ? (next) => patch(next) : undefined}
                 itemsLabel={campaign?.data.vocabulary.items ?? 'Items'}
                 packs={packs.map((p) => p.pack)}

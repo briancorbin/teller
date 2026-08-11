@@ -74,6 +74,15 @@ export type CounterViewProps = {
   marks?: SystemTemplate['marks'];
   /** The progression purchases (Prestige), when the system declares them. */
   spends?: SystemTemplate['spends'];
+  /** Standing scales (Reputation), when the system declares them. */
+  ladders?: SystemTemplate['ladders'];
+  /**
+   * Writes the character's fields — the ladder panel setting a
+   * standing. Receives the fields THIS surface was given; anything the
+   * caller withheld (the description) must ride back in its handler,
+   * or the first standing tap deletes it (the StatusPanel lesson).
+   */
+  onFields?: (next: Field[]) => void;
   /**
    * One write for a spend that touches more than one part of the sheet —
    * the fire button debits Grit and an ammo pool together, a Prestige

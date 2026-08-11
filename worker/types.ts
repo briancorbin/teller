@@ -830,6 +830,40 @@ export type SystemTemplate = {
    * `tiers` are display-only milestones derived from `total` — never
    * stored, so they can never go stale (the `bundleKind` lesson).
    */
+  /**
+   * Ordered standing scales — WiW's Reputation ladder, one field per
+   * faction. A ladder names its steps and (optionally) the pack section
+   * whose entry names are the ROSTER: the parties a standing can be
+   * held with are world content, so they live in a pack, never here
+   * (rule 4) — a section title is the join, the same way `note` and
+   * `lookup` already find pack prose by name.
+   *
+   * A standing is an ordinary FIELD: key `${prefix}${slug(name)}`,
+   * label the party's name, value a step's label — no new type, and
+   * editable anywhere fields are edited (rule 1). Nothing is stored
+   * until a standing moves off `defaultStep` ("everyone starts
+   * Neutral"), and a stored field whose name the roster doesn't know
+   * still renders — the strays promise again. A step's `mod` is shown,
+   * never applied: the dice it modifies are in the player's hand.
+   *
+   * An array because the shape recurs — the book runs horse bonds on
+   * the same five steps, which will be a second entry with its own
+   * prefix, not a special case.
+   */
+  ladders?: {
+    /** Field-key namespace — 'rep_'. Identifies which fields ride this. */
+    prefix: string;
+    /** The panel's heading — "Reputation". */
+    label: string;
+    /** Pack section whose entry names seed the roster. */
+    section?: string;
+    /** Reminder shown on the panel — what a standing does, in brief. */
+    text?: string;
+    /** The rungs, in order. `mod` is display only. */
+    steps: { label: string; mod?: string }[];
+    /** The step everyone starts on. Unstored = this. */
+    defaultStep?: string;
+  }[];
   spends?: {
     /** The counter every purchase debits — 'Prestige · Unclaimed'. */
     counter: string;

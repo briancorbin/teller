@@ -208,19 +208,23 @@ each skill row is this** — the Talent tick, not Aim (settled
 - **Surface:** markers on existing panels; the buy lives with
   Prestige (§16).
 
-## 15. Reputation & factions (p. 119+) ⬜
+## 15. Reputation & factions (p. 119+) ✅
 
 Per-faction standing on one five-step ladder: Hostile (−2B),
 Suspicious (−1B), Neutral (0), Helpful (+1B), Revered (+2B) — the
-modifier applies to social rolls with that faction. Everyone starts
-Neutral. Abilities reference thresholds ("Helpful or better").
-**Horse bonds use the same ladder** (§18).
+modifier applies to CHARM rolls with that faction (p. 119's table).
+Everyone starts Neutral. Abilities reference thresholds ("Helpful or
+better"). **Horse bonds use the same ladder** (§18).
 
-- **Shape:** fields (`Rosewoods: Helpful`) — display strings, no new
-  type. The faction LIST is campaign data (a pack can seed the
-  canonical factions; the campaign owns its own).
-- **Surface:** between-session, back-of-sheet — a later seat screen
-  ("More") and/or console. Dice modifiers are physical 🎲.
+- **Built (TEL-67):** template key `ladders` (prefix / steps with
+  display-only mods / defaultStep / a pack SECTION whose entry names
+  are the roster — factions are world content and live in the pack,
+  v14's "Factions"). A standing is an ordinary field
+  (`rep_<slug>: Helpful`), stored only off-default — tap Neutral and
+  the field is removed. `LadderPanel` rides on More; names open the
+  pack entry; strays render. Mods shown, never applied 🎲.
+- **Later:** horse bonds as a second `ladders` entry (own prefix),
+  when mounts arrive (§18).
 
 ## 16. Prestige, tiers, achievements (p. 32–34) ✅
 

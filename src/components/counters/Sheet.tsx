@@ -8,6 +8,7 @@ import { Screens } from '../sheet/Screens';
 import { TallyPanel } from '../sheet/TallyPanel';
 import { TalentPanel } from '../sheet/TalentPanel';
 import { PrestigePanel } from '../sheet/PrestigePanel';
+import { LadderPanel } from '../sheet/LadderPanel';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
 import { TradePlate } from '../sheet/TradePlate';
@@ -203,6 +204,8 @@ export function Sheet({
   screens,
   marks,
   spends,
+  ladders,
+  onFields,
   onSpend,
   items = [],
   onItems,
@@ -284,11 +287,15 @@ export function Sheet({
 
   /** Fields with no block of their own. Only shown on an undesigned sheet. */
   const allPinned = new Set(Object.values(pins ?? {}).flat());
+  // A standing field belongs to its ladder's panel, not the loose strip.
+  const laddered = (key: string) =>
+    (ladders ?? []).some((l) => key.startsWith(l.prefix));
   const rest = fields.filter(
     (f) =>
       !(skillKeys ?? []).includes(f.key) &&
       f.key !== titleKey &&
-      !allPinned.has(f.key),
+      !allPinned.has(f.key) &&
+      !laddered(f.key),
   );
 
   /**
@@ -333,10 +340,12 @@ export function Sheet({
   // final screen is decided (blocks first, arrangement second). Moving
   // it later is one line here.
   const roster = Boolean(marks?.categories?.length) && Boolean(onTags);
+  const ladderPanels = ladders ?? [];
   const hasSpare =
     spare.gauges.length + spare.tallies.length + spare.fields.length > 0 ||
     roster ||
-    spendPanel;
+    spendPanel ||
+    ladderPanels.length > 0;
 
   // Screen one: the blocks the page has actually been drawn for.
   const drawn = (
@@ -566,6 +575,18 @@ export function Sheet({
           fill={strip}
         />
       )}
+      {ladderPanels.map((ladder) => (
+        <LadderPanel
+          key={ladder.prefix}
+          ladder={ladder}
+          fields={fields}
+          packs={packs}
+          onFields={onFields}
+          lookup={lookup}
+          note={note?.(ladder.label)}
+          fill={strip}
+        />
+      ))}
       {spendPanel && (
         <PrestigePanel
           spends={spends!}
