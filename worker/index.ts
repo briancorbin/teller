@@ -606,6 +606,12 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       packs: body.data?.packs ?? campaign.data.packs,
       foePicks: body.data?.foePicks ?? campaign.data.foePicks,
       reference: body.data?.reference ?? campaign.data.reference,
+      // This table's own gear. Second time this allowlist has silently
+      // eaten a new key — a patch carrying it returns 200 and writes
+      // nothing, which reads as a client bug for as long as it takes to
+      // find. If you add a patchable key to `CampaignData`, add it here
+      // in the same commit.
+      catalog: body.data?.catalog ?? campaign.data.catalog,
       activeHandoutId:
         body.data?.activeHandoutId !== undefined
           ? body.data.activeHandoutId
