@@ -1,4 +1,5 @@
 import type {
+  CampaignData,
   Counter,
   Field,
   Item,
@@ -60,6 +61,8 @@ export type CounterViewProps = {
   itemsLabel?: string;
   /** The catalogue items may point into. */
   packs?: RulesPack[];
+  /** This campaign's own gear, which outranks any pack's. */
+  ownCatalog?: CampaignData['catalog'];
   /** The pack entries for the conditions block, and its heading. */
   conditions?: (PackEntry & { section?: string })[];
   conditionsLabel?: string;

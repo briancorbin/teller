@@ -426,6 +426,27 @@ export type CampaignData = {
   states?: EncounterState[];
   /** The bestiary: NPCs to stamp out. Per-instance content, never shipped. */
   npcs?: NpcBlueprint[];
+  /**
+   * This table's OWN gear and modifications — kitbashed weapons, a
+   * Warden's one-offs, anything the books don't print.
+   *
+   * A pack describes a BOOK: it stays as its author wrote it, so that
+   * installing the next version doesn't clobber your inventions and your
+   * inventions never masquerade as the publisher's. Two ways in, and
+   * both end here: copy an entry out of a pack, or write one from
+   * scratch. Either way it becomes a NEW entry with its own id — never a
+   * shadow of the pack's, because a weapon you modified is a different
+   * weapon and the book's still exists beside it.
+   *
+   * It's also what makes homebrew travel (rule 9): a `.story` carries
+   * the campaign and only REFERENCES packs, so gear written here goes
+   * with the game while the book's tables stay on the host that owns
+   * them.
+   */
+  catalog?: {
+    items?: CatalogItem[];
+    upgrades?: CatalogUpgrade[];
+  };
   /** Prepared fights — see `Encounter`. Most of what a module is made of. */
   encounters?: Encounter[];
   /**

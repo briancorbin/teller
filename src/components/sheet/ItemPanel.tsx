@@ -4,7 +4,11 @@ import type {
   RulesPack,
   SystemTemplate,
 } from '../../../worker/types';
-import { fittedUpgrades, resolveItem } from '../../../worker/items';
+import {
+  fittedUpgrades,
+  resolveItem,
+  type OwnCatalog,
+} from '../../../worker/items';
 import { bumped, isGauge, Step } from '../counters/shared';
 import { SheetPanel } from './SheetPanel';
 import { looksLikePool, Track } from './Track';
@@ -149,6 +153,7 @@ export function ItemPanel({
   item,
   dice,
   packs = [],
+  ownCatalog,
   onChange,
   fill = false,
 }: {
@@ -156,14 +161,16 @@ export function ItemPanel({
   dice?: SystemTemplate['dice'];
   /** The catalogue this item may point into. */
   packs?: RulesPack[];
+  /** The campaign's own gear, which outranks any pack's. */
+  ownCatalog?: OwnCatalog;
   onChange: (next: Item) => void;
   fill?: boolean;
 }) {
   // Base stats from the catalogue, upgrades applied, anything a person
   // typed on top — see `worker/items.ts`. An item that points at nothing
   // comes back exactly as it was stored.
-  const resolved = resolveItem(item, packs, dice);
-  const fitted = fittedUpgrades(item, packs);
+  const resolved = resolveItem(item, packs, dice, ownCatalog);
+  const fitted = fittedUpgrades(item, packs, ownCatalog);
   const setCounter = (next: Counter) =>
     onChange({
       ...item,

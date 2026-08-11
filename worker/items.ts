@@ -1,5 +1,6 @@
 import { parsePool } from './dice';
 import type {
+  CampaignData,
   CatalogItem,
   CatalogUpgrade,
   Field,
@@ -9,25 +10,56 @@ import type {
   SystemTemplate,
 } from './types';
 
+/** The campaign's own gear, which outranks any pack's. */
+export type OwnCatalog = CampaignData['catalog'];
+
 // What a thing's numbers actually are once it's been modified.
 //
-// teller ships the arithmetic; the pack ships the weapons and what
+// teller ships the arithmetic; the catalogue ships the weapons and what
 // bolting something onto them does. That split is rule 4's: mechanics
 // belong in code, the publisher's tables belong in the reader's own
 // pack, and a new system arrives as data rather than a code change.
 //
+// **There are two catalogues, and they are not interchangeable.** A pack
+// is a BOOK — static, as its author wrote it, upgradable underneath you.
+// The campaign holds what your table invented. Kitbashed gear belongs on
+// the campaign, not stuffed into the publisher's pack, or installing the
+// next version of the book would clobber it and your inventions would
+// masquerade as the publisher's. It's also the only way homebrew travels
+// (rule 9) — a `.story` carries the campaign and merely references packs.
+//
 // **Everything here PROPOSES** (rule 1). A derived pool fills a field
 // that nobody typed over; the moment a person writes a number down, that
-// number wins and the derivation steps aside. It has to work that way —
-// the table's ruling beats the book's, a homebrew part has no catalogue
-// entry, and a Warden saying "it's jammed, one die" must be able to say
-// so without arguing with a spreadsheet.
+// number wins and the derivation steps aside. That's for the RULING —
+// "it's jammed, one die" — not for homebrew, which deserves a catalogue
+// entry of its own rather than a pile of typed-over fields.
 //
 // Pure and dependency-free, so the same function answers on the seat,
 // on the console and on either runtime.
 
-/** Merge the catalogues of every pack, later packs winning on an id. */
-export function catalogOf(packs: RulesPack[]): {
+/**
+ * Everything a campaign can reach: every pack's catalogue, plus its own.
+ *
+ * A UNION, not an override — and that's the one place this deliberately
+ * parts company with `bestiaryFor`. A foe you retune is still that foe,
+ * so the bestiary lets a campaign shadow a pack's id. A weapon you
+ * modify is a DIFFERENT WEAPON: copying one out of a book mints a new id
+ * on the campaign, and the book's entry goes on existing beside it.
+ *
+ * Which means an item's `from` always names exactly one thing. Under
+ * shadowing it wouldn't: a character pointing at the book's rifle would
+ * silently start meaning something else the day someone retuned it, and
+ * nothing on the card would say so.
+ *
+ * Ids are therefore expected to be distinct across sources. Campaign
+ * entries are read last so a collision resolves deterministically rather
+ * than by map order, but that's damage control for bad data, not a
+ * feature to rely on.
+ */
+export function catalogOf(
+  packs: RulesPack[],
+  own?: OwnCatalog,
+): {
   items: Map<string, CatalogItem>;
   upgrades: Map<string, CatalogUpgrade>;
 } {
@@ -37,6 +69,8 @@ export function catalogOf(packs: RulesPack[]): {
     for (const item of pack.catalog?.items ?? []) items.set(item.id, item);
     for (const up of pack.catalog?.upgrades ?? []) upgrades.set(up.id, up);
   }
+  for (const item of own?.items ?? []) items.set(item.id, item);
+  for (const up of own?.upgrades ?? []) upgrades.set(up.id, up);
   return { items, upgrades };
 }
 
@@ -105,8 +139,9 @@ export function resolveItem(
   item: Item,
   packs: RulesPack[],
   dice?: SystemTemplate['dice'],
+  own?: OwnCatalog,
 ): { name: string; fields: DerivedField[]; slots?: number; slotsUsed: number } {
-  const { items, upgrades } = catalogOf(packs);
+  const { items, upgrades } = catalogOf(packs, own);
   const base = item.from ? items.get(item.from) : undefined;
   const fitted = (item.upgrades ?? [])
     .map((f) => ({ fit: f, up: upgrades.get(f.from) }))
@@ -179,8 +214,9 @@ export function resolveItem(
 export function fittedUpgrades(
   item: Item,
   packs: RulesPack[],
+  own?: OwnCatalog,
 ): { upgrade: CatalogUpgrade; range?: string }[] {
-  const { upgrades } = catalogOf(packs);
+  const { upgrades } = catalogOf(packs, own);
   const out: { upgrade: CatalogUpgrade; range?: string }[] = [];
   for (const fit of item.upgrades ?? []) {
     const upgrade = upgrades.get(fit.from);

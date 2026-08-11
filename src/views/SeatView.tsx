@@ -500,6 +500,7 @@ export function SeatView({
                 onItems={ownsTags(layout) ? (items) => patch({ items }) : undefined}
                 itemsLabel={campaign?.data.vocabulary.items ?? 'Items'}
                 packs={packs.map((p) => p.pack)}
+                ownCatalog={campaign?.data.catalog}
                 conditions={conditions}
                 conditionsLabel={conditionsLabel}
                 lookup={lookup}

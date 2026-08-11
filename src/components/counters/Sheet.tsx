@@ -197,6 +197,7 @@ export function Sheet({
   onItems,
   itemsLabel = 'Items',
   packs = [],
+  ownCatalog,
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -590,6 +591,7 @@ export function Sheet({
               item={item}
               dice={dice}
               packs={packs}
+              ownCatalog={ownCatalog}
               fill={strip}
               onChange={(next) =>
                 onItems?.(items.map((i) => (i.id === next.id ? next : i)))
