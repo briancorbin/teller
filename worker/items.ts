@@ -232,6 +232,129 @@ export function describeEffect(
     : `${where} ${effect.count}${effect.from} → ${effect.count}${effect.to}`;
 }
 
+/**
+ * The fields of a catalogue entry that hold a die pool — i.e. the
+ * places an effect can land.
+ *
+ * Derived from the values rather than declared, the same way the sheet
+ * decides a value is a track: "3B" is a pool and "Used" isn't, and
+ * nothing here needs to know the word "range".
+ */
+export function poolFields(base: CatalogItem, dice?: SystemTemplate['dice']): Field[] {
+  const faces = dice?.faces ?? {};
+  if (!Object.keys(faces).length) return [];
+  return base.fields.filter((f) => parsePool(f.value, faces).length > 0);
+}
+
+/**
+ * Where an upgrade fitted to THIS item can be pointed.
+ *
+ * The same list `fittableUpgrades` hands out, for the upgrades already
+ * on the thing — re-pointing one is an ordinary edit, not something you
+ * have to unfit and refit to change.
+ */
+export function itemRanges(
+  item: Item,
+  packs: RulesPack[],
+  dice?: SystemTemplate['dice'],
+  own?: OwnCatalog,
+): Field[] {
+  const base = item.from ? catalogOf(packs, own).items.get(item.from) : undefined;
+  return base ? poolFields(base, dice) : [];
+}
+
+/** An upgrade offered for an item, with what the book has to say about it. */
+export type Fit = {
+  upgrade: CatalogUpgrade;
+  /** Pool fields it could be pointed at, in the item's own order. */
+  ranges: Field[];
+  /** Where to point it unless the person says otherwise. */
+  range?: string;
+  /**
+   * What the book's own constraints say — one per type, and the slot
+   * count. A WARNING, never a bar: the picker shows it and fits it
+   * anyway if you say so, because the table's ruling beats the book's
+   * (rule 1).
+   */
+  problem?: string;
+  /**
+   * True when this was written for this kind of thing — every effect's
+   * declared range actually exists here. A Damage upgrade aimed at
+   * Short Range is not native to a knife, which has none.
+   */
+  native: boolean;
+};
+
+/**
+ * Every upgrade the catalogue offers for one item, in the order a
+ * picker should show them.
+ *
+ * Nothing is withheld. Sorting puts the ones written for this kind of
+ * weapon first and the ones the book would refuse last, which is the
+ * useful part — a hard filter would silently hide the homebrew case,
+ * and "your table can't do that" is not teller's call to make.
+ */
+export function fittableUpgrades(
+  item: Item,
+  packs: RulesPack[],
+  dice?: SystemTemplate['dice'],
+  own?: OwnCatalog,
+): Fit[] {
+  const { items, upgrades } = catalogOf(packs, own);
+  const base = item.from ? items.get(item.from) : undefined;
+  const ranges = base ? poolFields(base, dice) : [];
+  const rangeKeys = new Set(ranges.map((f) => f.key));
+
+  const fittedList = (item.upgrades ?? [])
+    .map((f) => upgrades.get(f.from))
+    .filter((u): u is CatalogUpgrade => Boolean(u));
+  const used = fittedList.reduce((n, u) => n + (u.slotsUsed ?? 1), 0);
+  // Types already spoken for, minus the ones that said they stack.
+  const taken = new Set(fittedList.filter((u) => !u.stacks).map((u) => u.type));
+  const slots = base?.slots;
+
+  const out: Fit[] = [];
+  for (const upgrade of upgrades.values()) {
+    const declared = (upgrade.effects ?? []).map((e) => e.range);
+    const native = declared.length === 0 || declared.every((r) => rangeKeys.has(r));
+    const cost = upgrade.slotsUsed ?? 1;
+
+    let problem: string | undefined;
+    if (!upgrade.stacks && taken.has(upgrade.type)) {
+      problem = `already has ${aOrAn(upgrade.type)} upgrade`;
+    } else if (slots !== undefined && used + cost > slots) {
+      problem =
+        cost > 1
+          ? `needs ${cost} slots — ${slots - used} left`
+          : `no slots left — ${used} of ${slots} used`;
+    }
+
+    out.push({
+      upgrade,
+      ranges,
+      // The effect's own range if this item has it, else the first pool
+      // it does have — a proposal the picker lets you change.
+      range: declared.find((r) => rangeKeys.has(r)) ?? ranges[0]?.key,
+      problem,
+      native,
+    });
+  }
+
+  return out.sort(
+    (a, b) =>
+      Number(Boolean(a.problem)) - Number(Boolean(b.problem)) ||
+      Number(!a.native) - Number(!b.native) ||
+      a.upgrade.type.localeCompare(b.upgrade.type) ||
+      (a.upgrade.level ?? 0) - (b.upgrade.level ?? 0) ||
+      a.upgrade.name.localeCompare(b.upgrade.name),
+  );
+}
+
+/** Only ever seen by a human, and only ever in a warning. */
+function aOrAn(word: string): string {
+  return /^[aeiou]/i.test(word) ? `an ${word}` : `a ${word}`;
+}
+
 /** The fitted upgrades, resolved for display. */
 export function fittedUpgrades(
   item: Item,

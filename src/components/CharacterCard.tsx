@@ -1,8 +1,15 @@
-import type { Character, CharacterData } from '../../worker/types';
+import type {
+  Character,
+  CharacterData,
+  RulesPack,
+  SystemTemplate,
+} from '../../worker/types';
+import type { OwnCatalog } from '../../worker/items';
 import type { RuleLookup } from '../lib/rules';
 import { btnGhost, card, input, sectionLabel } from '../lib/ui';
 import { CounterSection } from './CounterSection';
 import { FieldSection } from './FieldSection';
+import { ItemSection } from './ItemSection';
 import { TagSection } from './TagSection';
 
 // The DM's view of one character. Pure schema renderer: fields,
@@ -16,6 +23,10 @@ export function CharacterCard({
   onDuplicate,
   onSaveBlueprint,
   lookup,
+  packs = [],
+  ownCatalog,
+  template,
+  onOwnCatalog,
 }: {
   character: Character;
   vocabulary: Record<string, string>;
@@ -25,6 +36,13 @@ export function CharacterCard({
   /** NPCs only: keep this sheet in the bestiary to stamp out later. */
   onSaveBlueprint?: () => void;
   lookup?: RuleLookup;
+  /** This campaign's packs, in precedence order — the gear catalogue. */
+  packs?: RulesPack[];
+  /** The campaign's own gear, which outranks nothing and travels. */
+  ownCatalog?: OwnCatalog;
+  template?: SystemTemplate | null;
+  /** Absent on a surface that may look but not write to the campaign. */
+  onOwnCatalog?: (next: NonNullable<OwnCatalog>) => void;
 }) {
   // No seat link and no QR any more: a player's screen joins like every
   // other screen, and you point it at this character from the Displays
@@ -86,6 +104,16 @@ export function CharacterCard({
         counters={d.counters}
         editable
         onChange={(counters) => onPatch({ data: { counters } })}
+      />
+
+      <ItemSection
+        items={d.items ?? []}
+        packs={packs}
+        own={ownCatalog}
+        dice={template?.dice}
+        onChange={(items) => onPatch({ data: { items } })}
+        onOwnChange={onOwnCatalog}
+        label={vocabulary.gear ?? 'Gear'}
       />
 
       <TagSection

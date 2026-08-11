@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Campaign,
   Character,
@@ -6,7 +6,9 @@ import type {
   Display,
   Encounter,
   PackRecord,
+  RulesPack,
   Scene,
+  SystemTemplate,
 } from '../../worker/types';
 import { api, ApiError, getDmKey, newLocalId, setDmKey } from '../lib/api';
 import type { SourcedNpc } from '../../worker/bestiary';
@@ -81,6 +83,8 @@ export function DmView({
   const [castQuery, setCastQuery] = useState('');
   const [notice, setNotice] = useState('');
   const [packs, setPacks] = useState<PackRecord[]>([]);
+  /** The system this campaign runs — its dice, mostly. */
+  const [template, setTemplate] = useState<SystemTemplate | null>(null);
   /** Packs this campaign claims that the host doesn't hold. */
   const [missingPacks, setMissingPacks] = useState<string[]>([]);
   /** The screen on table duty — it owns the calibration, not the campaign. */
@@ -146,6 +150,34 @@ export function DmView({
   }, [campaign?.system]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(loadPacks, [loadPacks]);
   const lookup = useRuleLookup(packs);
+
+  // The system's dice, so the picker can tell a die pool from a price.
+  // `/api/templates` is open and the console already holds the key —
+  // this is the same fetch the seat makes, for the same reason.
+  useEffect(() => {
+    if (!campaign) return;
+    api
+      .templates()
+      .then((all) => setTemplate(all.find((t) => t.system === campaign.system) ?? null))
+      .catch(() => setTemplate(null));
+  }, [campaign?.system]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * The packs this table actually runs on, in precedence order.
+   *
+   * `packsFor` on the server, in the client's own terms — the console
+   * must show a Warden the same catalogue their players' seats do, and
+   * `packs` here is every pack for the system rather than this
+   * campaign's claim. Same fallback, deliberately: no claim means all of
+   * them, because a host with one pack should never make anyone tick a
+   * box.
+   */
+  const activePacks = useMemo(() => {
+    const claim = campaign?.data.packs;
+    if (!claim?.length) return packs.map((p) => p.pack);
+    const byId = new Map(packs.map((p) => [p.id, p.pack]));
+    return claim.map((id) => byId.get(id)).filter((p): p is RulesPack => Boolean(p));
+  }, [packs, campaign?.data.packs]);
 
   // SSE poke → debounced refetch (a burst of taps = one fetch).
   useWakeLock();
@@ -1051,6 +1083,15 @@ export function DmView({
                 character={character}
                 vocabulary={campaign.data.vocabulary}
                 lookup={lookup}
+                packs={activePacks}
+                ownCatalog={campaign.data.catalog}
+                template={template}
+                onOwnCatalog={(catalog) =>
+                  api
+                    .patchCampaign(campaign.id, { data: { catalog } })
+                    .then(setCampaign)
+                    .catch((e) => setError(String(e instanceof Error ? e.message : e)))
+                }
                 onPatch={(patch) => patchCharacter(character.id, patch)}
                 onDelete={() =>
                   api.deleteCharacter(character.id).catch(() => refetch())

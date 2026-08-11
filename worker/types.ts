@@ -174,6 +174,16 @@ export type CatalogUpgrade = {
   level?: number;
   /** How many of the item's slots it takes. Defaults to 1. */
   slotsUsed?: number;
+  /**
+   * More than one of this type may be fitted to the same thing.
+   *
+   * One-per-type is the book's rule and `type` is what encodes it — but
+   * WiW's Utility upgrades say outright that they may fill every
+   * remaining slot, so the exception has to be data too. Code that
+   * special-cased the word "Utility" would be a game concept hiding in
+   * an `if` (rule 2).
+   */
+  stacks?: boolean;
   /** What it does to the pools. Absent means it changes no numbers. */
   effects?: PoolEffect[];
   /** What it does that ISN'T arithmetic — shown, never computed. */
