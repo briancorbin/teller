@@ -199,6 +199,7 @@ export function Sheet({
   mounted = false,
   use,
   screens,
+  marks,
   onSpend,
   items = [],
   onItems,
@@ -209,6 +210,19 @@ export function Sheet({
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
+
+  /**
+   * Mark tags (Talents) versus everything else. The statuses panel gets
+   * only the others — "Talent: Rifles" is not a condition — but its
+   * onChange writes the tag list WHOLESALE, so the withheld marks must
+   * ride back on every write or the first status tap silently deletes
+   * every talent the character owns.
+   */
+  const isMark = (t: string) =>
+    Boolean(marks) &&
+    t.trim().toLowerCase().startsWith(marks!.prefix.trim().toLowerCase());
+  const markTags = tags.filter(isMark);
+  const plainTags = tags.filter((t) => !isMark(t));
 
   // The sheet's SKILLS panel is a declared set, not "every stat" — see
   // `SystemTemplate.groups`. WiW's holds exactly Charm, Finesse,
@@ -348,6 +362,8 @@ export function Sheet({
             title={SKILLS_TITLE}
             note={note?.(SKILLS_TITLE)}
             fill={strip}
+            tags={tags}
+            marks={marks}
           />
           {/* Stats with no block of their own — Speed, for WiW — used to
               hang here as loose chips, and don't any more for the same
@@ -460,8 +476,13 @@ export function Sheet({
           >
             <StatusPanel
               entries={conditions}
-              tags={tags}
-              onChange={onTags}
+              // A tag that IS a mark isn't a condition — "Talent:
+              // Rifles" was rendering as a status with a severity box.
+              // It has its own home (the ✶ ticks); the panel keeps every
+              // other stray tag, table-invented statuses included. The
+              // marks ride back on every write (see `markTags`).
+              tags={plainTags}
+              onChange={(next) => onTags?.([...next, ...markTags])}
               title={conditionsLabel}
               note={note?.(conditionsLabel)}
               relievers={skills.map((f) => f.label)}
@@ -730,6 +751,8 @@ export function Sheet({
             ammo={chamber}
             extraCost={armedCost}
             available={available}
+            tags={tags}
+            marks={marks}
             onFire={onSpend ? (cost) => fire(item, cost) : undefined}
             onChange={(next) =>
               onItems?.(items.map((i) => (i.id === next.id ? next : i)))

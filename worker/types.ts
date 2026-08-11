@@ -786,6 +786,23 @@ export type SystemTemplate = {
    * exactly as before.
    */
   screens?: { name: string; kinds: string[]; counters?: string[] }[];
+  /**
+   * Tag-driven category marks — WiW's Talents.
+   *
+   * A tag of `${prefix}${category}` fills the ✶ box on whatever matches
+   * the category: a skill row whose LABEL matches ("Talent: Nerve"), or
+   * an item panel whose catalogue GROUP matches ("Talent: Rifles" on
+   * every carried rifle). The printed sheet's spur-and-box beside each
+   * skill track and each weapon's Model line is exactly this marker —
+   * settled 2026-08-11, after it was twice misread as Aim.
+   *
+   * Display only, deliberately: what the mark DOES (WiW: reroll Spurs
+   * on that category's rolls) happens in the player's hand with real
+   * dice. teller shows that it's true; the tag is the stored fact, and
+   * tags are editable everywhere (rule 1). `text` is the reminder shown
+   * on the marker.
+   */
+  marks?: { prefix: string; text?: string };
 };
 
 // --- Rules packs ------------------------------------------------------------

@@ -30,6 +30,8 @@ function SkillRow({
   entry,
   open,
   onToggleInfo,
+  marked = false,
+  markTitle,
 }: {
   field: Field;
   dice?: SystemTemplate['dice'];
@@ -37,6 +39,9 @@ function SkillRow({
   entry?: PackEntry & { section?: string };
   open: boolean;
   onToggleInfo: () => void;
+  /** This skill's Talent is bought — the ✶ box fills (see `marks`). */
+  marked?: boolean;
+  markTitle?: string;
 }) {
   return (
     <div className="flex items-center gap-2.5 py-1">
@@ -73,7 +78,7 @@ function SkillRow({
       <div className="w-px self-stretch bg-stone-600" />
 
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-        <Track value={field.value} dice={dice} />
+        <Track value={field.value} dice={dice} marked={marked} markTitle={markTitle} />
       </div>
     </div>
   );
@@ -86,6 +91,8 @@ export function SkillPanel({
   lookup,
   note,
   fill = false,
+  tags = [],
+  marks,
 }: {
   fields: Field[];
   dice?: SystemTemplate['dice'];
@@ -97,12 +104,22 @@ export function SkillPanel({
   fill?: boolean;
   /** Finds a skill's pack entry, so its description can open on tap. */
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
+  /** The character's tags — where a Talent lives ("Talent: Nerve"). */
+  tags?: string[];
+  /** The system's mark declaration — see `SystemTemplate.marks`. */
+  marks?: SystemTemplate['marks'];
 }) {
   const [openInfo, setOpenInfo] = useState<string | null>(null);
 
   if (!fields.length) return null;
 
   const shown = openInfo ? lookup?.(openInfo) : undefined;
+  const marked = (label: string) =>
+    Boolean(marks) &&
+    tags.some(
+      (t) =>
+        t.trim().toLowerCase() === `${marks!.prefix}${label}`.trim().toLowerCase(),
+    );
 
   return (
     // Full width of whatever column it's in; hugging the CONTENT is the
@@ -123,6 +140,10 @@ export function SkillPanel({
             open={openInfo === field.label}
             onToggleInfo={() =>
               setOpenInfo(openInfo === field.label ? null : field.label)
+            }
+            marked={marked(field.label)}
+            markTitle={
+              marks ? `${marks.prefix}${field.label} — ${marks.text ?? ''}` : undefined
             }
           />
         ))}

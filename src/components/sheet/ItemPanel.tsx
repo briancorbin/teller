@@ -164,6 +164,8 @@ export function ItemPanel({
   onFire,
   extraCost = 0,
   available,
+  tags = [],
+  marks,
 }: {
   item: Item;
   dice?: SystemTemplate['dice'];
@@ -186,14 +188,30 @@ export function ItemPanel({
   extraCost?: number;
   /** What the cost counter currently holds, for the disabled state. */
   available?: number;
+  /** The character's tags — where a Talent lives ("Talent: Rifles"). */
+  tags?: string[];
+  /** The system's mark declaration — see `SystemTemplate.marks`. */
+  marks?: SystemTemplate['marks'];
 }) {
   // A pool that's gone missing (deleted, traded away) simply deselects.
   const chambered = ammo.find((a) => a.id === item.loaded);
+  const catalog = catalogOf(packs, ownCatalog).items;
   // The chambered round's catalogue entry — its pool effects flow into
   // the tracks below, and its prose is shown at the moment of the shot.
-  const round = chambered?.from
-    ? catalogOf(packs, ownCatalog).items.get(chambered.from)
-    : undefined;
+  const round = chambered?.from ? catalog.get(chambered.from) : undefined;
+
+  // The Talent tick (see `SystemTemplate.marks`): the catalogue GROUP is
+  // the category — carry a rifle, hold "Talent: Rifles", and the panel
+  // wears the printed sheet's ✶. Display only; the reroll is real dice.
+  const group = item.from ? catalog.get(item.from)?.group : undefined;
+  const talent =
+    marks && group
+      ? tags.find(
+          (t) =>
+            t.trim().toLowerCase() ===
+            `${marks.prefix}${group}`.trim().toLowerCase(),
+        )
+      : undefined;
 
   // Base stats from the catalogue, upgrades applied, the chambered
   // round last, anything a person typed on top — see `worker/items.ts`.
@@ -226,7 +244,12 @@ export function ItemPanel({
   const fireable = Boolean(onFire) && Number.isFinite(price) && price > 0;
 
   return (
-    <SheetPanel title={item.name} fill={fill} className="w-full">
+    <SheetPanel
+      title={item.name}
+      fill={fill}
+      className="w-full"
+      mark={talent ? { title: `${talent} — ${marks?.text ?? ''}` } : undefined}
+    >
       <div className="flex flex-col gap-1">
         {/* Filing information stays in the catalogue, where you're
             choosing the thing. Quality and Cost are most of the decision

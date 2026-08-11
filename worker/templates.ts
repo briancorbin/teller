@@ -171,6 +171,11 @@ const wiw: SystemTemplate = {
     { name: 'Weapons', kinds: ['weapon', 'ammo'] },
     { name: 'Abilities', kinds: ['ability'], counters: ['Aces'] },
   ],
+  // Talents (p. 32): 4 Prestige buys a category — a skill, a weapon
+  // family, Defense, Mechs, Forstalls — and that category rerolls
+  // Spurs. Stored as a tag ("Talent: Rifles"), shown as the printed
+  // sheet's ✶ box filling in.
+  marks: { prefix: 'Talent: ', text: 'rerolls Spurs' },
   // Firing a weapon costs its Grit and consumes one of whatever special
   // ammo is chambered. Special ammo is a CHARACTER-level pool, fired
   // from any weapon that takes it (Guidebook p. 76; the pregens list it

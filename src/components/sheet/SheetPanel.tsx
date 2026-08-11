@@ -1,3 +1,5 @@
+import { Starburst } from './Track';
+
 // The chrome every block on the printed sheet wears.
 //
 // SKILLS, HEALTH, GRIT, STATUSES, WEAPONS and ABILITIES are all the same
@@ -75,12 +77,15 @@ export function SheetPanel({
   children,
   className = '',
   fill = false,
+  mark,
 }: {
   title: string;
   /** The sheet's instruction line. Publisher prose — pack-supplied only. */
   note?: string;
   children: React.ReactNode;
   className?: string;
+  /** The Talent tick — shown only when true. See `SystemTemplate.marks`. */
+  mark?: { title?: string };
   /**
    * Grow to fill the column instead of hugging the content.
    *
@@ -105,6 +110,19 @@ export function SheetPanel({
       <Corner at="tr" />
       <Corner at="bl" />
       <Corner at="br" />
+
+      {/* The ✶-and-box the printed sheet puts beside a weapon's Model
+          line — the Talent tick, shown only when it's TRUE. Top-right,
+          inside the corner, where the paper puts it. */}
+      {mark && (
+        <span
+          title={mark.title}
+          className="absolute right-2.5 top-2 flex h-[1.15rem] w-[1.15rem] items-center justify-center rounded-[2px]"
+          style={{ background: 'var(--sheet-accent, #f59e0b)' }}
+        >
+          <Starburst size={11} fill="#1c1917" />
+        </span>
+      )}
 
       {/* One block, so the gap between heading and caption is set once
           and every panel gets the same one — and one margin below it, so

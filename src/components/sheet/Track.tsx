@@ -23,7 +23,13 @@ import { isPool, parsePool } from '../../../worker/dice';
  * to ship in a public repo (rule 4). If Boylei ever wants their actual
  * mark, that arrives in a pack as the skin.
  */
-export function Starburst({ size = 14 }: { size?: number }) {
+export function Starburst({
+  size = 14,
+  fill = 'var(--sheet-accent, #f59e0b)',
+}: {
+  size?: number;
+  fill?: string;
+}) {
   const points = Array.from({ length: 8 }, (_, i) => {
     const a = (i * Math.PI) / 4;
     return `${50 + 48 * Math.cos(a)},${50 + 48 * Math.sin(a)}`;
@@ -43,7 +49,7 @@ export function Starburst({ size = 14 }: { size?: number }) {
       aria-hidden="true"
       className="shrink-0"
     >
-      <path d={`${d} Z`} fill="var(--sheet-accent, #f59e0b)" />
+      <path d={`${d} Z`} fill={fill} />
     </svg>
   );
 }
@@ -96,6 +102,8 @@ export function Track({
   value,
   dice,
   bonus: bonusOverride,
+  marked = false,
+  markTitle,
 }: {
   value: string;
   dice?: SystemTemplate['dice'];
@@ -109,6 +117,13 @@ export function Track({
    * extra box on all three ranges of every weapon.
    */
   bonus?: number;
+  /**
+   * The ✶ box's true job (settled 2026-08-11): it is the TALENT tick —
+   * this category rerolls Spurs — not a die slot. Filled when the
+   * character holds the matching mark tag; see `SystemTemplate.marks`.
+   */
+  marked?: boolean;
+  markTitle?: string;
 }) {
   const pool = dice ? parsePool(value ?? '', dice.faces) : [];
   // The dice this one owns, spread out one per slot, in the order the
@@ -138,9 +153,23 @@ export function Track({
       {bonus > 0 && (
         <>
           <Starburst />
-          {Array.from({ length: bonus }, (_, i) => (
-            <Slot key={`b${i}`} die={owned[slots + i]} bonus />
-          ))}
+          {Array.from({ length: bonus }, (_, i) =>
+            marked ? (
+              <span
+                key={`b${i}`}
+                title={markTitle}
+                className="flex h-[1.35rem] w-[1.15rem] shrink-0 items-center justify-center rounded-[2px] border"
+                style={{
+                  borderColor: 'var(--sheet-accent, #f59e0b)',
+                  background: 'var(--sheet-accent, #f59e0b)',
+                }}
+              >
+                <Starburst size={11} fill="#1c1917" />
+              </span>
+            ) : (
+              <Slot key={`b${i}`} die={owned[slots + i]} bonus />
+            ),
+          )}
         </>
       )}
     </>
