@@ -210,6 +210,28 @@ export function resolveItem(
   return { name: item.name || base.name, fields: out, slots: base.slots, slotsUsed };
 }
 
+/**
+ * What an effect DOES, in the terms of the pool it lands on.
+ *
+ * Generated rather than written down, so it can name the range the
+ * PLAYER chose — "Long Range +2B" for an upgrade the catalogue only
+ * knows as "add 2B somewhere". A description typed into the pack could
+ * never say that, because the choice isn't the pack's to make.
+ *
+ * `label` resolves a field key to the sheet's own word for it, so this
+ * says "Long Range" rather than "long".
+ */
+export function describeEffect(
+  effect: PoolEffect,
+  range: string,
+  label: (key: string) => string,
+): string {
+  const where = label(range);
+  return effect.op === 'add'
+    ? `${where} +${effect.dice}`
+    : `${where} ${effect.count}${effect.from} → ${effect.count}${effect.to}`;
+}
+
 /** The fitted upgrades, resolved for display. */
 export function fittedUpgrades(
   item: Item,

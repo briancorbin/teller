@@ -5,6 +5,7 @@ import type {
   SystemTemplate,
 } from '../../../worker/types';
 import {
+  describeEffect,
   fittedUpgrades,
   resolveItem,
   type OwnCatalog,
@@ -171,6 +172,11 @@ export function ItemPanel({
   // comes back exactly as it was stored.
   const resolved = resolveItem(item, packs, dice, ownCatalog);
   const fitted = fittedUpgrades(item, packs, ownCatalog);
+  // An effect names a field KEY; the sheet's own word for it is on the
+  // resolved field, so an upgrade reads "Long Range +2B" rather than
+  // "long +2B" without this file knowing any range names.
+  const labelOf = (key: string) =>
+    resolved.fields.find((f) => f.key === key)?.label ?? key;
   const setCounter = (next: Counter) =>
     onChange({
       ...item,
@@ -201,13 +207,24 @@ export function ItemPanel({
             </span>
             {fitted.map(({ upgrade, range }, i) => (
               <div key={`${upgrade.id}${i}`} className="border-l-2 border-stone-700 pl-2">
+                {/* The NAME, and under it what it does. Not its level,
+                    not which weapons it fits, not what it cost — that's
+                    filing information, and a player mid-fight is asking
+                    what the thing on their rifle actually does. */}
                 <span
                   className="block break-words text-[0.7rem] uppercase tracking-[0.1em]"
                   style={{ color: 'var(--sheet-accent, #f59e0b)' }}
                 >
                   {upgrade.name}
-                  {range ? ` · ${range}` : ''}
                 </span>
+                {(upgrade.effects ?? []).map((effect, j) => (
+                  <span
+                    key={j}
+                    className="block break-words font-mono text-[0.75rem] leading-snug text-stone-200"
+                  >
+                    {describeEffect(effect, range ?? effect.range, labelOf)}
+                  </span>
+                ))}
                 {upgrade.text && (
                   <span className="block break-words text-[0.75rem] leading-snug text-stone-400">
                     {upgrade.text}
