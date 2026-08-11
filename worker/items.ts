@@ -1,4 +1,4 @@
-import { parsePool } from './dice';
+import { isPool, parsePool } from './dice';
 import type {
   CampaignData,
   CatalogItem,
@@ -140,9 +140,17 @@ export function resolveItem(
   packs: RulesPack[],
   dice?: SystemTemplate['dice'],
   own?: OwnCatalog,
+  /**
+   * The item chambered in this one (`item.loaded`, resolved by the
+   * caller, who holds the character's other items). Its catalogue
+   * entry's effects apply after the upgrades' — what's loaded is the
+   * last thing that happens to the pool before it's rolled.
+   */
+  chambered?: Item,
 ): { name: string; fields: DerivedField[]; slots?: number; slotsUsed: number } {
   const { items, upgrades } = catalogOf(packs, own);
   const base = item.from ? items.get(item.from) : undefined;
+  const round = chambered?.from ? items.get(chambered.from) : undefined;
   const fitted = (item.upgrades ?? [])
     .map((f) => ({ fit: f, up: upgrades.get(f.from) }))
     .filter((x): x is { fit: (typeof x)['fit']; up: CatalogUpgrade } => Boolean(x.up));
@@ -163,7 +171,7 @@ export function resolveItem(
   const pools = new Map<string, Counts>();
   const plain = new Map<string, Field>();
   for (const field of base.fields) {
-    if (Object.keys(faces).length && parsePool(field.value, faces).length) {
+    if (Object.keys(faces).length && isPool(field.value, faces)) {
       pools.set(field.key, toCounts(field.value, faces));
     } else {
       plain.set(field.key, field);
@@ -179,6 +187,16 @@ export function resolveItem(
       if (!current) continue;
       pools.set(key, apply(current, effect, faces));
     }
+  }
+
+  // What's chambered, last: the round is the final thing that happens
+  // to a pool before it's rolled. No range choice here — a round's
+  // effect names its own range, and a weapon without that pool simply
+  // isn't modified (the same skip an upgrade gets).
+  for (const effect of round?.effects ?? []) {
+    const current = pools.get(effect.range);
+    if (!current) continue;
+    pools.set(effect.range, apply(current, effect, faces));
   }
 
   // Catalogue order, so the sheet's rows stay in the sheet's order.
@@ -243,7 +261,7 @@ export function describeEffect(
 export function poolFields(base: CatalogItem, dice?: SystemTemplate['dice']): Field[] {
   const faces = dice?.faces ?? {};
   if (!Object.keys(faces).length) return [];
-  return base.fields.filter((f) => parsePool(f.value, faces).length > 0);
+  return base.fields.filter((f) => isPool(f.value, faces));
 }
 
 /**

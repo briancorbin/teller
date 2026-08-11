@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type {
   Counter,
   Item,
@@ -5,6 +6,7 @@ import type {
   SystemTemplate,
 } from '../../../worker/types';
 import {
+  catalogOf,
   describeEffect,
   fittedUpgrades,
   resolveItem,
@@ -173,14 +175,29 @@ export function ItemPanel({
   use?: SystemTemplate['use'];
   /** The character's consumable pools — siblings this item can chamber. */
   ammo?: Item[];
-  /** Spend this item's cost (and one of the chambered pool). */
-  onFire?: (cost: number) => void;
+  /**
+   * Spend `cost` from the priced counter; `consume` also takes one off
+   * the chambered pool. The trigger consumes, Aim doesn't.
+   */
+  onFire?: (cost: number, consume: boolean) => void;
 }) {
-  // Base stats from the catalogue, upgrades applied, anything a person
-  // typed on top — see `worker/items.ts`. An item that points at nothing
-  // comes back exactly as it was stored.
-  const resolved = resolveItem(item, packs, dice, ownCatalog);
+  // A pool that's gone missing (deleted, traded away) simply deselects.
+  const chambered = ammo.find((a) => a.id === item.loaded);
+  // The chambered round's catalogue entry — its pool effects flow into
+  // the tracks below, and its prose is shown at the moment of the shot.
+  const round = chambered?.from
+    ? catalogOf(packs, ownCatalog).items.get(chambered.from)
+    : undefined;
+
+  // Base stats from the catalogue, upgrades applied, the chambered
+  // round last, anything a person typed on top — see `worker/items.ts`.
+  // An item that points at nothing comes back exactly as it was stored.
+  const resolved = resolveItem(item, packs, dice, ownCatalog, chambered);
   const fitted = fittedUpgrades(item, packs, ownCatalog);
+  // Collapsed by default so every weapon panel stands the same height —
+  // the header row (with the slot count) is the part a player checks
+  // mid-fight; the list is for the workbench moment.
+  const [showUpgrades, setShowUpgrades] = useState(false);
   // An effect names a field KEY; the sheet's own word for it is on the
   // resolved field, so an upgrade reads "Long Range +2B" rather than
   // "long +2B" without this file knowing any range names.
@@ -201,8 +218,6 @@ export function ItemPanel({
     ? Number(resolved.fields.find((f) => f.key === use.costField)?.value)
     : NaN;
   const fireable = Boolean(onFire) && Number.isFinite(price) && price > 0;
-  // A pool that's gone missing (deleted, traded away) simply deselects.
-  const chambered = ammo.find((a) => a.id === item.loaded);
 
   return (
     <SheetPanel title={item.name} fill={fill} className="w-full">
@@ -232,10 +247,10 @@ export function ItemPanel({
             than a verb teller would have to know ("fire"? "swing"?):
             the label IS the receipt. */}
         {fireable && (
-          <div className="flex items-center gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-2 pt-1">
             {use?.consumesKind && ammo.length > 0 && (
               <select
-                className="h-9 min-w-0 flex-1 rounded-md border border-stone-700 bg-stone-900 px-2 text-[0.75rem] text-stone-200 focus:border-stone-500 focus:outline-none"
+                className="h-9 min-w-0 flex-1 basis-32 rounded-md border border-stone-700 bg-stone-900 px-2 text-[0.75rem] text-stone-200 focus:border-stone-500 focus:outline-none"
                 value={chambered?.id ?? ''}
                 onChange={(e) =>
                   onChange({ ...item, loaded: e.target.value || undefined })
@@ -260,13 +275,66 @@ export function ItemPanel({
                 borderColor: 'var(--sheet-accent, #f59e0b)',
                 color: 'var(--sheet-accent, #f59e0b)',
               }}
-              onClick={() => onFire?.(price)}
+              onClick={() => onFire?.(price, true)}
               aria-label={`use ${item.name}: spend ${price} ${use?.costCounter}${
                 chambered ? ` and one ${chambered.name}` : ''
               }`}
             >
               − {price} {use?.costCounter}
             </button>
+            {/* The system's other priced moves — WiW's Aim. Same
+                arithmetic as the trigger, minus the round: aiming
+                spends Grit, not ammunition. */}
+            {(use?.actions ?? []).map((action) => (
+              <button
+                key={action.name}
+                type="button"
+                className="flex h-9 shrink-0 items-center justify-center rounded-md border border-stone-600 px-2.5 font-mono text-[0.8rem] tracking-wider text-stone-300 transition-colors active:bg-stone-800"
+                onClick={() => onFire?.(action.cost, false)}
+                title={action.text}
+                aria-label={`${action.name} with ${item.name}: spend ${action.cost} ${use?.costCounter}. ${action.text ?? ''}`}
+              >
+                {action.name} −{action.cost}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* What's chambered, at the moment it matters. Pool effects are
+            already IN the tracks above; everything a round does after
+            the dice (push, burn, pierce) is prose, and this is the shot
+            where it applies. Prose-length fields only — "Fits: Firearms"
+            is the pool panel's business, not the trigger's. */}
+        {fireable && round && (
+          <div className="border-l-2 border-stone-700 pl-2">
+            <span
+              className="block break-words text-[0.7rem] uppercase tracking-[0.1em]"
+              style={{ color: 'var(--sheet-accent, #f59e0b)' }}
+            >
+              {chambered?.name}
+            </span>
+            {(round.effects ?? []).map((effect, i) => (
+              <span
+                key={i}
+                className="block break-words font-mono text-[0.75rem] leading-snug text-stone-200"
+              >
+                {describeEffect(
+                  effect,
+                  effect.range,
+                  (key) => resolved.fields.find((f) => f.key === key)?.label ?? key,
+                )}
+              </span>
+            ))}
+            {round.fields
+              .filter((f) => !f.filing && f.value.length > PROSE)
+              .map((f) => (
+                <span
+                  key={f.key}
+                  className="block break-words text-[0.75rem] leading-snug text-stone-400"
+                >
+                  {f.value}
+                </span>
+              ))}
           </div>
         )}
 
@@ -275,10 +343,20 @@ export function ItemPanel({
             asks at the table — "can I fit another one?" */}
         {fitted.length > 0 && (
           <div className="flex flex-col gap-1 pt-1">
-            <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
-              Upgrades {resolved.slots ? `${resolved.slotsUsed}/${resolved.slots}` : ''}
-            </span>
-            {fitted.map(({ upgrade, range }, i) => (
+            {/* A disclosure, not a heading: their arithmetic is already
+                in the tracks, so mid-fight the count is the whole
+                answer and the list is workbench reading. Collapsed,
+                every weapon panel stands the same height. */}
+            <button
+              type="button"
+              className="self-start text-left text-[0.65rem] uppercase tracking-widest text-stone-500 transition-colors hover:text-stone-300"
+              onClick={() => setShowUpgrades(!showUpgrades)}
+              aria-expanded={showUpgrades}
+            >
+              Upgrades {resolved.slots ? `${resolved.slotsUsed}/${resolved.slots}` : ''}{' '}
+              {showUpgrades ? '▾' : '▸'}
+            </button>
+            {showUpgrades && fitted.map(({ upgrade, range }, i) => (
               <div key={`${upgrade.id}${i}`} className="border-l-2 border-stone-700 pl-2">
                 {/* The NAME, and under it what it does. Not its level,
                     not which weapons it fits, not what it cost — that's

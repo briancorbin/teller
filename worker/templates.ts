@@ -165,7 +165,16 @@ const wiw: SystemTemplate = {
   // under ITEMS, not under a gun) — so the seat's fire button debits
   // the Grit counter by the weapon's own grit field and decrements the
   // loaded ammo item by one. Regular ammo is untracked, by the book.
-  use: { costField: 'grit', costCounter: 'Grit', consumesKind: 'ammo' },
+  use: {
+    costField: 'grit',
+    costCounter: 'Grit',
+    consumesKind: 'ammo',
+    // Guidebook p. 41 — the box beside each range track's spur on the
+    // printed sheet is its once-per-turn marker.
+    actions: [
+      { name: 'Aim', cost: 1, text: 'Reroll 1 die in your next Attack. Once per turn.' },
+    ],
+  },
   // Guidebook, Turn Order: "the Warden will ask the players to roll with
   // Finesse to determine turn order. The player with the highest number
   // of Hits will go first."

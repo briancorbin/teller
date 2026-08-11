@@ -170,6 +170,15 @@ export type CatalogItem = {
   fields: Field[];
   /** Counters it brings with it, e.g. tracked special ammunition. */
   counters?: Counter[];
+  /**
+   * What being CHAMBERED in something does to the host's pools — the
+   * same shape an upgrade's effects take, applied while this entry is
+   * an item's `loaded`. Almost all of WiW's special ammo acts after
+   * the dice (Bang!, Status, Piercing, Knockback) and so carries none
+   * of these; Explosive Arrowheads (+1G at Arm's Reach) is the one
+   * that does. Meaningless on anything that can't be loaded.
+   */
+  effects?: PoolEffect[];
   notes?: string;
 };
 
@@ -741,6 +750,14 @@ export type SystemTemplate = {
     costField: string;
     costCounter: string;
     consumesKind?: string;
+    /**
+     * Other priced moves an item offers, by name — WiW's Aim: 1 Grit,
+     * reroll one die, once per turn. The name and the reminder text
+     * are the system's own words and live here as data (rule 4); the
+     * button they drive is the same counter arithmetic as the trigger.
+     * Nothing enforces "once per turn" — the table does (rule 1).
+     */
+    actions?: { name: string; cost: number; text?: string }[];
   };
 };
 

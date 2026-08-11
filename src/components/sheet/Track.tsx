@@ -1,5 +1,5 @@
 import type { SystemTemplate } from '../../../worker/types';
-import { parsePool } from '../../../worker/dice';
+import { isPool, parsePool } from '../../../worker/dice';
 
 // A die pool, drawn as the track of boxes the sheet prints.
 //
@@ -85,7 +85,7 @@ export function looksLikePool(
   dice?: SystemTemplate['dice'],
 ): boolean {
   if (!dice) return false;
-  return parsePool(value ?? '', dice.faces).length > 0;
+  return isPool(value ?? '', dice.faces);
 }
 
 /**

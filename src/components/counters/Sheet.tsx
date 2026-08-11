@@ -594,7 +594,7 @@ export function Sheet({
    * blocks the shot either — whether you could afford it is the
    * table's argument, not teller's (rule 1).
    */
-  const fire = (item: Item, cost: number) => {
+  const fire = (item: Item, cost: number, consume: boolean) => {
     if (!use || !onSpend) return;
     const next: { counters?: Counter[]; items?: Item[] } = {};
     if (counters.some((c) => c.name === use.costCounter)) {
@@ -602,7 +602,10 @@ export function Sheet({
         c.name === use.costCounter ? bumped(c, -cost) : c,
       );
     }
-    const pool = item.loaded ? pools.find((p) => p.id === item.loaded) : undefined;
+    // Aim spends the counter and nothing else — you don't burn a round
+    // by lining up the shot.
+    const pool =
+      consume && item.loaded ? pools.find((p) => p.id === item.loaded) : undefined;
     if (pool && pool.counters.length) {
       next.items = items.map((i) =>
         i.id === pool.id
@@ -613,36 +616,58 @@ export function Sheet({
     onSpend(next);
   };
 
+  /**
+   * Weapons up top, pools beneath their own rule — the printed page's
+   * own split (weapon blocks, then the counted ammunition rows). The
+   * grouping is the template's `consumesKind`, not a kind teller knows.
+   */
+  const weapons = items.filter((i) => !pools.includes(i));
+
+  const itemRow = (row: Item[]) => (
+    <div
+      className={`flex min-h-0 flex-wrap gap-2 ${
+        strip ? 'flex-1 items-stretch' : 'content-start'
+      }`}
+    >
+      {row.map((item) => (
+        <div
+          key={item.id}
+          className={`flex min-w-[15rem] flex-1 flex-col gap-2 ${
+            strip ? 'self-stretch' : 'self-start'
+          }`}
+        >
+          <ItemPanel
+            item={item}
+            dice={dice}
+            packs={packs}
+            ownCatalog={ownCatalog}
+            fill={strip}
+            use={use}
+            ammo={pools}
+            onFire={onSpend ? (cost, consume) => fire(item, cost, consume) : undefined}
+            onChange={(next) =>
+              onItems?.(items.map((i) => (i.id === next.id ? next : i)))
+            }
+          />
+        </div>
+      ))}
+    </div>
+  );
+
   const carried = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div
-        className={`flex min-h-0 flex-1 flex-wrap gap-2 ${
-          strip ? 'items-stretch' : 'content-start'
-        }`}
-      >
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className={`flex min-w-[15rem] flex-1 flex-col gap-2 ${
-              strip ? 'self-stretch' : 'self-start'
-            }`}
-          >
-            <ItemPanel
-              item={item}
-              dice={dice}
-              packs={packs}
-              ownCatalog={ownCatalog}
-              fill={strip}
-              use={use}
-              ammo={pools}
-              onFire={onSpend ? (cost) => fire(item, cost) : undefined}
-              onChange={(next) =>
-                onItems?.(items.map((i) => (i.id === next.id ? next : i)))
-              }
-            />
+      {itemRow(weapons)}
+      {pools.length > 0 && (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
+              {use?.consumesKind}
+            </span>
+            <div className="h-px flex-1 bg-stone-800" />
           </div>
-        ))}
-      </div>
+          {itemRow(pools)}
+        </>
+      )}
     </div>
   );
 

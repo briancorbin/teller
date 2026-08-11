@@ -19,6 +19,23 @@ export type Pool = { die: string; count: number }[];
  * a stat reading "Normal" (Speed) or "—" is not a pool, and inventing
  * dice for it would put a fictional number in the turn order.
  */
+/**
+ * Is this value pool NOTATION — "2B1G", "3 B", "+1G" — as opposed to a
+ * sentence that happens to mention dice?
+ *
+ * `parsePool` deliberately scavenges tokens from anywhere in a string,
+ * which is right for reading a pool and wrong for deciding whether a
+ * value IS one: Knockback's effect text ("…+1G if it hits something
+ * behind it") contains a die and is not a pool, and classifying it as
+ * one replaced the prose with a one-die track. Classification demands
+ * the WHOLE string be notation; only then does parsePool get a say.
+ */
+export function isPool(text: string, faces: Record<string, string[]>): boolean {
+  const compact = (text ?? '').replace(/[\s+]/g, '');
+  if (!/^(\d+[A-Za-z])+$/.test(compact)) return false;
+  return parsePool(compact, faces).length > 0;
+}
+
 export function parsePool(text: string, faces: Record<string, string[]>): Pool {
   const pool: Pool = [];
   for (const [, n, die] of text.matchAll(/(\d+)\s*([A-Za-z])/g)) {

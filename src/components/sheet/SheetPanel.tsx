@@ -124,7 +124,11 @@ export function SheetPanel({
       <div className="mb-2">
         <header className="flex items-center justify-center gap-1.5 px-2">
           <Dart />
-          <h2 className="whitespace-nowrap font-serif text-[1rem] font-bold uppercase leading-tight tracking-[0.14em] text-stone-100">
+          {/* break-words, not nowrap: "Incendiary [1] Arrowheads" is
+              wider than a 15rem panel, and a nowrap title bled past the
+              dart-and-diamond rules. A rare second line beats ten
+              pixels of title outside its own box. */}
+          <h2 className="min-w-0 break-words text-center font-serif text-[1rem] font-bold uppercase leading-tight tracking-[0.14em] text-stone-100">
             {title}
           </h2>
           <Dart flip />
