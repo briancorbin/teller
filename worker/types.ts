@@ -54,11 +54,137 @@ export type Field = {
   value: string;
 };
 
+/**
+ * A thing a character HAS, rather than a number a character IS.
+ *
+ * The first thing on the sheet that `fields`/`counters`/`tags` couldn't
+ * express, and the temptation was to add a `weapons` table with columns
+ * for Grit cost and range pools. That would have been the first
+ * game-specific type in the schema (rule 2), and it would have been
+ * wrong twice over: a weapon here is a spell focus somewhere else, and
+ * "Grit cost" is only a column until a system prices things some other
+ * way.
+ *
+ * So an item is **the same four primitives, nested**. A WiW revolver is
+ * fields (Manufacturer, Model, and one die pool per range) plus counters
+ * (its rounds). Everything already built works on it unchanged: a pool
+ * renders as the skills track because `parsePool` reads it the same way,
+ * ammunition is a gauge like any other, and nothing new had to learn
+ * what a weapon is.
+ *
+ * It lives in the JSON blob (rule 8), so absent simply means none and no
+ * migration is needed.
+ */
+export type Item = {
+  id: string;
+  name: string;
+  /**
+   * The catalogue entry this came off, when it came off one.
+   *
+   * A REFERENCE, so the stats stay in the pack where the publisher's
+   * numbers belong and a correction to the book reaches every character
+   * at once. Absent for anything invented at the table, which keeps
+   * working exactly as before.
+   */
+  from?: string;
+  /** Upgrades fitted to it, and where the player pointed them. */
+  upgrades?: FittedUpgrade[];
+  /**
+   * Values a person typed, which BEAT anything derived (rule 1).
+   *
+   * This is why the derived pool is a proposal and not an answer: the
+   * table's ruling, a homebrew part or a Warden's call all land here and
+   * win. An item with no catalogue entry has nothing else, so these are
+   * simply its stats.
+   */
+  fields: Field[];
+  counters: Counter[];
+  tags?: string[];
+  notes?: string;
+  /**
+   * Free-text grouping — "weapon", "ability", "gear".
+   *
+   * For sorting and for a person to read. NOTHING may branch on it:
+   * the moment code says `kind === 'weapon'` this has become a
+   * game-specific type wearing a string.
+   */
+  kind?: string;
+};
+
+/**
+ * What an upgrade DOES to a pool, as data.
+ *
+ * Two operations cover every pool-changing upgrade WiW has, and they
+ * came straight off the book's own table rather than being invented:
+ * Damage adds dice, Accuracy exchanges one colour for another. Optic,
+ * Melee Attachment and Utility change no pool at all — Optic acts on the
+ * roll's RESULT, the other two on what you're holding — so they carry no
+ * effect here and simply describe themselves.
+ *
+ * `range` is a field key, not an enum. The book restricts Damage and
+ * Accuracy to Short or Long, but that's this system's rule, not a shape
+ * teller should enforce — a pack that puts one on Arm's Reach works.
+ */
+export type PoolEffect =
+  | { op: 'add'; dice: string; range: string }
+  | { op: 'convert'; from: string; to: string; count: number; range: string };
+
+/** A thing the books describe, that a character can point at. */
+export type CatalogItem = {
+  id: string;
+  name: string;
+  /** Free-text grouping for the picker — "Rifles", "Melee". */
+  group?: string;
+  kind?: string;
+  /** How many upgrades it can take. */
+  slots?: number;
+  /** Base stats, before anything is bolted on. */
+  fields: Field[];
+  /** Counters it brings with it, e.g. tracked special ammunition. */
+  counters?: Counter[];
+  notes?: string;
+};
+
+/** A modification a catalogue item can take. */
+export type CatalogUpgrade = {
+  id: string;
+  name: string;
+  /**
+   * The slot it occupies. One per type, which is the book's own rule and
+   * the reason this is data rather than a name — `slotsUsed` and this
+   * together are what a validator needs.
+   */
+  type: string;
+  level?: number;
+  /** How many of the item's slots it takes. Defaults to 1. */
+  slotsUsed?: number;
+  /** What it does to the pools. Absent means it changes no numbers. */
+  effects?: PoolEffect[];
+  /** What it does that ISN'T arithmetic — shown, never computed. */
+  text?: string;
+};
+
+/**
+ * An upgrade a character actually fitted, and the choice they made.
+ *
+ * Damage and Accuracy both say "Short OR Long", so the choice belongs to
+ * the character rather than the catalogue — the same upgrade is a
+ * different weapon depending on where it was pointed.
+ */
+export type FittedUpgrade = {
+  /** `CatalogUpgrade.id`. */
+  from: string;
+  /** Overrides the effect's own `range` when the player chose one. */
+  range?: string;
+};
+
 export type CharacterData = {
   fields: Field[];
   counters: Counter[];
   tags: string[];
   notes: string;
+  /** Things the character carries — see `Item`. Absent means none. */
+  items?: Item[];
   /**
    * The blueprint this was stamped from — PROVENANCE, not a live link.
    * Editing the blueprint later never reaches back into creatures
@@ -607,6 +733,23 @@ export type RulesPack = {
    * panel is exactly as it was.
    */
   notes?: Record<string, string>;
+  /**
+   * The things this system's books describe, and what modifying them
+   * does — a catalogue a character points AT instead of copying.
+   *
+   * Publisher content (names, stats, prices), so it lives here and only
+   * here: packs are per-instance and gitignored, and the repo never
+   * carries a weapon table (rule 4). What the repo ships is the
+   * evaluator in `worker/items.ts`, because mechanics are fair game in
+   * code and a new system should arrive as pack DATA rather than a code
+   * change — the same bargain `dice` already made.
+   */
+  catalog?: {
+    /** Things a character can carry. */
+    items?: CatalogItem[];
+    /** Modifications those things can take. */
+    upgrades?: CatalogUpgrade[];
+  };
   /**
    * The bestiary this pack brings. Having the pack means having the
    * foes, the way having the book on a shelf does — instead of every

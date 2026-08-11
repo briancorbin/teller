@@ -763,12 +763,21 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     // past it and left a creature on the table that only a hand-delete
     // could remove. Provenance is not editable, but it must SURVIVE an
     // edit.
+    //
+    // The overlay below is an ALLOWLIST of what a client may change, and
+    // that is deliberate — provenance must survive an edit and must not
+    // be settable by one. The cost is that **a new editable key has to
+    // be added here or it is silently ignored**: `items` was, and a
+    // patch carrying three weapons returned 200 with nothing written.
+    // If you add something to `CharacterData` that a person edits, add
+    // it here in the same commit.
     const next: CharacterData = {
       ...character.data,
       fields: patch.fields ?? character.data.fields,
       counters: patch.counters ?? character.data.counters,
       tags: patch.tags ?? character.data.tags,
       notes: patch.notes ?? character.data.notes,
+      items: patch.items ?? character.data.items,
     };
     const name = (isDm ? body.name : undefined) ?? character.name;
 

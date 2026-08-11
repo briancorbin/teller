@@ -11,6 +11,7 @@ const dnd5e: SystemTemplate = {
   vocabulary: {
     gm: 'DM',
     conditions: 'Conditions',
+    items: 'Equipment',
   },
   character: {
     fields: [
@@ -60,6 +61,10 @@ const wiw: SystemTemplate = {
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',
+    // What this table calls the things a character carries. The sheet's
+    // own heading, and the name of the screen they live on — the same
+    // job `conditions` already does for Statuses.
+    items: 'Weapons',
   },
   character: {
     fields: [

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { Field, PackEntry, SystemTemplate } from '../../../worker/types';
-import { parsePool } from '../../../worker/dice';
 import { InfoPopover } from './InfoPopover';
 import { SheetPanel } from './SheetPanel';
+import { Track } from './Track';
 
 // The skills block, arranged like the printed sheet.
 //
@@ -24,65 +24,6 @@ import { SheetPanel } from './SheetPanel';
 // a system with d6s and d10s gets its own track for free, and one with
 // no dice declared falls back to showing the value as written.
 
-/**
- * The sheet's mark between one kind of die and the next.
- *
- * Drawn here rather than lifted out of the PDF. The book's own glyph is
- * their artwork; a starburst is a starburst, and this one costs nothing
- * to ship in a public repo (rule 4). If Boylei ever wants their actual
- * mark on this panel, that arrives in a pack as the skin.
- */
-function Starburst({ size = 14 }: { size?: number }) {
-  const points = Array.from({ length: 8 }, (_, i) => {
-    const a = (i * Math.PI) / 4;
-    return `${50 + 48 * Math.cos(a)},${50 + 48 * Math.sin(a)}`;
-  });
-  const inner = Array.from({ length: 8 }, (_, i) => {
-    const a = (i * Math.PI) / 4 + Math.PI / 8;
-    return `${50 + 18 * Math.cos(a)},${50 + 18 * Math.sin(a)}`;
-  });
-  const d = points
-    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${p} L ${inner[i]}`)
-    .join(' ');
-  return (
-    <svg
-      viewBox="0 0 100 100"
-      width={size}
-      height={size}
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <path d={`${d} Z`} fill="var(--sheet-accent, #f59e0b)" />
-    </svg>
-  );
-}
-
-/**
- * One slot on the track.
- *
- * The printed sheet draws the WHOLE track and you write the die's letter
- * into each slot you own. That distinction is the whole point: an empty
- * slot and a slot that doesn't exist have to look different, and a
- * player should be able to see "three of a possible six" without
- * counting anything.
- */
-function Slot({ die, bonus }: { die?: string; bonus?: boolean }) {
-  return (
-    <span
-      className={`flex h-[1.35rem] w-[1.15rem] shrink-0 items-center justify-center rounded-[2px] border font-serif text-[0.8rem] italic leading-none ${
-        die
-          ? 'border-stone-200 bg-stone-200 text-stone-900'
-          : bonus
-            ? 'border-stone-500 bg-stone-800/40 text-transparent'
-            : 'border-stone-400 bg-transparent text-transparent'
-      }`}
-      title={die ? die : 'empty'}
-    >
-      {die ?? '·'}
-    </span>
-  );
-}
-
 function SkillRow({
   field,
   dice,
@@ -97,17 +38,6 @@ function SkillRow({
   open: boolean;
   onToggleInfo: () => void;
 }) {
-  const pool = dice ? parsePool(field.value ?? '', dice.faces) : [];
-  // The dice this character owns, spread out one per slot, in the order
-  // the value was written: "3B1G" → B B B G.
-  const owned = pool.flatMap(({ die, count }) => Array.from({ length: count }, () => die));
-  const track = dice?.track ?? 0;
-  // A track only for things that ARE pools. "Marshal" and "Normal" live
-  // in these rows too, and a declared track was drawing them six empty
-  // boxes and throwing the word away.
-  const slots = owned.length ? Math.max(track, owned.length) : 0;
-  const bonus = dice?.trackBonus ?? 0;
-
   return (
     <div className="flex items-center gap-2.5 py-1">
       {/* Name right-aligned against the rule, as printed — and it IS the
@@ -143,27 +73,7 @@ function SkillRow({
       <div className="w-px self-stretch bg-stone-600" />
 
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-        {slots > 0 ? (
-          <>
-            {Array.from({ length: slots }, (_, i) => (
-              <Slot key={i} die={owned[i]} />
-            ))}
-            {bonus > 0 && (
-              <>
-                <Starburst />
-                {Array.from({ length: bonus }, (_, i) => (
-                  <Slot key={`b${i}`} die={owned[slots + i]} bonus />
-                ))}
-              </>
-            )}
-          </>
-        ) : (
-          // Not every stat is a pool — Trade says "Marshal", Speed says
-          // "Normal". Those get their words, not an empty track.
-          <span className="break-words font-mono text-sm text-stone-200">
-            {field.value || '—'}
-          </span>
-        )}
+        <Track value={field.value} dice={dice} />
       </div>
     </div>
   );

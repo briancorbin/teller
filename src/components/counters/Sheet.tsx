@@ -1,6 +1,7 @@
 import type { Counter, Field } from '../../../worker/types';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
+import { ItemPanel } from '../sheet/ItemPanel';
 import { Screens } from '../sheet/Screens';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
@@ -192,6 +193,10 @@ export function Sheet({
   lookup,
   note,
   strip = false,
+  items = [],
+  onItems,
+  itemsLabel = 'Items',
+  packs = [],
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -558,6 +563,44 @@ export function Sheet({
     </div>
   );
 
+  /**
+   * The things the character carries, on a screen of their own.
+   *
+   * Their own screen rather than a block on the first one, because the
+   * printed page gives WEAPONS half a page and the strip has four
+   * columns already spoken for. Each item is a panel and they wrap the
+   * same way the sheet's blocks do — three weapons across a rail bar,
+   * one under another on a phone.
+   */
+  const carried = (
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div
+        className={`flex min-h-0 flex-1 flex-wrap gap-2 ${
+          strip ? 'items-stretch' : 'content-start'
+        }`}
+      >
+        {items.map((item) => (
+          <div
+            key={item.id}
+            className={`flex min-w-[15rem] flex-1 flex-col gap-2 ${
+              strip ? 'self-stretch' : 'self-start'
+            }`}
+          >
+            <ItemPanel
+              item={item}
+              dice={dice}
+              packs={packs}
+              fill={strip}
+              onChange={(next) =>
+                onItems?.(items.map((i) => (i.id === next.id ? next : i)))
+              }
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
   return (
     // The accent rides on a CSS variable rather than a prop threaded
     // through every box: a themed sheet tints a dozen small things, and
@@ -580,6 +623,11 @@ export function Sheet({
       <Screens
         screens={[
           { name: 'Sheet', render: () => drawn },
+          // Only when there is something to carry — an empty screen
+          // advertises somewhere to go and then shows nothing.
+          ...(onItems && items.length > 0
+            ? [{ name: itemsLabel, render: () => carried }]
+            : []),
           ...(hasSpare ? [{ name: 'More', render: () => spareScreen }] : []),
         ]}
       />

@@ -1,7 +1,9 @@
 import type {
   Counter,
   Field,
+  Item,
   PackEntry,
+  RulesPack,
   SystemTemplate,
 } from '../../../worker/types';
 
@@ -52,6 +54,12 @@ export type CounterViewProps = {
    */
   tags?: string[];
   onTags?: (next: string[]) => void;
+  /** The things the character carries, for layouts that place them. */
+  items?: Item[];
+  onItems?: (next: Item[]) => void;
+  itemsLabel?: string;
+  /** The catalogue items may point into. */
+  packs?: RulesPack[];
   /** The pack entries for the conditions block, and its heading. */
   conditions?: (PackEntry & { section?: string })[];
   conditionsLabel?: string;

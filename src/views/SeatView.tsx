@@ -496,6 +496,10 @@ export function SeatView({
                 strip={strip}
                 tags={character.data.tags}
                 onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
+                items={character.data.items ?? []}
+                onItems={ownsTags(layout) ? (items) => patch({ items }) : undefined}
+                itemsLabel={campaign?.data.vocabulary.items ?? 'Items'}
+                packs={packs.map((p) => p.pack)}
                 conditions={conditions}
                 conditionsLabel={conditionsLabel}
                 lookup={lookup}

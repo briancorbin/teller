@@ -210,6 +210,13 @@ export function toPublicCharacter(row: CharacterRow): PublicCharacter {
       // NPCs keep only tags — the table may know a wolf is Bloodied,
       // never its numbers. Seat tokens and notes never leave for anyone,
       // and hidden counters stay behind the screen until revealed.
+      //
+      // `items` is absent DELIBERATELY, not forgotten: what a character
+      // carries is their own business, and the table-facing surfaces
+      // (board, badge, art) have no use for a weapon list. This is an
+      // allowlist for exactly that reason — anything new is private
+      // until someone decides otherwise, which is the right default for
+      // a snapshot that leaves the player's own screen.
       fields: npc ? [] : character.data.fields,
       counters: npc ? [] : publicCounters(character.data.counters),
       tags: character.data.tags,
