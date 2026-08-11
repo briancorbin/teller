@@ -169,8 +169,11 @@ const wiw: SystemTemplate = {
     costField: 'grit',
     costCounter: 'Grit',
     consumesKind: 'ammo',
-    // Guidebook p. 41 — the box beside each range track's spur on the
-    // printed sheet is its once-per-turn marker.
+    // Guidebook p. 41. Aim is a GLOBAL once-per-turn Action, not a
+    // property of any weapon — the seat renders one reticle for the
+    // screen. (The ✶-and-box printed on each weapon block is NOT Aim:
+    // it's the weapon-category Talent marker, p. 32 — tick it when
+    // you've bought the Talent and that weapon rerolls Spurs.)
     actions: [
       { name: 'Aim', cost: 1, text: 'Reroll 1 die in your next Attack. Once per turn.' },
     ],

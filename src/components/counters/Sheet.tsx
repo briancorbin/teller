@@ -1,7 +1,9 @@
+import { useEffect, useRef, useState } from 'react';
 import type { Counter, Field, Item } from '../../../worker/types';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
+import { Reticle } from '../sheet/Reticle';
 import { Screens } from '../sheet/Screens';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
@@ -587,6 +589,42 @@ export function Sheet({
     : [];
 
   /**
+   * The system's per-turn moves (WiW's Aim), armed and spent.
+   *
+   * Armed is INTENT — the reticle lights, the fire buttons reprice, and
+   * nothing is written anywhere until the trigger goes (deduct-at-fire,
+   * as agreed: an armed-then-abandoned Aim costs nothing, and a table
+   * that rules it should is one cylinder tap from charging it).
+   *
+   * Spent is the once-per-turn lock, and its release is DERIVED: the
+   * cost counter going UP is what "your turn came back around" looks
+   * like in the data — the cylinder's ↻, the console's stepper, an SSE
+   * edit from across the room all read the same. Local state, on
+   * purpose: whether you've aimed is the player's own reminder; the
+   * Grit spend is the shared truth.
+   */
+  const costCounter = counters.find((c) => c.name === use?.costCounter);
+  const available = costCounter?.current;
+  const [armed, setArmed] = useState<string[]>([]);
+  const [spentActs, setSpentActs] = useState<string[]>([]);
+  const lastAvail = useRef(available);
+  useEffect(() => {
+    if (
+      available !== undefined &&
+      lastAvail.current !== undefined &&
+      available > lastAvail.current
+    ) {
+      setSpentActs([]);
+    }
+    lastAvail.current = available;
+  }, [available]);
+
+  const acts = use?.actions ?? [];
+  const armedCost = acts
+    .filter((a) => armed.includes(a.name))
+    .reduce((n, a) => n + a.cost, 0);
+
+  /**
    * One squeeze of the trigger: debit the cost counter, and one round
    * off whatever's chambered — in a SINGLE write, so it's one event and
    * one /undo. `bumped` clamps at zero the same as a stepper would;
@@ -594,18 +632,18 @@ export function Sheet({
    * blocks the shot either — whether you could afford it is the
    * table's argument, not teller's (rule 1).
    */
-  const fire = (item: Item, cost: number, consume: boolean) => {
+  const fire = (item: Item, cost: number) => {
     if (!use || !onSpend) return;
+    // One squeeze: the weapon's cost AND every armed action, together —
+    // Aim's Grit rides on the shot it improves.
+    const total = cost + armedCost;
     const next: { counters?: Counter[]; items?: Item[] } = {};
-    if (counters.some((c) => c.name === use.costCounter)) {
+    if (costCounter) {
       next.counters = counters.map((c) =>
-        c.name === use.costCounter ? bumped(c, -cost) : c,
+        c.name === use.costCounter ? bumped(c, -total) : c,
       );
     }
-    // Aim spends the counter and nothing else — you don't burn a round
-    // by lining up the shot.
-    const pool =
-      consume && item.loaded ? pools.find((p) => p.id === item.loaded) : undefined;
+    const pool = item.loaded ? pools.find((p) => p.id === item.loaded) : undefined;
     if (pool && pool.counters.length) {
       next.items = items.map((i) =>
         i.id === pool.id
@@ -614,6 +652,10 @@ export function Sheet({
       );
     }
     onSpend(next);
+    if (armed.length) {
+      setSpentActs([...spentActs, ...armed]);
+      setArmed([]);
+    }
   };
 
   /**
@@ -644,7 +686,9 @@ export function Sheet({
             fill={strip}
             use={use}
             ammo={pools}
-            onFire={onSpend ? (cost, consume) => fire(item, cost, consume) : undefined}
+            extraCost={armedCost}
+            available={available}
+            onFire={onSpend ? (cost) => fire(item, cost) : undefined}
             onChange={(next) =>
               onItems?.(items.map((i) => (i.id === next.id ? next : i)))
             }
@@ -656,6 +700,57 @@ export function Sheet({
 
   const carried = (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {/* The turn's moves, once for the whole screen — Aim is a global
+          once-per-turn Action (Guidebook p. 41), not a property of any
+          weapon. Arm the reticle and every trigger reprices; the spend
+          happens on the shot. */}
+      {acts.length > 0 && onSpend && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {acts.map((action) => {
+            const isArmed = armed.includes(action.name);
+            const isSpent = spentActs.includes(action.name);
+            const broke =
+              available !== undefined && !isArmed && available < action.cost;
+            return (
+              <div key={action.name} className="flex items-center gap-2">
+                <Reticle
+                  armed={isArmed}
+                  spent={isSpent}
+                  disabled={broke}
+                  label={`${action.name}: +${action.cost} ${use?.costCounter} on your next shot. ${action.text ?? ''}`}
+                  onToggle={() =>
+                    setArmed(
+                      isArmed
+                        ? armed.filter((n) => n !== action.name)
+                        : [...armed, action.name],
+                    )
+                  }
+                />
+                <div className="flex flex-col">
+                  <span
+                    className="text-[0.7rem] font-bold uppercase tracking-[0.14em]"
+                    style={{
+                      color: isArmed
+                        ? 'var(--sheet-accent, #f59e0b)'
+                        : '#a8a29e',
+                    }}
+                  >
+                    {action.name}
+                    <span className="ml-1.5 font-mono font-normal normal-case text-stone-500">
+                      +{action.cost} {use?.costCounter}
+                    </span>
+                  </span>
+                  <span className="text-[0.65rem] leading-tight text-stone-500">
+                    {isSpent
+                      ? `used this turn — back when your ${use?.costCounter} reloads`
+                      : action.text}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {itemRow(weapons)}
       {pools.length > 0 && (
         <>

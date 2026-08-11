@@ -751,11 +751,14 @@ export type SystemTemplate = {
     costCounter: string;
     consumesKind?: string;
     /**
-     * Other priced moves an item offers, by name — WiW's Aim: 1 Grit,
-     * reroll one die, once per turn. The name and the reminder text
-     * are the system's own words and live here as data (rule 4); the
-     * button they drive is the same counter arithmetic as the trigger.
-     * Nothing enforces "once per turn" — the table does (rule 1).
+     * The system's per-turn priced moves — WiW's Aim: 1 Grit, reroll
+     * one die, once per turn. GLOBAL, not per-item (Aim is an Action
+     * like Move or Dodge); the seat renders each as an armable control
+     * whose cost rides on the next use of anything (deduct-at-fire).
+     * The name and reminder text are the system's own words and live
+     * here as data (rule 4). The once-per-turn lock releases when the
+     * cost counter refills — derived, not scheduled — and the spend
+     * itself is ordinary counter arithmetic the table can reverse.
      */
     actions?: { name: string; cost: number; text?: string }[];
   };

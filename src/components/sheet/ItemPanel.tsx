@@ -162,6 +162,8 @@ export function ItemPanel({
   use,
   ammo = [],
   onFire,
+  extraCost = 0,
+  available,
 }: {
   item: Item;
   dice?: SystemTemplate['dice'];
@@ -176,10 +178,14 @@ export function ItemPanel({
   /** The character's consumable pools — siblings this item can chamber. */
   ammo?: Item[];
   /**
-   * Spend `cost` from the priced counter; `consume` also takes one off
-   * the chambered pool. The trigger consumes, Aim doesn't.
+   * Spend this item's cost from the priced counter — the caller adds
+   * any armed actions (Aim) on top and clears them.
    */
-  onFire?: (cost: number, consume: boolean) => void;
+  onFire?: (cost: number) => void;
+  /** Armed actions' cost, already decided upstream — shown in the price. */
+  extraCost?: number;
+  /** What the cost counter currently holds, for the disabled state. */
+  available?: number;
 }) {
   // A pool that's gone missing (deleted, traded away) simply deselects.
   const chambered = ammo.find((a) => a.id === item.loaded);
@@ -268,35 +274,33 @@ export function ItemPanel({
                 ))}
               </select>
             )}
-            <button
-              type="button"
-              className="flex h-9 shrink-0 items-center justify-center rounded-md border-2 px-3 font-mono text-sm font-bold tracking-wider transition-colors active:bg-stone-800"
-              style={{
-                borderColor: 'var(--sheet-accent, #f59e0b)',
-                color: 'var(--sheet-accent, #f59e0b)',
-              }}
-              onClick={() => onFire?.(price, true)}
-              aria-label={`use ${item.name}: spend ${price} ${use?.costCounter}${
-                chambered ? ` and one ${chambered.name}` : ''
-              }`}
-            >
-              − {price} {use?.costCounter}
-            </button>
-            {/* The system's other priced moves — WiW's Aim. Same
-                arithmetic as the trigger, minus the round: aiming
-                spends Grit, not ammunition. */}
-            {(use?.actions ?? []).map((action) => (
-              <button
-                key={action.name}
-                type="button"
-                className="flex h-9 shrink-0 items-center justify-center rounded-md border border-stone-600 px-2.5 font-mono text-[0.8rem] tracking-wider text-stone-300 transition-colors active:bg-stone-800"
-                onClick={() => onFire?.(action.cost, false)}
-                title={action.text}
-                aria-label={`${action.name} with ${item.name}: spend ${action.cost} ${use?.costCounter}. ${action.text ?? ''}`}
-              >
-                {action.name} −{action.cost}
-              </button>
-            ))}
+            {/* The price is the WHOLE price — an armed Aim rides on the
+                same squeeze (deduct-at-fire, one event, one undo), so
+                the label already includes it. Unaffordable is DISABLED,
+                not clamped: teller declines to automate a spend the
+                counter can't cover, and the steppers stay right there
+                for the table to rule otherwise (rule 1). */}
+            {(() => {
+              const total = price + extraCost;
+              const broke = available !== undefined && available < total;
+              return (
+                <button
+                  type="button"
+                  className="flex h-9 shrink-0 items-center justify-center rounded-md border-2 px-3 font-mono text-sm font-bold tracking-wider transition-colors active:bg-stone-800 disabled:opacity-35"
+                  style={{
+                    borderColor: 'var(--sheet-accent, #f59e0b)',
+                    color: 'var(--sheet-accent, #f59e0b)',
+                  }}
+                  disabled={broke}
+                  onClick={() => onFire?.(price)}
+                  aria-label={`use ${item.name}: spend ${total} ${use?.costCounter}${
+                    chambered ? ` and one ${chambered.name}` : ''
+                  }${broke ? ` (not enough ${use?.costCounter})` : ''}`}
+                >
+                  − {total} {use?.costCounter}
+                </button>
+              );
+            })()}
           </div>
         )}
 
