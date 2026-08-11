@@ -83,6 +83,13 @@ It is no longer where play happens.
   actually SHIPPED: coordinate spaces, scale, the calibrated 1-inch grid,
   tokens, fog, hidden-means-stripped. Scenes, fog and tokens are built;
   don't design them again from this file.
+- **`docs/SYSTEMS.md`** — the WiW survey: every subsystem in the
+  Guidebook, its data shape, its surface, and what's built. **Read the
+  relevant entry before modelling any mechanic** — it exists because
+  shaping features off one filled-in sheet produced three wrong
+  guesses in a week. Mechanics only (rule 4); the book's prose stays
+  in the pack. It maps the domain; screens are still designed one at
+  a time.
 - **`packs/README.md`** — the pack format. The JSON itself is gitignored.
 
 ## RULES
