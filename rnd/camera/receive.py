@@ -64,12 +64,38 @@ state = {
                            # so it stops photographing the room
 }
 
+# The phone is a puppet: Eye polls /control and applies whatever this
+# says, so the propped rig never needs touching. `rev` bumps on every
+# /set so Eye can apply-on-change instead of fighting local toggles;
+# `shoot` is a counter — each increment is one requested capture.
+control_lock = threading.Lock()
+control = {
+    'interval': 2.0,
+    'auto': False,   # off until the page says go — propping the phone
+                     # shouldn't start the shutter on its own
+    'lock': None,    # None = leave the camera's lock alone
+    'shoot': 0,
+    'rev': 0,
+}
+
 PAGE = """<!doctype html>
 <meta charset="utf-8">
 <meta http-equiv="refresh" content="2">
 <title>eye — live</title>
 <body style="margin:0;background:#111;color:#ccc;font:14px monospace">
 <div style="padding:8px 12px">{line}</div>
+<div style="padding:0 12px 8px">
+  eye: <b>{auto}</b> @ {interval}s &nbsp;·&nbsp;
+  auto <a href="/set?auto=on" style="color:#7ab">on</a>/<a
+    href="/set?auto=off" style="color:#7ab">off</a> &nbsp;·&nbsp;
+  every <a href="/set?interval=0.5" style="color:#7ab">0.5s</a>
+  <a href="/set?interval=1" style="color:#7ab">1s</a>
+  <a href="/set?interval=2" style="color:#7ab">2s</a>
+  <a href="/set?interval=5" style="color:#7ab">5s</a> &nbsp;·&nbsp;
+  <a href="/set?shoot=1" style="color:#7ab">capture once</a> &nbsp;·&nbsp;
+  camera <a href="/set?lock=on" style="color:#7ab">lock</a>/<a
+    href="/set?lock=off" style="color:#7ab">unlock</a>
+</div>
 <img src="/latest.png?{n}" style="width:100%">
 <div style="padding:8px 12px"><a href="/rebase" style="color:#7ab">rebase</a>
 — current frame becomes the empty table</div>
@@ -264,6 +290,31 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(table_page().encode())
             return
+        if self.path == '/control':
+            with control_lock:
+                body = json.dumps(control)
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(body.encode())
+            return
+        if self.path.startswith('/set?'):
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            with control_lock:
+                if 'interval' in q:
+                    control['interval'] = max(0.5, float(q['interval'][0]))
+                if 'auto' in q:
+                    control['auto'] = q['auto'][0] == 'on'
+                if 'lock' in q:
+                    control['lock'] = q['lock'][0] == 'on'
+                if 'shoot' in q:
+                    control['shoot'] += 1
+                control['rev'] += 1
+            self.send_response(303)
+            self.send_header('Location', '/')
+            self.end_headers()
+            return
         if self.path == '/state.json':
             with state_lock:
                 body = json.dumps({'rings': state['rings'], 'r': RING_R})
@@ -293,7 +344,13 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return
         with state_lock:
-            page = PAGE.format(line=state['line'], n=state['frames'])
+            line, n = state['line'], state['frames']
+        with control_lock:
+            page = PAGE.format(
+                line=line, n=n,
+                auto='auto' if control['auto'] else 'paused',
+                interval=control['interval'],
+            )
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.end_headers()

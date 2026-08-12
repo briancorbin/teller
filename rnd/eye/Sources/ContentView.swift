@@ -42,18 +42,13 @@ struct ContentView: View {
                             .tint(.cyan)
                     }
 
-                    Toggle("auto \(Int(intervalSec))s", isOn: $auto)
+                    Toggle(
+                        "auto \(intervalSec < 1 ? String(format: "%.1f", intervalSec) : String(Int(intervalSec)))s",
+                        isOn: $auto
+                    )
                         .toggleStyle(.button)
                         .tint(.green)
-                        .onChange(of: auto) { _, on in
-                            timer?.invalidate()
-                            timer = nil
-                            if on {
-                                timer = Timer.scheduledTimer(
-                                    withTimeInterval: intervalSec, repeats: true
-                                ) { _ in shoot() }
-                            }
-                        }
+                        .onChange(of: auto) { _, _ in restartTimer() }
 
                     Spacer()
 
@@ -85,6 +80,50 @@ struct ContentView: View {
         .onAppear {
             camera.start()
             UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .task { await followRemote() }
+    }
+
+    private func restartTimer() {
+        timer?.invalidate()
+        timer = nil
+        if auto {
+            timer = Timer.scheduledTimer(
+                withTimeInterval: intervalSec, repeats: true
+            ) { _ in shoot() }
+        }
+    }
+
+    /// The propped phone is a puppet: poll the receiver's /control and
+    /// apply whatever it says — interval, auto, exposure lock, one-shot
+    /// captures — so nobody ever has to touch the rig. `rev` gates
+    /// application to actual changes, so the local buttons still work
+    /// between remote commands.
+    private func followRemote() async {
+        var lastRev = -1
+        var lastShoot = -1
+        while !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            guard
+                let url = URL(string: uploadBase)?.appendingPathComponent("control"),
+                let (data, _) = try? await URLSession.shared.data(from: url),
+                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let rev = obj["rev"] as? Int
+            else { continue }
+
+            if rev != lastRev {
+                lastRev = rev
+                if let i = obj["interval"] as? Double { intervalSec = i }
+                if let a = obj["auto"] as? Bool { auto = a }
+                if let l = obj["lock"] as? Bool, l != camera.locked {
+                    l ? camera.lock() : camera.unlock()
+                }
+                restartTimer()
+                lastResult = "remote: \(auto ? "auto" : "paused") @ \(intervalSec)s"
+            }
+            let shootN = obj["shoot"] as? Int ?? 0
+            if lastShoot >= 0 && shootN > lastShoot { shoot() }
+            lastShoot = shootN
         }
     }
 
