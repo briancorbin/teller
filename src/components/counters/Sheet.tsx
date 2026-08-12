@@ -772,6 +772,10 @@ export function Sheet({
     ? screens
     : [{ name: itemsLabel, kinds: [] }];
   const claimedKinds = new Set((screens ?? []).flatMap((s) => s.kinds));
+  // Unclaimed kinds land on the declared catch-all (`rest`) when there
+  // is one — the junk drawer, not the gun rack — and on the first
+  // screen otherwise, as always.
+  const hasRest = (screens ?? []).some((s) => s.rest);
   const shelfItems = (
     def: (typeof shelfDefs)[number],
     first: boolean,
@@ -780,9 +784,18 @@ export function Sheet({
       ? items.filter(
           (i) =>
             def.kinds.includes(i.kind ?? '') ||
-            (first && !claimedKinds.has(i.kind ?? '')),
+            ((hasRest ? def.rest === true : first) &&
+              !claimedKinds.has(i.kind ?? '')),
         )
       : items;
+
+  /**
+   * The shelf filter, per screen: which KIND is showing, '' = all.
+   * The kinds are derived from what the screen actually holds, and the
+   * rail only renders when there are two or more — a filter with one
+   * option is a control that can't do anything.
+   */
+  const [shelfKind, setShelfKind] = useState<Record<string, string>>({});
 
   const itemRow = (
     row: Item[],
@@ -805,7 +818,7 @@ export function Sheet({
     <div
       className={`flex min-h-0 gap-2 ${
         strip
-          ? 'flex-1 flex-nowrap items-stretch overflow-x-auto'
+          ? 'snap-x snap-mandatory flex-1 flex-nowrap items-stretch overflow-x-auto'
           : 'flex-wrap content-start'
       }`}
     >
@@ -814,7 +827,9 @@ export function Sheet({
         <div
           key={item.id}
           className={`flex flex-1 flex-col gap-2 ${
-            strip ? 'min-w-[22rem] self-stretch' : 'min-w-[15rem] self-start'
+            strip
+              ? 'min-w-[22rem] snap-start self-stretch'
+              : 'min-w-[15rem] self-start'
           }`}
         >
           <ItemPanel
@@ -862,7 +877,15 @@ export function Sheet({
     def: (typeof shelfDefs)[number],
     first: boolean,
   ) => {
-    const mine = shelfItems(def, first);
+    const held = shelfItems(def, first);
+    // The filter rail: distinct kinds on THIS screen, derived from the
+    // items themselves — a new kind grows a chip, nothing is declared.
+    const kinds = [...new Set(held.map((i) => i.kind ?? ''))];
+    const chosen = shelfKind[def.name] ?? '';
+    const mine =
+      kinds.length > 1 && chosen
+        ? held.filter((i) => (i.kind ?? '') === chosen)
+        : held;
     const minePools = mine.filter((i) => pools.includes(i));
     const mineRest = mine.filter((i) => !pools.includes(i));
     const tallyPanels = (def.counters ?? [])
@@ -889,7 +912,45 @@ export function Sheet({
     // No declared screens = one screen, and it arms, as before.
     const arming = !screens?.length || def.arms === true;
     return (
-      <div className="flex min-h-0 flex-1 flex-col gap-2">
+      <div className="flex min-h-0 flex-1 gap-2">
+        {/* The filter rail, when this screen holds more than one KIND:
+            a slim column pinned left (sticky where the card scrolls —
+            held glass; the strip doesn't scroll down, so it just sits).
+            Kind names are the packs' own words, shown as written. */}
+        {kinds.length > 1 && (
+          // Sticky only where the card scrolls (held glass) — inside
+          // FitBox's transform, sticky resolves against the wrong
+          // pixels (the segmented bar learned this the hard way).
+          <div
+            className={`flex shrink-0 flex-col gap-1 self-start ${
+              mounted ? '' : 'sticky top-0'
+            }`}
+          >
+            {['', ...kinds].map((kind) => (
+              <button
+                key={kind || 'all'}
+                type="button"
+                onClick={() =>
+                  setShelfKind({ ...shelfKind, [def.name]: kind })
+                }
+                aria-pressed={chosen === kind}
+                className={`max-w-[7rem] break-words rounded-md px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-[0.14em] transition-colors ${
+                  chosen === kind
+                    ? 'text-stone-950'
+                    : 'bg-stone-900 text-stone-400 hover:bg-stone-800 hover:text-stone-100'
+                }`}
+                style={
+                  chosen === kind
+                    ? { background: 'var(--sheet-accent, #f59e0b)' }
+                    : undefined
+                }
+              >
+                {kind || 'all'}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
         {/* Skipped when empty: on the strip a row is flex-1, and an
             empty shelf would silently spend half the screen's height. */}
         {(mineRest.length > 0 || tallyPanels.length > 0) &&
@@ -902,9 +963,9 @@ export function Sheet({
         {minePools.length > 0 && (
           <>
             {/* The rule exists to separate pools from the things that
-                fire them. A screen that is ALL pools (Items) has
-                nothing to separate — the divider would just be an
-                empty row spending the strip's scarcest dimension. */}
+                fire them. A screen that is ALL pools has nothing to
+                separate — the divider would just be an empty row
+                spending the strip's scarcest dimension. */}
             {mineRest.length > 0 && (
               <div className="flex items-center gap-2">
                 <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
@@ -916,6 +977,7 @@ export function Sheet({
             {itemRow(minePools)}
           </>
         )}
+        </div>
       </div>
     );
   };

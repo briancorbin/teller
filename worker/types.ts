@@ -798,8 +798,20 @@ export type SystemTemplate = {
    * kind" — which broke the day the ammo pools moved to their own
    * screen: what a weapon LOADS is a character-level pool wherever its
    * items are displayed, so the join had to be declared.
+   *
+   * `rest` marks the catch-all: an item whose kind no screen claims
+   * lands here instead of on the first screen. Declared so a new kind
+   * (gear, traps) joins the junk drawer rather than the gun rack. At
+   * most one screen should carry it; without one, the first screen
+   * keeps the job, exactly as before.
    */
-  screens?: { name: string; kinds: string[]; counters?: string[]; arms?: boolean }[];
+  screens?: {
+    name: string;
+    kinds: string[];
+    counters?: string[];
+    arms?: boolean;
+    rest?: boolean;
+  }[];
   /**
    * Tag-driven category marks — WiW's Talents.
    *

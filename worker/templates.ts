@@ -173,7 +173,10 @@ const wiw: SystemTemplate = {
   screens: [
     { name: 'Weapons', kinds: ['weapon'], arms: true },
     { name: 'Abilities', kinds: ['ability'], counters: ['Aces'] },
-    { name: 'Items', kinds: ['ammo'] },
+    // The junk drawer: ammo by name, and everything nobody claims —
+    // gear, traps, whatever a table invents — lands here (`rest`)
+    // rather than on the gun rack.
+    { name: 'Items', kinds: ['ammo'], rest: true },
   ],
   // Talents (p. 32): 4 Prestige buys a category — a skill, a weapon
   // family, Defense, Mechs, Forstalls — and that category rerolls

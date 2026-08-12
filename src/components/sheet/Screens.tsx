@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
 // More than one screen on one piece of glass.
 //
@@ -8,21 +8,11 @@ import { useRef, useState } from 'react';
 // the card is SCREENS, and deciding what earns a place on the first one
 // is the design work.
 //
-// Two ways to move, on purpose, because they are for different moments:
-//
-//   * **The segmented bar** is how you learn what exists. A swipe-only
-//     interface hides its own contents; a player who never discovers the
-//     abilities screen may as well not have one.
-//   * **The swipe** is how you actually move mid-fight, with dice in the
-//     other hand. It's the gesture your thumb already makes.
-//
-// The bar is not decoration on top of the swipe: it is the discoverable
-// half, and it is also the only half that works with a mouse or a
-// keyboard.
-
-/** Enough travel to be deliberate, and clearly sideways rather than a scroll. */
-const TRAVEL = 50;
-const SIDEWAYS = 1.5;
+// The segmented bar is the ONE way to move (Brian, 2026-08-12). There
+// used to be a swipe as well; it died the day item rows became shelves
+// that pan sideways — two horizontal gestures on one surface fight,
+// and the bar was already the discoverable half and the only one that
+// works with a mouse.
 
 export type Screen = {
   /** Stable key, and the label on the bar. */
@@ -39,7 +29,6 @@ export function Screens({
   mounted?: boolean;
 }) {
   const [at, setAt] = useState(0);
-  const from = useRef<{ x: number; y: number } | null>(null);
 
   // One screen needs no chrome at all. A segmented bar with a single
   // segment is a control that can't do anything, which is worse than no
@@ -54,33 +43,7 @@ export function Screens({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div
-        className="flex min-h-0 flex-1 flex-col"
-        // Pointer events, so this is one implementation for a finger on
-        // the rail panel and a mouse at a desk.
-        //
-        // Nothing is prevented and nothing is captured: on a phone the
-        // card scrolls vertically, and swallowing the gesture to look at
-        // it would fight the scroll. The direction test below is what
-        // keeps a diagonal drag from changing screens under someone who
-        // was only scrolling.
-        onPointerDown={(e) => {
-          from.current = { x: e.clientX, y: e.clientY };
-        }}
-        onPointerUp={(e) => {
-          const start = from.current;
-          from.current = null;
-          if (!start) return;
-          const dx = e.clientX - start.x;
-          const dy = e.clientY - start.y;
-          if (Math.abs(dx) < TRAVEL) return;
-          if (Math.abs(dx) < Math.abs(dy) * SIDEWAYS) return;
-          go(current + (dx < 0 ? 1 : -1));
-        }}
-        onPointerCancel={() => {
-          from.current = null;
-        }}
-      >
+      <div className="flex min-h-0 flex-1 flex-col">
         {screens[current].render()}
       </div>
 
