@@ -794,17 +794,27 @@ export function Sheet({
     chamber: Item[] = [],
     arming = false,
   ) => (
+    // On the strip the row is a SHELF: one row, full height, and it
+    // PANS sideways past what fits — a deliberate touch gesture on
+    // glass that already swipes between screens, ruled in 2026-08-12
+    // (amending rule 6's blanket ban, which was written against
+    // accidental layout overflow). The floor width is what derives the
+    // count: five-ish panels fill the 12.6" rail evenly, a sixth
+    // floors them all and the shelf scrolls — no magic number, and a
+    // narrower bar degrades to four without anyone deciding it.
     <div
-      className={`flex min-h-0 flex-wrap gap-2 ${
-        strip ? 'flex-1 items-stretch' : 'content-start'
+      className={`flex min-h-0 gap-2 ${
+        strip
+          ? 'flex-1 flex-nowrap items-stretch overflow-x-auto'
+          : 'flex-wrap content-start'
       }`}
     >
       {lead}
       {row.map((item) => (
         <div
           key={item.id}
-          className={`flex min-w-[15rem] flex-1 flex-col gap-2 ${
-            strip ? 'self-stretch' : 'self-start'
+          className={`flex flex-1 flex-col gap-2 ${
+            strip ? 'min-w-[22rem] self-stretch' : 'min-w-[15rem] self-start'
           }`}
         >
           <ItemPanel
@@ -880,20 +890,29 @@ export function Sheet({
     const arming = !screens?.length || def.arms === true;
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        {itemRow(
-          mineRest,
-          tallyPanels.length ? tallyPanels : undefined,
-          arming ? pools : [],
-          arming,
-        )}
+        {/* Skipped when empty: on the strip a row is flex-1, and an
+            empty shelf would silently spend half the screen's height. */}
+        {(mineRest.length > 0 || tallyPanels.length > 0) &&
+          itemRow(
+            mineRest,
+            tallyPanels.length ? tallyPanels : undefined,
+            arming ? pools : [],
+            arming,
+          )}
         {minePools.length > 0 && (
           <>
-            <div className="flex items-center gap-2">
-              <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
-                {use?.consumesKind}
-              </span>
-              <div className="h-px flex-1 bg-stone-800" />
-            </div>
+            {/* The rule exists to separate pools from the things that
+                fire them. A screen that is ALL pools (Items) has
+                nothing to separate — the divider would just be an
+                empty row spending the strip's scarcest dimension. */}
+            {mineRest.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
+                  {use?.consumesKind}
+                </span>
+                <div className="h-px flex-1 bg-stone-800" />
+              </div>
+            )}
             {itemRow(minePools)}
           </>
         )}

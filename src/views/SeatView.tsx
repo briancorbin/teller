@@ -255,7 +255,9 @@ export function SeatView({
    * 10px. **A `FitBox` scale far below 1 is a diagnostic**: it means the
    * layout is wrong for that glass, not that the glass is small.
    *
-   * Neither family may EVER scroll sideways.
+   * Neither family may EVER scroll sideways by accident — the page
+   * never pans. A deliberate SHELF may (the item rows on the strip):
+   * same gesture family as swiping between screens.
    *
    * Read from the forced frame when there is one, or the preview would
    * keep answering for the real window and a simulated rail would
