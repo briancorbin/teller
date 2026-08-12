@@ -105,11 +105,16 @@ export function SizeFrame({
     return () => observer.disconnect();
   }, [size]);
 
-  // No frame: the card simply IS the window, and still gets a container
-  // context so `cqh` means the same thing in both modes.
+  // No frame: the card simply IS the remaining page, and still gets a
+  // container context so `cqh` means the same thing in both modes. The
+  // PARENT owns the height — the chrome (identity, pickers) sits above
+  // the frame, outside the glass, so 100dvh here would double-count it.
   if (!size) {
     return (
-      <div className="h-[100dvh] w-full" style={{ containerType: 'size' }}>
+      <div
+        className="min-h-0 w-full flex-1"
+        style={{ containerType: 'size' }}
+      >
         {children}
       </div>
     );
@@ -126,7 +131,7 @@ export function SizeFrame({
   return (
     <div
       ref={box}
-      className="relative flex h-[100dvh] w-full items-center justify-center overflow-hidden bg-stone-950 p-2"
+      className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden bg-stone-950 p-2"
     >
       <div
         className="shrink-0 overflow-hidden rounded-lg ring-1 ring-stone-700"

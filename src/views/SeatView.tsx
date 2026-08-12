@@ -278,14 +278,15 @@ export function SeatView({
   const fields = character.data.fields.filter((f) => f.key !== 'description');
 
   return (
-    <SizeFrame size={size} ppi={trueSize ? ppi : null}>
-      <main
-        // Held glass may scroll DOWN; mounted glass may not. Nothing may
-        // ever scroll sideways — see the note on `wide` above.
-        className={`flex h-full w-full flex-col gap-2 overflow-x-hidden p-3 ${
-          wide ? 'overflow-y-hidden' : 'overflow-y-auto'
-        } ${youreUp ? 'ring-4 ring-inset ring-amber-600' : ''}`}
-      >
+    // The page is a column: the seat's CHROME — connection hint,
+    // identity, the ▭/▦ pickers — and then the glass. The chrome is
+    // the rig AROUND the card, not the card, so it renders at window
+    // scale outside the SizeFrame and a simulated panel spends none of
+    // its pixels on controls; the frame shows exactly what the glass
+    // would. In Actual mode the column is invisible — chrome on top,
+    // card filling the rest.
+    <div className="flex h-[100dvh] w-full flex-col bg-stone-950">
+      <div className="shrink-0 space-y-2 px-3 pt-3">
         <ConnectionHint connected={connected} />
 
         {/* Identity. Wraps rather than squeezes: in a nowrap row the title
@@ -503,199 +504,209 @@ export function SeatView({
             )}
           </div>
         )}
+      </div>
 
-        {takingRolls && (
-          <section className="shrink-0 rounded-lg bg-amber-950/40 p-2 ring-1 ring-amber-800">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <p className="text-sm text-amber-200">
-                Roll for turn order — tap each die you rolled.
-              </p>
-              {basePool && (
-                <span className="font-mono text-[11px] text-stone-500">
-                  sheet says {basePool} · roll any bonus dice too
-                </span>
-              )}
-            </div>
-
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {faceList.map((face) => (
-                <button
-                  key={face}
-                  className="min-w-20 rounded-md bg-stone-800 px-3 py-2 text-left active:bg-stone-700"
-                  aria-label={`add a ${face} — you have ${tally[face] ?? 0}`}
-                  onClick={() =>
-                    setTally((t) => ({ ...t, [face]: (t[face] ?? 0) + 1 }))
-                  }
-                >
-                  <span className="font-mono text-lg text-stone-100">
-                    {tally[face] ?? 0}
-                  </span>
-                  <span className="ml-1.5 text-xs text-stone-400">{face}</span>
-                  <span className="ml-1 text-[10px] text-stone-600">
-                    {(dice?.values[face] ?? 0) === 0
-                      ? '·0'
-                      : `·${dice?.values[face]}`}
-                  </span>
-                </button>
-              ))}
-              <span className="ml-1 font-mono text-2xl text-amber-300">
-                {tallyTotal}
-                <span className="ml-1 text-xs text-stone-500">
-                  {dice?.unit ?? 'total'}
-                </span>
-              </span>
-              <button
-                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
-                disabled={!tapped}
-                onClick={() => {
-                  submitRoll(tallyTotal);
-                  setTally({});
-                }}
-              >
-                that's my roll
-              </button>
-              {tapped > 0 ? (
-                <button
-                  className="text-xs text-stone-500 underline-offset-2 hover:underline"
-                  onClick={() => setTally({})}
-                >
-                  clear
-                </button>
-              ) : (
-                // A blank roll is a real outcome, and tapping four Blanks to
-                // say so would be silly.
-                <button
-                  className="text-xs text-stone-500 underline-offset-2 hover:underline"
-                  onClick={() => submitRoll(0)}
-                >
-                  I rolled nothing
-                </button>
-              )}
-              {typeof mine?.score === 'number' && (
-                <span className="text-xs text-stone-400">
-                  reported <span className="text-amber-300">{mine.score}</span>
-                </span>
-              )}
-            </div>
-          </section>
-        )}
-
-        {/* The body. A row when the glass is wider than it is tall — a rail
-          panel or a desktop — and a column on a phone. Driven by aspect
-          rather than a pixel breakpoint, because 1920×515 and 1024×600
-          want the same treatment for the same reason. */}
-        <div
-          className={`flex min-h-0 gap-2 ${wide ? 'flex-1 flex-row' : 'flex-col'}`}
+      <SizeFrame size={size} ppi={trueSize ? ppi : null}>
+        <main
+          // Held glass may scroll DOWN; mounted glass may not. Nothing
+          // may ever scroll sideways — see the note on `wide` above.
+          className={`flex h-full w-full flex-col gap-2 overflow-x-hidden p-3 ${
+            wide ? 'overflow-y-hidden' : 'overflow-y-auto'
+          } ${youreUp ? 'ring-4 ring-inset ring-amber-600' : ''}`}
         >
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-            {/* `FitBox` only on mounted glass. On a phone it was solving
-                the wrong problem — squeezing a card that had somewhere
-                to go — and the squeeze cost both legibility and the
-                width the panels were asking for. */}
-            <Fit on={wide} className="min-h-0 flex-1">
-              <Counters
-                big
-                counters={character.data.counters}
-                fields={fields}
-                dice={template?.dice}
-                groups={template?.groups}
-                accents={template?.accents}
-                pins={template?.pins}
-                dials={template?.dials}
-                strip={strip}
-                mounted={wide}
-                tags={character.data.tags}
-                onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
-                items={character.data.items ?? []}
-                onItems={ownsTags(layout) ? (items) => patch({ items }) : undefined}
-                use={template?.use}
-                screens={template?.screens}
-                marks={template?.marks}
-                spends={template?.spends}
-                ladders={template?.ladders}
-                onFields={
-                  ownsTags(layout)
-                    ? (next) =>
-                        // The card was given fields minus the
-                        // description; it must ride back on every write
-                        // or the first standing tap deletes it (the
-                        // StatusPanel lesson, same shape).
-                        patch({
-                          fields: [
-                            ...next,
-                            ...character.data.fields.filter(
-                              (f) => f.key === 'description',
-                            ),
-                          ],
-                        })
-                    : undefined
-                }
-                onSpend={ownsTags(layout) ? (next) => patch(next) : undefined}
-                itemsLabel={campaign?.data.vocabulary.items ?? 'Items'}
-                packs={packs.map((p) => p.pack)}
-                ownCatalog={campaign?.data.catalog}
-                conditions={conditions}
-                conditionsLabel={conditionsLabel}
-                lookup={lookup}
-                note={note}
-                onChange={(counters) => patch({ counters })}
-              />
-            </Fit>
-
-            {/* Stats are reference, not controls — one dense strip.
-                Skipped when the layout places them itself, or the same
-                stats would appear twice on the card. */}
-            {fields.length > 0 && !ownsFields(layout) && (
-              <div className="flex shrink-0 flex-wrap gap-1">
-                {fields.map((field) => (
-                  <span
-                    key={field.key}
-                    className="rounded-md bg-stone-900 px-2 py-1 text-xs"
-                  >
-                    <span className="font-mono text-stone-100">
-                      {field.value || '—'}
-                    </span>
-                    <span className="ml-1 uppercase tracking-wider text-stone-500">
-                      {field.label}
-                    </span>
+          {takingRolls && (
+            <section className="shrink-0 rounded-lg bg-amber-950/40 p-2 ring-1 ring-amber-800">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-sm text-amber-200">
+                  Roll for turn order — tap each die you rolled.
+                </p>
+                {basePool && (
+                  <span className="font-mono text-[11px] text-stone-500">
+                    sheet says {basePool} · roll any bonus dice too
                   </span>
+                )}
+              </div>
+
+              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                {faceList.map((face) => (
+                  <button
+                    key={face}
+                    className="min-w-20 rounded-md bg-stone-800 px-3 py-2 text-left active:bg-stone-700"
+                    aria-label={`add a ${face} — you have ${tally[face] ?? 0}`}
+                    onClick={() =>
+                      setTally((t) => ({ ...t, [face]: (t[face] ?? 0) + 1 }))
+                    }
+                  >
+                    <span className="font-mono text-lg text-stone-100">
+                      {tally[face] ?? 0}
+                    </span>
+                    <span className="ml-1.5 text-xs text-stone-400">{face}</span>
+                    <span className="ml-1 text-[10px] text-stone-600">
+                      {(dice?.values[face] ?? 0) === 0
+                        ? '·0'
+                        : `·${dice?.values[face]}`}
+                    </span>
+                  </button>
                 ))}
+                <span className="ml-1 font-mono text-2xl text-amber-300">
+                  {tallyTotal}
+                  <span className="ml-1 text-xs text-stone-500">
+                    {dice?.unit ?? 'total'}
+                  </span>
+                </span>
+                <button
+                  className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
+                  disabled={!tapped}
+                  onClick={() => {
+                    submitRoll(tallyTotal);
+                    setTally({});
+                  }}
+                >
+                  that's my roll
+                </button>
+                {tapped > 0 ? (
+                  <button
+                    className="text-xs text-stone-500 underline-offset-2 hover:underline"
+                    onClick={() => setTally({})}
+                  >
+                    clear
+                  </button>
+                ) : (
+                  // A blank roll is a real outcome, and tapping four Blanks to
+                  // say so would be silly.
+                  <button
+                    className="text-xs text-stone-500 underline-offset-2 hover:underline"
+                    onClick={() => submitRoll(0)}
+                  >
+                    I rolled nothing
+                  </button>
+                )}
+                {typeof mine?.score === 'number' && (
+                  <span className="text-xs text-stone-400">
+                    reported <span className="text-amber-300">{mine.score}</span>
+                  </span>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* The body. A row when the glass is wider than it is tall — a rail
+            panel or a desktop — and a column on a phone. Driven by aspect
+            rather than a pixel breakpoint, because 1920×515 and 1024×600
+            want the same treatment for the same reason. */}
+          <div
+            className={`flex min-h-0 gap-2 ${wide ? 'flex-1 flex-row' : 'flex-col'}`}
+          >
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+              {/* `FitBox` only on mounted glass. On a phone it was solving
+                  the wrong problem — squeezing a card that had somewhere
+                  to go — and the squeeze cost both legibility and the
+                  width the panels were asking for. */}
+              <Fit on={wide} className="min-h-0 flex-1">
+                <Counters
+                  big
+                  counters={character.data.counters}
+                  fields={fields}
+                  dice={template?.dice}
+                  groups={template?.groups}
+                  accents={template?.accents}
+                  pins={template?.pins}
+                  dials={template?.dials}
+                  strip={strip}
+                  mounted={wide}
+                  tags={character.data.tags}
+                  onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
+                  items={character.data.items ?? []}
+                  onItems={ownsTags(layout) ? (items) => patch({ items }) : undefined}
+                  use={template?.use}
+                  screens={template?.screens}
+                  marks={template?.marks}
+                  spends={template?.spends}
+                  ladders={template?.ladders}
+                  onFields={
+                    ownsTags(layout)
+                      ? (next) =>
+                          // The card was given fields minus the
+                          // description; it must ride back on every write
+                          // or the first standing tap deletes it (the
+                          // StatusPanel lesson, same shape).
+                          patch({
+                            fields: [
+                              ...next,
+                              ...character.data.fields.filter(
+                                (f) => f.key === 'description',
+                              ),
+                            ],
+                          })
+                      : undefined
+                  }
+                  onSpend={ownsTags(layout) ? (next) => patch(next) : undefined}
+                  itemsLabel={campaign?.data.vocabulary.items ?? 'Items'}
+                  packs={packs.map((p) => p.pack)}
+                  ownCatalog={campaign?.data.catalog}
+                  conditions={conditions}
+                  conditionsLabel={conditionsLabel}
+                  lookup={lookup}
+                  note={note}
+                  onChange={(counters) => patch({ counters })}
+                />
+              </Fit>
+
+              {/* Stats are reference, not controls — one dense strip.
+                  Skipped when the layout places them itself, or the same
+                  stats would appear twice on the card. */}
+              {fields.length > 0 && !ownsFields(layout) && (
+                <div className="flex shrink-0 flex-wrap gap-1">
+                  {fields.map((field) => (
+                    <span
+                      key={field.key}
+                      className="rounded-md bg-stone-900 px-2 py-1 text-xs"
+                    >
+                      <span className="font-mono text-stone-100">
+                        {field.value || '—'}
+                      </span>
+                      <span className="ml-1 uppercase tracking-wider text-stone-500">
+                        {field.label}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* The sidebar exists only to hold the conditions strip, so a
+                layout that draws its own doesn't get the COLUMN either.
+                Rendering an empty `w-56` left 14rem of nothing down the
+                side of the card and everything else squeezed to fit beside
+                it — the emptiest possible use of the scarcest thing here.
+
+                This is why the guard moved out to wrap the div rather than
+                staying on the child: a container sized in advance keeps its
+                width whether or not anything ends up inside it. */}
+            {!ownsTags(layout) && (
+              <div className={`flex shrink-0 flex-col gap-2 ${wide ? 'w-56' : ''}`}>
+                <TagSection
+                  tags={character.data.tags}
+                  label={conditionsLabel}
+                  lookup={lookup}
+                  onChange={(tags) => patch({ tags })}
+                />
+
+                {/* The turn-order list used to sit here, and it's gone for
+                    now. A seat is one player's own card, and the roster of
+                    everyone else in the fight is the room's information,
+                    not theirs — it's on the table screen and the console,
+                    where everybody can already see it.
+
+                    What stays is everything aimed at THIS player: the ring
+                    around the card when it's their turn, and the roll
+                    prompt when the Warden asks for one. Those are
+                    addressed to them; a list of names is a thing to read. */}
               </div>
             )}
           </div>
-
-          {/* The sidebar exists only to hold the conditions strip, so a
-              layout that draws its own doesn't get the COLUMN either.
-              Rendering an empty `w-56` left 14rem of nothing down the
-              side of the card and everything else squeezed to fit beside
-              it — the emptiest possible use of the scarcest thing here.
-
-              This is why the guard moved out to wrap the div rather than
-              staying on the child: a container sized in advance keeps its
-              width whether or not anything ends up inside it. */}
-          {!ownsTags(layout) && (
-            <div className={`flex shrink-0 flex-col gap-2 ${wide ? 'w-56' : ''}`}>
-              <TagSection
-                tags={character.data.tags}
-                label={conditionsLabel}
-                lookup={lookup}
-                onChange={(tags) => patch({ tags })}
-              />
-
-              {/* The turn-order list used to sit here, and it's gone for
-                  now. A seat is one player's own card, and the roster of
-                  everyone else in the fight is the room's information,
-                  not theirs — it's on the table screen and the console,
-                  where everybody can already see it.
-
-                  What stays is everything aimed at THIS player: the ring
-                  around the card when it's their turn, and the roll
-                  prompt when the Warden asks for one. Those are
-                  addressed to them; a list of names is a thing to read. */}
-            </div>
-          )}
-        </div>
-      </main>
-    </SizeFrame>
+        </main>
+      </SizeFrame>
+    </div>
   );
 }
