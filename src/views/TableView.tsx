@@ -16,6 +16,16 @@ import { FogLayer } from '../components/FogLayer';
 import { CalibrationOverlay } from '../components/CalibrationOverlay';
 import { CameraMarks } from '../components/CameraMarks';
 
+// A tap anywhere toggles fullscreen — a gesture, not a control: the
+// table renders no button and nothing about the game can be touched
+// from this surface (rule 6). It exists because the glass is usually a
+// TV driven by someone else's browser chrome, and the chrome is not
+// part of the ground.
+const toggleFullscreen = () => {
+  if (document.fullscreenElement) void document.exitFullscreen();
+  else void document.documentElement.requestFullscreen();
+};
+
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the active scene (framed per its view + true
 // scale when calibrated), token ground-markers with reactive effects,
@@ -168,7 +178,10 @@ export function TableView({
 
   if (mapUrl) {
     return (
-      <main className="relative h-screen overflow-hidden bg-black">
+      <main
+        className="relative h-screen overflow-hidden bg-black"
+        onClick={toggleFullscreen}
+      >
         <ConnectionHint connected={connected} />
         <img
           key={mapKey}
@@ -315,7 +328,10 @@ export function TableView({
   }
 
   return (
-    <main className="relative flex min-h-screen flex-col items-center justify-center gap-2">
+    <main
+      className="relative flex min-h-screen flex-col items-center justify-center gap-2"
+      onClick={toggleFullscreen}
+    >
       <ConnectionHint connected={connected} />
       <h1 className="font-serif text-6xl text-stone-700">teller</h1>
       <p className="text-stone-600">the table awaits a map…</p>
