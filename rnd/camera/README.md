@@ -73,6 +73,22 @@ Success bar: RMS under ~0.1" across shots from several handheld poses.
 `calibrate.py --selftest` proves the pipeline with no hardware at all
 (synthesizes the pattern, warps it, requires sub-pixel recovery).
 
+## The live loop (no AirDrop, no per-shot commands)
+
+1. TV: `pattern.html`, one click → fullscreen. Note the viewport size.
+2. Mac: `./.venv/bin/python receive.py --screen 1920x1080`
+3. Phone: the Eye app (`../eye/` — build once via Xcode). URL =
+   `http://<mac-lan-ip>:8124`. Prop the phone STILL (fixed pose is what
+   makes reflections subtract out), frame all four markers, **LOCK**,
+   then **auto** on.
+4. Watch `http://localhost:8124/` (or that URL from any device) — the
+   first good frame becomes the empty-table baseline; every frame
+   after diffs against it. Move a mini between frames and watch it
+   tracked. Hit **rebase** when you rearrange on purpose.
+
+Frames with no solvable markers (a hand over the table) are skipped
+and say so; raw frames still land in `captures/` for re-runs.
+
 ## What's next (in order)
 
 1. Known-background subtraction: photo of the table view (not the

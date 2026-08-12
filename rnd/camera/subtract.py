@@ -33,21 +33,14 @@ def rectify(path: Path, sw: int, sh: int) -> np.ndarray:
     return cv2.warpPerspective(img, np.linalg.inv(H), (sw, sh))
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('baseline', type=Path)
-    ap.add_argument('objects', type=Path)
-    ap.add_argument('--screen', required=True)
-    ap.add_argument('--min-area', type=int, default=400,
-                    help='ignore blobs smaller than this, px² (default 400)')
-    args = ap.parse_args()
-    sw, sh = (int(v) for v in args.screen.lower().split('x'))
+def detect(
+    base: np.ndarray, objs: np.ndarray, min_area: int = 400
+) -> tuple[list[tuple[float, float, int]], np.ndarray, np.ndarray]:
+    """Diff two rectified frames → (blobs, annotated view, mask).
 
-    base = rectify(args.baseline, sw, sh)
-    objs = rectify(args.objects, sw, sh)
-
-    # Grayscale, matched brightness (handheld shots expose differently),
-    # then a generous diff. Blur first so sensor noise doesn't speckle.
+    Blobs are (cx, cy, area) in screen px. Shared by the CLI below and
+    the live receiver — one detector, two doors.
+    """
     g0 = cv2.GaussianBlur(cv2.cvtColor(base, cv2.COLOR_BGR2GRAY), (9, 9), 0)
     g1 = cv2.GaussianBlur(cv2.cvtColor(objs, cv2.COLOR_BGR2GRAY), (9, 9), 0)
     g0 = cv2.equalizeHist(g0)
@@ -61,22 +54,38 @@ def main():
         mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
     )
 
-    n, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
+    n, _, stats, centroids = cv2.connectedComponentsWithStats(mask)
     out = objs.copy()
-    found = []
+    found: list[tuple[float, float, int]] = []
     for i in range(1, n):
-        area = stats[i, cv2.CC_STAT_AREA]
-        if area < args.min_area:
+        area = int(stats[i, cv2.CC_STAT_AREA])
+        if area < min_area:
             continue
-        x, y, w, h = (stats[i, k] for k in (
+        x, y, w, h = (int(stats[i, k]) for k in (
             cv2.CC_STAT_LEFT, cv2.CC_STAT_TOP, cv2.CC_STAT_WIDTH, cv2.CC_STAT_HEIGHT))
         cx, cy = centroids[i]
-        found.append((cx, cy, area))
+        found.append((float(cx), float(cy), area))
         cv2.rectangle(out, (x, y), (x + w, y + h), (0, 176, 255), 3)
         cv2.drawMarker(out, (int(cx), int(cy)), (0, 255, 0),
                        cv2.MARKER_CROSS, 24, 3)
         cv2.putText(out, f'({int(cx)},{int(cy)})', (x, y - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    return found, out, mask
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('baseline', type=Path)
+    ap.add_argument('objects', type=Path)
+    ap.add_argument('--screen', required=True)
+    ap.add_argument('--min-area', type=int, default=400,
+                    help='ignore blobs smaller than this, px² (default 400)')
+    args = ap.parse_args()
+    sw, sh = (int(v) for v in args.screen.lower().split('x'))
+
+    base = rectify(args.baseline, sw, sh)
+    objs = rectify(args.objects, sw, sh)
+    found, out, mask = detect(base, objs, args.min_area)
 
     print(f'{len(found)} object(s):')
     for cx, cy, area in sorted(found, key=lambda f: f[0]):
