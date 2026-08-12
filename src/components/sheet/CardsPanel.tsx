@@ -11,12 +11,12 @@ import { SheetPanel } from './SheetPanel';
 // face with `dials: { <counter>: 'cards' }`, exactly the way the
 // revolver cylinder is asked for.
 //
-// The one flourish is the LAST slot. "Ace in the hole" is a stud-poker
-// term — the hole card is the one dealt face down — so the final card
-// sits face-down in the hand from the start, and completing the tally
-// flips it. The reveal is the payoff the tick-boxes never had. Count at
-// a glance stays honest: face-up cards are the count; a patterned back
-// reads as a back, not a tick.
+// The whole hand is dealt face-down up front — alternating blue and
+// red backs (Brian, 2026-08-12) — and each point flips one card over.
+// "Ace in the hole" is a stud-poker term (the hole card is the one
+// dealt face down), so the last flip is the reveal: the spade turns,
+// lifts above its neighbours, and the hand glows ready. Count at a
+// glance stays honest: face-up cards are the count.
 //
 // Tapping the nth card proposes n, tapping the last face-up card takes
 // it back — the ring's gesture, the tally's arithmetic: event-logged,
@@ -56,25 +56,22 @@ function Face({ suit }: { suit: string }) {
   );
 }
 
-/** The back: an accent-tinted lattice, unmistakably not a count. */
-function Back() {
+/**
+ * A card back — the classic lattice, in a deck colour. Every undealt
+ * card wears one (a hand is DEALT face down, not missing), alternating
+ * blue and red down the row the way a drawer of decks does.
+ */
+const BACKS = ['#3b82f6', '#dc2626'];
+function Back({ tint }: { tint: string }) {
   return (
     <span
       className="absolute inset-0 rounded-md border-2 [backface-visibility:hidden]"
       style={{
-        borderColor: 'color-mix(in srgb, var(--sheet-accent, #f59e0b) 55%, transparent)',
-        background:
-          'repeating-linear-gradient(45deg, color-mix(in srgb, var(--sheet-accent, #f59e0b) 28%, transparent) 0 2px, transparent 2px 7px), repeating-linear-gradient(-45deg, color-mix(in srgb, var(--sheet-accent, #f59e0b) 28%, transparent) 0 2px, transparent 2px 7px)',
+        borderColor: `color-mix(in srgb, ${tint} 60%, transparent)`,
+        background: `repeating-linear-gradient(45deg, color-mix(in srgb, ${tint} 32%, transparent) 0 2px, transparent 2px 7px), repeating-linear-gradient(-45deg, color-mix(in srgb, ${tint} 32%, transparent) 0 2px, transparent 2px 7px)`,
         backgroundColor: '#1c1917',
       }}
     />
-  );
-}
-
-/** An empty slot — a card not yet dealt. */
-function Slot() {
-  return (
-    <span className="absolute inset-0 rounded-md border-2 border-dashed border-stone-600 [backface-visibility:hidden]" />
   );
 }
 
@@ -131,19 +128,19 @@ export function CardsPanel({
                 }}
               >
                 <Face suit={hole ? HOLE_SUIT : SUITS[i % SUITS.length]} />
-                {/* The face the flip shows while undealt: the hole card
-                    is already in the hand, face down; the rest are
-                    empty slots waiting to be earned. `backface-visibility`
-                    must sit on THIS wrapper — it's the element in the
-                    button's 3D context, and without `preserve-3d` of its
-                    own it flattens its child, whose backface rule then
-                    protects nothing: the back painted over the face at
-                    rotateY(0) and every card looked forever undealt. */}
+                {/* The face the flip shows while undealt — a back, so
+                    the whole hand reads as dealt-and-waiting.
+                    `backface-visibility` must sit on THIS wrapper —
+                    it's the element in the button's 3D context, and
+                    without `preserve-3d` of its own it flattens its
+                    child, whose backface rule then protects nothing:
+                    the back painted over the face at rotateY(0) and
+                    every card looked forever undealt. */}
                 <span
                   className="absolute inset-0 [backface-visibility:hidden]"
                   style={{ transform: 'rotateY(180deg)' }}
                 >
-                  {hole ? <Back /> : <Slot />}
+                  <Back tint={BACKS[i % BACKS.length]} />
                 </span>
               </button>
             );

@@ -653,6 +653,17 @@ export type SystemTemplate = {
     track?: number;
     /** Slots past the track's mark, if the sheet prints any. */
     trackBonus?: number;
+    /**
+     * Faces that BANK when a roll is reported — WiW's Aces, marking the
+     * Ace-in-the-Hole meter as a side effect of any combat roll. teller
+     * only ever hears about rolls a player reports (the dice stay
+     * physical), so this fires on the reporting surfaces; every other
+     * ace is a tap on the tally, as it always was. One per rolled face
+     * into the named counter, clamped by the counter's own max, through
+     * the ordinary counter path (rule 1: event-logged, undoable, and a
+     * mis-tap is a stepper away from fixed).
+     */
+    banks?: { face: string; counter: string }[];
   };
   /**
    * Which field decides turn order, when the table wants teller to roll.
@@ -766,6 +777,26 @@ export type SystemTemplate = {
      * button say what the table says. Absent, the price stands alone.
      */
     verb?: string;
+    /**
+     * The trigger's word per item KIND, when one word doesn't fit all —
+     * WiW fires a weapon but USES an ability. Falls back to `verb`.
+     */
+    verbs?: Record<string, string>;
+    /**
+     * Additional currencies a use can price, beyond `costField`.
+     *
+     * Each entry names an item FIELD holding the amount and the
+     * character counter it debits — WiW's Ace-in-the-Hole abilities
+     * carry `aces: 6`, and using one sweeps the Ace tally. An item
+     * without the field pays nothing extra; an item whose holder can't
+     * cover the amount gets a disabled trigger, exactly like the main
+     * cost (rule 1: unaffordable is disabled, never clamped — and the
+     * table can still spend the counters by hand if it rules
+     * otherwise). Declared as field + counter so nothing here is a
+     * game word, and the amount stays on the item where a person can
+     * type over it.
+     */
+    costs?: { field: string; counter: string }[];
     /**
      * The system's per-turn priced moves — WiW's Aim: 1 Grit, reroll
      * one die, once per turn. GLOBAL, not per-item (Aim is an Action

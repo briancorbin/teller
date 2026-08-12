@@ -25,8 +25,7 @@ export function SheetHeader({
   player,
   trade,
   accent,
-  cost,
-  costFace,
+  costs = [],
   onCost,
 }: {
   /** The character's name — a column, not a field. */
@@ -36,18 +35,20 @@ export function SheetHeader({
   /** The field `groups.title` names — the role, and the theme. */
   trade?: Field;
   accent?: string;
-  /** The counter `use.costCounter` names, when the system prices use. */
-  cost?: Counter;
-  /** The face `dials` gives that counter — a cylinder earns a cartridge. */
-  costFace?: 'cylinder' | 'cards';
+  /**
+   * The currencies `use` prices — costCounter first, then every
+   * `use.costs` counter — each with the face `dials` gives it: a
+   * cylinder earns a cartridge chip, cards earn a mini card.
+   */
+  costs?: { counter: Counter; face?: 'cylinder' | 'cards' }[];
   onCost?: (next: Counter) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
   const tint = accent ?? '#f59e0b';
   const tradeValue = trade?.value?.trim();
   const playerValue = player?.value?.trim();
 
-  if (!name && !tradeValue && !cost) return null;
+  if (!name && !tradeValue && !costs.length) return null;
 
   return (
     <div
@@ -88,55 +89,62 @@ export function SheetHeader({
         </div>
       )}
 
-      {/* What's left to spend. Just the number — the gauge on the Sheet
-          screen already shows the ceiling; up here the question is "can
-          I afford the next thing", and the answer is one figure. The
-          chip is still a control (rule 1): tapping it opens a stepper,
-          so the header never shows a number nobody can change. */}
-      {cost && (
-        <div className="relative">
+      {/* What's left to spend. Just the numbers — the gauges on the
+          Sheet screen keep the ceilings; up here the question is "can I
+          afford the next thing". Each chip is still a control (rule 1):
+          tapping it opens a stepper, so the header never shows a number
+          nobody can change. */}
+      {costs.map(({ counter, face }) => (
+        <div key={counter.id} className="relative">
           <button
             type="button"
-            onClick={() => setOpen((o) => !o)}
-            aria-label={`${cost.name}: ${cost.current}`}
-            aria-expanded={open}
+            onClick={() => setOpen((o) => (o === counter.id ? null : counter.id))}
+            aria-label={`${counter.name}: ${counter.current}`}
+            aria-expanded={open === counter.id}
             className="flex items-center gap-1.5"
           >
             <span className="text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">
-              {cost.name}
+              {counter.name}
             </span>
-            {/* A cylinder-dialled counter is spent in cartridges, so the
-                chip wears the shape: flat rim, round nose. Anything else
-                gets a plain pill — the shape is declared, never named. */}
-            <span
-              className={`flex h-7 min-w-[2.6rem] items-center justify-center border font-mono text-sm text-stone-100 ${
-                costFace === 'cylinder'
-                  ? 'rounded-l-sm rounded-r-full border-l-2 pl-1.5 pr-2.5'
-                  : 'rounded-full px-2.5'
-              }`}
-              style={{ borderColor: tint, background: `${tint}1f` }}
-            >
-              {cost.current}
-            </span>
+            {/* The chip wears its counter's declared face, never its
+                name: a cylinder is spent in cartridges (flat rim, round
+                nose), a cards counter is a tiny card off the deck, and
+                anything undialled is a plain pill. */}
+            {face === 'cards' ? (
+              <span className="flex h-8 w-6 items-center justify-center rounded-[4px] border border-stone-400 bg-[#f4efe4] font-mono text-sm font-bold text-stone-900">
+                {counter.current}
+              </span>
+            ) : (
+              <span
+                className={`flex h-7 min-w-[2.6rem] items-center justify-center border font-mono text-sm text-stone-100 ${
+                  face === 'cylinder'
+                    ? 'rounded-l-sm rounded-r-full border-l-2 pl-1.5 pr-2.5'
+                    : 'rounded-full px-2.5'
+                }`}
+                style={{ borderColor: tint, background: `${tint}1f` }}
+              >
+                {counter.current}
+              </span>
+            )}
           </button>
 
-          {open && onCost && (
+          {open === counter.id && onCost && (
             <div className="absolute right-0 top-full z-20 mt-1 flex items-center gap-1 rounded-lg border border-stone-700 bg-stone-950 p-1 shadow-lg">
               <button
                 type="button"
-                aria-label={`decrease ${cost.name}`}
-                onClick={() => onCost(bumped(cost, -1))}
+                aria-label={`decrease ${counter.name}`}
+                onClick={() => onCost(bumped(counter, -1))}
                 className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-800 font-mono text-lg text-stone-100 hover:bg-stone-700"
               >
                 −
               </button>
               <span className="min-w-[2rem] text-center font-mono text-sm text-stone-100">
-                {cost.current}
+                {counter.current}
               </span>
               <button
                 type="button"
-                aria-label={`increase ${cost.name}`}
-                onClick={() => onCost(bumped(cost, 1))}
+                aria-label={`increase ${counter.name}`}
+                onClick={() => onCost(bumped(counter, 1))}
                 className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-800 font-mono text-lg text-stone-100 hover:bg-stone-700"
               >
                 +
@@ -144,7 +152,7 @@ export function SheetHeader({
             </div>
           )}
         </div>
-      )}
+      ))}
     </div>
   );
 }

@@ -138,6 +138,9 @@ const wiw: SystemTemplate = {
     // Six slots and one past the mark, as printed on the sheet.
     track: 6,
     trackBonus: 1,
+    // The Ace die face (p. 8): rolled in combat, it also marks one Ace
+    // on the Ace-in-the-Hole meter. Reported rolls bank it themselves.
+    banks: [{ face: 'ace', counter: 'Aces' }],
   },
   // The sheet's SKILLS panel, exactly. Defense is a pool as well but
   // belongs beside Health; Trade names the character; Speed is a word.
@@ -227,6 +230,12 @@ const wiw: SystemTemplate = {
     costCounter: 'Grit',
     consumesKind: 'ammo',
     verb: 'Fire',
+    // You fire a weapon; you use an ability (Brian, 2026-08-12).
+    verbs: { ability: 'Use' },
+    // Ace-in-the-Hole (p. 14): usable at six Aces, and using it resets
+    // the tally — modelled as a second price, `aces: 6` on the ability,
+    // debited whole. Disabled until affordable, like any other cost.
+    costs: [{ field: 'aces', counter: 'Aces' }],
     // Guidebook p. 41. Aim is a GLOBAL once-per-turn Action, not a
     // property of any weapon — the seat renders one reticle for the
     // screen. (The ✶-and-box printed on each weapon block is NOT Aim:

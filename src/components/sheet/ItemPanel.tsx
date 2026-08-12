@@ -169,6 +169,7 @@ export function ItemPanel({
   onFire,
   extraCost = 0,
   available,
+  balances = {},
   tags = [],
   marks,
 }: {
@@ -197,13 +198,17 @@ export function ItemPanel({
   onToggleAct?: (name: string) => void;
   /**
    * Spend this item's cost from the priced counter — the caller adds
-   * any armed actions (Aim) on top and clears them.
+   * any armed actions (Aim) on top and clears them. `extras` are the
+   * item's additional prices (`use.costs`), resolved here because only
+   * this panel holds the catalogue-merged fields.
    */
-  onFire?: (cost: number) => void;
+  onFire?: (cost: number, extras?: { counter: string; amount: number }[]) => void;
   /** Armed actions' cost, already decided upstream — shown in the price. */
   extraCost?: number;
   /** What the cost counter currently holds, for the disabled state. */
   available?: number;
+  /** What each `use.costs` counter holds, for the disabled state. */
+  balances?: Record<string, number>;
   /** The character's tags — where a Talent lives ("Talent: Rifles"). */
   tags?: string[];
   /** The system's mark declaration — see `SystemTemplate.marks`. */
@@ -259,6 +264,19 @@ export function ItemPanel({
     ? Number(resolved.fields.find((f) => f.key === use.costField)?.value)
     : NaN;
   const fireable = Boolean(onFire) && Number.isFinite(price) && price > 0;
+  // The trigger's word for THIS kind of thing — you fire a weapon, you
+  // use an ability. Declared per kind, falling back to the one verb.
+  const verb = use?.verbs?.[item.kind ?? ''] ?? use?.verb;
+  // The item's additional prices (`use.costs`): an ability carrying
+  // `aces: 6` also sweeps the Ace tally. Read off the resolved fields
+  // like the main price, so a typed-over value wins (rule 1) and an
+  // item without the field pays nothing extra.
+  const extras = (use?.costs ?? []).flatMap((c) => {
+    const amount = Number(resolved.fields.find((f) => f.key === c.field)?.value);
+    return Number.isFinite(amount) && amount > 0
+      ? [{ counter: c.counter, amount }]
+      : [];
+  });
 
   // A FIXED order, so three panels in a row read as one table: the
   // priced field first (declared — `use.costField`, the printed sheet's
@@ -439,7 +457,19 @@ export function ItemPanel({
                 for the table to rule otherwise (rule 1). */}
             {(() => {
               const total = price + extraCost;
-              const broke = available !== undefined && available < total;
+              // Every price must clear: the main counter AND each of
+              // the item's extra currencies (an Ace-in-the-Hole ability
+              // waits for its six Aces the same way a shot waits for
+              // its Grit).
+              const short = [
+                ...(available !== undefined && available < total
+                  ? [use?.costCounter]
+                  : []),
+                ...extras
+                  .filter((e) => (balances[e.counter] ?? 0) < e.amount)
+                  .map((e) => e.counter),
+              ];
+              const broke = short.length > 0;
               return (
                 <button
                   type="button"
@@ -449,13 +479,19 @@ export function ItemPanel({
                     color: 'var(--sheet-accent, #f59e0b)',
                   }}
                   disabled={broke}
-                  onClick={() => onFire?.(price)}
-                  aria-label={`${use?.verb ?? 'use'} ${item.name}: spend ${total} ${use?.costCounter}${
-                    chambered ? ` and one ${chambered.name}` : ''
-                  }${broke ? ` (not enough ${use?.costCounter})` : ''}`}
+                  onClick={() => onFire?.(price, extras)}
+                  aria-label={`${verb ?? 'use'} ${item.name}: spend ${total} ${use?.costCounter}${
+                    extras.length
+                      ? ` and ${extras
+                          .map((e) => `${e.amount} ${e.counter}`)
+                          .join(' and ')}`
+                      : ''
+                  }${chambered ? ` and one ${chambered.name}` : ''}${
+                    broke ? ` (not enough ${short.join(', ')})` : ''
+                  }`}
                 >
-                  {use?.verb
-                    ? `${use.verb} −${total} ${use.costCounter}`
+                  {verb
+                    ? `${verb} −${total} ${use?.costCounter}`
                     : `− ${total} ${use?.costCounter}`}
                 </button>
               );

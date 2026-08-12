@@ -742,16 +742,27 @@ export function Sheet({
    * blocks the shot either — whether you could afford it is the
    * table's argument, not teller's (rule 1).
    */
-  const fire = (item: Item, cost: number) => {
+  const fire = (
+    item: Item,
+    cost: number,
+    // The item's additional prices (`use.costs`) — the Ace tally an
+    // Ace-in-the-Hole ability sweeps — resolved by the panel, which
+    // holds the catalogue-merged fields this file never sees.
+    extras: { counter: string; amount: number }[] = [],
+  ) => {
     if (!use || !onSpend) return;
     // One squeeze: the weapon's cost AND every armed action, together —
     // Aim's Grit rides on the shot it improves.
     const total = cost + armedCost;
     const next: { counters?: Counter[]; items?: Item[] } = {};
-    if (costCounter) {
-      next.counters = counters.map((c) =>
-        c.name === use.costCounter ? bumped(c, -total) : c,
-      );
+    if (costCounter || extras.length) {
+      next.counters = counters.map((c) => {
+        let out = c;
+        if (c.name === use.costCounter) out = bumped(out, -total);
+        const extra = extras.find((e) => e.counter === c.name);
+        if (extra) out = bumped(out, -extra.amount);
+        return out;
+      });
     }
     const pool = item.loaded ? pools.find((p) => p.id === item.loaded) : undefined;
     if (pool && pool.counters.length) {
@@ -871,7 +882,15 @@ export function Sheet({
             available={available}
             tags={tags}
             marks={marks}
-            onFire={onSpend ? (cost) => fire(item, cost) : undefined}
+            onFire={
+              onSpend ? (cost, extras) => fire(item, cost, extras) : undefined
+            }
+            balances={Object.fromEntries(
+              (use?.costs ?? []).map((c) => [
+                c.counter,
+                counters.find((k) => k.name === c.counter)?.current ?? 0,
+              ]),
+            )}
             onChange={(next) =>
               onItems?.(items.map((i) => (i.id === next.id ? next : i)))
             }
@@ -1049,8 +1068,18 @@ export function Sheet({
         player={player}
         trade={title}
         accent={accent}
-        cost={costCounter}
-        costFace={costCounter ? dials?.[costCounter.name] : undefined}
+        // The currencies `use` prices, in declaration order — Grit,
+        // then the Ace tally the moment `use.costs` names it. Derived,
+        // so the header grows a chip when the system grows a price.
+        costs={[
+          ...(use?.costCounter ? [use.costCounter] : []),
+          ...(use?.costs ?? []).map((c) => c.counter),
+        ]
+          .filter((n, i, a) => a.indexOf(n) === i)
+          .flatMap((n) => {
+            const c = counters.find((k) => k.name === n);
+            return c ? [{ counter: c, face: dials?.[c.name] }] : [];
+          })}
         onCost={update}
       />
 

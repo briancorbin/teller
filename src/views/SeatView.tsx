@@ -20,6 +20,7 @@ import {
 import { CalibrationOverlay } from '../components/CalibrationOverlay';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { COUNTER_VIEWS } from '../components/counters';
+import { bumped } from '../components/counters/shared';
 import { Fit } from '../components/FitBox';
 import { SEAT_SIZES, SizeFrame, type SeatSize } from '../components/SizeFrame';
 import { TagSection } from '../components/TagSection';
@@ -378,6 +379,26 @@ export function SeatView({
               disabled={!tapped}
               onClick={() => {
                 submitRoll(tallyTotal);
+                // Faces the system banks (`dice.banks` — WiW's Aces
+                // marking the Ace-in-the-Hole meter) tick their counter
+                // as a side effect of the report: the only rolls teller
+                // ever hears about are reported ones, so this is where
+                // "roll an Ace, mark an Ace" can be automatic. An
+                // ordinary counter write — clamped by the counter's own
+                // max, event-logged, and a tap on the tally reverses a
+                // miscount (rule 1).
+                const banked = (dice?.banks ?? []).flatMap((b) => {
+                  const n = tally[b.face] ?? 0;
+                  return n > 0 ? [{ counter: b.counter, n }] : [];
+                });
+                if (banked.length && character) {
+                  patch({
+                    counters: character.data.counters.map((c) => {
+                      const b = banked.find((x) => x.counter === c.name);
+                      return b ? bumped(c, b.n) : c;
+                    }),
+                  });
+                }
                 setTally({});
               }}
             >
