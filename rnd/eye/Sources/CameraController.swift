@@ -34,7 +34,16 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     }
 
     func start() {
-        queue.async { self.configure() }
+        // Ask first, configure after. Without the explicit ask, a fresh
+        // install can bring the session up unauthorized — which renders
+        // as an empty preview and no prompt, i.e. a blank screen.
+        AVCaptureDevice.requestAccess(for: .video) { granted in
+            guard granted else {
+                self.report("camera access denied — Settings → Eye → Camera")
+                return
+            }
+            self.queue.async { self.configure() }
+        }
     }
 
     private func configure() {

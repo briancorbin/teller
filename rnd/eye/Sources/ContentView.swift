@@ -75,6 +75,12 @@ struct ContentView: View {
             .padding()
             .background(.black.opacity(0.35))
         }
+        // A rig camera is a dark-room tool: solid black behind the
+        // preview and forced dark scheme, so an empty session (starting
+        // up, or permission denied) shows legible controls on black
+        // instead of white-on-white nothing.
+        .background(Color.black.ignoresSafeArea())
+        .preferredColorScheme(.dark)
         .statusBarHidden()
         .onAppear {
             camera.start()
@@ -105,6 +111,7 @@ private struct Preview: UIViewRepresentable {
 
     func makeUIView(context: Context) -> Host {
         let view = Host()
+        view.backgroundColor = .black
         let layer = view.layer as! AVCaptureVideoPreviewLayer
         layer.session = session
         layer.videoGravity = .resizeAspect
