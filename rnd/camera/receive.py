@@ -225,6 +225,83 @@ def table_page() -> str:
 """ % (uris[0], uris[1], uris[2], uris[3], RING_STROKE, RING_R)
 
 
+# The inch card (gen_inch_card.py): ArUco id 10 printed at exactly 2".
+# Seen through the same homography as everything else, it hands over
+# the one fact nothing digital knows — what an inch is.
+REF_ID = 10
+REF_INCHES = 2.0
+_last_cal = {'ppi': None, 'at': 0.0}
+
+
+def ref_ppi(seen: dict, Hinv: np.ndarray) -> tuple[float, float] | None:
+    """Screen px-per-inch, per axis, from the reference card if in view.
+
+    The card is square, so its screen-space quad measures both axes —
+    a stretched picture calibrates differently across and down, and
+    that's a fact worth capturing, not an error to average away.
+    """
+    if REF_ID not in seen:
+        return None
+    quad = cv2.perspectiveTransform(
+        seen[REF_ID].reshape(-1, 1, 2), Hinv
+    ).reshape(4, 2)
+    # Corners arrive TL, TR, BR, BL.
+    width = (np.linalg.norm(quad[1] - quad[0]) + np.linalg.norm(quad[2] - quad[3])) / 2
+    height = (np.linalg.norm(quad[3] - quad[0]) + np.linalg.norm(quad[2] - quad[1])) / 2
+    ppi = float(width) / REF_INCHES
+    ppi_y = float(height) / REF_INCHES
+    if not (10 < ppi < 300 and 10 < ppi_y < 300):
+        return None  # a misdetection, not a screen
+    return round(ppi, 1), round(ppi_y, 1)
+
+
+def push_calibration(ppi: float, ppi_y: float):
+    """Write the measured scale onto every table-role display whose
+    viewport matches the screen we're solving — the same PATCH the
+    console's wizard makes, so it lands in the same slot and stays
+    typed-over-able (rule 1). Throttled: the card sits on the glass
+    for seconds, and one write per sighting is bookkeeping, not spam.
+    """
+    import time
+    if not TELLER:
+        return
+    now = time.monotonic()
+    if _last_cal['ppi'] and abs(_last_cal['ppi'] - ppi) < 0.2 \
+            and now - _last_cal['at'] < 30:
+        return
+    _last_cal.update(ppi=ppi, at=now)
+    try:
+        req = urllib.request.Request(
+            f'{TELLER}/api/campaigns/{TELLER_CAMPAIGN}/displays',
+            headers={'x-teller-key': TELLER_KEY or ''},
+        )
+        displays = json.loads(urllib.request.urlopen(req, timeout=2).read())
+        for display in displays:
+            # This campaign's tables only, and only glass whose reported
+            # viewport matches the screen we're actually solving — a
+            # second TV at another size keeps its own calibration.
+            if display.get('role') != 'table':
+                continue
+            if display.get('campaignId') != TELLER_CAMPAIGN:
+                continue
+            vp = display.get('viewport') or {}
+            if vp.get('w') and (vp['w'], vp['h']) != (SW, SH):
+                continue
+            patch = urllib.request.Request(
+                f'{TELLER}/api/displays/{display["id"]}',
+                data=json.dumps({'ppi': ppi, 'ppiY': ppi_y}).encode(),
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-teller-key': TELLER_KEY or '',
+                },
+                method='PATCH',
+            )
+            urllib.request.urlopen(patch, timeout=2).read()
+            print(f'calibrated {display["id"][:14]}: {ppi} × {ppi_y} px/in')
+    except Exception as e:
+        print(f'calibration push failed: {e}')
+
+
 def crop_for(H: np.ndarray, img_w: int, img_h: int,
              applied: tuple[float, float, float, float] | None):
     """Where the screen sits in the FULL sensor frame, as fractions.
@@ -257,7 +334,7 @@ def process(jpeg: bytes, ts: str,
     if img is None:
         return 'undecodable frame'
     try:
-        H, err, ids, _ = solve(img, SW, SH)
+        H, err, ids, seen = solve(img, SW, SH)
     except SystemExit as e:  # calibrate's helpers bail via sys.exit
         # Markers lost — likely a stale crop after the phone moved. Tell
         # Eye to go back to full frame; the next solve re-derives it.
@@ -268,7 +345,15 @@ def process(jpeg: bytes, ts: str,
         # on failure is what bootstraps the loop out of that deadlock.
         push_to_teller([])
         return f'skipped: {e}'
-    rect = cv2.warpPerspective(img, np.linalg.inv(H), (SW, SH))
+    Hinv = np.linalg.inv(H)
+    rect = cv2.warpPerspective(img, Hinv, (SW, SH))
+
+    # The inch card, when it's lying on the glass: measure and file it.
+    cal = ref_ppi(seen, Hinv)
+    cal_note = ''
+    if cal:
+        push_calibration(*cal)
+        cal_note = f' · inch card {cal[0]}×{cal[1]} px/in — calibrated, remove card'
 
     with state_lock:
         state['crop'] = crop_for(H, img.shape[1], img.shape[0], applied)
@@ -279,7 +364,8 @@ def process(jpeg: bytes, ts: str,
             ok, png = cv2.imencode('.png', rect)
             state['latest_png'] = png.tobytes() if ok else None
             state['line'] = (
-                f'{ts} · frame 1 · BASELINE SET · {len(ids)} markers · RMS {err:.2f}px'
+                f'{ts} · frame 1 · BASELINE SET · {len(ids)} markers'
+                f' · RMS {err:.2f}px{cal_note}'
             )
             line, rings = state['line'], []
         else:
@@ -298,7 +384,7 @@ def process(jpeg: bytes, ts: str,
                              sorted(found)[:8])
             state['line'] = (
                 f'{ts} · frame {state["frames"]} · {len(found)} object(s) {blobs}'
-                f' · RMS {err:.2f}px'
+                f' · RMS {err:.2f}px{cal_note}'
             )
             line, rings = state['line'], state['rings']
     # Push outside the lock — a slow teller must never stall detection.
