@@ -15,6 +15,31 @@ python3 -m venv .venv
 
 `.venv/` stays out of git.
 
+## TV settings (once, before the first run)
+
+In order of how badly each breaks calibration if left on:
+
+1. **Overscan OFF** — "Just Scan" / "Screen Fit" / 1:1 pixel mapping;
+   labeling the HDMI input "PC" forces it on most TVs. Overscan
+   rescales the picture, moving every marker off its formula position.
+2. **Ambient light sensor / eco / auto-brightness OFF** — a TV that
+   dims itself shifts the subtraction baseline.
+3. **Local dimming + dynamic contrast OFF** — per-zone, content-driven
+   output changes are exactly what known-background subtraction can't
+   tolerate.
+4. **Game or PC mode** — kills remaining processing in one switch.
+5. **Sharpness 0** — sharpening halos read as geometry to sub-pixel
+   corner detection.
+6. **HDR off / SDR** — tone mapping is another content-dependent
+   luminance transform.
+7. **Backlight fixed, moderate** — consistency beats brightness with a
+   locked camera; max backlight blooms into glare.
+8. **Sleep / screensaver off** for the session.
+
+OLED caveat: pixel shift (burn-in protection) nudges the image a few
+px and often can't be disabled. Per-frame auto-cal mostly absorbs it;
+a consistent 2–3px residual error is probably this.
+
 ## The calibration run
 
 1. **TV flat on the table**, driven by anything with a browser. Open
