@@ -5,6 +5,7 @@ import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
 import { Screens } from '../sheet/Screens';
 import { TallyPanel } from '../sheet/TallyPanel';
+import { CardsPanel, cardable } from '../sheet/CardsPanel';
 import { TalentPanel } from '../sheet/TalentPanel';
 import { PrestigePanel } from '../sheet/PrestigePanel';
 import { LadderPanel } from '../sheet/LadderPanel';
@@ -915,12 +916,24 @@ export function Sheet({
               : 'min-w-[15rem] flex-1 self-start'
           }`}
         >
-          <TallyPanel
-            counter={c}
-            note={note?.(c.name)}
-            onChange={update}
-            fill={strip}
-          />
+          {/* The face is declared, never inferred (rule 2): a counter
+              dialled 'cards' is drawn as the hand, and one whose shape
+              doesn't suit a hand keeps the tick boxes. */}
+          {dials?.[c.name] === 'cards' && cardable(c) ? (
+            <CardsPanel
+              counter={c}
+              note={note?.(c.name)}
+              onChange={update}
+              fill={strip}
+            />
+          ) : (
+            <TallyPanel
+              counter={c}
+              note={note?.(c.name)}
+              onChange={update}
+              fill={strip}
+            />
+          )}
         </div>
       ));
     // Where the priced actions live — DECLARED (`screens[].arms`), not

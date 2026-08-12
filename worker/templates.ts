@@ -168,6 +168,9 @@ const wiw: SystemTemplate = {
   // spend Grit a point at a time and it reloads at the top of your turn.
   dials: {
     Grit: 'cylinder',
+    // The Ace-in-the-Hole tally, drawn as the poker hand it's named
+    // for — the last card sits face-down until the sixth Ace flips it.
+    Aces: 'cards',
   },
   // The printed page gives Weapons and Abilities separate real estate;
   // the seat does the same. The Ace-in-the-Hole tally (tick an Ace as

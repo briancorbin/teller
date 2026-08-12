@@ -722,11 +722,15 @@ export type SystemTemplate = {
    *   * `cylinder` — a revolver's chambers, one per point, advancing a
    *     click each time the value drops. Only sensible for a small max;
    *     anything past `RING_LIMIT` falls back to the ordinary gauge.
+   *   * `cards` — a hand of playing cards, one dealt face-up per point,
+   *     with the last slot face-down until the hand completes. Built
+   *     for a collect-then-spend tally; past `CARDS_LIMIT` it falls
+   *     back to tick boxes.
    *
    * Undeclared counters keep the default treatment, so a system that
    * says nothing loses nothing.
    */
-  dials?: Record<string, 'cylinder'>;
+  dials?: Record<string, 'cylinder' | 'cards'>;
   /**
    * How USING an item spends things, when this system prices actions.
    *

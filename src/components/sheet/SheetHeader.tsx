@@ -39,7 +39,7 @@ export function SheetHeader({
   /** The counter `use.costCounter` names, when the system prices use. */
   cost?: Counter;
   /** The face `dials` gives that counter — a cylinder earns a cartridge. */
-  costFace?: 'cylinder';
+  costFace?: 'cylinder' | 'cards';
   onCost?: (next: Counter) => void;
 }) {
   const [open, setOpen] = useState(false);
