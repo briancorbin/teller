@@ -826,10 +826,15 @@ export function Sheet({
       {row.map((item) => (
         <div
           key={item.id}
-          className={`flex flex-1 flex-col gap-2 ${
+          // FIXED width on the shelf, not a minimum that grows: three
+          // cards and eight cards are the same card, which is what
+          // lets a row read as one table and the snap land the same
+          // way every time. Held glass keeps fluid widths — a phone
+          // column should use everything it has.
+          className={`flex flex-col gap-2 ${
             strip
-              ? 'min-w-[22rem] snap-start self-stretch'
-              : 'min-w-[15rem] self-start'
+              ? 'w-[22rem] shrink-0 snap-start self-stretch'
+              : 'min-w-[15rem] flex-1 self-start'
           }`}
         >
           <ItemPanel
@@ -894,8 +899,12 @@ export function Sheet({
       .map((c) => (
         <div
           key={c.id}
-          className={`flex min-w-[15rem] flex-1 flex-col gap-2 ${
-            strip ? 'self-stretch' : 'self-start'
+          // The same card as the items beside it — a counter panel on
+          // the shelf is a tile like any other.
+          className={`flex flex-col gap-2 ${
+            strip
+              ? 'w-[22rem] shrink-0 snap-start self-stretch'
+              : 'min-w-[15rem] flex-1 self-start'
           }`}
         >
           <TallyPanel
@@ -951,32 +960,46 @@ export function Sheet({
           </div>
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-        {/* Skipped when empty: on the strip a row is flex-1, and an
-            empty shelf would silently spend half the screen's height. */}
-        {(mineRest.length > 0 || tallyPanels.length > 0) &&
-          itemRow(
-            mineRest,
-            tallyPanels.length ? tallyPanels : undefined,
-            arming ? pools : [],
-            arming,
+        {/* On the strip a screen is ONE shelf, always — everything it
+            holds in a single full-height row that pans, never two rows
+            stacked (Brian, 2026-08-12: stacking is what the shelf
+            exists to prevent). Held glass keeps the split: the card
+            scrolls down anyway, and the rule between gear and pools
+            reads well in a column. */}
+        {strip
+          ? (mine.length > 0 || tallyPanels.length > 0) &&
+            itemRow(
+              mine,
+              tallyPanels.length ? tallyPanels : undefined,
+              arming ? pools : [],
+              arming,
+            )
+          : (
+            <>
+              {(mineRest.length > 0 || tallyPanels.length > 0) &&
+                itemRow(
+                  mineRest,
+                  tallyPanels.length ? tallyPanels : undefined,
+                  arming ? pools : [],
+                  arming,
+                )}
+              {minePools.length > 0 && (
+                <>
+                  {/* The rule separates pools from the things that fire
+                      them; all-pools screens have nothing to separate. */}
+                  {mineRest.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
+                        {use?.consumesKind}
+                      </span>
+                      <div className="h-px flex-1 bg-stone-800" />
+                    </div>
+                  )}
+                  {itemRow(minePools)}
+                </>
+              )}
+            </>
           )}
-        {minePools.length > 0 && (
-          <>
-            {/* The rule exists to separate pools from the things that
-                fire them. A screen that is ALL pools has nothing to
-                separate — the divider would just be an empty row
-                spending the strip's scarcest dimension. */}
-            {mineRest.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
-                  {use?.consumesKind}
-                </span>
-                <div className="h-px flex-1 bg-stone-800" />
-              </div>
-            )}
-            {itemRow(minePools)}
-          </>
-        )}
         </div>
       </div>
     );
