@@ -667,33 +667,33 @@ export function Sheet({
     // tile instead of a grid of orphans.
     <div className="flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap items-stretch gap-2 overflow-x-auto">
       {talentBlock && (
-        <div className="flex w-[22rem] shrink-0 snap-start flex-col self-stretch">
+        <div className="flex flex-[1_0_22rem] snap-start flex-col self-stretch">
           {talentBlock}
         </div>
       )}
       {ladderBlocks.map((block, i) => (
         <div
           key={ladderPanels[i].prefix}
-          className="flex w-[26rem] shrink-0 snap-start flex-col self-stretch"
+          className="flex flex-[1_0_26rem] snap-start flex-col self-stretch"
         >
           {block}
         </div>
       ))}
       {spendBlock && (
-        <div className="flex w-[30rem] shrink-0 snap-start flex-col self-stretch">
+        <div className="flex flex-[1_0_30rem] snap-start flex-col self-stretch">
           {spendBlock}
         </div>
       )}
       {spare.gauges.map((counter) => (
         <div
           key={counter.id}
-          className="flex w-[16rem] shrink-0 snap-start flex-col self-stretch"
+          className="flex flex-[1_0_16rem] snap-start flex-col self-stretch"
         >
           <SheetGauge counter={counter} onChange={update} fill />
         </div>
       ))}
       {(fieldChips || spare.tallies.length > 0) && (
-        <div className="flex w-[19rem] shrink-0 snap-start flex-col gap-1.5 self-stretch rounded-lg border border-stone-700 bg-stone-900/60 p-2.5">
+        <div className="flex flex-[1_0_19rem] snap-start flex-col gap-1.5 self-stretch rounded-lg border border-stone-700 bg-stone-900/60 p-2.5">
           {fieldChips}
           {spare.tallies.map(tallyRow)}
         </div>
