@@ -70,8 +70,10 @@ def detect(
         cx, cy = centroids[i]
         found.append((float(cx), float(cy), area))
         cv2.rectangle(out, (x, y), (x + w, y + h), (0, 176, 255), 3)
-        cv2.drawMarker(out, (int(cx), int(cy)), (0, 255, 0),
-                       cv2.MARKER_CROSS, 24, 3)
+        # Magenta, and bigger than a base: green-on-a-green-mini taught
+        # us a crosshair must not match anything a player would paint.
+        cv2.drawMarker(out, (int(cx), int(cy)), (255, 0, 255),
+                       cv2.MARKER_CROSS, 48, 3)
         cv2.putText(out, f'({int(cx)},{int(cy)})', (x, y - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
     return found, out, mask
