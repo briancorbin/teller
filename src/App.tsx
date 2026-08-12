@@ -134,11 +134,7 @@ function Assigned({
     body = <BadgeView characterId={characterId} />;
   else if (display.role === 'seat' && characterId)
     body = (
-      <SeatView
-        characterId={characterId}
-        displayId={display.id}
-        layout={display.params.layout}
-      />
+      <SeatView characterId={characterId} layout={display.params.layout} />
     );
   else if (display.role === 'console')
     body = (

@@ -359,41 +359,11 @@ export async function displayRoutes(
     return json({ ok: true });
   }
 
-  /**
-   * A screen choosing how it looks.
-   *
-   * The one thing a display may change about itself, and the narrowness
-   * is the point: rule 7 says roles come from assignment and never from
-   * what a client knows, so this cannot touch `role` or `characterId`.
-   * It writes one presentational key and nothing else. A player who
-   * prefers dials is not thereby a console.
-   *
-   * The DM may set it too — for a player who'd rather be handed a screen
-   * that already looks right than fiddle with one.
-   */
-  m = pathname.match(/^\/api\/displays\/([^/]+)\/layout$/);
-  if (m && method === 'POST') {
-    const display = await readDisplay(env, m[1]);
-    if (!display || !display.campaignId) return err('display not found', 404);
-    const isSelf = auth.display?.id === display.id;
-    if (!isSelf && !canDm(auth, display.campaignId)) {
-      return err('not your screen', 401);
-    }
-    const body = await request.json<{ layout?: string | null }>();
-    // Stored opaquely; `src/lib/seat-layouts.ts` owns the vocabulary and
-    // an unknown value renders the default, so a bad string can't blank
-    // anybody's card. Length-capped because it's caller-supplied.
-    const layout =
-      typeof body.layout === 'string' && body.layout.length <= 32 ? body.layout : null;
-    const params: DisplayParams = { ...display.params, layout };
-    await env.DB.prepare('UPDATE displays SET params = ? WHERE id = ?')
-      .bind(JSON.stringify(params), display.id)
-      .run();
-    // Tell the screen itself, so a DM-driven change lands without a
-    // reload — the same path `identify` and role changes already use.
-    await notify(env, display.campaignId, display.id, { type: 'assign' });
-    return json({ display: (await readDisplay(env, display.id))! });
-  }
-
+  // A screen used to be able to choose its own layout here
+  // (POST /displays/:id/layout, self OR DM). Retired 2026-08-12, by
+  // ruling: a screen renders its assignment and doesn't negotiate it —
+  // the layout picker lives on the console now, which writes
+  // `params.layout` through the ordinary DM PATCH above (whose
+  // `assign` notify already lands the change on the screen live).
   return null;
 }

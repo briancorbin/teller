@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Character, Display, DisplayRole } from '../../worker/types';
 import { api } from '../lib/api';
 import { PANES } from '../lib/panes';
+import { SEAT_LAYOUTS, layoutOf } from '../lib/seat-layouts';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
+import { SeatPreview } from './SeatPreview';
 
 // Every screen in the room, and what each one is. This panel is the
 // patch bay: screens arrive knowing nothing, the DM says what they are.
@@ -283,6 +285,28 @@ export function DisplaysPanel({
                 </select>
               )}
 
+              {/* The arrangement is the console's call now — the seat
+                  itself has no picker (a screen renders its assignment).
+                  Preview them below before deciding for someone. */}
+              {d.role === 'seat' && (
+                <select
+                  className={input}
+                  value={layoutOf(d.params.layout)}
+                  aria-label="how this seat arranges its card"
+                  onChange={(e) =>
+                    patch(d.id, {
+                      params: { ...d.params, layout: e.target.value },
+                    })
+                  }
+                >
+                  {SEAT_LAYOUTS.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               {d.role === 'console' && (
                 <select
                   className={input}
@@ -326,6 +350,8 @@ export function DisplaysPanel({
       {mine.length === 0 && elsewhere.length === 0 && (
         <p className="px-1 text-sm text-stone-500">No screens yet.</p>
       )}
+
+      <SeatPreview characters={characters} />
     </div>
   );
 }

@@ -312,17 +312,6 @@ export const api = {
   forgetDisplay: (id: string) =>
     req<{ ok: true }>(`/api/displays/${id}`, { method: 'DELETE' }),
 
-  /**
-   * How a seat arranges itself. A screen may set its OWN — the one thing
-   * about itself a display gets to decide, because it's a preference and
-   * not an authority (see the route in `worker/displays.ts`).
-   */
-  setLayout: (id: string, layout: string | null) =>
-    req<{ display: Display }>(`/api/displays/${id}/layout`, {
-      method: 'POST',
-      body: JSON.stringify({ layout }),
-    }),
-
   /** Put a calibration pattern on the table, or null to take it away. */
   setCalibration: (campaignId: string, calibration: Calibration | null) =>
     req<{ ok: true }>(`/api/campaigns/${campaignId}/calibration`, {

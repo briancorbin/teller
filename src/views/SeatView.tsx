@@ -14,20 +14,12 @@ import {
   layoutOf,
   ownsFields,
   ownsTags,
-  SEAT_LAYOUTS,
   type SeatLayout,
 } from '../lib/seat-layouts';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { COUNTER_VIEWS } from '../components/counters';
 import { Fit } from '../components/FitBox';
-import {
-  CARD_INCHES,
-  SEAT_SIZES,
-  SizeFrame,
-  getScreenPpi,
-  setScreenPpi,
-  type SeatSize,
-} from '../components/SizeFrame';
+import { type SeatSize } from '../components/SizeFrame';
 import { TagSection } from '../components/TagSection';
 
 // The player's card.
@@ -58,13 +50,17 @@ import { TagSection } from '../components/TagSection';
 
 export function SeatView({
   characterId,
-  displayId,
   layout: assigned,
+  frame = null,
 }: {
   characterId: string;
-  /** This screen, so it can remember how it likes to look. */
-  displayId?: string;
   layout?: string | null;
+  /**
+   * The glass this card should pretend to be on — set only by the
+   * console's preview, which wraps this in a `SizeFrame` of the same
+   * dimensions. A real seat never passes it: the window IS the glass.
+   */
+  frame?: SeatSize;
 }) {
   const [character, setCharacter] = useState<Character | null>(null);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -82,26 +78,12 @@ export function SeatView({
   const note = usePanelNote(packs);
   const [template, setTemplate] = useState<SystemTemplate | null>(null);
   const [tally, setTally] = useState<Record<string, number>>({});
-  const [picking, setPicking] = useState(false);
   /**
-   * Render as some other device, to see how a layout lands on glass you
-   * don't have in your hand. A viewing aid, so it's component state and
-   * gone on reload — a player who wandered in and left it on "Rail"
-   * shouldn't be stuck with a letterboxed card forever.
+   * The arrangement, from the ASSIGNMENT. The picker used to live on
+   * the card itself; it's the console's now (Displays panel) — a seat
+   * renders what it was told to render, and the change arrives over
+   * SSE like any other assignment edit.
    */
-  const [size, setSize] = useState<SeatSize>(null);
-  const [sizing, setSizing] = useState(false);
-  /**
-   * True-size rendering: judge a candidate panel at its PHYSICAL
-   * dimensions before buying one. The screen's CSS px/inch comes from a
-   * one-time credit-card calibration and persists (a fact about the
-   * monitor); whether true size is ON is a viewing choice and doesn't.
-   */
-  const [ppi, setPpi] = useState<number | null>(() => getScreenPpi());
-  const [trueSize, setTrueSize] = useState(true);
-  const [calibrating, setCalibrating] = useState(false);
-  const [ppiDraft, setPpiDraft] = useState(() => getScreenPpi() ?? 110);
-  /** Optimistic, so tapping a layout is instant on a slow LAN. */
   const [layout, setLayout] = useState<SeatLayout>(layoutOf(assigned));
 
   useEffect(() => setLayout(layoutOf(assigned)), [assigned]);
@@ -144,12 +126,6 @@ export function SeatView({
     if (!character) return;
     setCharacter({ ...character, data: { ...character.data, ...data } });
     api.patchCharacter(characterId, { data }).catch(() => refetch());
-  };
-
-  const chooseLayout = (next: SeatLayout) => {
-    setLayout(next);
-    setPicking(false);
-    if (displayId) api.setLayout(displayId, next).catch(() => {});
   };
 
   if (error) {
@@ -244,8 +220,8 @@ export function SeatView({
    * keep answering for the real window and a simulated rail would
    * render as a phone.
    */
-  const wide = size
-    ? size.w / size.h >= 1.3
+  const wide = frame
+    ? frame.w / frame.h >= 1.3
     : typeof window !== 'undefined' &&
       window.innerWidth / window.innerHeight >= 1.3;
 
@@ -269,8 +245,8 @@ export function SeatView({
    * them side by side. A tall narrow screen is not a strip, and neither
    * is a tablet that merely lost 80px to Safari.
    */
-  const ratio = size
-    ? size.w / size.h
+  const ratio = frame
+    ? frame.w / frame.h
     : typeof window !== 'undefined'
       ? window.innerWidth / window.innerHeight
       : 0;
@@ -278,26 +254,29 @@ export function SeatView({
   const fields = character.data.fields.filter((f) => f.key !== 'description');
 
   return (
-    // The page is a column: the seat's CHROME — connection hint,
-    // identity, the ▭/▦ pickers — and then the glass. The chrome is
-    // the rig AROUND the card, not the card, so it renders at window
-    // scale outside the SizeFrame and a simulated panel spends none of
-    // its pixels on controls; the frame shows exactly what the glass
-    // would. In Actual mode the column is invisible — chrome on top,
-    // card filling the rest.
-    <div className="flex h-[100dvh] w-full flex-col bg-stone-950">
-      <div className="shrink-0 space-y-2 px-3 pt-3">
-        <ConnectionHint connected={connected} />
+    // The seat renders ONLY what the glass is for: the card, the turn
+    // signals aimed at this player, and the connection state. Identity,
+    // the layout choice and the device preview are the CONSOLE's
+    // business now (Displays panel) — a screen shows its assignment, it
+    // doesn't negotiate it, and nothing here spends the panel's pixels
+    // on controls nobody uses mid-game.
+    <main
+      // Held glass may scroll DOWN; mounted glass may not. Nothing may
+      // ever scroll sideways — see the note on `wide` above. Height is
+      // the window's — or the preview frame's, which sizes its child.
+      className={`flex w-full flex-col gap-2 overflow-x-hidden p-3 ${
+        frame ? 'h-full' : 'h-[100dvh]'
+      } ${wide ? 'overflow-y-hidden' : 'overflow-y-auto'} ${
+        youreUp ? 'ring-4 ring-inset ring-amber-600' : ''
+      }`}
+    >
+      <ConnectionHint connected={connected} />
 
-        {/* Identity. Wraps rather than squeezes: in a nowrap row the title
-            takes the width it wants and the neighbours get the remainder,
-            which on a phone was about one character — so the campaign
-            name rendered vertically, a letter per line. Nothing here may
-            clip, so anything that doesn't fit moves to the next line. */}
-        <header className="flex shrink-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 className="min-w-0 break-words font-serif text-[1.6rem] leading-tight text-stone-100">
-            {character.name}
-          </h1>
+      {/* Turn signals: gameplay, not chrome — they appear only
+          mid-fight and are addressed to this player. The amber ring
+          already shouts; these give it words, and cover on-deck. */}
+      {(youreUp || onDeck) && (
+        <div className="flex shrink-0 items-baseline gap-2">
           {youreUp && (
             <span className="shrink-0 animate-pulse rounded bg-amber-700 px-2 py-0.5 text-xs font-semibold text-stone-950">
               YOU'RE UP
@@ -308,405 +287,200 @@ export function SeatView({
               on deck
             </span>
           )}
-          {/* Whole name or next line, never letter-by-letter. */}
-          <span className="whitespace-nowrap text-xs text-stone-600">
-            {campaign?.name}
-          </span>
-          {/* Kept together and pushed right, so the name wraps as a unit
-              instead of colliding with them. */}
-          <div className="ml-auto flex shrink-0 items-baseline gap-1">
-            <button
-              type="button"
-              onClick={() => {
-                setSizing(!sizing);
-                setPicking(false);
-              }}
-              aria-expanded={sizing}
-              className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors hover:bg-stone-800 hover:text-stone-300 ${
-                size ? 'text-amber-400' : 'text-stone-600'
-              }`}
-              title="render as another device, to see how this lands"
-            >
-              ▭ {size ? size.name : 'Actual'}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPicking(!picking);
-                setSizing(false);
-              }}
-              aria-expanded={picking}
-              className="shrink-0 rounded-md px-2 py-1 text-xs text-stone-600 transition-colors hover:bg-stone-800 hover:text-stone-300"
-              title="how this card is arranged"
-            >
-              ▦ {SEAT_LAYOUTS.find((l) => l.id === layout)?.name}
-            </button>
-          </div>
-        </header>
+        </div>
+      )}
 
-        {/* The picker is deliberately in the player's reach, not buried in
-          the console: the whole point is that they try all five and tell
-          you which one they liked. */}
-        {picking && (
-          <div className="flex shrink-0 flex-wrap gap-1.5 rounded-lg bg-stone-900 p-2">
-            {SEAT_LAYOUTS.map((option) => (
+      {takingRolls && (
+        <section className="shrink-0 rounded-lg bg-amber-950/40 p-2 ring-1 ring-amber-800">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-sm text-amber-200">
+              Roll for turn order — tap each die you rolled.
+            </p>
+            {basePool && (
+              <span className="font-mono text-[11px] text-stone-500">
+                sheet says {basePool} · roll any bonus dice too
+              </span>
+            )}
+          </div>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            {faceList.map((face) => (
               <button
-                key={option.id}
-                type="button"
-                onClick={() => chooseLayout(option.id)}
-                aria-pressed={option.id === layout}
-                className={`rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
-                  option.id === layout
-                    ? 'bg-amber-700 text-stone-950'
-                    : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
-                }`}
+                key={face}
+                className="min-w-20 rounded-md bg-stone-800 px-3 py-2 text-left active:bg-stone-700"
+                aria-label={`add a ${face} — you have ${tally[face] ?? 0}`}
+                onClick={() =>
+                  setTally((t) => ({ ...t, [face]: (t[face] ?? 0) + 1 }))
+                }
               >
-                <span className="font-medium">{option.name}</span>
-                <span
-                  className={`ml-1.5 ${
-                    option.id === layout ? 'text-stone-800' : 'text-stone-500'
-                  }`}
-                >
-                  {option.blurb}
+                <span className="font-mono text-lg text-stone-100">
+                  {tally[face] ?? 0}
+                </span>
+                <span className="ml-1.5 text-xs text-stone-400">{face}</span>
+                <span className="ml-1 text-[10px] text-stone-600">
+                  {(dice?.values[face] ?? 0) === 0
+                    ? '·0'
+                    : `·${dice?.values[face]}`}
                 </span>
               </button>
             ))}
-          </div>
-        )}
-
-        {sizing && (
-          <div className="shrink-0 space-y-2 rounded-lg bg-stone-900 p-2">
-            <div className="flex flex-wrap gap-1.5">
+            <span className="ml-1 font-mono text-2xl text-amber-300">
+              {tallyTotal}
+              <span className="ml-1 text-xs text-stone-500">
+                {dice?.unit ?? 'total'}
+              </span>
+            </span>
+            <button
+              className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
+              disabled={!tapped}
+              onClick={() => {
+                submitRoll(tallyTotal);
+                setTally({});
+              }}
+            >
+              that's my roll
+            </button>
+            {tapped > 0 ? (
               <button
-                type="button"
-                onClick={() => setSize(null)}
-                aria-pressed={!size}
-                className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                  !size
-                    ? 'bg-amber-700 text-stone-950'
-                    : 'bg-stone-800 text-stone-300'
-                }`}
+                className="text-xs text-stone-500 underline-offset-2 hover:underline"
+                onClick={() => setTally({})}
               >
-                Actual
+                clear
               </button>
-              {SEAT_SIZES.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setSize(option)}
-                  aria-pressed={size?.id === option.id}
-                  className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                    size?.id === option.id
-                      ? 'bg-amber-700 text-stone-950'
-                      : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
-                  }`}
+            ) : (
+              // A blank roll is a real outcome, and tapping four Blanks to
+              // say so would be silly.
+              <button
+                className="text-xs text-stone-500 underline-offset-2 hover:underline"
+                onClick={() => submitRoll(0)}
+              >
+                I rolled nothing
+              </button>
+            )}
+            {typeof mine?.score === 'number' && (
+              <span className="text-xs text-stone-400">
+                reported <span className="text-amber-300">{mine.score}</span>
+              </span>
+            )}
+          </div>
+        </section>
+      )}
+
+      {/* The body. A row when the glass is wider than it is tall — a rail
+        panel or a desktop — and a column on a phone. Driven by aspect
+        rather than a pixel breakpoint, because 1920×515 and 1024×600
+        want the same treatment for the same reason. */}
+      <div
+        className={`flex min-h-0 gap-2 ${wide ? 'flex-1 flex-row' : 'flex-col'}`}
+      >
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
+          {/* `FitBox` only on mounted glass. On a phone it was solving
+              the wrong problem — squeezing a card that had somewhere
+              to go — and the squeeze cost both legibility and the
+              width the panels were asking for. */}
+          <Fit on={wide} className="min-h-0 flex-1">
+            <Counters
+              big
+              counters={character.data.counters}
+              fields={fields}
+              dice={template?.dice}
+              groups={template?.groups}
+              accents={template?.accents}
+              pins={template?.pins}
+              dials={template?.dials}
+              strip={strip}
+              mounted={wide}
+              tags={character.data.tags}
+              onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
+              items={character.data.items ?? []}
+              onItems={ownsTags(layout) ? (items) => patch({ items }) : undefined}
+              use={template?.use}
+              screens={template?.screens}
+              marks={template?.marks}
+              spends={template?.spends}
+              ladders={template?.ladders}
+              onFields={
+                ownsTags(layout)
+                  ? (next) =>
+                      // The card was given fields minus the
+                      // description; it must ride back on every write
+                      // or the first standing tap deletes it (the
+                      // StatusPanel lesson, same shape).
+                      patch({
+                        fields: [
+                          ...next,
+                          ...character.data.fields.filter(
+                            (f) => f.key === 'description',
+                          ),
+                        ],
+                      })
+                  : undefined
+              }
+              onSpend={ownsTags(layout) ? (next) => patch(next) : undefined}
+              itemsLabel={campaign?.data.vocabulary.items ?? 'Items'}
+              packs={packs.map((p) => p.pack)}
+              ownCatalog={campaign?.data.catalog}
+              conditions={conditions}
+              conditionsLabel={conditionsLabel}
+              lookup={lookup}
+              note={note}
+              onChange={(counters) => patch({ counters })}
+            />
+          </Fit>
+
+          {/* Stats are reference, not controls — one dense strip.
+              Skipped when the layout places them itself, or the same
+              stats would appear twice on the card. */}
+          {fields.length > 0 && !ownsFields(layout) && (
+            <div className="flex shrink-0 flex-wrap gap-1">
+              {fields.map((field) => (
+                <span
+                  key={field.key}
+                  className="rounded-md bg-stone-900 px-2 py-1 text-xs"
                 >
-                  {option.name}
-                  <span
-                    className={`ml-1.5 font-mono ${
-                      size?.id === option.id ? 'text-stone-800' : 'text-stone-500'
-                    }`}
-                  >
-                    {option.w}×{option.h}
+                  <span className="font-mono text-stone-100">
+                    {field.value || '—'}
                   </span>
-                </button>
+                  <span className="ml-1 uppercase tracking-wider text-stone-500">
+                    {field.label}
+                  </span>
+                </span>
               ))}
             </div>
+          )}
+        </div>
 
-            {/* Physical truth, offered only when the chosen preset knows
-                its inches. Uncalibrated, the toggle explains itself and
-                opens the card instead of silently doing nothing. */}
-            {size?.inches && (
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-stone-800 pt-2">
-                <button
-                  type="button"
-                  onClick={() =>
-                    ppi ? setTrueSize(!trueSize) : setCalibrating(true)
-                  }
-                  aria-pressed={Boolean(ppi) && trueSize}
-                  className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                    ppi && trueSize
-                      ? 'bg-amber-700 text-stone-950'
-                      : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
-                  }`}
-                >
-                  ⌖ True size
-                  <span
-                    className={`ml-1.5 font-mono ${
-                      ppi && trueSize ? 'text-stone-800' : 'text-stone-500'
-                    }`}
-                  >
-                    {size.inches.w.toFixed(1)}″×{size.inches.h.toFixed(1)}″
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPpiDraft(ppi ?? 110);
-                    setCalibrating(!calibrating);
-                  }}
-                  aria-expanded={calibrating}
-                  className="rounded-md px-2.5 py-1.5 text-xs text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300"
-                >
-                  {ppi ? `calibrated · ${Math.round(ppi)} px/in` : 'calibrate this screen'}
-                </button>
-              </div>
-            )}
+        {/* The sidebar exists only to hold the conditions strip, so a
+            layout that draws its own doesn't get the COLUMN either.
+            Rendering an empty `w-56` left 14rem of nothing down the
+            side of the card and everything else squeezed to fit beside
+            it — the emptiest possible use of the scarcest thing here.
 
-            {calibrating && (
-              <div className="space-y-2 border-t border-stone-800 pt-2">
-                <p className="text-xs text-stone-400">
-                  Hold a real credit card against the screen and drag until
-                  the outline matches it. That teaches teller how big a
-                  pixel is on this monitor — once, ever.
-                </p>
-                <div
-                  className="flex items-center justify-center rounded-md border-2 border-dashed border-amber-500/70 bg-stone-800/40 text-[10px] uppercase tracking-widest text-stone-500"
-                  style={{
-                    width: ppiDraft * CARD_INCHES.w,
-                    height: ppiDraft * CARD_INCHES.h,
-                  }}
-                >
-                  credit card
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="range"
-                    min={70}
-                    max={280}
-                    step={0.5}
-                    value={ppiDraft}
-                    onChange={(e) => setPpiDraft(Number(e.target.value))}
-                    aria-label="match the outline to a real credit card"
-                    className="w-64 max-w-full accent-amber-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setScreenPpi(ppiDraft);
-                      setPpi(ppiDraft);
-                      setTrueSize(true);
-                      setCalibrating(false);
-                    }}
-                    className="rounded-md bg-amber-700 px-2.5 py-1.5 text-xs text-stone-950"
-                  >
-                    matches
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCalibrating(false)}
-                    className="rounded-md px-2.5 py-1.5 text-xs text-stone-500 hover:bg-stone-800"
-                  >
-                    cancel
-                  </button>
-                </div>
-              </div>
-            )}
+            This is why the guard moved out to wrap the div rather than
+            staying on the child: a container sized in advance keeps its
+            width whether or not anything ends up inside it. */}
+        {!ownsTags(layout) && (
+          <div className={`flex shrink-0 flex-col gap-2 ${wide ? 'w-56' : ''}`}>
+            <TagSection
+              tags={character.data.tags}
+              label={conditionsLabel}
+              lookup={lookup}
+              onChange={(tags) => patch({ tags })}
+            />
+
+            {/* The turn-order list used to sit here, and it's gone for
+                now. A seat is one player's own card, and the roster of
+                everyone else in the fight is the room's information,
+                not theirs — it's on the table screen and the console,
+                where everybody can already see it.
+
+                What stays is everything aimed at THIS player: the ring
+                around the card when it's their turn, and the roll
+                prompt when the Warden asks for one. Those are
+                addressed to them; a list of names is a thing to read. */}
           </div>
         )}
       </div>
-
-      <SizeFrame size={size} ppi={trueSize ? ppi : null}>
-        <main
-          // Held glass may scroll DOWN; mounted glass may not. Nothing
-          // may ever scroll sideways — see the note on `wide` above.
-          className={`flex h-full w-full flex-col gap-2 overflow-x-hidden p-3 ${
-            wide ? 'overflow-y-hidden' : 'overflow-y-auto'
-          } ${youreUp ? 'ring-4 ring-inset ring-amber-600' : ''}`}
-        >
-          {takingRolls && (
-            <section className="shrink-0 rounded-lg bg-amber-950/40 p-2 ring-1 ring-amber-800">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                <p className="text-sm text-amber-200">
-                  Roll for turn order — tap each die you rolled.
-                </p>
-                {basePool && (
-                  <span className="font-mono text-[11px] text-stone-500">
-                    sheet says {basePool} · roll any bonus dice too
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                {faceList.map((face) => (
-                  <button
-                    key={face}
-                    className="min-w-20 rounded-md bg-stone-800 px-3 py-2 text-left active:bg-stone-700"
-                    aria-label={`add a ${face} — you have ${tally[face] ?? 0}`}
-                    onClick={() =>
-                      setTally((t) => ({ ...t, [face]: (t[face] ?? 0) + 1 }))
-                    }
-                  >
-                    <span className="font-mono text-lg text-stone-100">
-                      {tally[face] ?? 0}
-                    </span>
-                    <span className="ml-1.5 text-xs text-stone-400">{face}</span>
-                    <span className="ml-1 text-[10px] text-stone-600">
-                      {(dice?.values[face] ?? 0) === 0
-                        ? '·0'
-                        : `·${dice?.values[face]}`}
-                    </span>
-                  </button>
-                ))}
-                <span className="ml-1 font-mono text-2xl text-amber-300">
-                  {tallyTotal}
-                  <span className="ml-1 text-xs text-stone-500">
-                    {dice?.unit ?? 'total'}
-                  </span>
-                </span>
-                <button
-                  className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
-                  disabled={!tapped}
-                  onClick={() => {
-                    submitRoll(tallyTotal);
-                    setTally({});
-                  }}
-                >
-                  that's my roll
-                </button>
-                {tapped > 0 ? (
-                  <button
-                    className="text-xs text-stone-500 underline-offset-2 hover:underline"
-                    onClick={() => setTally({})}
-                  >
-                    clear
-                  </button>
-                ) : (
-                  // A blank roll is a real outcome, and tapping four Blanks to
-                  // say so would be silly.
-                  <button
-                    className="text-xs text-stone-500 underline-offset-2 hover:underline"
-                    onClick={() => submitRoll(0)}
-                  >
-                    I rolled nothing
-                  </button>
-                )}
-                {typeof mine?.score === 'number' && (
-                  <span className="text-xs text-stone-400">
-                    reported <span className="text-amber-300">{mine.score}</span>
-                  </span>
-                )}
-              </div>
-            </section>
-          )}
-
-          {/* The body. A row when the glass is wider than it is tall — a rail
-            panel or a desktop — and a column on a phone. Driven by aspect
-            rather than a pixel breakpoint, because 1920×515 and 1024×600
-            want the same treatment for the same reason. */}
-          <div
-            className={`flex min-h-0 gap-2 ${wide ? 'flex-1 flex-row' : 'flex-col'}`}
-          >
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-              {/* `FitBox` only on mounted glass. On a phone it was solving
-                  the wrong problem — squeezing a card that had somewhere
-                  to go — and the squeeze cost both legibility and the
-                  width the panels were asking for. */}
-              <Fit on={wide} className="min-h-0 flex-1">
-                <Counters
-                  big
-                  counters={character.data.counters}
-                  fields={fields}
-                  dice={template?.dice}
-                  groups={template?.groups}
-                  accents={template?.accents}
-                  pins={template?.pins}
-                  dials={template?.dials}
-                  strip={strip}
-                  mounted={wide}
-                  tags={character.data.tags}
-                  onTags={ownsTags(layout) ? (tags) => patch({ tags }) : undefined}
-                  items={character.data.items ?? []}
-                  onItems={ownsTags(layout) ? (items) => patch({ items }) : undefined}
-                  use={template?.use}
-                  screens={template?.screens}
-                  marks={template?.marks}
-                  spends={template?.spends}
-                  ladders={template?.ladders}
-                  onFields={
-                    ownsTags(layout)
-                      ? (next) =>
-                          // The card was given fields minus the
-                          // description; it must ride back on every write
-                          // or the first standing tap deletes it (the
-                          // StatusPanel lesson, same shape).
-                          patch({
-                            fields: [
-                              ...next,
-                              ...character.data.fields.filter(
-                                (f) => f.key === 'description',
-                              ),
-                            ],
-                          })
-                      : undefined
-                  }
-                  onSpend={ownsTags(layout) ? (next) => patch(next) : undefined}
-                  itemsLabel={campaign?.data.vocabulary.items ?? 'Items'}
-                  packs={packs.map((p) => p.pack)}
-                  ownCatalog={campaign?.data.catalog}
-                  conditions={conditions}
-                  conditionsLabel={conditionsLabel}
-                  lookup={lookup}
-                  note={note}
-                  onChange={(counters) => patch({ counters })}
-                />
-              </Fit>
-
-              {/* Stats are reference, not controls — one dense strip.
-                  Skipped when the layout places them itself, or the same
-                  stats would appear twice on the card. */}
-              {fields.length > 0 && !ownsFields(layout) && (
-                <div className="flex shrink-0 flex-wrap gap-1">
-                  {fields.map((field) => (
-                    <span
-                      key={field.key}
-                      className="rounded-md bg-stone-900 px-2 py-1 text-xs"
-                    >
-                      <span className="font-mono text-stone-100">
-                        {field.value || '—'}
-                      </span>
-                      <span className="ml-1 uppercase tracking-wider text-stone-500">
-                        {field.label}
-                      </span>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* The sidebar exists only to hold the conditions strip, so a
-                layout that draws its own doesn't get the COLUMN either.
-                Rendering an empty `w-56` left 14rem of nothing down the
-                side of the card and everything else squeezed to fit beside
-                it — the emptiest possible use of the scarcest thing here.
-
-                This is why the guard moved out to wrap the div rather than
-                staying on the child: a container sized in advance keeps its
-                width whether or not anything ends up inside it. */}
-            {!ownsTags(layout) && (
-              <div className={`flex shrink-0 flex-col gap-2 ${wide ? 'w-56' : ''}`}>
-                <TagSection
-                  tags={character.data.tags}
-                  label={conditionsLabel}
-                  lookup={lookup}
-                  onChange={(tags) => patch({ tags })}
-                />
-
-                {/* The turn-order list used to sit here, and it's gone for
-                    now. A seat is one player's own card, and the roster of
-                    everyone else in the fight is the room's information,
-                    not theirs — it's on the table screen and the console,
-                    where everybody can already see it.
-
-                    What stays is everything aimed at THIS player: the ring
-                    around the card when it's their turn, and the roll
-                    prompt when the Warden asks for one. Those are
-                    addressed to them; a list of names is a thing to read. */}
-              </div>
-            )}
-          </div>
-        </main>
-      </SizeFrame>
-    </div>
+    </main>
   );
 }
