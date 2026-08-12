@@ -69,7 +69,11 @@ export function TableView({
       if (refetchTimer.current) clearTimeout(refetchTimer.current);
       refetchTimer.current = setTimeout(refetch, 300);
     },
-    { onCalibration: setCalibration },
+    {
+      // Untargeted mail only: a calibration addressed to a particular
+      // screen (a seat) rides the same broadcast, and isn't the table's.
+      onCalibration: (c) => setCalibration(c && !c.displayId ? c : null),
+    },
   );
 
   const scene = campaign?.data.scene ?? null;

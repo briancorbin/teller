@@ -139,6 +139,7 @@ function Assigned({
         layout={display.params.layout}
         glass={display.params.glass}
         ppi={display.ppi}
+        displayId={display.id}
       />
     );
   else if (display.role === 'console')

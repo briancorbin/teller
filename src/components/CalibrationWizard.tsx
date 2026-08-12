@@ -21,6 +21,7 @@ export function CalibrationWizard({
   ppi: initialPpi,
   ppiY: initialPpiY,
   tableDisplay,
+  displayId,
   onDone,
   onCancel,
 }: {
@@ -29,9 +30,16 @@ export function CalibrationWizard({
   ppiY?: number;
   /** The table's reported viewport, so we can tell when a strip won't fit. */
   tableDisplay?: { w: number; h: number };
+  /**
+   * Address the pattern to ONE screen (a seat) instead of the table.
+   * A targeted run skips the corners step — overscan is a TV disease,
+   * and a tablet or panel shows its whole picture.
+   */
+  displayId?: string;
   onDone: (ppi: number, ppiY: number) => void;
   onCancel: () => void;
 }) {
+  const steps = displayId ? STEPS.slice(1) : STEPS;
   const [stepIndex, setStepIndex] = useState(0);
   // Start with a strip that actually fits the screen, biased long:
   // precision comes from the baseline, so use most of the glass.
@@ -42,13 +50,15 @@ export function CalibrationWizard({
   });
   const [ppi, setPpi] = useState(initialPpi || 96);
   const [ppiY, setPpiY] = useState(initialPpiY || initialPpi || 96);
-  const step = STEPS[stepIndex];
+  const step = steps[stepIndex];
   const span = Math.max(1, Math.round(Number(inches) || 12));
 
-  // Push the candidate to the table on every change.
+  // Push the candidate to the screen being calibrated on every change.
   useEffect(() => {
-    api.setCalibration(campaignId, { step, ppi, ppiY, inches: span }).catch(() => {});
-  }, [campaignId, step, ppi, ppiY, span]);
+    api
+      .setCalibration(campaignId, { step, ppi, ppiY, inches: span, displayId })
+      .catch(() => {});
+  }, [campaignId, step, ppi, ppiY, span, displayId]);
 
   // Whatever happens next, the table goes back to being the ground.
   useEffect(() => {
@@ -95,9 +105,11 @@ export function CalibrationWizard({
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-stone-950/80 p-6 backdrop-blur-sm">
       <div className="w-full max-w-lg space-y-4 rounded-2xl border border-stone-800 bg-stone-950 p-5 shadow-2xl">
         <header className="flex items-baseline justify-between">
-          <h2 className="font-serif text-2xl text-stone-100">Calibrate the table</h2>
+          <h2 className="font-serif text-2xl text-stone-100">
+            {displayId ? 'Calibrate the screen' : 'Calibrate the table'}
+          </h2>
           <span className="font-mono text-xs text-stone-600">
-            {stepIndex + 1}/{STEPS.length}
+            {stepIndex + 1}/{steps.length}
           </span>
         </header>
 
@@ -121,9 +133,9 @@ export function CalibrationWizard({
           <div className="space-y-3 text-sm text-stone-400">
             <p>
               Lay your reference {axis === 'down' ? 'down' : 'across'} the strip
-              on the table screen, then nudge until the drawn ticks sit exactly
-              on the physical inches. Longer is better — a long match is a
-              precise one.
+              on the {displayId ? 'screen' : 'table screen'}, then nudge until
+              the drawn ticks sit exactly on the physical inches. Longer is
+              better — a long match is a precise one.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <span className="w-28 text-xs text-stone-500">inches it spans</span>
@@ -149,10 +161,10 @@ export function CalibrationWizard({
         {step === 'verify' && (
           <div className="space-y-3 text-sm text-stone-400">
             <p>
-              The table is drawing one-inch boxes in the middle and at two
-              corners. Check them against a card — an ID or credit card is
-              exactly 3.37 × 2.13 inches by standard, so it's a reference you
-              always have.
+              The {displayId ? 'screen' : 'table'} is drawing one-inch boxes in
+              the middle and at two corners. Check them against a card — an ID
+              or credit card is exactly 3.37 × 2.13 inches by standard, so it's
+              a reference you always have.
             </p>
             <p className="font-mono text-xs text-stone-500">
               {ppi.toFixed(1)} × {ppiY.toFixed(1)} px/in

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type {
+  Calibration,
   Campaign,
   Character,
   CharacterData,
@@ -16,6 +17,7 @@ import {
   ownsTags,
   type SeatLayout,
 } from '../lib/seat-layouts';
+import { CalibrationOverlay } from '../components/CalibrationOverlay';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { COUNTER_VIEWS } from '../components/counters';
 import { Fit } from '../components/FitBox';
@@ -54,9 +56,16 @@ export function SeatView({
   frame: framed = null,
   glass = null,
   ppi = null,
+  displayId,
 }: {
   characterId: string;
   layout?: string | null;
+  /**
+   * This screen's own id, so it can recognise calibration mail
+   * addressed to it. Absent in the console's preview, which is not a
+   * screen and receives no mail.
+   */
+  displayId?: string;
   /**
    * The glass this card should pretend to be on — set by the console's
    * preview, which wraps this in a `SizeFrame` of the same dimensions.
@@ -134,10 +143,23 @@ export function SeatView({
   }, [campaign?.system]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useWakeLock();
+  /**
+   * A calibration pattern addressed to THIS screen — the console
+   * measuring this glass so an assigned pretend-glass can render at
+   * true physical size. Targeted mail only; the table's own
+   * calibration rides the same broadcast unaddressed.
+   */
+  const [calibration, setCalibration] = useState<Calibration | null>(null);
   const { session, connected } = useSession(
     character?.campaignId ?? null,
     (id) => {
       if (id === characterId || id === 'campaign') refetch();
+    },
+    {
+      onCalibration: (c) =>
+        setCalibration(
+          c && displayId && c.displayId === displayId ? c : null,
+        ),
     },
   );
 
@@ -502,6 +524,11 @@ export function SeatView({
       </div>
     </main>
   );
+
+  // The console measuring THIS glass: the pattern takes the whole
+  // screen, exactly as it does on the table, and leaves when the
+  // wizard closes.
+  if (calibration) return <CalibrationOverlay calibration={calibration} />;
 
   // An assigned glass letterboxes the card on the seat's own screen —
   // an iPad auditioning as the rail bar renders the bar's exact frame,

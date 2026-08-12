@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { PANES } from '../lib/panes';
 import { SEAT_LAYOUTS, layoutOf } from '../lib/seat-layouts';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
+import { CalibrationWizard } from './CalibrationWizard';
 import { SeatPreview } from './SeatPreview';
 import { SEAT_SIZES } from './SizeFrame';
 
@@ -41,6 +42,8 @@ export function DisplaysPanel({
   const [displays, setDisplays] = useState<Display[]>([]);
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  /** The screen whose glass is being measured, while the wizard is up. */
+  const [calibrating, setCalibrating] = useState<Display | null>(null);
 
   const load = useCallback(() => {
     api
@@ -331,6 +334,23 @@ export function DisplaysPanel({
                 </select>
               )}
 
+              {/* Measure this screen's glass, so a pretend-glass can
+                  render at TRUE physical size on it — the same wizard
+                  the table uses, addressed to this one screen. */}
+              {d.role === 'seat' && (
+                <button
+                  className="rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
+                  title={
+                    d.ppi
+                      ? `calibrated · ${Math.round(d.ppi)} px/in — measure again`
+                      : 'measure this screen so pretend-glass renders at true size'
+                  }
+                  onClick={() => setCalibrating(d)}
+                >
+                  {d.ppi ? 'recalibrate' : 'calibrate'}
+                </button>
+              )}
+
               {d.role === 'console' && (
                 <select
                   className={input}
@@ -376,6 +396,23 @@ export function DisplaysPanel({
       )}
 
       <SeatPreview characters={characters} />
+
+      {calibrating && (
+        // The wizard positions itself absolutely; give it the viewport.
+        <div className="fixed inset-0 z-50">
+          <CalibrationWizard
+            campaignId={campaignId}
+            displayId={calibrating.id}
+            ppi={calibrating.ppi ?? undefined}
+            ppiY={calibrating.ppiY ?? undefined}
+            onCancel={() => setCalibrating(null)}
+            onDone={(ppi, ppiY) => {
+              patch(calibrating.id, { ppi, ppiY });
+              setCalibrating(null);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

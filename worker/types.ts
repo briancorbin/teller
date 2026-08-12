@@ -1263,6 +1263,14 @@ export type Calibration = {
   ppiY: number;
   /** True inches the physical reference spans (counted, not measured). */
   inches: number;
+  /**
+   * The one screen this pattern is addressed to — a seat being
+   * calibrated so an assigned pretend-glass can render at true size.
+   * Absent means the table, as it always did. The event still rides
+   * the campaign broadcast; screens simply ignore mail that isn't
+   * theirs, the same way identify works.
+   */
+  displayId?: string;
 };
 
 export type StreamEvent =
