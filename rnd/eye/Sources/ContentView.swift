@@ -95,7 +95,12 @@ struct ContentView: View {
         }
         camera.capture { capture in
             Task { @MainActor in
-                lastResult = await Uploader(base: url).send(capture)
+                let (line, next) = await Uploader(base: url)
+                    .send(capture, applied: capture.applied)
+                lastResult = line
+                // The server said where the screen is; ship only that
+                // from now on. nil = markers lost, go back to full.
+                camera.cropFraction = next
             }
         }
     }

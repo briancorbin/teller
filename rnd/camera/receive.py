@@ -59,6 +59,9 @@ state = {
     'rings': [],           # (x, y) the table page is drawing NOW
     'prev_rings': [],      # and the set before it — masked too, so a
                            # ring that just moved doesn't ghost-detect
+    'crop': None,          # [fx, fy, fw, fh] of the FULL sensor frame
+                           # where the screen sits — handed back to Eye
+                           # so it stops photographing the room
 }
 
 PAGE = """<!doctype html>
@@ -144,14 +147,47 @@ def table_page() -> str:
 """ % (uris[0], uris[1], uris[2], uris[3], RING_STROKE, RING_R)
 
 
-def process(jpeg: bytes, ts: str) -> str:
+def crop_for(H: np.ndarray, img_w: int, img_h: int,
+             applied: tuple[float, float, float, float] | None):
+    """Where the screen sits in the FULL sensor frame, as fractions.
+
+    The solve found the screen in the *received* image; if Eye already
+    cropped, compose with the crop it says it applied — fractions
+    within a fractional window need no knowledge of the sensor's pixel
+    size. 10% margin so the markers never kiss the edge.
+    """
+    corners = np.float64([[0, 0], [SW, 0], [SW, SH], [0, SH]]).reshape(-1, 1, 2)
+    quad = cv2.perspectiveTransform(corners, H).reshape(-1, 2)
+    x0, y0 = quad.min(axis=0)
+    x1, y1 = quad.max(axis=0)
+    mx, my = 0.10 * (x1 - x0), 0.10 * (y1 - y0)
+    bx = max(0.0, (x0 - mx) / img_w)
+    by = max(0.0, (y0 - my) / img_h)
+    bw = min(1.0, (x1 + mx) / img_w) - bx
+    bh = min(1.0, (y1 + my) / img_h) - by
+    fx, fy, fw, fh = applied or (0.0, 0.0, 1.0, 1.0)
+    # Plain floats — numpy's sneak into json.dumps and 500 the response.
+    return [
+        round(float(fx + bx * fw), 4), round(float(fy + by * fh), 4),
+        round(float(bw * fw), 4), round(float(bh * fh), 4),
+    ]
+
+
+def process(jpeg: bytes, ts: str,
+            applied: tuple[float, float, float, float] | None = None) -> str:
     img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         return 'undecodable frame'
     try:
         H, err, ids, _ = solve(img, SW, SH)
     except SystemExit as e:  # calibrate's helpers bail via sys.exit
+        # Markers lost — likely a stale crop after the phone moved. Tell
+        # Eye to go back to full frame; the next solve re-derives it.
+        with state_lock:
+            state['crop'] = None
         return f'skipped: {e}'
+    with state_lock:
+        state['crop'] = crop_for(H, img.shape[1], img.shape[0], applied)
     rect = cv2.warpPerspective(img, np.linalg.inv(H), (SW, SH))
 
     with state_lock:
@@ -192,7 +228,22 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == '/capture':
             (OUT / f'{ts}.jpg').write_bytes(body)
-            print(process(body, ts))
+            raw = self.headers.get('X-Crop', 'full')
+            applied = None
+            if raw != 'full':
+                try:
+                    fx, fy, fw, fh = (float(v) for v in raw.split(','))
+                    applied = (fx, fy, fw, fh)
+                except ValueError:
+                    pass
+            print(process(body, ts, applied))
+            with state_lock:
+                crop = state['crop']
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'crop': crop}).encode())
+            return
         elif self.path == '/depth':
             (OUT / f'{ts}.depth.f32').write_bytes(body)
             (OUT / f'{ts}.depth.json').write_text(json.dumps({

@@ -22,6 +22,12 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
     @Published var depthEnabled = false
     @Published var status = "starting…"
 
+    /// The window of the full sensor frame worth shipping — the server
+    /// works it out (it knows where the screen is) and hands it back
+    /// with every upload. nil = send everything. Depth stays full-frame
+    /// regardless; it's tiny and cropping would break its alignment.
+    var cropFraction: CGRect?
+
     private let queue = DispatchQueue(label: "ink.teller.eye.camera")
     private var device: AVCaptureDevice?
     private let photoOutput = AVCapturePhotoOutput()
@@ -31,6 +37,8 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
         let jpeg: Data
         /// Row-major float32 metres, when depth was delivered.
         let depth: (data: Data, width: Int, height: Int)?
+        /// The crop this JPEG covers, as fractions of the sensor frame.
+        let applied: CGRect?
     }
 
     func start() {
@@ -132,9 +140,15 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             report("capture failed: \(error.localizedDescription)")
             return
         }
-        guard let jpeg = photo.fileDataRepresentation() else {
+        guard let full = photo.fileDataRepresentation() else {
             report("no image data")
             return
+        }
+        var jpeg = full
+        var applied: CGRect?
+        if let f = cropFraction, let cut = Self.cropped(full, to: f) {
+            jpeg = cut
+            applied = f
         }
         var depth: (Data, Int, Int)?
         if let raw = photo.depthData {
@@ -142,8 +156,24 @@ final class CameraController: NSObject, ObservableObject, AVCapturePhotoCaptureD
             let metres = raw.converting(toDepthDataType: kCVPixelFormatType_DepthFloat32)
             depth = Self.planeData(metres.depthDataMap)
         }
-        onCapture?(Capture(jpeg: jpeg, depth: depth.map { ($0.0, $0.1, $0.2) }))
+        onCapture?(Capture(
+            jpeg: jpeg, depth: depth.map { ($0.0, $0.1, $0.2) }, applied: applied
+        ))
         onCapture = nil
+    }
+
+    /// Crop in the CGImage's own (sensor) space — the same space the
+    /// server's fractions live in, since OpenCV ignores EXIF rotation
+    /// and every frame solves its own homography anyway.
+    private static func cropped(_ jpeg: Data, to f: CGRect) -> Data? {
+        guard let src = UIImage(data: jpeg)?.cgImage else { return nil }
+        let w = CGFloat(src.width), h = CGFloat(src.height)
+        let rect = CGRect(
+            x: f.origin.x * w, y: f.origin.y * h,
+            width: f.width * w, height: f.height * h
+        ).integral
+        guard let cut = src.cropping(to: rect) else { return nil }
+        return UIImage(cgImage: cut).jpegData(compressionQuality: 0.85)
     }
 
     /// A pixel buffer's float plane as tightly-packed row-major bytes —
