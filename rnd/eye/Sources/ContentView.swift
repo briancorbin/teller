@@ -6,7 +6,10 @@ import SwiftUI
 /// interval do it). Everything else is a setting that persists.
 struct ContentView: View {
     @StateObject private var camera = CameraController()
-    @AppStorage("uploadBase") private var uploadBase = "http://192.168.1.10:8124"
+    // Hardcoded to Brian's Mac by request — the phone lives on the rig
+    // and nobody wants to type an IP on a propped phone. Becomes a
+    // setting again the day this isn't a one-table prototype.
+    private let uploadBase = "http://192.168.4.76:8124"
     @AppStorage("intervalSec") private var intervalSec = 2.0
     @State private var auto = false
     @State private var lastResult = ""
@@ -18,17 +21,6 @@ struct ContentView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 10) {
-                HStack {
-                    TextField("http://host:8124", text: $uploadBase)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.URL)
-                        .padding(8)
-                        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
-                        .foregroundStyle(.white)
-                        .font(.system(.footnote, design: .monospaced))
-                }
-
                 HStack(spacing: 12) {
                     Button(camera.locked ? "LOCKED" : "LOCK") {
                         camera.locked ? camera.unlock() : camera.lock()
@@ -62,7 +54,7 @@ struct ContentView: View {
                     }
                 }
 
-                Text("\(camera.status)\(lastResult.isEmpty ? "" : " · \(lastResult)")")
+                Text("\(uploadBase) · \(camera.status)\(lastResult.isEmpty ? "" : " · \(lastResult)")")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
