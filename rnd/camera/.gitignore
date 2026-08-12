@@ -7,3 +7,4 @@
 *.jpeg
 *.png
 !pattern.html
+__pycache__/
