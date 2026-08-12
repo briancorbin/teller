@@ -263,6 +263,10 @@ def process(jpeg: bytes, ts: str,
         # Eye to go back to full frame; the next solve re-derives it.
         with state_lock:
             state['crop'] = None
+        # Still ask the table to SHOW markers — the first frame of a
+        # session fails exactly because they aren't up yet, and pushing
+        # on failure is what bootstraps the loop out of that deadlock.
+        push_to_teller([])
         return f'skipped: {e}'
     rect = cv2.warpPerspective(img, np.linalg.inv(H), (SW, SH))
 
