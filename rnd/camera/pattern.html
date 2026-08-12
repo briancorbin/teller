@@ -60,6 +60,14 @@
   }
   window.addEventListener('resize', layout);
   layout();
+
+  // One tap/click = true fullscreen (browser chrome gone), tap again to
+  // leave. The resize listener re-lays-out and reprints the viewport —
+  // use the numbers shown AFTER fullscreening.
+  document.body.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  });
 </script>
 </body>
 </html>
