@@ -1111,6 +1111,17 @@ export type DisplayParams = {
    * default too — a preference should never be able to blank a screen.
    */
   layout?: string | null;
+  /**
+   * seat: render as some OTHER glass — an iPad pretending to be the
+   * rail bar, while the hardware decision is still open.
+   *
+   * Console-set, like everything else about a screen. Opaque here;
+   * `SEAT_SIZES` in `src/components/SizeFrame.tsx` owns the vocabulary
+   * and an unknown value renders the actual window (never blanks).
+   * If the screen has a calibrated `ppi`, the forced glass renders at
+   * its true physical size on that screen; otherwise it scales to fit.
+   */
+  glass?: string | null;
 };
 
 export type Display = {

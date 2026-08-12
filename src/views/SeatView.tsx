@@ -19,7 +19,7 @@ import {
 import { ConnectionHint } from '../components/ConnectionHint';
 import { COUNTER_VIEWS } from '../components/counters';
 import { Fit } from '../components/FitBox';
-import { type SeatSize } from '../components/SizeFrame';
+import { SEAT_SIZES, SizeFrame, type SeatSize } from '../components/SizeFrame';
 import { TagSection } from '../components/TagSection';
 
 // The player's card.
@@ -51,17 +51,36 @@ import { TagSection } from '../components/TagSection';
 export function SeatView({
   characterId,
   layout: assigned,
-  frame = null,
+  frame: framed = null,
+  glass = null,
+  ppi = null,
 }: {
   characterId: string;
   layout?: string | null;
   /**
-   * The glass this card should pretend to be on — set only by the
-   * console's preview, which wraps this in a `SizeFrame` of the same
-   * dimensions. A real seat never passes it: the window IS the glass.
+   * The glass this card should pretend to be on — set by the console's
+   * preview, which wraps this in a `SizeFrame` of the same dimensions.
    */
   frame?: SeatSize;
+  /**
+   * The ASSIGNED pretend-glass (`params.glass`) — the console telling a
+   * real screen to render as other hardware (an iPad auditioning as the
+   * rail bar). A `SEAT_SIZES` preset id; unknown or unset renders the
+   * actual window. Unlike `frame`, the seat wraps ITSELF here.
+   */
+  glass?: string | null;
+  /**
+   * This screen's calibrated CSS px/inch, when it has one — with it, an
+   * assigned glass renders at true physical size on this very screen.
+   */
+  ppi?: number | null;
 }) {
+  // Assignment-driven glass, resolved from the client's own vocabulary.
+  // The preview's `frame` wins — it already has a SizeFrame outside.
+  const forced = framed
+    ? null
+    : (SEAT_SIZES.find((s) => s.id === glass) ?? null);
+  const frame = framed ?? forced;
   const [character, setCharacter] = useState<Character | null>(null);
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [packs, setPacks] = useState<PackRecord[]>([]);
@@ -253,13 +272,13 @@ export function SeatView({
   const strip = ratio >= 2.5;
   const fields = character.data.fields.filter((f) => f.key !== 'description');
 
-  return (
-    // The seat renders ONLY what the glass is for: the card, the turn
-    // signals aimed at this player, and the connection state. Identity,
-    // the layout choice and the device preview are the CONSOLE's
-    // business now (Displays panel) — a screen shows its assignment, it
-    // doesn't negotiate it, and nothing here spends the panel's pixels
-    // on controls nobody uses mid-game.
+  // The seat renders ONLY what the glass is for: the card, the turn
+  // signals aimed at this player, and the connection state. Identity,
+  // the layout choice and the device preview are the CONSOLE's
+  // business now (Displays panel) — a screen shows its assignment, it
+  // doesn't negotiate it, and nothing here spends the panel's pixels
+  // on controls nobody uses mid-game.
+  const card = (
     <main
       // Held glass may scroll DOWN; mounted glass may not. Nothing may
       // ever scroll sideways — see the note on `wide` above. Height is
@@ -482,5 +501,18 @@ export function SeatView({
         )}
       </div>
     </main>
+  );
+
+  // An assigned glass letterboxes the card on the seat's own screen —
+  // an iPad auditioning as the rail bar renders the bar's exact frame,
+  // at true physical size when this screen's ppi is known, scaled to
+  // fit when it isn't.
+  if (!forced) return card;
+  return (
+    <div className="flex h-[100dvh] w-full flex-col bg-stone-950">
+      <SizeFrame size={forced} ppi={ppi}>
+        {card}
+      </SizeFrame>
+    </div>
   );
 }

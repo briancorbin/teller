@@ -5,6 +5,7 @@ import { PANES } from '../lib/panes';
 import { SEAT_LAYOUTS, layoutOf } from '../lib/seat-layouts';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { SeatPreview } from './SeatPreview';
+import { SEAT_SIZES } from './SizeFrame';
 
 // Every screen in the room, and what each one is. This panel is the
 // patch bay: screens arrive knowing nothing, the DM says what they are.
@@ -302,6 +303,29 @@ export function DisplaysPanel({
                   {SEAT_LAYOUTS.map((l) => (
                     <option key={l.id} value={l.id}>
                       {l.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {/* Pretend-glass: render this seat as other hardware — an
+                  iPad auditioning as the rail bar while the panels are
+                  still a decision. Actual = the window it really has. */}
+              {d.role === 'seat' && (
+                <select
+                  className={input}
+                  value={d.params.glass ?? ''}
+                  aria-label="which glass this seat renders as"
+                  onChange={(e) =>
+                    patch(d.id, {
+                      params: { ...d.params, glass: e.target.value || null },
+                    })
+                  }
+                >
+                  <option value="">actual glass</option>
+                  {SEAT_SIZES.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      as {s.name} · {s.w}×{s.h}
                     </option>
                   ))}
                 </select>
