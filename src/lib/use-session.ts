@@ -160,6 +160,7 @@ export function useSession(
     onIdentify?: () => void;
     onCalibration?: (calibration: Calibration | null) => void;
     onCamera?: (camera: CameraOverlay | null) => void;
+    onDisplay?: (displayId: string) => void;
   },
 ): { session: SessionState | null; connected: boolean } {
   const [session, setSession] = useState<SessionState | null>(null);
@@ -188,6 +189,8 @@ export function useSession(
           screenRef.current?.onCalibration?.(event.calibration);
         } else if (event.type === 'camera') {
           screenRef.current?.onCamera?.(event.camera);
+        } else if (event.type === 'display') {
+          screenRef.current?.onDisplay?.(event.displayId);
         }
       },
       setConnected,

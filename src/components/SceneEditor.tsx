@@ -123,6 +123,8 @@ export function SceneEditor({
   const [zoneEditId, setZoneEditId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [calibrating, setCalibrating] = useState(false);
+  /** The eye path: instructions, not a wizard — the camera does the work. */
+  const [eyeHint, setEyeHint] = useState(false);
   const [tvWidth, setTvWidth] = useState('');
   const [tvHeight, setTvHeight] = useState('');
   // Personal workshop preference (not scene data — the table never
@@ -1552,6 +1554,13 @@ export function SceneEditor({
                     >
                       with a ruler…
                     </button>
+                    <button
+                      className="rounded-lg bg-stone-800 px-2.5 py-1.5 font-mono text-xs text-stone-300 hover:bg-stone-700"
+                      onClick={() => setEyeHint((v) => !v)}
+                      title="the overhead camera measures the screen against a printed inch card — no ruler, no typing"
+                    >
+                      eye…
+                    </button>
                     <span className="font-mono text-xs text-stone-500">
                       {ppi
                         ? stretched
@@ -1575,6 +1584,17 @@ export function SceneEditor({
                 Measure the image on the table screen itself, corner to corner
                 of the picture — not the bezel, not the box's size.
               </p>
+              {eyeHint && (
+                <p className="pl-26 text-xs text-stone-500">
+                  With the overhead camera running, lay the printed inch card
+                  flat anywhere on the table screen. The camera measures the
+                  glass against it and writes the calibration by itself — the
+                  px/in readout above updates the moment it lands. Take the
+                  card off when it does. (Print the card once and check its
+                  ruler strip: it's in the camera kit as{' '}
+                  <span className="font-mono">inch-card.html</span>.)
+                </p>
+              )}
               {stretched && (
                 <p className="pl-26 text-xs text-amber-500/80">
                   Those axes disagree by{' '}

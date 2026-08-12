@@ -181,10 +181,19 @@ export function DmView({
 
   // SSE poke → debounced refetch (a burst of taps = one fetch).
   useWakeLock();
-  const { session, connected } = useSession(campaignId, () => {
-    if (refetchTimer.current) clearTimeout(refetchTimer.current);
-    refetchTimer.current = setTimeout(refetch, 300);
-  });
+  const { session, connected } = useSession(
+    campaignId,
+    () => {
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
+      refetchTimer.current = setTimeout(refetch, 300);
+    },
+    {
+      // A display changed (a rename, or the camera's inch card writing
+      // calibration) — refresh what the workshop knows about the table
+      // so the frame preview and the px/in readout track it live.
+      onDisplay: () => loadTableScreen(),
+    },
+  );
 
   const patchCharacter = (
     id: string,

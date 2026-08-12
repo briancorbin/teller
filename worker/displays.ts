@@ -163,6 +163,18 @@ async function notify(
   );
 }
 
+/** Room-wide, unlike notify: everyone on the stream hears it. */
+async function broadcast(
+  env: Env,
+  campaignId: string,
+  event: StreamEvent,
+): Promise<void> {
+  await env.CAMPAIGN.get(env.CAMPAIGN.idFromName(campaignId)).fetch(
+    'https://do/broadcast',
+    { method: 'POST', body: JSON.stringify(event) },
+  );
+}
+
 /**
  * Display routes. Returns null when the path isn't ours, so the main
  * router can carry on.
@@ -346,6 +358,12 @@ export async function displayRoutes(
       .bind(name, color, role, JSON.stringify(params), ppi, ppiY, display.id)
       .run();
     await notify(env, display.campaignId, display.id, { type: 'assign' });
+    // Consoles too: the workshop's frame preview must track a
+    // calibration it didn't perform (the camera's inch card).
+    await broadcast(env, display.campaignId, {
+      type: 'display',
+      displayId: display.id,
+    });
     return json({ display: (await readDisplay(env, display.id))! });
   }
 

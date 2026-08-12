@@ -1375,4 +1375,11 @@ export type StreamEvent =
   | { type: 'calibration'; calibration: Calibration | null }
   /** Table screens: the camera's overlay, or null to clear it. */
   | { type: 'camera'; camera: CameraOverlay | null }
+  /**
+   * A display's record changed — calibration written (by the wizard OR
+   * the camera's inch card), a rename, a recolor. Untargeted: consoles
+   * refresh what they know about the room's screens, so the workshop's
+   * frame preview tracks a calibration the console didn't perform.
+   */
+  | { type: 'display'; displayId: string }
   | { type: 'ping' };
