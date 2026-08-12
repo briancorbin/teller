@@ -1339,6 +1339,27 @@ export type Calibration = {
   displayId?: string;
 };
 
+/**
+ * The overhead camera's transient overlay for the table screen — the
+ * corner fiducials it solves against, and a confirmation ring under
+ * every position it believes a physical mini occupies (BATTLEMAP.md's
+ * "someday", TEL-77's now). Same contract as `Calibration`: never
+ * stored, never in a snapshot, arrives over SSE and leaves the same
+ * way — and the table clears it by itself when the stream goes quiet,
+ * so a dead camera daemon can't leave stale rings on the glass.
+ *
+ * `rings` are in the table's own viewport px: the camera solved
+ * against markers this screen drew, so its coordinates ARE this
+ * screen's. Mapping observations into MAP space (u,v — where token
+ * proposals live) is the next stage, not this one.
+ */
+export type CameraOverlay = {
+  /** Draw the corner fiducials so the camera can keep solving. */
+  markers: boolean;
+  /** Believed object positions, viewport px of this screen. */
+  rings: [number, number][];
+};
+
 export type StreamEvent =
   | { type: 'hello'; state: SessionState }
   | { type: 'session'; state: SessionState }
@@ -1352,4 +1373,6 @@ export type StreamEvent =
   | { type: 'identify' }
   /** Table screens: show this calibration pattern, or null to stop. */
   | { type: 'calibration'; calibration: Calibration | null }
+  /** Table screens: the camera's overlay, or null to clear it. */
+  | { type: 'camera'; camera: CameraOverlay | null }
   | { type: 'ping' };

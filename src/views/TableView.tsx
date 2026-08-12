@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Calibration, Campaign, PublicCharacter } from '../../worker/types';
+import type {
+  Calibration,
+  CameraOverlay,
+  Campaign,
+  PublicCharacter,
+} from '../../worker/types';
 import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
@@ -9,6 +14,7 @@ import { STATE_EFFECTS, tokenShapeStyle, zoneStyle } from '../components/token-v
 import { TileZones } from '../components/TileZones';
 import { FogLayer } from '../components/FogLayer';
 import { CalibrationOverlay } from '../components/CalibrationOverlay';
+import { CameraMarks } from '../components/CameraMarks';
 
 // The table TV — the screen IN the table, under the minis. It is the
 // GROUND, nothing else: the active scene (framed per its view + true
@@ -32,6 +38,11 @@ export function TableView({
   const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
   // Console-driven, transient, never stored — see Calibration in the contract.
   const [calibration, setCalibration] = useState<Calibration | null>(null);
+  // The overhead camera's overlay — same transient contract, plus a
+  // dead-man's clear: rings that stop arriving stop being drawn, so a
+  // killed camera daemon can't leave stale ink on the glass.
+  const [camera, setCamera] = useState<CameraOverlay | null>(null);
+  const cameraTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useWakeLock();
 
@@ -73,6 +84,11 @@ export function TableView({
       // Untargeted mail only: a calibration addressed to a particular
       // screen (a seat) rides the same broadcast, and isn't the table's.
       onCalibration: (c) => setCalibration(c && !c.displayId ? c : null),
+      onCamera: (c) => {
+        setCamera(c);
+        if (cameraTimer.current) clearTimeout(cameraTimer.current);
+        if (c) cameraTimer.current = setTimeout(() => setCamera(null), 10_000);
+      },
     },
   );
 
@@ -290,15 +306,21 @@ export function TableView({
             cellPxY={pxPerMapInchY ?? undefined}
           />
         )}
+        {/* the camera's fiducials and rings sit above EVERYTHING —
+            glass furniture like the connection hint, not map content:
+            fog hides rooms from players, never markers from the camera */}
+        {camera && <CameraMarks camera={camera} />}
       </main>
     );
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-2">
+    <main className="relative flex min-h-screen flex-col items-center justify-center gap-2">
       <ConnectionHint connected={connected} />
       <h1 className="font-serif text-6xl text-stone-700">teller</h1>
       <p className="text-stone-600">the table awaits a map…</p>
+      {/* the camera can calibrate against an idle table too */}
+      {camera && <CameraMarks camera={camera} />}
     </main>
   );
 }

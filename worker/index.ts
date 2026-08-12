@@ -29,6 +29,7 @@ import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
 import type {
   Calibration,
+  CameraOverlay,
   Campaign,
   Character,
   CharacterData,
@@ -882,6 +883,25 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true });
   }
 
+
+  // The overhead camera's overlay for the table screen. Same transient
+  // contract as calibration: straight out over SSE, nothing stored.
+  // The camera daemon (rnd/camera, holding the DM key locally) posts
+  // one of these per processed frame; the table clears itself when
+  // they stop coming.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/camera$/);
+  if (m && method === 'POST') {
+    if (!dm(m[1])) return err('DM key required', 401);
+    const body = await request.json<{ camera: CameraOverlay | null }>();
+    await sessionStub(env, m[1]).fetch('https://do/broadcast', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: 'camera',
+        camera: body.camera ?? null,
+      }),
+    });
+    return json({ ok: true });
+  }
 
   // Put a prepared fight on the table.
   //

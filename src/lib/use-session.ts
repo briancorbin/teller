@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Calibration, SessionState, StreamEvent } from '../../worker/types';
+import type {
+  Calibration,
+  CameraOverlay,
+  SessionState,
+  StreamEvent,
+} from '../../worker/types';
 import { api } from './api';
 
 // The live session, over SSE.
@@ -154,6 +159,7 @@ export function useSession(
     onAssign?: () => void;
     onIdentify?: () => void;
     onCalibration?: (calibration: Calibration | null) => void;
+    onCamera?: (camera: CameraOverlay | null) => void;
   },
 ): { session: SessionState | null; connected: boolean } {
   const [session, setSession] = useState<SessionState | null>(null);
@@ -180,6 +186,8 @@ export function useSession(
           screenRef.current?.onIdentify?.();
         } else if (event.type === 'calibration') {
           screenRef.current?.onCalibration?.(event.calibration);
+        } else if (event.type === 'camera') {
+          screenRef.current?.onCamera?.(event.camera);
         }
       },
       setConnected,

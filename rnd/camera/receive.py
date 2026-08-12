@@ -26,6 +26,7 @@ import argparse
 import base64
 import json
 import threading
+import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -35,6 +36,35 @@ import numpy as np
 
 from calibrate import DICT, solve
 from subtract import detect
+
+# Bridge mode (--teller): after each processed frame, POST the overlay
+# to teller's /camera endpoint and the REAL table draws the markers and
+# rings over the live scene — rnd's own /table page becomes optional.
+# The daemon holds the DM key (rule 7: the one secret), read from
+# ~/.teller/dm.key by default. Set from main().
+TELLER = None       # e.g. 'http://localhost:4525'
+TELLER_CAMPAIGN = None
+TELLER_KEY = None
+
+
+def push_to_teller(rings):
+    if not TELLER:
+        return
+    req = urllib.request.Request(
+        f'{TELLER}/api/campaigns/{TELLER_CAMPAIGN}/camera',
+        data=json.dumps({
+            'camera': {'markers': True, 'rings': rings},
+        }).encode(),
+        headers={
+            'Content-Type': 'application/json',
+            'x-teller-key': TELLER_KEY or '',
+        },
+        method='POST',
+    )
+    try:
+        urllib.request.urlopen(req, timeout=2).read()
+    except Exception as e:
+        print(f'teller push failed: {e}')
 
 OUT = Path(__file__).parent / 'captures'
 OUT.mkdir(exist_ok=True)
@@ -234,11 +264,10 @@ def process(jpeg: bytes, ts: str,
         with state_lock:
             state['crop'] = None
         return f'skipped: {e}'
-    with state_lock:
-        state['crop'] = crop_for(H, img.shape[1], img.shape[0], applied)
     rect = cv2.warpPerspective(img, np.linalg.inv(H), (SW, SH))
 
     with state_lock:
+        state['crop'] = crop_for(H, img.shape[1], img.shape[0], applied)
         state['latest_rect'] = rect
         state['frames'] += 1
         if state['baseline'] is None:
@@ -248,25 +277,31 @@ def process(jpeg: bytes, ts: str,
             state['line'] = (
                 f'{ts} · frame 1 · BASELINE SET · {len(ids)} markers · RMS {err:.2f}px'
             )
-            return state['line']
-        ignore = [
-            (x, y, RING_R, MASK_STROKE)
-            for x, y in state['rings'] + state['prev_rings']
-        ]
-        found, annotated, _ = detect(state['baseline'], rect, ignore=ignore)
-        ok, png = cv2.imencode('.png', annotated)
-        state['latest_png'] = png.tobytes() if ok else None
-        # What we found is what the table page draws next — and what the
-        # next frame's detector must ignore.
-        state['prev_rings'] = state['rings']
-        state['rings'] = [(int(cx), int(cy)) for cx, cy, _ in found]
-        blobs = ' '.join(f'({cx:.0f},{cy:.0f})' for cx, cy, _ in
-                         sorted(found)[:8])
-        state['line'] = (
-            f'{ts} · frame {state["frames"]} · {len(found)} object(s) {blobs}'
-            f' · RMS {err:.2f}px'
-        )
-        return state['line']
+            line, rings = state['line'], []
+        else:
+            ignore = [
+                (x, y, RING_R, MASK_STROKE)
+                for x, y in state['rings'] + state['prev_rings']
+            ]
+            found, annotated, _ = detect(state['baseline'], rect, ignore=ignore)
+            ok, png = cv2.imencode('.png', annotated)
+            state['latest_png'] = png.tobytes() if ok else None
+            # What we found is what the table draws next — and what the
+            # next frame's detector must ignore.
+            state['prev_rings'] = state['rings']
+            state['rings'] = [(int(cx), int(cy)) for cx, cy, _ in found]
+            blobs = ' '.join(f'({cx:.0f},{cy:.0f})' for cx, cy, _ in
+                             sorted(found)[:8])
+            state['line'] = (
+                f'{ts} · frame {state["frames"]} · {len(found)} object(s) {blobs}'
+                f' · RMS {err:.2f}px'
+            )
+            line, rings = state['line'], state['rings']
+    # Push outside the lock — a slow teller must never stall detection.
+    # Markers ride from frame 1, so the table is solvable before
+    # anything stands on it.
+    push_to_teller(rings)
+    return line
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -388,8 +423,20 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('--screen', required=True, help='pattern viewport, e.g. 1920x1080')
+    ap.add_argument('--teller', help="teller host, e.g. http://localhost:4525 — "
+                    'markers and rings go to the REAL table view')
+    ap.add_argument('--campaign', help='campaign id the table is showing')
+    ap.add_argument('--key', help='DM key (default: ~/.teller/dm.key)')
     ap.add_argument('port', nargs='?', type=int, default=8124)
     args = ap.parse_args()
     SW, SH = (int(v) for v in args.screen.lower().split('x'))
+    if args.teller:
+        if not args.campaign:
+            ap.error('--teller needs --campaign')
+        TELLER = args.teller.rstrip('/')
+        TELLER_CAMPAIGN = args.campaign
+        TELLER_KEY = args.key or (
+            Path.home() / '.teller' / 'dm.key').read_text().strip()
+        print(f'bridging to {TELLER} · campaign {TELLER_CAMPAIGN}')
     print(f'listening on 0.0.0.0:{args.port} · screen {SW}x{SH} · watch http://localhost:{args.port}/')
     ThreadingHTTPServer(('0.0.0.0', args.port), Handler).serve_forever()
