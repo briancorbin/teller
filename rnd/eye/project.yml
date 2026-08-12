@@ -1,0 +1,35 @@
+# The capture node, as a phone (TEL-77 phase 0).
+#
+# XcodeGen turns this into Eye.xcodeproj (gitignored — this file is the
+# project). Regenerate after edits: `xcodegen generate`.
+name: Eye
+options:
+  bundleIdPrefix: ink.teller
+  deploymentTarget:
+    iOS: "17.0"
+targets:
+  Eye:
+    type: application
+    platform: iOS
+    sources: [Sources]
+    settings:
+      base:
+        DEVELOPMENT_TEAM: 27N85AU6XK
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    info:
+      path: Info.plist
+      properties:
+        UILaunchScreen: {}
+        NSCameraUsageDescription: >-
+          Eye photographs the table so teller can track mini positions.
+        NSLocalNetworkUsageDescription: >-
+          Eye sends captures to the teller host on your local network.
+        # The host is plain HTTP on the LAN, on purpose (local-first).
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
