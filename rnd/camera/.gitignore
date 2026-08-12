@@ -1,0 +1,9 @@
+.venv/
+*.rectified.png
+*.overlay.png
+*.HEIC
+*.heic
+*.jpg
+*.jpeg
+*.png
+!pattern.html
