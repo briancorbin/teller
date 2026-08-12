@@ -234,10 +234,11 @@ export function ItemPanel({
   // An item that points at nothing comes back exactly as it was stored.
   const resolved = resolveItem(item, packs, dice, ownCatalog, chambered);
   const fitted = fittedUpgrades(item, packs, ownCatalog);
-  // Collapsed by default so every weapon panel stands the same height —
-  // the header row (with the slot count) is the part a player checks
-  // mid-fight; the list is for the workbench moment.
-  const [showUpgrades, setShowUpgrades] = useState(false);
+  // The panel has two FACES: stats, and the upgrades bolted on. A flip
+  // rather than a disclosure, because an inline expansion changes the
+  // panel's height and three weapons in a row stop lining up — the
+  // back face borrows the front's frame and gives it back.
+  const [flipped, setFlipped] = useState(false);
   // An effect names a field KEY; the sheet's own word for it is on the
   // resolved field, so an upgrade reads "Long Range +2B" rather than
   // "long +2B" without this file knowing any range names.
@@ -259,6 +260,18 @@ export function ItemPanel({
     : NaN;
   const fireable = Boolean(onFire) && Number.isFinite(price) && price > 0;
 
+  // A FIXED order, so three panels in a row read as one table: the
+  // priced field first (declared — `use.costField`, the printed sheet's
+  // Grit box), then everything else in catalogue order, which is the
+  // same for every entry in a pack. Alignment is the whole point of a
+  // row of weapons; a field that wanders panel to panel costs more
+  // than it tells.
+  const shown = resolved.fields.filter((f) => !f.filing);
+  const costRow = use ? shown.find((f) => f.key === use.costField) : undefined;
+  const bodyRows = costRow ? shown.filter((f) => f !== costRow) : shown;
+  /** The back face exists when there's upgrade real estate at all. */
+  const flippable = resolved.slots != null || fitted.length > 0;
+
   return (
     <SheetPanel
       title={item.name}
@@ -266,15 +279,13 @@ export function ItemPanel({
       className="w-full"
       mark={talent ? { title: `${talent} — ${marks?.text ?? ''}` } : undefined}
     >
-      <div className="flex flex-col gap-1">
-        {/* Filing information stays in the catalogue, where you're
-            choosing the thing. Quality and Cost are most of the decision
-            at the gunsmith's and pure noise above the dice mid-fight —
-            so the pack says which is which and this surface skips them
-            (see `Field.filing`). */}
-        {resolved.fields
-          .filter((field) => !field.filing)
-          .map((field) => (
+      <div className={`flex flex-col gap-1 ${fill ? 'min-h-0 flex-1' : ''}`}>
+        {/* The FRONT face: stats. Filing information stays in the
+            catalogue, where you're choosing the thing — Quality and
+            Cost are most of the decision at the gunsmith's and pure
+            noise above the dice mid-fight (see `Field.filing`). */}
+        {!flipped &&
+          [...(costRow ? [costRow] : []), ...bodyRows].map((field) => (
           <ItemRow
             key={field.key}
             label={field.label}
@@ -284,6 +295,90 @@ export function ItemPanel({
             derived={field.derived}
           />
           ))}
+
+        {/* The BACK face: what's bolted on, in full — a flip rather
+            than an inline expansion, so reading your upgrades never
+            changes the panel's height or anyone's alignment. */}
+        {flipped && (
+          <div className="flex flex-col gap-1">
+            {fitted.length === 0 && (
+              <span className="text-[0.75rem] leading-snug text-stone-500">
+                nothing fitted yet — fitting happens at the console
+              </span>
+            )}
+            {fitted.map(({ upgrade, range }, i) => (
+              <div key={`${upgrade.id}${i}`} className="border-l-2 border-stone-700 pl-2">
+                {/* The NAME, and under it what it does. Not its level,
+                    not which weapons it fits, not what it cost — that's
+                    filing information, and a player is asking what the
+                    thing on their rifle actually does. */}
+                <span
+                  className="block break-words text-[0.7rem] uppercase tracking-[0.1em]"
+                  style={{ color: 'var(--sheet-accent, #f59e0b)' }}
+                >
+                  {upgrade.name}
+                </span>
+                {(upgrade.effects ?? []).map((effect, j) => (
+                  <span
+                    key={j}
+                    className="block break-words font-mono text-[0.75rem] leading-snug text-stone-200"
+                  >
+                    {describeEffect(effect, range ?? effect.range, labelOf)}
+                  </span>
+                ))}
+                {upgrade.text && (
+                  <span className="block break-words text-[0.75rem] leading-snug text-stone-400">
+                    {upgrade.text}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* The bottom cluster, pinned (`mt-auto`) and IDENTICAL on both
+            faces, which is what makes a row of panels read as one
+            table: every chamber select, reticle, trigger and flip
+            button sits at the same height on every weapon, whatever
+            the middle of each panel got up to. */}
+        <div className="mt-auto flex flex-col gap-1 pt-1">
+        {/* What's chambered, at the moment it matters. Pool effects are
+            already IN the tracks above; everything a round does after
+            the dice (push, burn, pierce) is prose, and this is the shot
+            where it applies. Prose-length fields only — "Fits: Firearms"
+            is the pool panel's business, not the trigger's. */}
+        {fireable && round && (
+          <div className="border-l-2 border-stone-700 pl-2">
+            <span
+              className="block break-words text-[0.7rem] uppercase tracking-[0.1em]"
+              style={{ color: 'var(--sheet-accent, #f59e0b)' }}
+            >
+              {chambered?.name}
+            </span>
+            {(round.effects ?? []).map((effect, i) => (
+              <span
+                key={i}
+                className="block break-words font-mono text-[0.75rem] leading-snug text-stone-200"
+              >
+                {describeEffect(
+                  effect,
+                  effect.range,
+                  (key) => resolved.fields.find((f) => f.key === key)?.label ?? key,
+                )}
+              </span>
+            ))}
+            {round.fields
+              .filter((f) => !f.filing && f.value.length > PROSE)
+              .map((f) => (
+                <span
+                  key={f.key}
+                  className="block break-words text-[0.75rem] leading-snug text-stone-400"
+                >
+                  {f.value}
+                </span>
+              ))}
+          </div>
+        )}
 
         {/* The trigger. One tap spends the item's declared cost and one
             of whatever's chambered — bookkeeping through the same
@@ -368,90 +463,22 @@ export function ItemPanel({
           </div>
         )}
 
-        {/* What's chambered, at the moment it matters. Pool effects are
-            already IN the tracks above; everything a round does after
-            the dice (push, burn, pierce) is prose, and this is the shot
-            where it applies. Prose-length fields only — "Fits: Firearms"
-            is the pool panel's business, not the trigger's. */}
-        {fireable && round && (
-          <div className="border-l-2 border-stone-700 pl-2">
-            <span
-              className="block break-words text-[0.7rem] uppercase tracking-[0.1em]"
-              style={{ color: 'var(--sheet-accent, #f59e0b)' }}
-            >
-              {chambered?.name}
-            </span>
-            {(round.effects ?? []).map((effect, i) => (
-              <span
-                key={i}
-                className="block break-words font-mono text-[0.75rem] leading-snug text-stone-200"
-              >
-                {describeEffect(
-                  effect,
-                  effect.range,
-                  (key) => resolved.fields.find((f) => f.key === key)?.label ?? key,
-                )}
-              </span>
-            ))}
-            {round.fields
-              .filter((f) => !f.filing && f.value.length > PROSE)
-              .map((f) => (
-                <span
-                  key={f.key}
-                  className="block break-words text-[0.75rem] leading-snug text-stone-400"
-                >
-                  {f.value}
-                </span>
-              ))}
-          </div>
-        )}
-
-        {/* What's bolted on, and how much room is left. The slot count
-            is the book's own constraint and the thing a player actually
-            asks at the table — "can I fit another one?" */}
-        {fitted.length > 0 && (
-          <div className="flex flex-col gap-1 pt-1">
-            {/* A disclosure, not a heading: their arithmetic is already
-                in the tracks, so mid-fight the count is the whole
-                answer and the list is workbench reading. Collapsed,
-                every weapon panel stands the same height. */}
-            <button
-              type="button"
-              className="self-start text-left text-[0.65rem] uppercase tracking-widest text-stone-500 transition-colors hover:text-stone-300"
-              onClick={() => setShowUpgrades(!showUpgrades)}
-              aria-expanded={showUpgrades}
-            >
-              Upgrades {resolved.slots ? `${resolved.slotsUsed}/${resolved.slots}` : ''}{' '}
-              {showUpgrades ? '▾' : '▸'}
-            </button>
-            {showUpgrades && fitted.map(({ upgrade, range }, i) => (
-              <div key={`${upgrade.id}${i}`} className="border-l-2 border-stone-700 pl-2">
-                {/* The NAME, and under it what it does. Not its level,
-                    not which weapons it fits, not what it cost — that's
-                    filing information, and a player mid-fight is asking
-                    what the thing on their rifle actually does. */}
-                <span
-                  className="block break-words text-[0.7rem] uppercase tracking-[0.1em]"
-                  style={{ color: 'var(--sheet-accent, #f59e0b)' }}
-                >
-                  {upgrade.name}
-                </span>
-                {(upgrade.effects ?? []).map((effect, j) => (
-                  <span
-                    key={j}
-                    className="block break-words font-mono text-[0.75rem] leading-snug text-stone-200"
-                  >
-                    {describeEffect(effect, range ?? effect.range, labelOf)}
-                  </span>
-                ))}
-                {upgrade.text && (
-                  <span className="block break-words text-[0.75rem] leading-snug text-stone-400">
-                    {upgrade.text}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
+        {/* The flip. The slot count is the book's own constraint and
+            the thing a player actually asks — "can I fit another
+            one?" — so it IS the button. Same line on every panel. */}
+        {flippable && (
+          <button
+            type="button"
+            className="self-start text-left text-[0.65rem] uppercase tracking-widest text-stone-500 transition-colors hover:text-stone-300"
+            onClick={() => setFlipped(!flipped)}
+            aria-expanded={flipped}
+          >
+            {flipped
+              ? '◂ stats'
+              : `Upgrades ${
+                  resolved.slots ? `${resolved.slotsUsed}/${resolved.slots}` : fitted.length
+                } ▸`}
+          </button>
         )}
 
         {/* Chips, because a tag is a word that is either there or not —
@@ -486,6 +513,7 @@ export function ItemPanel({
             ))}
           </div>
         )}
+        </div>
       </div>
     </SheetPanel>
   );
