@@ -673,6 +673,11 @@ export type SystemTemplate = {
    * (rule 4). A block nobody declares just isn't rendered, and fields in
    * no block still show up in the card's general stat strip — nothing
    * disappears for want of a declaration.
+   *
+   * Two slots are load-bearing beyond arrangement: `title` names the
+   * field that titles the sheet and picks the theme (see `accents`),
+   * and `player` names the field holding the person at the table —
+   * both drawn in the card's header rather than in any block.
    */
   groups?: Record<string, string[]>;
   /**

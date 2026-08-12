@@ -20,6 +20,8 @@ export type CounterViewProps = {
   onChange: (next: Counter[]) => void;
   /** Touch-sized targets (a seat, a rail panel) vs compact (the console). */
   big?: boolean;
+  /** The character's name, for layouts that draw a header of their own. */
+  name?: string;
   /**
    * The character's stats, for layouts that place them themselves.
    *

@@ -10,7 +10,7 @@ import { PrestigePanel } from '../sheet/PrestigePanel';
 import { LadderPanel } from '../sheet/LadderPanel';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
-import { TradePlate } from '../sheet/TradePlate';
+import { SheetHeader } from '../sheet/SheetHeader';
 import {
   Bar,
   bumped,
@@ -185,6 +185,7 @@ function SheetGauge({
 export function Sheet({
   counters,
   onChange,
+  name,
   fields = [],
   dice,
   groups,
@@ -244,6 +245,12 @@ export function Sheet({
   const titleKey = groups?.title?.[0];
   const title = titleKey ? fields.find((f) => f.key === titleKey) : undefined;
   const accent = (title?.value && accents?.[title.value.trim()]) || undefined;
+  // The person holding the sheet, when the system declares a slot for
+  // them — drawn in the header beside the character's name.
+  const playerKey = groups?.player?.[0];
+  const player = playerKey
+    ? fields.find((f) => f.key === playerKey)
+    : undefined;
 
   // Fields the system pinned into a counter's own panel (WiW: Defense
   // lives inside HEALTH). Looked up per counter so a system can pin to
@@ -293,6 +300,7 @@ export function Sheet({
     (f) =>
       !(skillKeys ?? []).includes(f.key) &&
       f.key !== titleKey &&
+      f.key !== playerKey &&
       !allPinned.has(f.key) &&
       !laddered(f.key),
   );
@@ -1021,8 +1029,17 @@ export function Sheet({
       }
     >
       {/* Outside the screens: whose card this is doesn't change when you
-          swipe, and it carries the colour. */}
-      <TradePlate field={title} accent={accent} />
+          switch, it carries the colour, and the spend chip must be
+          visible from the screens that spend it. */}
+      <SheetHeader
+        name={name}
+        player={player}
+        trade={title}
+        accent={accent}
+        cost={costCounter}
+        costFace={costCounter ? dials?.[costCounter.name] : undefined}
+        onCost={update}
+      />
 
       <Screens
         mounted={mounted}

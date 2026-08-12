@@ -69,6 +69,10 @@ const wiw: SystemTemplate = {
   character: {
     fields: [
       { key: 'trade', label: 'Trade' },
+      // The paper sheet's second box: whose hand is holding this. A
+      // plain field like any other — typed once, edited anywhere fields
+      // are — that the header draws beside the character's name.
+      { key: 'player', label: 'Player' },
       { key: 'charm', label: 'Charm' },
       { key: 'finesse', label: 'Finesse' },
       { key: 'intuition', label: 'Intuition' },
@@ -141,6 +145,8 @@ const wiw: SystemTemplate = {
     skills: ['charm', 'finesse', 'intuition', 'nerve'],
     // The field that names the character's role, and picks the theme.
     title: ['trade'],
+    // The field naming the person at the table, drawn in the header.
+    player: ['player'],
   },
   // Read out of each pregen sheet's own fill colours, not eyeballed.
   accents: {

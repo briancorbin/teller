@@ -424,6 +424,7 @@ export function SeatView({
           <Fit on={wide} className="min-h-0 flex-1">
             <Counters
               big
+              name={character.name}
               counters={character.data.counters}
               fields={fields}
               dice={template?.dice}
