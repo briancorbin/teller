@@ -20,7 +20,14 @@ import {
 import { ConnectionHint } from '../components/ConnectionHint';
 import { COUNTER_VIEWS } from '../components/counters';
 import { Fit } from '../components/FitBox';
-import { SEAT_SIZES, SizeFrame, type SeatSize } from '../components/SizeFrame';
+import {
+  CARD_INCHES,
+  SEAT_SIZES,
+  SizeFrame,
+  getScreenPpi,
+  setScreenPpi,
+  type SeatSize,
+} from '../components/SizeFrame';
 import { TagSection } from '../components/TagSection';
 
 // The player's card.
@@ -84,6 +91,16 @@ export function SeatView({
    */
   const [size, setSize] = useState<SeatSize>(null);
   const [sizing, setSizing] = useState(false);
+  /**
+   * True-size rendering: judge a candidate panel at its PHYSICAL
+   * dimensions before buying one. The screen's CSS px/inch comes from a
+   * one-time credit-card calibration and persists (a fact about the
+   * monitor); whether true size is ON is a viewing choice and doesn't.
+   */
+  const [ppi, setPpi] = useState<number | null>(() => getScreenPpi());
+  const [trueSize, setTrueSize] = useState(true);
+  const [calibrating, setCalibrating] = useState(false);
+  const [ppiDraft, setPpiDraft] = useState(() => getScreenPpi() ?? 110);
   /** Optimistic, so tapping a layout is instant on a slow LAN. */
   const [layout, setLayout] = useState<SeatLayout>(layoutOf(assigned));
 
@@ -261,7 +278,7 @@ export function SeatView({
   const fields = character.data.fields.filter((f) => f.key !== 'description');
 
   return (
-    <SizeFrame size={size}>
+    <SizeFrame size={size} ppi={trueSize ? ppi : null}>
       <main
         // Held glass may scroll DOWN; mounted glass may not. Nothing may
         // ever scroll sideways — see the note on `wide` above.
@@ -357,41 +374,133 @@ export function SeatView({
         )}
 
         {sizing && (
-          <div className="flex shrink-0 flex-wrap gap-1.5 rounded-lg bg-stone-900 p-2">
-            <button
-              type="button"
-              onClick={() => setSize(null)}
-              aria-pressed={!size}
-              className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                !size
-                  ? 'bg-amber-700 text-stone-950'
-                  : 'bg-stone-800 text-stone-300'
-              }`}
-            >
-              Actual
-            </button>
-            {SEAT_SIZES.map((option) => (
+          <div className="shrink-0 space-y-2 rounded-lg bg-stone-900 p-2">
+            <div className="flex flex-wrap gap-1.5">
               <button
-                key={option.id}
                 type="button"
-                onClick={() => setSize(option)}
-                aria-pressed={size?.id === option.id}
+                onClick={() => setSize(null)}
+                aria-pressed={!size}
                 className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
-                  size?.id === option.id
+                  !size
                     ? 'bg-amber-700 text-stone-950'
-                    : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                    : 'bg-stone-800 text-stone-300'
                 }`}
               >
-                {option.name}
-                <span
-                  className={`ml-1.5 font-mono ${
-                    size?.id === option.id ? 'text-stone-800' : 'text-stone-500'
+                Actual
+              </button>
+              {SEAT_SIZES.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => setSize(option)}
+                  aria-pressed={size?.id === option.id}
+                  className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                    size?.id === option.id
+                      ? 'bg-amber-700 text-stone-950'
+                      : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
                   }`}
                 >
-                  {option.w}×{option.h}
-                </span>
-              </button>
-            ))}
+                  {option.name}
+                  <span
+                    className={`ml-1.5 font-mono ${
+                      size?.id === option.id ? 'text-stone-800' : 'text-stone-500'
+                    }`}
+                  >
+                    {option.w}×{option.h}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {/* Physical truth, offered only when the chosen preset knows
+                its inches. Uncalibrated, the toggle explains itself and
+                opens the card instead of silently doing nothing. */}
+            {size?.inches && (
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-stone-800 pt-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    ppi ? setTrueSize(!trueSize) : setCalibrating(true)
+                  }
+                  aria-pressed={Boolean(ppi) && trueSize}
+                  className={`rounded-md px-2.5 py-1.5 text-xs transition-colors ${
+                    ppi && trueSize
+                      ? 'bg-amber-700 text-stone-950'
+                      : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                  }`}
+                >
+                  ⌖ True size
+                  <span
+                    className={`ml-1.5 font-mono ${
+                      ppi && trueSize ? 'text-stone-800' : 'text-stone-500'
+                    }`}
+                  >
+                    {size.inches.w.toFixed(1)}″×{size.inches.h.toFixed(1)}″
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPpiDraft(ppi ?? 110);
+                    setCalibrating(!calibrating);
+                  }}
+                  aria-expanded={calibrating}
+                  className="rounded-md px-2.5 py-1.5 text-xs text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-300"
+                >
+                  {ppi ? `calibrated · ${Math.round(ppi)} px/in` : 'calibrate this screen'}
+                </button>
+              </div>
+            )}
+
+            {calibrating && (
+              <div className="space-y-2 border-t border-stone-800 pt-2">
+                <p className="text-xs text-stone-400">
+                  Hold a real credit card against the screen and drag until
+                  the outline matches it. That teaches teller how big a
+                  pixel is on this monitor — once, ever.
+                </p>
+                <div
+                  className="flex items-center justify-center rounded-md border-2 border-dashed border-amber-500/70 bg-stone-800/40 text-[10px] uppercase tracking-widest text-stone-500"
+                  style={{
+                    width: ppiDraft * CARD_INCHES.w,
+                    height: ppiDraft * CARD_INCHES.h,
+                  }}
+                >
+                  credit card
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="range"
+                    min={70}
+                    max={280}
+                    step={0.5}
+                    value={ppiDraft}
+                    onChange={(e) => setPpiDraft(Number(e.target.value))}
+                    aria-label="match the outline to a real credit card"
+                    className="w-64 max-w-full accent-amber-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScreenPpi(ppiDraft);
+                      setPpi(ppiDraft);
+                      setTrueSize(true);
+                      setCalibrating(false);
+                    }}
+                    className="rounded-md bg-amber-700 px-2.5 py-1.5 text-xs text-stone-950"
+                  >
+                    matches
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCalibrating(false)}
+                    className="rounded-md px-2.5 py-1.5 text-xs text-stone-500 hover:bg-stone-800"
+                  >
+                    cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
