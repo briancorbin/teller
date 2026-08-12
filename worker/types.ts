@@ -751,6 +751,13 @@ export type SystemTemplate = {
     costCounter: string;
     consumesKind?: string;
     /**
+     * The word on the trigger — WiW's "Fire". The button used to be
+     * price-only ("− 3 Grit") precisely so teller never had to know a
+     * verb; declaring it keeps that true (rule 2) while letting the
+     * button say what the table says. Absent, the price stands alone.
+     */
+    verb?: string;
+    /**
      * The system's per-turn priced moves — WiW's Aim: 1 Grit, reroll
      * one die, once per turn. GLOBAL, not per-item (Aim is an Action
      * like Move or Dodge); the seat renders each as an armable control
@@ -784,8 +791,15 @@ export type SystemTemplate = {
    * than vanishing — nothing a person carries may disappear over a
    * missing declaration. Undeclared entirely = one items screen,
    * exactly as before.
+   *
+   * `arms` marks the screen where the system's priced actions live:
+   * its item panels get the chamber select and the per-turn reticles
+   * (Aim). It used to be derived — "the screen holding the consumable
+   * kind" — which broke the day the ammo pools moved to their own
+   * screen: what a weapon LOADS is a character-level pool wherever its
+   * items are displayed, so the join had to be declared.
    */
-  screens?: { name: string; kinds: string[]; counters?: string[] }[];
+  screens?: { name: string; kinds: string[]; counters?: string[]; arms?: boolean }[];
   /**
    * Tag-driven category marks — WiW's Talents.
    *

@@ -3,7 +3,6 @@ import type { Counter, Field, Item } from '../../../worker/types';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
-import { Reticle } from '../sheet/Reticle';
 import { Screens } from '../sheet/Screens';
 import { TallyPanel } from '../sheet/TallyPanel';
 import { TalentPanel } from '../sheet/TalentPanel';
@@ -788,10 +787,12 @@ export function Sheet({
   const itemRow = (
     row: Item[],
     lead?: React.ReactNode,
-    // The chamber select is offered only where the pools LIVE — an
-    // Ability is fireable (it costs Grit) but nothing loads into a
-    // speech. The fighting screen passes the pools; others pass none.
+    // The chamber select and the reticles are offered only on the
+    // ARMING screen — an Ability is fireable (it costs Grit) but
+    // nothing loads into a speech and you don't aim one. The arming
+    // screen passes the pools and the acts; others pass neither.
     chamber: Item[] = [],
+    arming = false,
   ) => (
     <div
       className={`flex min-h-0 flex-wrap gap-2 ${
@@ -814,6 +815,19 @@ export function Sheet({
             fill={strip}
             use={use}
             ammo={chamber}
+            // The turn's moves (Aim) ride ON each trigger row — global
+            // state worn locally: one reticle armed lights them all,
+            // because there is one Aim, not one per gun (p. 41).
+            acts={arming ? acts : []}
+            armed={armed}
+            spent={spentActs}
+            onToggleAct={(name) =>
+              setArmed(
+                armed.includes(name)
+                  ? armed.filter((n) => n !== name)
+                  : [...armed, name],
+              )
+            }
             extraCost={armedCost}
             available={available}
             tags={tags}
@@ -825,59 +839,6 @@ export function Sheet({
           />
         </div>
       ))}
-    </div>
-  );
-
-  /* The turn's moves, once per fighting screen — Aim is a global
-     once-per-turn Action (Guidebook p. 41), not a property of any
-     weapon. Arm the reticle and every trigger reprices; the spend
-     happens on the shot. It renders on the screen that holds the
-     consumable pools — data deciding again, not a screen name. */
-  const actionRow = acts.length > 0 && onSpend && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          {acts.map((action) => {
-            const isArmed = armed.includes(action.name);
-            const isSpent = spentActs.includes(action.name);
-            const broke =
-              available !== undefined && !isArmed && available < action.cost;
-            return (
-              <div key={action.name} className="flex items-center gap-2">
-                <Reticle
-                  armed={isArmed}
-                  spent={isSpent}
-                  disabled={broke}
-                  label={`${action.name}: +${action.cost} ${use?.costCounter} on your next shot. ${action.text ?? ''}`}
-                  onToggle={() =>
-                    setArmed(
-                      isArmed
-                        ? armed.filter((n) => n !== action.name)
-                        : [...armed, action.name],
-                    )
-                  }
-                />
-                <div className="flex flex-col">
-                  <span
-                    className="text-[0.7rem] font-bold uppercase tracking-[0.14em]"
-                    style={{
-                      color: isArmed
-                        ? 'var(--sheet-accent, #f59e0b)'
-                        : '#a8a29e',
-                    }}
-                  >
-                    {action.name}
-                    <span className="ml-1.5 font-mono font-normal normal-case text-stone-500">
-                      +{action.cost} {use?.costCounter}
-                    </span>
-                  </span>
-                  <span className="text-[0.65rem] leading-tight text-stone-500">
-                    {isSpent
-                      ? `used this turn — back when your ${use?.costCounter} reloads`
-                      : action.text}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
     </div>
   );
 
@@ -912,16 +873,18 @@ export function Sheet({
           />
         </div>
       ));
-    const fighting =
-      !screens?.length ||
-      (use?.consumesKind != null && def.kinds.includes(use.consumesKind));
+    // Where the priced actions live — DECLARED (`screens[].arms`), not
+    // derived from which screen holds the ammo: what a weapon chambers
+    // is a character-level pool wherever the pool's items are shown.
+    // No declared screens = one screen, and it arms, as before.
+    const arming = !screens?.length || def.arms === true;
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        {fighting && actionRow}
         {itemRow(
           mineRest,
           tallyPanels.length ? tallyPanels : undefined,
-          fighting ? pools : [],
+          arming ? pools : [],
+          arming,
         )}
         {minePools.length > 0 && (
           <>

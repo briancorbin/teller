@@ -166,10 +166,14 @@ const wiw: SystemTemplate = {
   // The printed page gives Weapons and Abilities separate real estate;
   // the seat does the same. The Ace-in-the-Hole tally (tick an Ace as
   // you roll one, spend six to fire an Ace-in-the-Hole Ability) sits
-  // beside the abilities it unlocks.
+  // beside the abilities it unlocks. Ammo POOLS live on Items — a
+  // weapon chambers from the character-level pool wherever its items
+  // are shown, so Weapons carries `arms` (the chamber select and the
+  // Aim reticle) and Items merely counts the rounds.
   screens: [
-    { name: 'Weapons', kinds: ['weapon', 'ammo'] },
+    { name: 'Weapons', kinds: ['weapon'], arms: true },
     { name: 'Abilities', kinds: ['ability'], counters: ['Aces'] },
+    { name: 'Items', kinds: ['ammo'] },
   ],
   // Talents (p. 32): 4 Prestige buys a category — a skill, a weapon
   // family, Defense, Mechs, Forstalls — and that category rerolls
@@ -210,6 +214,7 @@ const wiw: SystemTemplate = {
     costField: 'grit',
     costCounter: 'Grit',
     consumesKind: 'ammo',
+    verb: 'Fire',
     // Guidebook p. 41. Aim is a GLOBAL once-per-turn Action, not a
     // property of any weapon — the seat renders one reticle for the
     // screen. (The ✶-and-box printed on each weapon block is NOT Aim:

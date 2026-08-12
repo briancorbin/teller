@@ -13,6 +13,7 @@ import {
   type OwnCatalog,
 } from '../../../worker/items';
 import { bumped, isGauge, Step } from '../counters/shared';
+import { Reticle } from './Reticle';
 import { SheetPanel } from './SheetPanel';
 import { looksLikePool, Track } from './Track';
 
@@ -161,6 +162,10 @@ export function ItemPanel({
   fill = false,
   use,
   ammo = [],
+  acts = [],
+  armed = [],
+  spent = [],
+  onToggleAct,
   onFire,
   extraCost = 0,
   available,
@@ -179,6 +184,17 @@ export function ItemPanel({
   use?: SystemTemplate['use'];
   /** The character's consumable pools — siblings this item can chamber. */
   ammo?: Item[];
+  /**
+   * The system's per-turn moves (Aim), worn as a reticle beside this
+   * trigger. GLOBAL state rendered locally: there is one Aim, not one
+   * per gun, so the same armed list lights every panel's reticle and
+   * toggling any one of them toggles them all. Empty off the arming
+   * screen — you don't aim a speech.
+   */
+  acts?: { name: string; cost: number; text?: string }[];
+  armed?: string[];
+  spent?: string[];
+  onToggleAct?: (name: string) => void;
   /**
    * Spend this item's cost from the priced counter — the caller adds
    * any armed actions (Aim) on top and clears them.
@@ -272,9 +288,9 @@ export function ItemPanel({
         {/* The trigger. One tap spends the item's declared cost and one
             of whatever's chambered — bookkeeping through the same
             counter arithmetic a stepper does, event-logged and undoable
-            (rule 1). The button says exactly what it will do rather
-            than a verb teller would have to know ("fire"? "swing"?):
-            the label IS the receipt. */}
+            (rule 1). The verb on the button is the SYSTEM's word
+            (`use.verb` — "Fire"), never teller's, and the price beside
+            it is the receipt. */}
         {fireable && (
           <div className="flex flex-wrap items-center gap-2 pt-1">
             {use?.consumesKind && ammo.length > 0 && (
@@ -297,6 +313,29 @@ export function ItemPanel({
                 ))}
               </select>
             )}
+            {/* The turn's moves, one reticle each, on the trigger row
+                where the price they add is felt. Arm it here or on any
+                other weapon — same state, one Aim. */}
+            {acts.map((action) => {
+              const isArmed = armed.includes(action.name);
+              const isSpent = spent.includes(action.name);
+              const broke =
+                available !== undefined && !isArmed && available < action.cost;
+              return (
+                <Reticle
+                  key={action.name}
+                  armed={isArmed}
+                  spent={isSpent}
+                  disabled={broke || !onToggleAct}
+                  label={
+                    isSpent
+                      ? `${action.name}: used this turn — back when your ${use?.costCounter} reloads`
+                      : `${action.name}: +${action.cost} ${use?.costCounter} on your next shot. ${action.text ?? ''}`
+                  }
+                  onToggle={() => onToggleAct?.(action.name)}
+                />
+              );
+            })}
             {/* The price is the WHOLE price — an armed Aim rides on the
                 same squeeze (deduct-at-fire, one event, one undo), so
                 the label already includes it. Unaffordable is DISABLED,
@@ -316,11 +355,13 @@ export function ItemPanel({
                   }}
                   disabled={broke}
                   onClick={() => onFire?.(price)}
-                  aria-label={`use ${item.name}: spend ${total} ${use?.costCounter}${
+                  aria-label={`${use?.verb ?? 'use'} ${item.name}: spend ${total} ${use?.costCounter}${
                     chambered ? ` and one ${chambered.name}` : ''
                   }${broke ? ` (not enough ${use?.costCounter})` : ''}`}
                 >
-                  − {total} {use?.costCounter}
+                  {use?.verb
+                    ? `${use.verb} −${total} ${use.costCounter}`
+                    : `− ${total} ${use?.costCounter}`}
                 </button>
               );
             })()}
