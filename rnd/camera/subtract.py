@@ -46,7 +46,11 @@ def detect(
     g0 = cv2.equalizeHist(g0)
     g1 = cv2.equalizeHist(g1)
     diff = cv2.absdiff(g0, g1)
-    _, mask = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    # Otsu picks the "best" split even when the diff is essentially
+    # nothing — an empty table gets its sensor noise promoted to
+    # objects. Floor the threshold so near-identical frames stay empty.
+    t, _ = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
+    _, mask = cv2.threshold(diff, max(t, 40), 255, cv2.THRESH_BINARY)
     mask = cv2.morphologyEx(
         mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     )
