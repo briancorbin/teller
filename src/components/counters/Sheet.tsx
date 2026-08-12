@@ -126,9 +126,12 @@ function NumberRing({
 function SheetGauge({
   counter,
   onChange,
+  fill = false,
 }: {
   counter: Counter;
   onChange: (next: Counter) => void;
+  /** Stretch to the column (a shelf tile); default is content height. */
+  fill?: boolean;
 }) {
   const ringable = counter.max! <= RING_LIMIT;
   return (
@@ -138,7 +141,9 @@ function SheetGauge({
     // fatal here, where rows are content-sized: every tile collapsed and
     // the rings drew on top of each other.
     <div
-      className="flex flex-col gap-1.5 rounded-lg border border-stone-700 bg-stone-900/60 p-2.5"
+      className={`flex flex-col gap-1.5 rounded-lg border border-stone-700 bg-stone-900/60 p-2.5 ${
+        fill ? 'min-h-0 flex-1' : ''
+      }`}
       style={{ containerType: 'inline-size' }}
     >
       <div className="flex items-baseline gap-2">
@@ -572,65 +577,134 @@ export function Sheet({
    * nothing, at which point the bar goes back to one segment and
    * disappears on its own.
    */
-  const spareScreen = (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      {roster && (
-        <TalentPanel
-          marks={marks!}
-          tags={tags}
-          onTags={onTags}
-          note={note?.(marks!.label ?? marks!.prefix.trim())}
-          fill={strip}
-        />
-      )}
-      {ladderPanels.map((ladder) => (
-        <LadderPanel
-          key={ladder.prefix}
-          ladder={ladder}
-          fields={fields}
-          packs={packs}
-          onFields={onFields}
-          lookup={lookup}
-          note={note?.(ladder.label)}
-          fill={strip}
-        />
+  // The More screen's blocks, built once and arranged twice — the
+  // holding pen is still a TEMP state (TEL-68 decides real screens),
+  // but a temp state on the strip obeys the strip's one law all the
+  // same: one full-height shelf that pans, never a stack. Stacking
+  // these five blocks is what read as "kind of crazy" — FitBox was
+  // scaling the pile to ~0.57 to make it fit.
+  const talentBlock = roster && (
+    <TalentPanel
+      marks={marks!}
+      tags={tags}
+      onTags={onTags}
+      note={note?.(marks!.label ?? marks!.prefix.trim())}
+      fill={strip}
+    />
+  );
+  const ladderBlocks = ladderPanels.map((ladder) => (
+    <LadderPanel
+      key={ladder.prefix}
+      ladder={ladder}
+      fields={fields}
+      packs={packs}
+      onFields={onFields}
+      lookup={lookup}
+      note={note?.(ladder.label)}
+      fill={strip}
+    />
+  ));
+  const spendBlock = spendPanel && (
+    <PrestigePanel
+      spends={spends!}
+      counters={counters}
+      fields={fields}
+      groups={groups}
+      tags={tags}
+      marks={marks}
+      items={items}
+      packs={packs}
+      ownCatalog={ownCatalog}
+      dice={dice}
+      onChange={update}
+      onSpend={onSpend}
+      note={note?.(spends!.label ?? spends!.counter)}
+      fill={strip}
+    />
+  );
+  const fieldChips = spare.fields.length > 0 && (
+    <div className="flex flex-wrap gap-1">
+      {spare.fields.map((field) => (
+        <span key={field.key} className="rounded-md bg-stone-900 px-2 py-1 text-xs">
+          <span className="font-mono text-stone-100">{field.value || '—'}</span>
+          <span className="ml-1 uppercase tracking-wider text-stone-500">
+            {field.label}
+          </span>
+        </span>
       ))}
-      {spendPanel && (
-        <PrestigePanel
-          spends={spends!}
-          counters={counters}
-          fields={fields}
-          groups={groups}
-          tags={tags}
-          marks={marks}
-          items={items}
-          packs={packs}
-          ownCatalog={ownCatalog}
-          dice={dice}
-          onChange={update}
-          onSpend={onSpend}
-          note={note?.(spends!.label ?? spends!.counter)}
-          fill={strip}
+    </div>
+  );
+  const tallyRow = (counter: Counter) => (
+    <div
+      key={counter.id}
+      className="flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1"
+    >
+      <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
+        <Name
+          counter={counter}
+          className="text-[10px] uppercase tracking-widest text-stone-500"
         />
-      )}
-      {spare.fields.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {spare.fields.map((field) => (
-            <span
-              key={field.key}
-              className="rounded-md bg-stone-900 px-2 py-1 text-xs"
-            >
-              <span className="font-mono text-stone-100">
-                {field.value || '—'}
-              </span>
-              <span className="ml-1 uppercase tracking-wider text-stone-500">
-                {field.label}
-              </span>
-            </span>
-          ))}
+        <Value counter={counter} className="text-base" />
+      </div>
+      <Step
+        sign="−"
+        label={`decrease ${counter.name}`}
+        onClick={() => update(bumped(counter, -1))}
+      />
+      <Step
+        sign="+"
+        label={`increase ${counter.name}`}
+        onClick={() => update(bumped(counter, 1))}
+      />
+    </div>
+  );
+
+  const spareScreen = strip ? (
+    // The shelf, exactly as the item screens pan it — snap tiles,
+    // widths sized to each block's natural column: the ladder needs
+    // room for five rungs a row, the spend menu wants two columns of
+    // buy buttons, and the loose tallies pocket together in one slim
+    // tile instead of a grid of orphans.
+    <div className="flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap items-stretch gap-2 overflow-x-auto">
+      {talentBlock && (
+        <div className="flex w-[22rem] shrink-0 snap-start flex-col self-stretch">
+          {talentBlock}
         </div>
       )}
-
+      {ladderBlocks.map((block, i) => (
+        <div
+          key={ladderPanels[i].prefix}
+          className="flex w-[26rem] shrink-0 snap-start flex-col self-stretch"
+        >
+          {block}
+        </div>
+      ))}
+      {spendBlock && (
+        <div className="flex w-[30rem] shrink-0 snap-start flex-col self-stretch">
+          {spendBlock}
+        </div>
+      )}
+      {spare.gauges.map((counter) => (
+        <div
+          key={counter.id}
+          className="flex w-[16rem] shrink-0 snap-start flex-col self-stretch"
+        >
+          <SheetGauge counter={counter} onChange={update} fill />
+        </div>
+      ))}
+      {(fieldChips || spare.tallies.length > 0) && (
+        <div className="flex w-[19rem] shrink-0 snap-start flex-col gap-1.5 self-stretch rounded-lg border border-stone-700 bg-stone-900/60 p-2.5">
+          {fieldChips}
+          {spare.tallies.map(tallyRow)}
+        </div>
+      )}
+    </div>
+  ) : (
+    <div className="flex min-h-0 flex-1 flex-col gap-2">
+      {talentBlock}
+      {ladderBlocks}
+      {spendBlock}
+      {fieldChips}
       {spare.gauges.length > 0 && (
         <div
           className="grid gap-2"
@@ -644,36 +718,12 @@ export function Sheet({
           ))}
         </div>
       )}
-
       {spare.tallies.length > 0 && (
         <div
           className="grid shrink-0 gap-1.5"
           style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))' }}
         >
-          {spare.tallies.map((counter) => (
-            <div
-              key={counter.id}
-              className="flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1"
-            >
-              <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
-                <Name
-                  counter={counter}
-                  className="text-[10px] uppercase tracking-widest text-stone-500"
-                />
-                <Value counter={counter} className="text-base" />
-              </div>
-              <Step
-                sign="−"
-                label={`decrease ${counter.name}`}
-                onClick={() => update(bumped(counter, -1))}
-              />
-              <Step
-                sign="+"
-                label={`increase ${counter.name}`}
-                onClick={() => update(bumped(counter, 1))}
-              />
-            </div>
-          ))}
+          {spare.tallies.map(tallyRow)}
         </div>
       )}
     </div>
