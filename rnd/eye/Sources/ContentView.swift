@@ -103,6 +103,16 @@ struct ContentView: View {
                 let rev = obj["rev"] as? Int
             else { continue }
 
+            // First contact ADOPTS the server's revision without applying
+            // it — otherwise launching the app clobbers a local toggle
+            // with the server's defaults one poll later ("I pressed auto
+            // and it stopped after one frame"). Only clicks that happen
+            // after we're connected drive changes.
+            if lastRev == -1 {
+                lastRev = rev
+                lastShoot = obj["shoot"] as? Int ?? 0
+                continue
+            }
             if rev != lastRev {
                 lastRev = rev
                 if let i = obj["interval"] as? Double { intervalSec = i }

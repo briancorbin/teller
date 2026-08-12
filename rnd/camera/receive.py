@@ -80,25 +80,47 @@ control = {
 
 PAGE = """<!doctype html>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="2">
 <title>eye — live</title>
 <body style="margin:0;background:#111;color:#ccc;font:14px monospace">
-<div style="padding:8px 12px">{line}</div>
+<div id="line" style="padding:8px 12px">…</div>
 <div style="padding:0 12px 8px">
-  eye: <b>{auto}</b> @ {interval}s &nbsp;·&nbsp;
-  auto <a href="/set?auto=on" style="color:#7ab">on</a>/<a
-    href="/set?auto=off" style="color:#7ab">off</a> &nbsp;·&nbsp;
-  every <a href="/set?interval=0.5" style="color:#7ab">0.5s</a>
-  <a href="/set?interval=1" style="color:#7ab">1s</a>
-  <a href="/set?interval=2" style="color:#7ab">2s</a>
-  <a href="/set?interval=5" style="color:#7ab">5s</a> &nbsp;·&nbsp;
-  <a href="/set?shoot=1" style="color:#7ab">capture once</a> &nbsp;·&nbsp;
-  camera <a href="/set?lock=on" style="color:#7ab">lock</a>/<a
-    href="/set?lock=off" style="color:#7ab">unlock</a>
+  eye: <b id="mode">…</b> ·
+  auto <a href="#" onclick="return set('auto=on')" style="color:#7ab">on</a>/<a
+    href="#" onclick="return set('auto=off')" style="color:#7ab">off</a> ·
+  every <a href="#" onclick="return set('interval=0.5')" style="color:#7ab">0.5s</a>
+  <a href="#" onclick="return set('interval=1')" style="color:#7ab">1s</a>
+  <a href="#" onclick="return set('interval=2')" style="color:#7ab">2s</a>
+  <a href="#" onclick="return set('interval=5')" style="color:#7ab">5s</a> ·
+  <a href="#" onclick="return set('shoot=1')" style="color:#7ab">capture once</a> ·
+  camera <a href="#" onclick="return set('lock=on')" style="color:#7ab">lock</a>/<a
+    href="#" onclick="return set('lock=off')" style="color:#7ab">unlock</a> ·
+  <a href="#" onclick="return act('/rebase')" style="color:#7ab">rebase</a>
 </div>
-<img src="/latest.png?{n}" style="width:100%">
-<div style="padding:8px 12px"><a href="/rebase" style="color:#7ab">rebase</a>
-— current frame becomes the empty table</div>
+<img id="view" style="width:100%">
+<script>
+  // In-place updates, no page reloads — a full refresh every 2s made
+  // the whole screen flicker. The image double-buffers: preload the
+  // new frame, swap only once it's ready.
+  function set(kv) { fetch('/set?' + kv); return false; }
+  function act(path) { fetch(path); return false; }
+  let lastFrame = -1;
+  async function tick() {
+    try {
+      const s = await (await fetch('/status.json')).json();
+      document.getElementById('line').textContent = s.line;
+      document.getElementById('mode').textContent =
+        (s.auto ? 'auto' : 'paused') + ' @ ' + s.interval + 's';
+      if (s.frames !== lastFrame) {
+        lastFrame = s.frames;
+        const img = new Image();
+        img.onload = () => { document.getElementById('view').src = img.src; };
+        img.src = '/latest.png?' + s.frames;
+      }
+    } catch (e) {}
+    setTimeout(tick, 1000);
+  }
+  tick();
+</script>
 """
 
 
@@ -290,6 +312,17 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(table_page().encode())
             return
+        if self.path == '/status.json':
+            with state_lock:
+                body = {'line': state['line'], 'frames': state['frames']}
+            with control_lock:
+                body['auto'] = control['auto']
+                body['interval'] = control['interval']
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps(body).encode())
+            return
         if self.path == '/control':
             with control_lock:
                 body = json.dumps(control)
@@ -343,18 +376,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Location', '/')
             self.end_headers()
             return
-        with state_lock:
-            line, n = state['line'], state['frames']
-        with control_lock:
-            page = PAGE.format(
-                line=line, n=n,
-                auto='auto' if control['auto'] else 'paused',
-                interval=control['interval'],
-            )
         self.send_response(200)
         self.send_header('Content-Type', 'text/html; charset=utf-8')
         self.end_headers()
-        self.wfile.write(page.encode())
+        self.wfile.write(PAGE.encode())
 
     def log_message(self, *args):
         pass
