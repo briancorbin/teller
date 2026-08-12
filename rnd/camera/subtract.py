@@ -34,12 +34,20 @@ def rectify(path: Path, sw: int, sh: int) -> np.ndarray:
 
 
 def detect(
-    base: np.ndarray, objs: np.ndarray, min_area: int = 400
+    base: np.ndarray, objs: np.ndarray, min_area: int = 400,
+    ignore: list[tuple[int, int, int, int]] | None = None,
+    inset: int = 14,
 ) -> tuple[list[tuple[float, float, int]], np.ndarray, np.ndarray]:
     """Diff two rectified frames → (blobs, annotated view, mask).
 
     Blobs are (cx, cy, area) in screen px. Shared by the CLI below and
     the live receiver — one detector, two doors.
+
+    `ignore` is a list of (cx, cy, radius, stroke) annuli zeroed out of
+    the mask: the confirmation rings the SCREEN is drawing under
+    believed positions. The receiver knows exactly what it drew, so it
+    subtracts its own ink — otherwise a ring detects as an object and
+    chases itself around the table.
     """
     g0 = cv2.GaussianBlur(cv2.cvtColor(base, cv2.COLOR_BGR2GRAY), (9, 9), 0)
     g1 = cv2.GaussianBlur(cv2.cvtColor(objs, cv2.COLOR_BGR2GRAY), (9, 9), 0)
@@ -51,6 +59,17 @@ def detect(
     # objects. Floor the threshold so near-identical frames stay empty.
     t, _ = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
     _, mask = cv2.threshold(diff, max(t, 40), 255, cv2.THRESH_BINARY)
+    for cx, cy, radius, stroke in ignore or []:
+        cv2.circle(mask, (int(cx), int(cy)), int(radius), 0, int(stroke))
+    # The warp already crops the world beyond the screen quad, but the
+    # BORDER itself flickers: sub-pixel solve drift slides bezel pixels
+    # in and out at the edge. A thin inset keeps the flicker out of the
+    # count — nothing standing on the glass is ever this close anyway.
+    if inset > 0:
+        mask[:inset, :] = 0
+        mask[-inset:, :] = 0
+        mask[:, :inset] = 0
+        mask[:, -inset:] = 0
     mask = cv2.morphologyEx(
         mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
     )

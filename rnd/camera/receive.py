@@ -23,6 +23,7 @@ web page; nothing downstream trusts it yet.
 """
 
 import argparse
+import base64
 import json
 import threading
 from datetime import datetime
@@ -32,13 +33,21 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from calibrate import solve
+from calibrate import DICT, solve
 from subtract import detect
 
 OUT = Path(__file__).parent / 'captures'
 OUT.mkdir(exist_ok=True)
 
 SW = SH = 0  # set from --screen in main()
+
+# The confirmation rings the /table page draws under believed positions
+# (TEL-24's glow, prototyped). The camera sees them, so the detector
+# masks the same annuli — with margin, because the camera's view of a
+# ring is blurrier than the ink.
+RING_R = 34
+RING_STROKE = 5
+MASK_STROKE = 20
 
 state_lock = threading.Lock()
 state = {
@@ -47,6 +56,9 @@ state = {
     'latest_png': None,    # annotated view, PNG bytes
     'line': 'waiting for the first frame…',
     'frames': 0,
+    'rings': [],           # (x, y) the table page is drawing NOW
+    'prev_rings': [],      # and the set before it — masked too, so a
+                           # ring that just moved doesn't ghost-detect
 }
 
 PAGE = """<!doctype html>
@@ -64,6 +76,72 @@ PAGE = """<!doctype html>
 def safe_ts(raw: str | None) -> str:
     ts = raw or datetime.now().isoformat(timespec='seconds')
     return ''.join(c if c.isalnum() or c in '-T' else '-' for c in ts)
+
+
+def marker_uri(marker_id: int) -> str:
+    img = cv2.aruco.generateImageMarker(DICT, marker_id, 400)
+    ok, png = cv2.imencode('.png', img)
+    return 'data:image/png;base64,' + base64.b64encode(png.tobytes()).decode()
+
+
+def table_page() -> str:
+    """What the TV shows: pattern.html's markers (calibration never
+    stops working) plus a ring under every believed mini position —
+    the confirmation glow, polled from /state.json. Click = fullscreen."""
+    uris = [marker_uri(i) for i in range(4)]
+    return """<!doctype html>
+<meta charset="utf-8"><title>teller table — live</title>
+<style>
+  html, body { margin:0; height:100%%; background:#000; overflow:hidden; cursor:none; }
+  .marker { position:absolute; image-rendering:pixelated; }
+  #rings { position:absolute; inset:0; }
+  #info { position:absolute; left:0; right:0; bottom:1.5%%; text-align:center;
+          color:#555; font:14px monospace; }
+</style>
+<body>
+<canvas id="rings"></canvas>
+<img class="marker" id="m0" src="%s"><img class="marker" id="m1" src="%s">
+<img class="marker" id="m2" src="%s"><img class="marker" id="m3" src="%s">
+<div id="info"></div>
+<script>
+  function layout() {
+    const W = innerWidth, H = innerHeight;
+    const m = Math.round(0.06 * Math.min(W, H));
+    const s = Math.round(0.12 * Math.min(W, H));
+    [[m,m],[W-m-s,m],[m,H-m-s],[W-m-s,H-m-s]].forEach(([x,y],i) => {
+      const el = document.getElementById('m'+i);
+      el.style.left = x+'px'; el.style.top = y+'px';
+      el.style.width = s+'px'; el.style.height = s+'px';
+      el.style.outline = Math.round(s/8)+'px solid #fff';
+    });
+    const c = document.getElementById('rings');
+    c.width = W; c.height = H;
+    document.getElementById('info').textContent =
+      `teller calibration · viewport ${W}x${H} · margin ${m} · marker ${s}`;
+  }
+  addEventListener('resize', layout); layout();
+  document.body.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  });
+
+  async function poll() {
+    try {
+      const s = await (await fetch('/state.json')).json();
+      const c = document.getElementById('rings');
+      const g = c.getContext('2d');
+      g.clearRect(0, 0, c.width, c.height);
+      g.strokeStyle = '#f59e0b';
+      g.lineWidth = %d;
+      for (const [x, y] of s.rings) {
+        g.beginPath(); g.arc(x, y, %d, 0, 7); g.stroke();
+      }
+    } catch (e) {}
+    setTimeout(poll, 800);
+  }
+  poll();
+</script>
+""" % (uris[0], uris[1], uris[2], uris[3], RING_STROKE, RING_R)
 
 
 def process(jpeg: bytes, ts: str) -> str:
@@ -87,9 +165,17 @@ def process(jpeg: bytes, ts: str) -> str:
                 f'{ts} · frame 1 · BASELINE SET · {len(ids)} markers · RMS {err:.2f}px'
             )
             return state['line']
-        found, annotated, _ = detect(state['baseline'], rect)
+        ignore = [
+            (x, y, RING_R, MASK_STROKE)
+            for x, y in state['rings'] + state['prev_rings']
+        ]
+        found, annotated, _ = detect(state['baseline'], rect, ignore=ignore)
         ok, png = cv2.imencode('.png', annotated)
         state['latest_png'] = png.tobytes() if ok else None
+        # What we found is what the table page draws next — and what the
+        # next frame's detector must ignore.
+        state['prev_rings'] = state['rings']
+        state['rings'] = [(int(cx), int(cy)) for cx, cy, _ in found]
         blobs = ' '.join(f'({cx:.0f},{cy:.0f})' for cx, cy, _ in
                          sorted(found)[:8])
         state['line'] = (
@@ -121,6 +207,20 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        if self.path == '/table':
+            self.send_response(200)
+            self.send_header('Content-Type', 'text/html; charset=utf-8')
+            self.end_headers()
+            self.wfile.write(table_page().encode())
+            return
+        if self.path == '/state.json':
+            with state_lock:
+                body = json.dumps({'rings': state['rings'], 'r': RING_R})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(body.encode())
+            return
         if self.path.startswith('/latest.png'):
             with state_lock:
                 png = state['latest_png']
