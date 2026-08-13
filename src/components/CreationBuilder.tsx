@@ -34,10 +34,10 @@ import { Glyph } from './sheet/glyphs';
 // a player one) — it's derived here from the Prestige counter the
 // stamp wrote, never asked again.
 
-const stepBtn =
-  'rounded-lg border p-3 text-left transition-colors active:bg-amber-950/60';
+// Every step that offers a CHOICE now wears the sheet's own panel, so
+// the plain bordered button these described survives only where a step
+// still lists loose chips (keepsakes, the wallet's faces).
 const off = 'border-stone-700 bg-stone-900';
-const on = 'border-amber-500 bg-amber-950/40';
 
 export function CreationBuilder({
   character,
@@ -104,6 +104,8 @@ export function CreationBuilder({
   const spent = budget ? spreadTotal(skills, budget.die) : 0;
   /** Dice still in hand. The pool is the constraint the screen shows. */
   const left = budget ? budget.total - spent : 0;
+  /** How many equipment packs this tier gets to choose. */
+  const picks = tier?.packs ?? 1;
   /** Already sitting on the printed numbers — nothing for reset to do. */
   const atTradeSpread = Object.entries(trade?.skills ?? {}).every(
     ([label, pool]) => skills[label] === pool,
@@ -170,8 +172,10 @@ export function CreationBuilder({
   };
   const accent = trade ? template?.accents?.[trade.name] : undefined;
 
-  // One layout family: heading up top, the question's options in a row
-  // that PANS on the strip (the shelf gesture) and wraps on a phone.
+  // The trades still PAN — there are seven of them, one expands to
+  // twice its width, and reading them one at a time is the point. The
+  // steps that offer a handful of alternatives divide the glass
+  // instead; each says so where it lays itself out.
   const shelf = (children: React.ReactNode) => (
     <div
       className={`flex min-h-0 flex-1 gap-2 ${
@@ -183,8 +187,6 @@ export function CreationBuilder({
       {children}
     </div>
   );
-  const tile = (extra = '') =>
-    `${strip ? 'w-[19rem] shrink-0 snap-start self-stretch' : 'w-full'} ${extra}`;
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col gap-2 p-1">
@@ -592,16 +594,39 @@ export function CreationBuilder({
       )}
 
       {here === 'gear' && (
-        <>
-          {shelf(
-            (creation.equipmentPacks ?? []).map((id) => {
+        <div
+          className="flex min-h-0 flex-1 flex-col gap-2"
+          style={
+            (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
+          }
+        >
+          {/* Same shape as the skills: the choices divide the glass
+              evenly, because they're alternatives to weigh side by
+              side rather than a list to pan through. */}
+          <div
+            className={
+              strip
+                ? 'grid min-h-0 flex-1 gap-2'
+                : 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto'
+            }
+            style={
+              strip
+                ? {
+                    gridTemplateColumns: `repeat(${
+                      (creation.equipmentPacks ?? []).length || 1
+                    }, minmax(0, 1fr))`,
+                  }
+                : undefined
+            }
+          >
+            {(creation.equipmentPacks ?? []).map((id) => {
               const p = catalog.get(id);
               if (!p) return null;
               const picked = eqPicks.includes(id);
               return (
                 <button
                   key={id}
-                  className={`${stepBtn} ${picked ? on : off} ${tile('flex flex-col gap-1')}`}
+                  className="flex text-left"
                   onClick={() =>
                     setEqPicks(
                       picked
@@ -610,35 +635,107 @@ export function CreationBuilder({
                     )
                   }
                 >
-                  <span className="font-serif text-base text-stone-100">{p.name}</span>
-                  <span className="text-xs text-stone-400">
-                    {p.fields?.find((f) => f.key === 'effect')?.value ?? ''}
-                  </span>
+                  <SheetPanel
+                    title={p.name}
+                    fill
+                    className={`w-full transition-colors ${
+                      picked
+                        ? 'border-[color:var(--sheet-accent)]'
+                        : `${off} opacity-60`
+                    }`}
+                    style={
+                      picked
+                        ? { background: `${accent ?? '#f59e0b'}14` }
+                        : undefined
+                    }
+                  >
+                    <div className="flex min-h-0 flex-1 flex-col items-center">
+                      {/* The mark takes the room above the list and
+                          centres in it, the way the skills' does —
+                          the panel is 378px tall and the contents
+                          need barely half of it. */}
+                      {p.icon && (
+                        <span className="flex min-h-0 flex-1 items-center justify-center py-1">
+                          <Glyph
+                            name={p.icon}
+                            className={`h-24 w-24 transition-colors ${
+                              picked
+                                ? 'text-[color:var(--sheet-accent,#f59e0b)]'
+                                : 'text-stone-500'
+                            }`}
+                          />
+                        </span>
+                      )}
+                      {/* What's actually IN it, itemised. A bundle
+                          unpacks into the inventory (rule 4a), so the
+                          card that offers it should show the same
+                          list the sheet will end up carrying — not
+                          one word you have to take on trust. */}
+                      <ul className="flex min-h-0 w-full flex-col items-center gap-px overflow-hidden font-serif text-[0.72rem] leading-tight text-stone-400">
+                        {(p.contents ?? []).map((cid, i) => (
+                          <li key={`${cid}-${i}`}>
+                            {catalog.get(cid)?.name ?? cid}
+                          </li>
+                        ))}
+                      </ul>
+                      {/* The commit lives in the card you chose, the
+                          way the trade's does — you point at a thing
+                          and then agree to it, instead of pointing at
+                          a thing and reaching somewhere else. It waits
+                          for the LAST pick, so a tier with two slots
+                          still gets one button and not two. */}
+                      {picked && eqPicks.length === picks && (
+                        <span
+                          className="mt-2 w-full rounded-md px-3 py-2 text-center text-sm font-semibold text-stone-950"
+                          style={{ background: 'var(--sheet-accent, #f59e0b)' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // Swap, don't stack: drop anything a
+                            // previous pass's bundles unpacked before
+                            // granting this pass's picks.
+                            onPatch(
+                              applyGear(
+                                withoutInstanced(data, {
+                                  from: bundleGrantIds(
+                                    packs,
+                                    creation.equipmentPacks ?? [],
+                                  ),
+                                }),
+                                packs,
+                                eqPicks,
+                              ),
+                            );
+                            next();
+                          }}
+                        >
+                          grab yer pack
+                        </span>
+                      )}
+                    </div>
+                  </SheetPanel>
                 </button>
               );
-            }),
+            })}
+          </div>
+          {/* Only when there's more than one slot to fill. With the
+              usual single pick the card carries the whole decision,
+              and a bar counting to one is furniture. */}
+          {picks > 1 && (
+            <div className="flex shrink-0 items-center justify-center gap-1.5">
+              {Array.from({ length: picks }, (_, i) => (
+                <Glyph
+                  key={i}
+                  name="satchel"
+                  className={`h-8 w-8 transition-colors ${
+                    i < eqPicks.length
+                      ? 'text-[color:var(--sheet-accent,#f59e0b)]'
+                      : 'text-stone-800'
+                  }`}
+                />
+              ))}
+            </div>
           )}
-          <button
-            className="shrink-0 self-start rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
-            disabled={eqPicks.length === 0}
-            onClick={() => {
-              // Swap, don't stack: drop anything a previous pass's
-              // bundles unpacked before granting this pass's picks.
-              onPatch(
-                applyGear(
-                  withoutInstanced(data, {
-                    from: bundleGrantIds(packs, creation.equipmentPacks ?? []),
-                  }),
-                  packs,
-                  eqPicks,
-                ),
-              );
-              next();
-            }}
-          >
-            packed
-          </button>
-        </>
+        </div>
       )}
 
       {here === 'wallet' && (

@@ -188,6 +188,18 @@ export type CatalogItem = {
    * card; what lands in inventory is the contents.
    */
   contents?: string[];
+  /**
+   * The mark this entry wears where it's offered as a choice, named
+   * from teller's glyph set (`src/components/sheet/glyphs.tsx`).
+   *
+   * Same bargain as `SystemTemplate.icons`: the drawings are teller's,
+   * the ASSIGNMENT belongs to whoever wrote the content, so no code
+   * ever learns what an "Explorer's Pack" is (rule 2). It rides on the
+   * entry rather than the template because an item arrives WITH a pack
+   * and should bring its own face. An unknown name draws nothing and
+   * the card still works.
+   */
+  icon?: string;
 };
 
 /** A modification a catalogue item can take. */

@@ -78,6 +78,44 @@ const GLYPHS: Record<string, React.ReactNode> = {
       <path d="M8.4 8.4h.01M12 12h.01M15.6 15.6h.01" />
     </>
   ),
+  // The kit marks. Each equipment pack is told apart by the one thing
+  // only it carries, so the mark is that thing rather than four
+  // variations on a rucksack.
+
+  // A compass: rose ring and a needle pointing off true north.
+  compass: (
+    <>
+      <circle cx="12" cy="12" r="8.6" />
+      <path d="M15.2 8.8l-2 4.4-4.4 2 2-4.4z" />
+      <path d="M12 2.6v1.4M12 20v1.4M2.6 12H4M20 12h1.4" />
+    </>
+  ),
+  // A lantern: bail handle, glass, and the flame inside it.
+  lantern: (
+    <>
+      <path d="M9.4 3.6a2.6 2.6 0 0 1 5.2 0" />
+      <path d="M7.6 6h8.8l-1 3.2v8.4H8.6V9.2z" />
+      <path d="M6.8 20.4h10.4" />
+      <path d="M12 11.4c1.4 1.2 1.8 2.4 1.2 3.4-.5.8-1.9.8-2.4 0-.6-1-.2-2.2 1.2-3.4z" />
+    </>
+  ),
+  // A coil of rope: three turns and the working end hanging free.
+  rope: (
+    <>
+      <ellipse cx="12" cy="8" rx="6.4" ry="3.2" />
+      <path d="M5.6 8v3.4c0 1.8 2.9 3.2 6.4 3.2s6.4-1.4 6.4-3.2V8" />
+      <path d="M5.6 11.6V15c0 1.8 2.9 3.2 6.4 3.2" />
+      <path d="M12 18.2c1 1.4 2.4 2 4.2 1.8" />
+    </>
+  ),
+  // A harmonica: the comb, its cover plate, and the reed slots.
+  harmonica: (
+    <>
+      <rect x="2.8" y="8.2" width="18.4" height="7.6" rx="1.4" />
+      <path d="M2.8 11.4h18.4" />
+      <path d="M7 13.2v2.2M10.3 13.2v2.2M13.7 13.2v2.2M17 13.2v2.2" />
+    </>
+  ),
   // A cartridge stood on its base — what a pool of dice looks like on
   // this table. SOLID, unlike every other glyph here: this one is read
   // as a row that fills, and an outline doesn't carry a bar. The case

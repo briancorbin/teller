@@ -76,6 +76,7 @@ export function SheetPanel({
   note,
   children,
   className = '',
+  style,
   fill = false,
   mark,
 }: {
@@ -84,6 +85,8 @@ export function SheetPanel({
   note?: string;
   children: React.ReactNode;
   className?: string;
+  /** Merged over the panel's own — for a caller-set tint or accent. */
+  style?: React.CSSProperties;
   /** The Talent tick — shown only when true. See `SystemTemplate.marks`. */
   mark?: { title?: string };
   /**
@@ -104,7 +107,7 @@ export function SheetPanel({
       className={`relative rounded-md border border-stone-600/80 px-3 py-2.5 ${
         fill ? 'flex h-full flex-col' : ''
       } ${className}`}
-      style={{ containerType: 'inline-size' }}
+      style={{ containerType: 'inline-size', ...style }}
     >
       <Corner at="tl" />
       <Corner at="tr" />
