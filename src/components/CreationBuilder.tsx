@@ -444,12 +444,18 @@ export function CreationBuilder({
                   fill
                   className={off}
                 >
-                  <div className="flex flex-col items-center gap-2">
+                  <div className="flex min-h-0 flex-1 flex-col items-center gap-2">
+                    {/* The mark takes the whole gap between the book's
+                        words and the dice, and centres in it — so it
+                        reads as the panel's face rather than a bullet
+                        point that wandered into the middle. */}
                     {glyph && (
-                      <Glyph
-                        name={glyph}
-                        className="h-9 w-9 text-[color:var(--sheet-accent,#f59e0b)]"
-                      />
+                      <span className="flex min-h-0 flex-1 items-center justify-center py-1">
+                        <Glyph
+                          name={glyph}
+                          className="h-24 w-24 text-[color:var(--sheet-accent,#f59e0b)]"
+                        />
+                      </span>
                     )}
                     {/* What the book says you DO with it — four verbs,
                         set like the sheet's own small print. */}
