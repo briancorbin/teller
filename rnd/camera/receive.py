@@ -34,7 +34,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from calibrate import DICT, solve
+from calibrate import DICT, layout, solve
 from subtract import detect
 
 # Bridge mode (--teller): after each processed frame, POST the overlay
@@ -79,8 +79,32 @@ RING_R = 34
 RING_STROKE = 5
 MASK_STROKE = 20
 
+# The bananas fix (TEL-77): a fixed camera re-solved every frame yields
+# a homography that jitters sub-pixel, and against dense map art every
+# jittered edge diffs — three minis became a screenful of phantoms. So
+# the first good solve is PINNED and every frame rectifies through it;
+# the per-frame solve only checks the pin still fits the markers. When
+# it stops fitting (camera bumped, Eye's crop changed), adopt the fresh
+# solve once — a single shift, not a per-frame shimmer.
+REPIN_RMS = 3.0
+
+
+def pin_rms(H: np.ndarray, seen: dict) -> float:
+    """How well a (pinned) homography fits THIS frame's markers, in
+    screen px — same measure solve() reports for its own fit."""
+    expected, _ = layout(SW, SH)
+    ids = sorted(set(expected) & set(seen))
+    cam = np.vstack([seen[i] for i in ids])
+    scr = np.vstack([expected[i] for i in ids])
+    back = cv2.perspectiveTransform(
+        cam.reshape(-1, 1, 2), np.linalg.inv(H)
+    ).reshape(-1, 2)
+    return float(np.sqrt(np.mean(np.sum((back - scr) ** 2, axis=1))))
+
+
 state_lock = threading.Lock()
 state = {
+    'H': None,             # the pinned screen→camera homography
     'baseline': None,      # rectified empty-table frame
     'latest_rect': None,   # rectified most-recent frame (for /rebase)
     'latest_png': None,    # annotated view, PNG bytes
@@ -334,7 +358,7 @@ def process(jpeg: bytes, ts: str,
     if img is None:
         return 'undecodable frame'
     try:
-        H, err, ids, seen = solve(img, SW, SH)
+        fresh, err, ids, seen = solve(img, SW, SH)
     except SystemExit as e:  # calibrate's helpers bail via sys.exit
         # Markers lost — likely a stale crop after the phone moved. Tell
         # Eye to go back to full frame; the next solve re-derives it.
@@ -345,6 +369,22 @@ def process(jpeg: bytes, ts: str,
         # on failure is what bootstraps the loop out of that deadlock.
         push_to_teller([])
         return f'skipped: {e}'
+    # Rectify through the PIN, not the fresh solve — the fresh one only
+    # proves the pin still fits this frame's markers.
+    with state_lock:
+        H = state['H']
+    pin_note = ''
+    if H is None:
+        H = fresh
+        pin_note = ' · pinned'
+    else:
+        fit = pin_rms(H, seen)
+        if fit > REPIN_RMS:
+            H, pin_note = fresh, f' · repinned ({fit:.1f}px drift)'
+        else:
+            err = fit
+    with state_lock:
+        state['H'] = H
     Hinv = np.linalg.inv(H)
     rect = cv2.warpPerspective(img, Hinv, (SW, SH))
 
@@ -365,7 +405,7 @@ def process(jpeg: bytes, ts: str,
             state['latest_png'] = png.tobytes() if ok else None
             state['line'] = (
                 f'{ts} · frame 1 · BASELINE SET · {len(ids)} markers'
-                f' · RMS {err:.2f}px{cal_note}'
+                f' · RMS {err:.2f}px{pin_note}{cal_note}'
             )
             line, rings = state['line'], []
         else:
@@ -384,7 +424,7 @@ def process(jpeg: bytes, ts: str,
                              sorted(found)[:8])
             state['line'] = (
                 f'{ts} · frame {state["frames"]} · {len(found)} object(s) {blobs}'
-                f' · RMS {err:.2f}px{cal_note}'
+                f' · RMS {err:.2f}px{pin_note}{cal_note}'
             )
             line, rings = state['line'], state['rings']
     # Push outside the lock — a slow teller must never stall detection.

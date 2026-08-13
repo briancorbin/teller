@@ -36,7 +36,7 @@ def rectify(path: Path, sw: int, sh: int) -> np.ndarray:
 def detect(
     base: np.ndarray, objs: np.ndarray, min_area: int = 400,
     ignore: list[tuple[int, int, int, int]] | None = None,
-    inset: int = 14,
+    inset: int = 14, scale: int = 4,
 ) -> tuple[list[tuple[float, float, int]], np.ndarray, np.ndarray]:
     """Diff two rectified frames → (blobs, annotated view, mask).
 
@@ -48,46 +48,55 @@ def detect(
     believed positions. The receiver knows exactly what it drew, so it
     subtracts its own ink — otherwise a ring detects as an object and
     chases itself around the table.
+
+    Coarse on purpose: everything runs at 1/`scale` resolution. A mini
+    is still dozens of pixels there; the shimmer of dense map art under
+    sub-pixel misregistration is not, and INTER_AREA's averaging eats
+    it. All inputs and outputs stay in full-res screen px — the /scale
+    happens in here.
     """
-    g0 = cv2.GaussianBlur(cv2.cvtColor(base, cv2.COLOR_BGR2GRAY), (9, 9), 0)
-    g1 = cv2.GaussianBlur(cv2.cvtColor(objs, cv2.COLOR_BGR2GRAY), (9, 9), 0)
-    g0 = cv2.equalizeHist(g0)
-    g1 = cv2.equalizeHist(g1)
+    small = (objs.shape[1] // scale, objs.shape[0] // scale)
+    b = cv2.resize(base, small, interpolation=cv2.INTER_AREA)
+    o = cv2.resize(objs, small, interpolation=cv2.INTER_AREA)
+    g0 = cv2.GaussianBlur(cv2.cvtColor(b, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+    g1 = cv2.GaussianBlur(cv2.cvtColor(o, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+    # No equalizeHist: it stretched the map's own texture into the diff.
     diff = cv2.absdiff(g0, g1)
     # Otsu picks the "best" split even when the diff is essentially
     # nothing — an empty table gets its sensor noise promoted to
     # objects. Floor the threshold so near-identical frames stay empty.
     t, _ = cv2.threshold(diff, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    _, mask = cv2.threshold(diff, max(t, 40), 255, cv2.THRESH_BINARY)
+    _, mask = cv2.threshold(diff, max(t, 30), 255, cv2.THRESH_BINARY)
     for cx, cy, radius, stroke in ignore or []:
-        cv2.circle(mask, (int(cx), int(cy)), int(radius), 0, int(stroke))
+        cv2.circle(mask, (int(cx / scale), int(cy / scale)),
+                   int(radius / scale), 0, max(2, int(stroke / scale)))
     # The warp already crops the world beyond the screen quad, but the
     # BORDER itself flickers: sub-pixel solve drift slides bezel pixels
     # in and out at the edge. A thin inset keeps the flicker out of the
     # count — nothing standing on the glass is ever this close anyway.
-    if inset > 0:
-        mask[:inset, :] = 0
-        mask[-inset:, :] = 0
-        mask[:, :inset] = 0
-        mask[:, -inset:] = 0
+    ins = max(1, inset // scale)
+    mask[:ins, :] = 0
+    mask[-ins:, :] = 0
+    mask[:, :ins] = 0
+    mask[:, -ins:] = 0
     mask = cv2.morphologyEx(
-        mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+        mask, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     )
     mask = cv2.morphologyEx(
-        mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+        mask, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
     )
 
     n, _, stats, centroids = cv2.connectedComponentsWithStats(mask)
     out = objs.copy()
     found: list[tuple[float, float, int]] = []
     for i in range(1, n):
-        area = int(stats[i, cv2.CC_STAT_AREA])
+        area = int(stats[i, cv2.CC_STAT_AREA]) * scale * scale
         if area < min_area:
             continue
-        x, y, w, h = (int(stats[i, k]) for k in (
+        x, y, w, h = (int(stats[i, k]) * scale for k in (
             cv2.CC_STAT_LEFT, cv2.CC_STAT_TOP, cv2.CC_STAT_WIDTH, cv2.CC_STAT_HEIGHT))
-        cx, cy = centroids[i]
-        found.append((float(cx), float(cy), area))
+        cx, cy = (float(v) * scale for v in centroids[i])
+        found.append((cx, cy, area))
         cv2.rectangle(out, (x, y), (x + w, y + h), (0, 176, 255), 3)
         # Magenta, and bigger than a base: green-on-a-green-mini taught
         # us a crosshair must not match anything a player would paint.
@@ -95,6 +104,8 @@ def detect(
                        cv2.MARKER_CROSS, 48, 3)
         cv2.putText(out, f'({int(cx)},{int(cy)})', (x, y - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    mask = cv2.resize(mask, (objs.shape[1], objs.shape[0]),
+                      interpolation=cv2.INTER_NEAREST)
     return found, out, mask
 
 
