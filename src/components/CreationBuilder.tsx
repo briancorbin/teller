@@ -195,21 +195,17 @@ export function CreationBuilder({
                     }
                   >
                     <span className="flex min-h-0 flex-1 flex-col gap-1.5 pt-1">
+                  {/* The top of the card is reserved space: the trade's
+                      portrait lands here when the art pipeline exists
+                      (TEL-83). Until then, the book's introduction
+                      carries the card — no stat spread; the numbers
+                      have their own screen next, and a card sells a
+                      LIFE, not a statline. */}
                   {t.text && (
                     <span className="font-serif text-sm italic leading-snug text-stone-300">
                       {t.text}
                     </span>
                   )}
-                  <span className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-stone-400">
-                    {Object.entries(t.skills ?? {}).map(([k, v]) => (
-                      <span key={k}>
-                        {k}{' '}
-                        <span style={accent ? { color: accent } : undefined}>
-                          {v}
-                        </span>
-                      </span>
-                    ))}
-                  </span>
                   {open && (
                     <>
                       {/* What you START with — the sheet's preset: the
