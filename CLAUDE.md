@@ -485,7 +485,14 @@ Bundle rules that follow from this (`worker/bundle.ts`, `worker/import.ts`):
 
 ## Deferred on purpose (documented so they aren't re-invented badly)
 
-- SRD content import, character builder, level-up wizard.
+- SRD content import; the level-up wizard stays out permanently — the
+  Prestige spend menu IS the advancement mechanism, and there is no
+  second one. The **character builder shipped 2026-08-13** (TEL-75, a
+  deliberate un-deferral): creation is COMPOSITION over the pack's
+  `trades`/`creation` data — the console dialog and the rail builder
+  ("what's yer trade?") drive the same `src/lib/creation.ts`, every
+  step writes ordinary fields/counters/items, and a `draft` flag is
+  the only trace until the last step clears it (rule 1 throughout).
 - Remote seats and hybrid tables — a player joining over the network,
   their camera on a panel, their dice rolled physically on the far end
   (TEL-55/56/57). The local-first architecture is what makes this

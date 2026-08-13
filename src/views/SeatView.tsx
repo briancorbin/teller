@@ -19,6 +19,7 @@ import {
 } from '../lib/seat-layouts';
 import { CalibrationOverlay } from '../components/CalibrationOverlay';
 import { ConnectionHint } from '../components/ConnectionHint';
+import { CreationBuilder } from '../components/CreationBuilder';
 import { COUNTER_VIEWS } from '../components/counters';
 import { bumped } from '../components/counters/shared';
 import { SEAT_SIZES, SizeFrame, type SeatSize } from '../components/SizeFrame';
@@ -455,6 +456,24 @@ export function SeatView({
               wide ? 'flex min-h-0 flex-1 flex-col' : 'min-h-0 flex-1'
             }
           >
+            {character.data.draft ? (
+              // Mid-creation: the seat asks its questions instead of
+              // showing a sheet that doesn't exist yet (TEL-75). Same
+              // edit rights as the sheet — the seat owns this one
+              // character, draft or done.
+              <CreationBuilder
+                character={character}
+                packs={packs.map((p) => p.pack)}
+                template={template}
+                vocabulary={campaign?.data.vocabulary}
+                onPatch={patch}
+                onName={(name) => {
+                  setCharacter({ ...character, name });
+                  api.patchCharacter(characterId, { name }).catch(() => refetch());
+                }}
+                strip={strip}
+              />
+            ) : (
             <Counters
               big
               name={character.name}
@@ -504,12 +523,13 @@ export function SeatView({
               note={note}
               onChange={(counters) => patch({ counters })}
             />
+            )}
           </div>
 
           {/* Stats are reference, not controls — one dense strip.
               Skipped when the layout places them itself, or the same
               stats would appear twice on the card. */}
-          {fields.length > 0 && !ownsFields(layout) && (
+          {fields.length > 0 && !ownsFields(layout) && !character.data.draft && (
             <div className="flex shrink-0 flex-wrap gap-1">
               {fields.map((field) => (
                 <span
@@ -537,7 +557,7 @@ export function SeatView({
             This is why the guard moved out to wrap the div rather than
             staying on the child: a container sized in advance keeps its
             width whether or not anything ends up inside it. */}
-        {!ownsTags(layout) && (
+        {!ownsTags(layout) && !character.data.draft && (
           <div className={`flex shrink-0 flex-col gap-2 ${wide ? 'w-56' : ''}`}>
             <TagSection
               tags={character.data.tags}

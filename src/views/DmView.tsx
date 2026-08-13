@@ -24,6 +24,7 @@ import { CounterSection } from '../components/CounterSection';
 import { BestiaryPanel } from '../components/BestiaryPanel';
 import { BooksPanel } from '../components/BooksPanel';
 import { BundleImport } from '../components/BundleImport';
+import { CreationDialog } from '../components/CreationDialog';
 import { DisplaysPanel } from '../components/DisplaysPanel';
 import { EncounterPanel } from '../components/EncounterPanel';
 import { EncountersPanel } from '../components/EncountersPanel';
@@ -79,6 +80,7 @@ export function DmView({
   const [bestiary, setBestiary] = useState<SourcedNpc[]>([]);
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
+  const [creating, setCreating] = useState(false);
   const [castFilter, setCastFilter] = useState('all');
   const [castQuery, setCastQuery] = useState('');
   const [notice, setNotice] = useState('');
@@ -534,7 +536,11 @@ export function DmView({
           <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
           {paneNav}
         </div>
-        <DisplaysPanel campaignId={campaignId} characters={characters} />
+        <DisplaysPanel
+          campaignId={campaignId}
+          characters={characters}
+          packs={activePacks}
+        />
       </main>
     );
   }
@@ -1142,11 +1148,27 @@ export function DmView({
                 add
               </button>
             </div>
+            {/* The guided path (TEL-75): the same five saddle-up steps
+                the rail walks, compressed for prep speed. */}
+            <button
+              className="text-sm text-amber-400/90 underline-offset-2 hover:underline"
+              onClick={() => setCreating(true)}
+            >
+              …or saddle up from a trade
+            </button>
           </div>
         </div>
         )}
       </div>
 
+      {creating && (
+        <CreationDialog
+          campaignId={campaignId}
+          packs={activePacks}
+          onDone={refetch}
+          onClose={() => setCreating(false)}
+        />
+      )}
     </main>
   );
 }

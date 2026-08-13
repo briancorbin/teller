@@ -1,0 +1,200 @@
+import type {
+  CatalogItem,
+  CharacterData,
+  Counter,
+  Field,
+  Item,
+  RulesPack,
+} from '../../worker/types';
+import { catalogOf } from '../../worker/items';
+import { newLocalId } from './api';
+
+// Character creation as COMPOSITION (TEL-75): every function here takes
+// ordinary character data and returns ordinary character data — fields,
+// counters, items — with the pack's declarations applied. Nothing is
+// enforced afterward; a created character is a normal character, and
+// skipping the flow to type one by hand stays a first-class path.
+//
+// Two surfaces drive this: the console dialog applies everything at
+// once (`composeAll`); the rail builder applies one step per screen.
+// Same functions either way, so the flows can't drift apart.
+
+type Trade = NonNullable<RulesPack['trades']>[number];
+type Creation = NonNullable<RulesPack['creation']>;
+type Tier = NonNullable<Creation['tiers']>[number];
+
+/** The first pack that declares trades speaks for the system. */
+export function creationOf(packs: RulesPack[]): {
+  trades: Trade[];
+  creation: Creation;
+} | null {
+  const pack = packs.find((p) => p.trades?.length);
+  if (!pack) return null;
+  return { trades: pack.trades!, creation: pack.creation ?? {} };
+}
+
+/** Set a field by label, if the sheet has one. */
+function setField(fields: Field[], label: string, value: string): Field[] {
+  return fields.map((f) => (f.label === label ? { ...f, value } : f));
+}
+
+/** Set a counter's current (and optionally max) by name, if present. */
+function setCounter(
+  counters: Counter[],
+  name: string,
+  current: number,
+  max?: number | null,
+): Counter[] {
+  return counters.map((c) =>
+    c.name === name ? { ...c, current, ...(max !== undefined ? { max } : {}) } : c,
+  );
+}
+
+/** A catalog entry, instanced onto a character (ItemSection's shape). */
+export function instanced(entry: CatalogItem): Item {
+  return {
+    id: newLocalId('itm'),
+    name: entry.name,
+    from: entry.id,
+    fields: [],
+    counters: (entry.counters ?? []).map((c) => ({
+      ...c,
+      id: newLocalId('ctr'),
+    })),
+    kind: entry.kind,
+  };
+}
+
+/**
+ * Step: the trade. Names the trade in its declared field and deals the
+ * quick-build spread into the skill fields — a DEFAULT the skills step
+ * then edits (the printed spread is a suggestion, p. 7).
+ */
+export function applyTrade(
+  data: CharacterData,
+  trade: Trade,
+  creation: Creation,
+): CharacterData {
+  let fields = data.fields;
+  const tradeLabel = creation.map?.trade;
+  if (tradeLabel) fields = setField(fields, tradeLabel, trade.name);
+  for (const [label, pool] of Object.entries(trade.skills ?? {})) {
+    fields = setField(fields, label, pool);
+  }
+  return { ...data, fields };
+}
+
+/** Step: the skill spread, as edited — label → pool string. */
+export function applySkills(
+  data: CharacterData,
+  skills: Record<string, string>,
+): CharacterData {
+  let fields = data.fields;
+  for (const [label, pool] of Object.entries(skills)) {
+    fields = setField(fields, label, pool);
+  }
+  return { ...data, fields };
+}
+
+/**
+ * Step: the tier. Routes the table's numbers onto whatever counters
+ * the pack's `map` names — teller never learns a counter is called
+ * "Wallet ($)" (rule 2). `wallet` may be overridden by the rolled
+ * amount (Tenderfoot rolls; higher tiers take the table's figure).
+ */
+export function applyTier(
+  data: CharacterData,
+  tier: Tier,
+  creation: Creation,
+  walletOverride?: number,
+): CharacterData {
+  let counters = data.counters;
+  const map = creation.map ?? {};
+  const names = (v?: string | string[]) =>
+    v === undefined ? [] : Array.isArray(v) ? v : [v];
+  for (const name of names(map.prestige)) {
+    counters = setCounter(counters, name, tier.prestige);
+  }
+  for (const name of names(map.wallet)) {
+    counters = setCounter(counters, name, walletOverride ?? tier.wallet ?? 0);
+  }
+  for (const name of names(map.scrap)) {
+    counters = setCounter(counters, name, tier.scrap ?? 0);
+  }
+  return { ...data, counters };
+}
+
+/**
+ * Step: what they carry out the door — the ability picks (the chosen
+ * edge + the first Ace-in-the-Hole), the starting weapons, and the
+ * chosen equipment packs. All instanced references; the catalogue
+ * stays where it is.
+ */
+export function applyGear(
+  data: CharacterData,
+  packs: RulesPack[],
+  ids: string[],
+): CharacterData {
+  const { items: catalog } = catalogOf(packs);
+  const have = new Set((data.items ?? []).map((i) => i.from));
+  const added = ids
+    .filter((id) => !have.has(id))
+    .map((id) => catalog.get(id))
+    .filter((e): e is CatalogItem => Boolean(e))
+    .map(instanced);
+  return { ...data, items: [...(data.items ?? []), ...added] };
+}
+
+/** Step: keepsakes land in notes — flavor the sheet carries, editable. */
+export function applyKeepsakes(
+  data: CharacterData,
+  keepsakes: string[],
+): CharacterData {
+  if (!keepsakes.length) return data;
+  const line = `Keepsakes: ${keepsakes.join('; ')}`;
+  return { ...data, notes: data.notes ? `${data.notes}\n${line}` : line };
+}
+
+/** Draw from the naming well. */
+export function gimmeName(creation: Creation): string {
+  const first = creation.names?.first ?? [];
+  const last = creation.names?.last ?? [];
+  const pick = (list: string[]) =>
+    list.length ? list[Math.floor(Math.random() * list.length)] : '';
+  return [pick(first), pick(last)].filter(Boolean).join(' ');
+}
+
+/** Sum a spread like {Charm:'3B',…} in the budget's die. */
+export function spreadTotal(skills: Record<string, string>, die: string): number {
+  return Object.values(skills).reduce((sum, pool) => {
+    const n = parseInt(pool, 10);
+    return sum + (Number.isFinite(n) && pool.endsWith(die) ? n : 0);
+  }, 0);
+}
+
+/** The console path: every step at once. */
+export function composeAll(
+  data: CharacterData,
+  args: {
+    packs: RulesPack[];
+    trade: Trade;
+    creation: Creation;
+    tier: Tier;
+    skills?: Record<string, string>;
+    abilityIds: string[];
+    equipmentPackIds: string[];
+    keepsakes?: string[];
+    wallet?: number;
+  },
+): CharacterData {
+  let next = applyTrade(data, args.trade, args.creation);
+  if (args.skills) next = applySkills(next, args.skills);
+  next = applyTier(next, args.tier, args.creation, args.wallet);
+  next = applyGear(next, args.packs, [
+    ...args.abilityIds,
+    ...(args.creation.weapons ?? []),
+    ...args.equipmentPackIds,
+  ]);
+  next = applyKeepsakes(next, args.keepsakes ?? []);
+  return next;
+}

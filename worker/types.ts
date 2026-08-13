@@ -233,6 +233,13 @@ export type CharacterData = {
   /** Things the character carries — see `Item`. Absent means none. */
   items?: Item[];
   /**
+   * Mid-creation. A seat pointed at a draft renders the builder
+   * instead of the sheet; the console shows "being built". Cleared by
+   * the flow's last step — after that this is an ordinary character
+   * and nothing remembers it was born guided (TEL-75).
+   */
+  draft?: boolean;
+  /**
    * The blueprint this was stamped from — PROVENANCE, not a live link.
    * Editing the blueprint later never reaches back into creatures
    * already on the table; this only answers "is saving this an update
@@ -1130,6 +1137,13 @@ export type RulesPack = {
   creation?: {
     page?: number;
     start?: { abilities?: number; aceInTheHole?: number };
+    /**
+     * The skill-assignment budget, when this system deals dice out:
+     * `total` dice of face `die` across the sheet's skill fields,
+     * `min`–`max` per skill. The trade's own spread is the suggested
+     * quick build; this is what makes it editable at creation.
+     */
+    skills?: { total: number; min: number; max: number; die: string };
     /**
      * Where the tier numbers LAND — creation-schema key → this system's
      * own field/counter names. Teller never knows a counter is called

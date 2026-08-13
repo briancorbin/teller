@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { Character, Display, DisplayRole } from '../../worker/types';
+import type {
+  Character,
+  Display,
+  DisplayRole,
+  RulesPack,
+} from '../../worker/types';
 import { api } from '../lib/api';
+import { applyGear, applyTier, creationOf } from '../lib/creation';
 import { PANES } from '../lib/panes';
 import { SEAT_LAYOUTS, layoutOf } from '../lib/seat-layouts';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
@@ -35,9 +41,11 @@ function isLive(display: Display): boolean {
 export function DisplaysPanel({
   campaignId,
   characters,
+  packs = [],
 }: {
   campaignId: string;
   characters: Character[];
+  packs?: RulesPack[];
 }) {
   // Seats and badges belong to players. A deployed foe is a character
   // too (kind 'npc'), but it never gets a screen — nobody sits at
@@ -106,6 +114,39 @@ export function DisplaysPanel({
   const patch = (id: string, patchBody: Parameters<typeof api.patchDisplay>[1]) => {
     setDisplays((ds) => ds.map((d) => (d.id === id ? { ...d, ...patchBody } : d)));
     api.patchDisplay(id, patchBody).then(load).catch(load);
+  };
+
+  // "New character…" on a seat: stamp a DRAFT and point the screen at
+  // it. The tier is the Warden's call HERE — a posse decision, made
+  // once, never asked of the player (TEL-75) — and the stamp writes it
+  // as ordinary counters plus the starting arms, so the builder can
+  // derive it and the player walks straight into "what's yer trade?".
+  const creation = creationOf(packs);
+  const [stamping, setStamping] = useState<string | null>(null);
+  const [stampTier, setStampTier] = useState('');
+
+  const stamp = async (displayId: string) => {
+    const tiers = creation?.creation.tiers ?? [];
+    const tier = tiers.find((t) => t.name === stampTier) ?? tiers[0];
+    try {
+      const created = await api.createCharacter(campaignId, 'Drifter', 'pc');
+      let data: typeof created.data = { ...created.data, draft: true };
+      if (creation && tier) {
+        data = applyTier(data, tier, creation.creation);
+        data = applyGear(data, packs, creation.creation.weapons ?? []);
+      }
+      await api.patchCharacter(created.id, { data });
+      // Spread the display's existing params — the stamp changes WHO
+      // the seat shows, never how the seat is set up.
+      const display = displays.find((d) => d.id === displayId);
+      patch(displayId, {
+        params: { ...display?.params, characterId: created.id } as never,
+      });
+      setStamping(null);
+      setError('');
+    } catch (e) {
+      setError(String(e instanceof Error ? e.message : e));
+    }
   };
 
   return (
@@ -278,20 +319,51 @@ export function DisplaysPanel({
               {role?.needsCharacter && (
                 <select
                   className={input}
-                  value={d.params.characterId ?? ''}
-                  onChange={(e) =>
+                  value={stamping === d.id ? '__new' : (d.params.characterId ?? '')}
+                  onChange={(e) => {
+                    if (e.target.value === '__new') {
+                      setStamping(d.id);
+                      return;
+                    }
+                    setStamping(null);
                     patch(d.id, {
                       params: { ...d.params, characterId: e.target.value || null },
-                    })
-                  }
+                    });
+                  }}
                 >
                   <option value="">— whose? —</option>
                   {pcs.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
+                      {c.data.draft ? ' (being built)' : ''}
                     </option>
                   ))}
+                  {d.role === 'seat' && creation && (
+                    <option value="__new">+ new character…</option>
+                  )}
                 </select>
+              )}
+
+              {stamping === d.id && (
+                <span className="flex items-center gap-2">
+                  {(creation?.creation.tiers?.length ?? 0) > 0 && (
+                    <select
+                      className={input}
+                      value={stampTier || creation!.creation.tiers![0].name}
+                      onChange={(e) => setStampTier(e.target.value)}
+                      aria-label="the posse's starting tier"
+                    >
+                      {creation!.creation.tiers!.map((t) => (
+                        <option key={t.name} value={t.name}>
+                          {t.name} · {t.prestige} Prestige
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button className={btnPrimary} onClick={() => void stamp(d.id)}>
+                    saddle up
+                  </button>
+                </span>
               )}
 
               {/* The arrangement is the console's call now — the seat

@@ -754,7 +754,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
     // The DM may edit anyone; a seat may edit the one character it was
     // pointed at. Nothing here consults a secret — only the assignment.
-    const isDm = dm(character.campaignId);
     if (!canEditCharacter(auth, character.campaignId, character.id)) {
       return err('not your character', 401);
     }
@@ -785,8 +784,14 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       tags: patch.tags ?? character.data.tags,
       notes: patch.notes ?? character.data.notes,
       items: patch.items ?? character.data.items,
+      // `draft` is flow state, not provenance — the builder's last step
+      // clears it, so an explicit false must land (?? would eat it).
+      draft: patch.draft !== undefined ? patch.draft : character.data.draft,
     };
-    const name = (isDm ? body.name : undefined) ?? character.name;
+    // A player may name their OWN character — the builder's last step
+    // asks "what do they call ya?" from the seat, and the seat already
+    // holds edit rights over exactly this one character (rule 7).
+    const name = body.name ?? character.name;
 
     await env.DB.prepare(
       "UPDATE characters SET name = ?, data = ?, updated_at = datetime('now') WHERE id = ?",
