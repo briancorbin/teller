@@ -647,7 +647,11 @@ export function Sheet({
     // room for five rungs a row, the spend menu wants two columns of
     // buy buttons, and the loose tallies pocket together in one slim
     // tile instead of a grid of orphans.
-    <div className="flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap items-stretch gap-2 overflow-x-auto">
+    // overflow-y-hidden is load-bearing: `overflow-x: auto` flips the
+    // other axis from `visible` to `auto` too (CSS spec), so a tile
+    // taller than the shelf would grow the strip a vertical scrollbar.
+    // Mounted glass never scrolls — the tall tile clips instead.
+    <div className="flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap items-stretch gap-2 overflow-x-auto overflow-y-hidden">
       {talentBlock && (
         <div className="flex flex-[1_0_22rem] snap-start flex-col self-stretch">
           {talentBlock}
@@ -915,7 +919,7 @@ export function Sheet({
       key={resetKey}
       className={`flex min-h-0 gap-2 ${
         strip
-          ? 'snap-x snap-mandatory flex-1 flex-nowrap items-stretch overflow-x-auto'
+          ? 'snap-x snap-mandatory flex-1 flex-nowrap items-stretch overflow-x-auto overflow-y-hidden'
           : 'flex-wrap content-start'
       }`}
     >
