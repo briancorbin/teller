@@ -182,8 +182,11 @@ from. A trade **references the catalogue instead of carrying it**:
 Again, every value is invented — the shape is public, the contents are
 the book's. `skills` is keyed by whatever field labels the system's
 sheet already uses; `abilities`/`aceInTheHole` are catalog item ids
-(`kind: "ability"`, `group` = the trade's name). `creation.start`
-counts the picks a new character makes; `creation.tiers` is the
+(`kind: "ability"`, `group` = the trade's name), **in the printed
+order — order is load-bearing**: `creation.start` counts how many of
+each list a new character begins with, taken from the FRONT, preset
+rather than picked (further unlocks are Prestige spends);
+`creation.tiers` is the
 starting-loadout table for a posse beginning at higher Prestige (its
 `packs` column counts equipment-pack picks).
 

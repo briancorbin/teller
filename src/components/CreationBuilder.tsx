@@ -83,8 +83,7 @@ export function CreationBuilder({
   const tradeLabel = creation.map?.trade;
   const tradeName = data.fields.find((f) => f.label === tradeLabel)?.value ?? '';
   const trade = trades.find((t) => t.name === tradeName);
-  const hasAbility = (data.items ?? []).some((i) => i.kind === 'ability');
-  const derived = !trade ? 0 : !hasAbility ? 2 : 3;
+  const derived = !trade ? 0 : 1;
   const [step, setStep] = useState(derived);
   const [confirming, setConfirming] = useState('');
   const [spread, setSpread] = useState<Record<string, string> | null>(null);
@@ -107,10 +106,13 @@ export function CreationBuilder({
     0,
   );
 
+  // No ability-pick step, deliberately: the printed sheet presets the
+  // trade's FIRST ability (only slot with no Prestige tag) and AitH 1.
+  // Choosing abilities is what SPENDING Prestige is for (4 apiece, the
+  // menu already prices it) — a higher-tier posse shops after creation.
   const steps = [
     'trade',
     'skills',
-    'edge',
     'gear',
     ...(rollsWallet ? ['wallet'] : []),
     ...(creation.keepsakes?.length ? ['keepsake'] : []),
@@ -172,8 +174,22 @@ export function CreationBuilder({
                   </span>
                   {open && (
                     <>
-                      <span className="mt-1 text-xs text-stone-400">
+                      {/* What you START with — the sheet's preset: the
+                          first ability and AitH 1. The rest are named
+                          so the choice of trade is informed, and they
+                          unlock with Prestige (4 apiece, per the book's
+                          own cost table). */}
+                      <span className="mt-1 text-xs text-stone-300">
+                        starts with{' '}
+                        {[t.abilities?.[0], t.aceInTheHole?.[0]]
+                          .map((id) => (id ? catalog.get(id)?.name : null))
+                          .filter(Boolean)
+                          .join(' + ')}
+                      </span>
+                      <span className="text-[10px] text-stone-500">
+                        later, with Prestige:{' '}
                         {(t.abilities ?? [])
+                          .slice(1)
                           .map((id) => catalog.get(id)?.name)
                           .filter(Boolean)
                           .join(' · ')}
@@ -182,7 +198,16 @@ export function CreationBuilder({
                         className="mt-1 rounded-md bg-amber-600 px-3 py-2 text-center text-sm font-semibold text-stone-950"
                         onClick={(e) => {
                           e.stopPropagation();
-                          onPatch(applyTrade(data, t, creation));
+                          // Trade + its preset abilities in one write.
+                          onPatch(
+                            applyGear(
+                              applyTrade(data, t, creation),
+                              packs,
+                              [t.abilities?.[0], t.aceInTheHole?.[0]].filter(
+                                (x): x is string => Boolean(x),
+                              ),
+                            ),
+                          );
                           setSpread(null);
                           setConfirming('');
                           setStep(1);
@@ -275,43 +300,6 @@ export function CreationBuilder({
               that's my spread
             </button>
           </div>
-        </>
-      )}
-
-      {here === 'edge' && trade && (
-        <>
-          {heading(
-            'Pick yer edge',
-            `one to start — the rest unlock with Prestige · ${
-              trade.aceInTheHole?.length ? 'your first Ace-in-the-Hole comes along free' : ''
-            }`,
-          )}
-          {shelf(
-            (trade.abilities ?? []).map((id) => {
-              const a = catalog.get(id);
-              if (!a) return null;
-              return (
-                <button
-                  key={id}
-                  className={`${stepBtn} ${off} ${tile('flex flex-col gap-1')}`}
-                  onClick={() => {
-                    onPatch(
-                      applyGear(data, packs, [
-                        id,
-                        trade.aceInTheHole?.[0] ?? '',
-                      ].filter(Boolean)),
-                    );
-                    next();
-                  }}
-                >
-                  <span className="font-serif text-base text-stone-100">{a.name}</span>
-                  <span className="text-xs text-stone-400">
-                    {a.fields?.find((f) => f.key === 'effect')?.value ?? ''}
-                  </span>
-                </button>
-              );
-            }),
-          )}
         </>
       )}
 

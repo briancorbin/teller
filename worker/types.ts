@@ -1136,6 +1136,12 @@ export type RulesPack = {
    */
   creation?: {
     page?: number;
+    /**
+     * How many of each list a new character STARTS with — the first N
+     * in declared order, preset, never picked (WiW's sheet stamps a
+     * Prestige cost on every slot but the first; choosing is what
+     * spending Prestige is for, and the spend menu prices it).
+     */
     start?: { abilities?: number; aceInTheHole?: number };
     /**
      * The skill-assignment budget, when this system deals dice out:

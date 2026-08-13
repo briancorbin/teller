@@ -35,7 +35,6 @@ export function CreationDialog({
 
   const [tradeId, setTradeId] = useState('');
   const [tierName, setTierName] = useState(tiers[0]?.name ?? '');
-  const [abilityId, setAbilityId] = useState('');
   const [eqPacks, setEqPacks] = useState<string[]>([]);
   const [skills, setSkills] = useState<Record<string, string> | null>(null);
   const [keeps, setKeeps] = useState<string[]>([]);
@@ -51,15 +50,6 @@ export function CreationDialog({
   const spent = budget ? spreadTotal(spread, budget.die) : 0;
   const packLimit = tier?.packs ?? 1;
 
-  const abilityEntries = useMemo(() => {
-    const all = new Map(
-      packs.flatMap((p) => (p.catalog?.items ?? []).map((e) => [e.id, e] as const)),
-    );
-    return (trade?.abilities ?? [])
-      .map((id) => all.get(id))
-      .filter((e): e is NonNullable<typeof e> => Boolean(e));
-  }, [packs, trade]);
-
   const eqPackEntries = useMemo(() => {
     const all = new Map(
       packs.flatMap((p) => (p.catalog?.items ?? []).map((e) => [e.id, e] as const)),
@@ -71,9 +61,22 @@ export function CreationDialog({
 
   const pickTrade = (id: string) => {
     setTradeId(id);
-    setAbilityId('');
     setSkills(null); // back to the new trade's quick build
   };
+
+  // The sheet presets the starting abilities: the trade's FIRST regular
+  // (the only slot with no Prestige tag) and AitH 1. Choosing is what
+  // spending Prestige is for — the menu prices Unlock Ability at the
+  // book's own figure, so a higher-tier posse shops after creation.
+  const starters = useMemo(() => {
+    const all = new Map(
+      packs.flatMap((p) => (p.catalog?.items ?? []).map((e) => [e.id, e] as const)),
+    );
+    return [trade?.abilities?.[0], trade?.aceInTheHole?.[0]]
+      .filter((x): x is string => Boolean(x))
+      .map((id) => all.get(id))
+      .filter((e): e is NonNullable<typeof e> => Boolean(e));
+  }, [packs, trade]);
 
   const bump = (label: string, delta: number) => {
     if (!budget) return;
@@ -98,7 +101,9 @@ export function CreationDialog({
         creation,
         tier,
         skills: skills ?? undefined,
-        abilityIds: [abilityId, trade.aceInTheHole?.[0] ?? ''].filter(Boolean),
+        abilityIds: [trade.abilities?.[0], trade.aceInTheHole?.[0]].filter(
+          (x): x is string => Boolean(x),
+        ),
         equipmentPackIds: eqPacks,
         keepsakes: keeps,
         wallet: wallet.trim() === '' ? undefined : Number(wallet),
@@ -216,32 +221,25 @@ export function CreationDialog({
           </div>
         )}
 
-        {/* Step: the edge — one ability; AitH 1 rides along */}
-        {trade && (
+        {/* The preset starting abilities — shown, never chosen. */}
+        {trade && starters.length > 0 && (
           <div className="space-y-1">
-            <span className={sectionLabel}>starting ability</span>
+            <span className={sectionLabel}>starts with</span>
             <div className="grid gap-1.5 sm:grid-cols-2">
-              {abilityEntries.map((a) => (
-                <button
+              {starters.map((a) => (
+                <div
                   key={a.id}
-                  className={`rounded-lg border p-2 text-left text-xs transition-colors ${
-                    abilityId === a.id
-                      ? 'border-amber-500 bg-amber-950/40'
-                      : 'border-stone-700 bg-stone-900 hover:border-stone-500'
-                  }`}
-                  onClick={() => setAbilityId(a.id)}
+                  className="rounded-lg border border-stone-700 bg-stone-900 p-2 text-left text-xs"
                 >
                   <div className="text-sm text-stone-100">{a.name}</div>
                   <div className="mt-0.5 text-stone-400">
                     {a.fields?.find((f) => f.key === 'effect')?.value ?? ''}
                   </div>
-                </button>
+                </div>
               ))}
             </div>
             <p className="text-[10px] text-stone-600">
-              {trade.aceInTheHole?.length
-                ? 'the first Ace-in-the-Hole comes with the trade'
-                : ''}
+              further abilities unlock with Prestige — the spend menu prices them
             </p>
           </div>
         )}
