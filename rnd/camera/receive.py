@@ -113,9 +113,13 @@ state = {
     'rings': [],           # (x, y) the table page is drawing NOW
     'prev_rings': [],      # and the set before it — masked too, so a
                            # ring that just moved doesn't ghost-detect
+    # The crop is a PROPOSAL a human confirms, never an auto-apply
+    # (rule 1 in miniature): per-frame renegotiation chased its own
+    # tail and chopped markers off. 'crop_auto' is what the latest
+    # good solve would crop to; 'crop' is what Eye actually gets, and
+    # only the status page's lock/clear buttons ever set it.
     'crop': None,          # [fx, fy, fw, fh] of the FULL sensor frame
-                           # where the screen sits — handed back to Eye
-                           # so it stops photographing the room
+    'crop_auto': None,     # the solver's current proposal
 }
 
 # The phone is a puppet: Eye polls /control and applies whatever this
@@ -148,7 +152,10 @@ PAGE = """<!doctype html>
   <a href="#" onclick="return set('shoot=1')" style="color:#7ab">capture once</a> ·
   camera <a href="#" onclick="return set('lock=on')" style="color:#7ab">lock</a>/<a
     href="#" onclick="return set('lock=off')" style="color:#7ab">unlock</a> ·
-  <a href="#" onclick="return act('/rebase')" style="color:#7ab">rebase</a>
+  <a href="#" onclick="return act('/rebase')" style="color:#7ab">rebase</a> ·
+  crop <b id="crop">…</b>
+  <a href="#" onclick="return set('crop=lock')" style="color:#7ab">lock proposed</a>/<a
+    href="#" onclick="return set('crop=clear')" style="color:#7ab">full frame</a>
 </div>
 <img id="view" style="width:100%">
 <script>
@@ -164,6 +171,10 @@ PAGE = """<!doctype html>
       document.getElementById('line').textContent = s.line;
       document.getElementById('mode').textContent =
         (s.auto ? 'auto' : 'paused') + ' @ ' + s.interval + 's';
+      const fmt = (c) => c ? c.map(v => v.toFixed(2)).join(',') : null;
+      document.getElementById('crop').textContent =
+        (s.crop ? 'LOCKED [' + fmt(s.crop) + ']' : 'full') +
+        (s.crop_auto ? ' · proposed [' + fmt(s.crop_auto) + ']' : '');
       if (s.frames !== lastFrame) {
         lastFrame = s.frames;
         const img = new Image();
@@ -360,10 +371,9 @@ def process(jpeg: bytes, ts: str,
     try:
         fresh, err, ids, seen = solve(img, SW, SH)
     except SystemExit as e:  # calibrate's helpers bail via sys.exit
-        # Markers lost — likely a stale crop after the phone moved. Tell
-        # Eye to go back to full frame; the next solve re-derives it.
-        with state_lock:
-            state['crop'] = None
+        # Markers lost. The locked crop stays locked — a hand over the
+        # table must not kick Eye back to full frame; if the crop
+        # itself is bad, the human clears it from the status page.
         # Still ask the table to SHOW markers — the first frame of a
         # session fails exactly because they aren't up yet, and pushing
         # on failure is what bootstraps the loop out of that deadlock.
@@ -396,7 +406,7 @@ def process(jpeg: bytes, ts: str,
         cal_note = f' · inch card {cal[0]}×{cal[1]} px/in — calibrated, remove card'
 
     with state_lock:
-        state['crop'] = crop_for(H, img.shape[1], img.shape[0], applied)
+        state['crop_auto'] = crop_for(H, img.shape[1], img.shape[0], applied)
         state['latest_rect'] = rect
         state['frames'] += 1
         if state['baseline'] is None:
@@ -479,7 +489,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path == '/status.json':
             with state_lock:
-                body = {'line': state['line'], 'frames': state['frames']}
+                body = {
+                    'line': state['line'],
+                    'frames': state['frames'],
+                    'crop': state['crop'],
+                    'crop_auto': state['crop_auto'],
+                }
             with control_lock:
                 body['auto'] = control['auto']
                 body['interval'] = control['interval']
@@ -499,6 +514,12 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith('/set?'):
             from urllib.parse import parse_qs, urlparse
             q = parse_qs(urlparse(self.path).query)
+            if 'crop' in q:
+                with state_lock:
+                    if q['crop'][0] == 'lock':
+                        state['crop'] = state['crop_auto']
+                    else:  # 'clear' — back to full frame
+                        state['crop'] = None
             with control_lock:
                 if 'interval' in q:
                     control['interval'] = max(0.5, float(q['interval'][0]))
