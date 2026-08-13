@@ -179,45 +179,62 @@ export function CreationBuilder({
           and large, for the whole flow. The bar tints to the trade's
           colour the moment one is chosen. */}
       <div
-        className="relative flex shrink-0 flex-col items-center rounded-md border px-12 py-1.5"
+        className="relative flex shrink-0 items-center gap-2.5 rounded-md border py-1.5 pl-14 pr-14"
         style={{ borderColor: `${accent ?? '#f59e0b'}66` }}
       >
         {/* Walking back is free: every step's commit REPLACES what it
             wrote (abilities swap with the trade, bundles swap on
             re-pack, the keepsakes line rewrites), so second thoughts
-            never double up. */}
+            never double up. The bar reserves its gutter whether or not
+            the button is there, so the rules never run under it. */}
         {step > 0 && (
           <button
-            className="absolute left-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
+            className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border transition-colors"
+            style={{
+              borderColor: `${accent ?? '#f59e0b'}66`,
+              color: accent ?? '#f59e0b',
+              background: `${accent ?? '#f59e0b'}14`,
+            }}
             aria-label="back a step"
             onClick={() => setStep((s) => Math.max(0, s - 1))}
           >
-            ← back
+            <svg
+              viewBox="0 0 24 24"
+              className="h-5 w-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.75}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M14.5 5.5 8 12l6.5 6.5" />
+            </svg>
           </button>
         )}
-        <div className="flex w-full items-center gap-2.5">
-          <span
-            className="h-px flex-1"
-            style={{ background: `${accent ?? '#f59e0b'}55` }}
-          />
+        <span
+          className="h-px flex-1"
+          style={{ background: `${accent ?? '#f59e0b'}55` }}
+        />
+        {/* The rules flank the whole block — question AND caption — so
+            the bar reads as one centered plate rather than a ruled
+            title with a line of small print hung underneath. */}
+        <div className="flex flex-col items-center">
           <span
             className="whitespace-nowrap font-serif text-[1.25rem] font-bold uppercase leading-tight tracking-[0.12em]"
             style={{ color: accent ?? '#f59e0b' }}
           >
             {QUESTIONS[here]}
           </span>
-          <span
-            className="h-px flex-1"
-            style={{ background: `${accent ?? '#f59e0b'}55` }}
-          />
+          {CAPTIONS[here] && (
+            <p className="font-serif text-[0.7rem] italic leading-tight text-stone-500">
+              {CAPTIONS[here]}
+            </p>
+          )}
         </div>
-        {/* The caption, centered beneath — the sheet's own italic
-            instruction-line treatment. */}
-        {CAPTIONS[here] && (
-          <p className="font-serif text-[0.7rem] italic leading-tight text-stone-500">
-            {CAPTIONS[here]}
-          </p>
-        )}
+        <span
+          className="h-px flex-1"
+          style={{ background: `${accent ?? '#f59e0b'}55` }}
+        />
       </div>
       {here === 'trade' && (
         <>
