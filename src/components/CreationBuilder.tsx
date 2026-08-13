@@ -15,7 +15,6 @@ import {
   spreadTotal,
   withoutInstanced,
 } from '../lib/creation';
-import { SheetHeader } from './sheet/SheetHeader';
 import { SheetPanel } from './sheet/SheetPanel';
 
 // "What's yer trade?" — the rail builder (TEL-75).
@@ -177,15 +176,30 @@ export function CreationBuilder({
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col gap-2 p-1">
-      <SheetHeader
-        name={QUESTIONS[here]}
-        trade={
-          trade
-            ? { key: 'trade', label: 'Trade', value: trade.name }
-            : undefined
-        }
-        accent={accent}
-      />
+      {/* The screen's question, worn the way the finished sheet wears
+          its header: the same bordered bar, the same ruled hairlines,
+          the plate treatment — but the QUESTION is the plate, centered
+          and large, for the whole flow. The bar tints to the trade's
+          colour the moment one is chosen. */}
+      <div
+        className="flex shrink-0 items-center gap-2.5 rounded-md border px-3 py-1.5"
+        style={{ borderColor: `${accent ?? '#f59e0b'}66` }}
+      >
+        <span
+          className="h-px flex-1"
+          style={{ background: `${accent ?? '#f59e0b'}55` }}
+        />
+        <span
+          className="whitespace-nowrap font-serif text-[1.25rem] font-bold uppercase leading-tight tracking-[0.12em]"
+          style={{ color: accent ?? '#f59e0b' }}
+        >
+          {QUESTIONS[here]}
+        </span>
+        <span
+          className="h-px flex-1"
+          style={{ background: `${accent ?? '#f59e0b'}55` }}
+        />
+      </div>
       {here === 'trade' && (
         <>
           {heading('tap one to read it — this is who you are at the table')}
