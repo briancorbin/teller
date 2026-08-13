@@ -104,6 +104,10 @@ export function CreationBuilder({
   const spent = budget ? spreadTotal(skills, budget.die) : 0;
   /** Dice still in hand. The pool is the constraint the screen shows. */
   const left = budget ? budget.total - spent : 0;
+  /** Already sitting on the printed numbers — nothing for reset to do. */
+  const atTradeSpread = Object.entries(trade?.skills ?? {}).every(
+    ([label, pool]) => skills[label] === pool,
+  );
   // What the book says each skill is FOR. Keyed off the trade's own
   // spread, so the labels asked about are the ones this sheet has.
   const skillText = useMemo(
@@ -526,6 +530,23 @@ export function CreationBuilder({
               the spread is legal — which is the same moment the button
               unlocks, so there's one thing to look at, not two. */}
           <div className="flex shrink-0 items-center justify-center gap-4">
+            {/* Back to what the trade deals. `spread` is an OVERRIDE
+                over `trade.skills`, so clearing it is the whole reset
+                — there's no second copy of the printed numbers to
+                drift from the one the trade already carries. Dead
+                while it IS the printed spread, so it never looks like
+                a button that does nothing. */}
+            <button
+              className="rounded-md border px-3 py-2 text-xs uppercase tracking-widest transition-colors disabled:opacity-30"
+              style={{
+                borderColor: `${accent ?? '#f59e0b'}66`,
+                color: accent ?? '#f59e0b',
+              }}
+              disabled={!spread || atTradeSpread}
+              onClick={() => setSpread(null)}
+            >
+              the {trade.name}'s spread
+            </button>
             {budget && (
               <div
                 className="flex items-center gap-1.5"
