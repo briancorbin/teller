@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 5,
+  version: 7,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
@@ -202,12 +202,21 @@ const wiw: SystemTemplate = {
       counters: ['Wallet ($)', 'Scrap (pcs)', 'Supplies'],
     },
   ],
-  // The pocket chips: these three render compact — glyph, name, value —
-  // in one slim tile at Inventory's left edge, not as full panels.
+  // Which glyph a named thing wears. The counters here become pocket
+  // chips — glyph, name, value — in one slim tile at Inventory's left
+  // edge rather than full panels; the four skills wear theirs on the
+  // creation cards. Same map either way: a name, a mark, and no code
+  // that knows what "Charm" is (rule 2).
   icons: {
     'Wallet ($)': 'coin',
     'Scrap (pcs)': 'cog',
     Supplies: 'satchel',
+    Charm: 'hat',
+    Finesse: 'card',
+    Intuition: 'track',
+    Nerve: 'horseshoe',
+    // The Black die, keyed by its own name: this table spends bullets.
+    B: 'bullet',
   },
   // Talents (p. 32): 4 Prestige buys a category — a skill, a weapon
   // family, Defense, Mechs, Forstalls — and that category rerolls

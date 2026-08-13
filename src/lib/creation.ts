@@ -4,6 +4,7 @@ import type {
   Counter,
   Field,
   Item,
+  PackEntry,
   RulesPack,
 } from '../../worker/types';
 import { catalogOf } from '../../worker/items';
@@ -56,6 +57,37 @@ export function creationOf(packs: RulesPack[]): {
  */
 export function packArtUrl(key: string, version: number): string {
   return `/api/maps/${key}?v=${version}`;
+}
+
+/**
+ * What the pack says about each skill, keyed by the sheet's own label.
+ *
+ * Found by CONTENT, not by section title: the section that speaks for
+ * the skills is the one that names the most of them, which is true of
+ * a pack in any language and any arrangement. Matching a title like
+ * "Skills" would be teller learning a game concept (rule 2), and
+ * matching a bare entry name anywhere risks a status called "Nerve"
+ * answering for the skill called Nerve.
+ */
+export function skillLore(
+  packs: RulesPack[],
+  labels: string[],
+): Map<string, PackEntry> {
+  const want = labels.map((l) => l.toLowerCase());
+  let best: PackEntry[] = [];
+  let bestHits = 0;
+  for (const pack of packs) {
+    for (const section of pack.sections ?? []) {
+      const hits = (section.entries ?? []).filter((e) =>
+        want.includes(e.name.toLowerCase()),
+      );
+      if (hits.length > bestHits) {
+        bestHits = hits.length;
+        best = hits;
+      }
+    }
+  }
+  return new Map(best.map((e) => [e.name.toLowerCase(), e]));
 }
 
 /** Set a field by label, if the sheet has one. */

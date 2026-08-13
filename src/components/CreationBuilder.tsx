@@ -13,10 +13,12 @@ import {
   creationOf,
   gimmeName,
   packArtUrl,
+  skillLore,
   spreadTotal,
   withoutInstanced,
 } from '../lib/creation';
 import { SheetPanel } from './sheet/SheetPanel';
+import { Glyph } from './sheet/glyphs';
 
 // "What's yer trade?" — the rail builder (TEL-75).
 //
@@ -100,6 +102,14 @@ export function CreationBuilder({
   const budget = creation.skills;
   const skills = spread ?? trade?.skills ?? {};
   const spent = budget ? spreadTotal(skills, budget.die) : 0;
+  /** Dice still in hand. The pool is the constraint the screen shows. */
+  const left = budget ? budget.total - spent : 0;
+  // What the book says each skill is FOR. Keyed off the trade's own
+  // spread, so the labels asked about are the ones this sheet has.
+  const skillText = useMemo(
+    () => skillLore(packs, Object.keys(trade?.skills ?? skills)),
+    [packs, trade, skills],
+  );
 
   // The wallet roll: only a fresh Tenderfoot rolls; the faces are the
   // system's dice, the prices are the pack's.
@@ -392,76 +402,166 @@ export function CreationBuilder({
       )}
 
       {here === 'skills' && trade && (
-        <>
-          {shelf(
-            Object.entries(skills).map(([label, pool]) => (
-              <div
-                key={label}
-                className={`${off} ${tile('flex flex-col items-center justify-center gap-2 rounded-lg border p-3')}`}
-              >
-                <span className="text-xs uppercase tracking-widest text-stone-400">
-                  {label}
-                </span>
-                <div className="flex items-center gap-3">
-                  {/* Functional updates, both: two taps inside one
-                      frame must BOTH count — a drummed finger on the
-                      bar would otherwise lose a die. */}
-                  <button
-                    className="h-12 min-w-12 rounded-lg bg-stone-800 text-2xl active:bg-amber-700"
-                    aria-label={`fewer ${label} dice`}
-                    onClick={() => {
-                      if (!budget) return;
-                      setSpread((prev) => {
-                        const cur = prev ?? trade?.skills ?? {};
-                        const n = parseInt(cur[label] ?? '0', 10) || 0;
-                        const v = Math.max(budget.min, n - 1);
-                        return { ...cur, [label]: `${v}${budget.die}` };
-                      });
-                    }}
-                  >
-                    −
-                  </button>
-                  <span className="font-mono text-2xl text-stone-100">{pool}</span>
-                  <button
-                    className="h-12 min-w-12 rounded-lg bg-stone-800 text-2xl active:bg-amber-700"
-                    aria-label={`more ${label} dice`}
-                    onClick={() => {
-                      if (!budget) return;
-                      setSpread((prev) => {
-                        const cur = prev ?? trade?.skills ?? {};
-                        const n = parseInt(cur[label] ?? '0', 10) || 0;
-                        const v = Math.min(budget.max, n + 1);
-                        return { ...cur, [label]: `${v}${budget.die}` };
-                      });
-                    }}
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-            )),
-          )}
-          <div className="flex shrink-0 items-center gap-3">
+        <div
+          className="flex min-h-0 flex-1 flex-col gap-2"
+          style={
+            (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
+          }
+        >
+          {/* Not the shelf. There are exactly as many skills as the
+              sheet has, they all matter equally, and nothing here is
+              worth panning past — so they divide the glass evenly
+              instead of queueing at 19rem apiece and leaving a third
+              of the bar empty. Columns come from the COUNT, so a
+              system with three skills or five still fills its width. */}
+          <div
+            className={
+              strip
+                ? 'grid min-h-0 flex-1 gap-2'
+                : 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto'
+            }
+            style={
+              strip
+                ? {
+                    gridTemplateColumns: `repeat(${
+                      Object.keys(skills).length || 1
+                    }, minmax(0, 1fr))`,
+                  }
+                : undefined
+            }
+          >
+            {Object.entries(skills).map(([label, pool]) => {
+              const lore = skillText.get(label.toLowerCase());
+              const glyph = template?.icons?.[label];
+              return (
+                <SheetPanel
+                  key={label}
+                  title={label}
+                  // The sheet's instruction line, and the pack fills
+                  // it — this is the book talking about the skill, so
+                  // it lives in the pack and never in here (rule 4).
+                  note={lore?.text}
+                  fill
+                  className={off}
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    {glyph && (
+                      <Glyph
+                        name={glyph}
+                        className="h-9 w-9 text-[color:var(--sheet-accent,#f59e0b)]"
+                      />
+                    )}
+                    {/* What the book says you DO with it — four verbs,
+                        set like the sheet's own small print. */}
+                    {lore?.meta && (
+                      <span className="text-center text-[0.65rem] uppercase tracking-[0.18em] text-stone-500">
+                        {lore.meta}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-3">
+                      {/* Functional updates, both: two taps inside one
+                          frame must BOTH count — a drummed finger on the
+                          bar would otherwise lose a die. */}
+                      <button
+                        className="h-12 min-w-12 rounded-lg bg-stone-800 text-2xl active:bg-amber-700"
+                        aria-label={`fewer ${label} dice`}
+                        onClick={() => {
+                          if (!budget) return;
+                          setSpread((prev) => {
+                            const cur = prev ?? trade?.skills ?? {};
+                            const n = parseInt(cur[label] ?? '0', 10) || 0;
+                            const v = Math.max(budget.min, n - 1);
+                            return { ...cur, [label]: `${v}${budget.die}` };
+                          });
+                        }}
+                      >
+                        −
+                      </button>
+                      <span className="font-mono text-2xl text-stone-100">
+                        {pool}
+                      </span>
+                      <button
+                        className="h-12 min-w-12 rounded-lg bg-stone-800 text-2xl active:bg-amber-700 disabled:bg-stone-900 disabled:text-stone-700"
+                        aria-label={`more ${label} dice`}
+                        // Nothing to deal means nothing to add, and the
+                        // button that would break the pool isn't live.
+                        disabled={left === 0}
+                        onClick={() => {
+                          if (!budget) return;
+                          setSpread((prev) => {
+                            const cur = prev ?? trade?.skills ?? {};
+                            // The pool check reads CUR, not the `left`
+                            // this handler closed over. A drummed
+                            // finger fires several taps inside one
+                            // frame, and every one of them sees the
+                            // same stale `left` — which is how twelve
+                            // rapid taps spent thirteen dice and left
+                            // the footer reading "-1 to place".
+                            const used = spreadTotal(cur, budget.die);
+                            const n = parseInt(cur[label] ?? '0', 10) || 0;
+                            if (used >= budget.total || n >= budget.max) {
+                              return cur;
+                            }
+                            return { ...cur, [label]: `${n + 1}${budget.die}` };
+                          });
+                        }}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                </SheetPanel>
+              );
+            })}
+          </div>
+          {/* The pool as a bar that FILLS. "12/12 dice used" asks you
+              to do the arithmetic; twelve dice lighting up as they land
+              on skills IS the arithmetic, and the row is only full when
+              the spread is legal — which is the same moment the button
+              unlocks, so there's one thing to look at, not two. */}
+          <div className="flex shrink-0 items-center justify-center gap-4">
             {budget && (
-              <span
-                className={`font-mono text-sm ${
-                  spent === budget.total ? 'text-stone-500' : 'text-amber-400'
-                }`}
+              <div
+                className="flex items-center gap-1.5"
+                title={`${left} to place`}
               >
-                {spent}/{budget.total} dice used
-              </span>
+                {Array.from({ length: budget.total }, (_, i) => (
+                  <Glyph
+                    key={i}
+                    // WHICH mark the pool wears is the system's call,
+                    // keyed by the die's own name — WiW spends bullets,
+                    // and a system that spends dice says so instead of
+                    // inheriting a cowboy's ammunition (rule 2).
+                    name={template?.icons?.[budget.die] ?? 'die'}
+                    className={`h-9 w-9 transition-colors ${
+                      i < spent
+                        ? 'text-[color:var(--sheet-accent,#f59e0b)]'
+                        : 'text-stone-800'
+                    }`}
+                  />
+                ))}
+              </div>
             )}
+            {/* Dealt out exactly, or you don't leave. The spread is a
+                fixed budget, not a suggestion — and the trade deals a
+                legal one, so this only ever locks mid-rearrange. */}
             <button
-              className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950"
+              className="rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:bg-stone-800 disabled:text-stone-600"
+              style={
+                left === 0
+                  ? { background: accent ?? '#f59e0b', color: '#1c1917' }
+                  : undefined
+              }
+              disabled={left !== 0}
               onClick={() => {
                 onPatch(applySkills(data, skills));
                 next();
               }}
             >
-              that's my spread
+              {left === 0 ? "that's my spread" : `${left} to place`}
             </button>
           </div>
-        </>
+        </div>
       )}
 
       {here === 'gear' && (

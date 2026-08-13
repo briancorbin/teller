@@ -768,6 +768,12 @@ export type SystemTemplate = {
    * glyph is the system's declaration, so no counter name is ever
    * special-cased in code (rule 2). An unknown glyph name draws
    * nothing and the chip still works.
+   *
+   * The key is any NAME the sheet uses, not only a counter's: a field
+   * label may claim a glyph too, which is how the skills wear marks on
+   * the creation cards. Only counters become pocket chips — that
+   * behaviour reads this map while walking the counters, so naming a
+   * field here decorates it without moving it anywhere.
    */
   icons?: Record<string, string>;
   /**
