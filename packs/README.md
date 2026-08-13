@@ -161,6 +161,13 @@ from. A trade **references the catalogue instead of carrying it**:
   "creation": {
     "page": 12,
     "start": { "abilities": 1, "aceInTheHole": 1 },
+    "map": { "trade": "Class", "wallet": "Coins", "prestige": ["XP"] },
+    "wallet": { "roll": "2B", "values": { "Ace": 2, "Hit": 1 } },
+    "weapons": ["itm_ex_rustysword"],
+    "equipmentPacks": ["itm_ex_wandererbundle"],
+    "keepsakes": ["An example memento, in your own words"],
+    "names": { "first": ["例"], "last": ["Example"] },
+    "questions": ["An example prompt for the prose panels?"],
     "tiers": [
       {
         "name": "Example Tier", "prestige": 0,
@@ -177,9 +184,20 @@ the book's. `skills` is keyed by whatever field labels the system's
 sheet already uses; `abilities`/`aceInTheHole` are catalog item ids
 (`kind: "ability"`, `group` = the trade's name). `creation.start`
 counts the picks a new character makes; `creation.tiers` is the
-starting-loadout table for a posse beginning at higher Prestige.
-Everything here **seeds ordinary editable state** — a created character
-is a normal character, and none of this is enforced afterward (rule 1).
+starting-loadout table for a posse beginning at higher Prestige (its
+`packs` column counts equipment-pack picks).
+
+The rest of `creation` keeps teller generic (rule 2): `map` says where
+tier numbers LAND (creation-schema key → this system's own counter and
+field names, so no code ever knows a counter is called anything);
+`wallet` is the starting-money roll — the player rolls PHYSICAL dice
+and taps the result, teller does the face arithmetic; `weapons` and
+`equipmentPacks` are catalog references; `keepsakes`, `names` (the
+"gimme a name" well — personalities/features ride along for NPC
+sparks) and `questions` are flavor lists the flow offers as chips and
+prompts. Everything here **seeds ordinary editable state** — a created
+character is a normal character, and none of this is enforced
+afterward (rule 1).
 
 ### `page` — where it's printed
 

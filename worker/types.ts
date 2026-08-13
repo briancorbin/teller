@@ -1130,6 +1130,44 @@ export type RulesPack = {
   creation?: {
     page?: number;
     start?: { abilities?: number; aceInTheHole?: number };
+    /**
+     * Where the tier numbers LAND — creation-schema key → this system's
+     * own field/counter names. Teller never knows a counter is called
+     * "Wallet ($)" (rule 2); the pack says so. `prestige` may name
+     * several counters that all receive the tier's value.
+     */
+    map?: {
+      trade?: string;
+      prestige?: string | string[];
+      wallet?: string | string[];
+      scrap?: string | string[];
+    };
+    /**
+     * The starting-money roll, when this system rolls it: dice in the
+     * template's own pool notation, and what each face is worth. The
+     * player rolls PHYSICAL dice and taps the result — teller does the
+     * arithmetic, exactly like the initiative roll.
+     */
+    wallet?: { roll: string; values: Record<string, number>; page?: number };
+    /** Catalog ids every new character starts armed with (lowest tier). */
+    weapons?: string[];
+    /** Catalog ids of the starting bundles; a tier says how many to pick. */
+    equipmentPacks?: string[];
+    /** Small mementos to pick from — flavor the sheet carries as a note. */
+    keepsakes?: string[];
+    /**
+     * The naming well: draw a random first + last for the "gimme a
+     * name" button. Personalities/features ride along for NPC sparks.
+     */
+    names?: {
+      page?: number;
+      first?: string[];
+      last?: string[];
+      personalities?: string[];
+      features?: string[];
+    };
+    /** Reflection prompts surfaced beside the prose panels, once. */
+    questions?: string[];
     tiers?: {
       name: string;
       prestige: number;
@@ -1138,6 +1176,7 @@ export type RulesPack = {
       melee?: string;
       scrap?: number;
       wallet?: number;
+      /** How many equipment packs this tier picks. */
       packs?: number;
       items?: number;
     }[];
