@@ -1050,35 +1050,28 @@ export function Sheet({
     // is a character-level pool wherever the pool's items are shown.
     // No declared screens = one screen, and it arms, as before.
     const arming = !screens?.length || def.arms === true;
-    // The pocket leads the shelf — always the same place, the left
-    // edge — as one slim tile on the strip and a chip row up top on
-    // held glass.
-    const pocketTile = pocket.length > 0 && (
-      <div
-        key="pocket"
-        className={
-          strip
-            ? 'flex w-[17rem] shrink-0 snap-start flex-col self-stretch'
-            : 'flex w-full flex-col'
-        }
-      >
-        <PocketPanel
-          counters={pocket}
-          icons={icons!}
-          onChange={update}
-          fill={strip}
-        />
+    // The pocket is FURNITURE, not a shelf tile: on the strip it's a
+    // slim column pinned at the screen's left edge, outside the shelf,
+    // so it never pans away — the whole point of money and supplies is
+    // that they're always in reach. Held glass keeps it as a chip row
+    // above the gear (the card scrolls; nothing pans away there).
+    const pocketCol = strip && pocket.length > 0 && (
+      <div className="flex w-[13rem] shrink-0 flex-col justify-center gap-1.5">
+        <PocketPanel counters={pocket} icons={icons!} onChange={update} />
+      </div>
+    );
+    const pocketLead = !strip && pocket.length > 0 && (
+      <div key="pocket" className="flex w-full flex-col">
+        <PocketPanel counters={pocket} icons={icons!} onChange={update} />
       </div>
     );
     const lead =
-      pocketTile || tallyPanels.length
-        ? [
-            ...(pocketTile ? [pocketTile] : []),
-            ...tallyPanels,
-          ]
+      pocketLead || tallyPanels.length
+        ? [...(pocketLead ? [pocketLead] : []), ...tallyPanels]
         : undefined;
     return (
       <div className="flex min-h-0 flex-1 gap-2">
+        {pocketCol}
         {/* The filter rail, when this screen holds more than one KIND:
             a slim column pinned left (sticky where the card scrolls —
             held glass; the strip doesn't scroll down, so it just sits).

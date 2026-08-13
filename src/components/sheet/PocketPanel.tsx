@@ -24,10 +24,10 @@ function Chip({
 }) {
   const max = counter.max ?? 0;
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-stone-800 bg-stone-900/60 px-2.5 py-2">
-      <Glyph name={icon} className="h-6 w-6 shrink-0 text-stone-400" />
+    <div className="flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5">
+      <Glyph name={icon} className="h-5 w-5 shrink-0 text-stone-400" />
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-[10px] uppercase tracking-widest text-stone-500">
+        <span className="text-[9px] uppercase tracking-widest text-stone-500">
           {counter.name}
         </span>
         {boxable(counter) ? (
@@ -48,7 +48,7 @@ function Chip({
                         filled && i === counter.current - 1 ? i : i + 1,
                     })
                   }
-                  className="h-5 w-5 rounded-[2px] border-2 transition-colors"
+                  className="h-4 w-4 rounded-[2px] border-2 transition-colors"
                   style={
                     filled
                       ? {
@@ -62,11 +62,14 @@ function Chip({
             })}
           </div>
         ) : (
+          // Bare: 65, not 65/— — a wallet has no ceiling and the chip's
+          // glyph already says what shape this is.
           <TypeableValue
             counter={counter}
             onChange={onChange}
-            className="text-lg"
-            inputClassName="w-16 text-lg"
+            bare
+            className="text-base"
+            inputClassName="w-14 text-base"
           />
         )}
       </div>

@@ -302,11 +302,14 @@ export function TypeableValue({
   onChange,
   className = '',
   inputClassName = '',
+  bare = false,
 }: {
   counter: Counter;
   onChange: (next: Counter) => void;
   className?: string;
   inputClassName?: string;
+  /** Passed through to `Value` — see the note there. */
+  bare?: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
   const commit = () => {
@@ -344,7 +347,7 @@ export function TypeableValue({
       className="rounded-md px-1 transition-colors hover:bg-stone-800"
       onClick={() => setDraft(String(counter.current))}
     >
-      <Value counter={counter} className={className} />
+      <Value counter={counter} className={className} bare={bare} />
     </button>
   );
 }
@@ -354,10 +357,18 @@ export function Value({
   counter,
   className = '',
   style,
+  bare = false,
 }: {
   counter: Counter;
   className?: string;
   style?: React.CSSProperties;
+  /**
+   * Skip the `/—` suffix on an unbounded counter. The dash earns its
+   * place on a gauge-shaped layout where a missing ceiling is worth
+   * flagging; on a money chip it's noise — nobody expects a maximum
+   * wallet. Bounded counters keep their `/max` either way.
+   */
+  bare?: boolean;
 }) {
   return (
     <span
@@ -373,8 +384,11 @@ export function Value({
       {counter.current}
       {/* An unset ceiling shows as "/—" rather than being left off: a
           bounded stat whose max nobody filled in otherwise renders as a
-          bare 0. The dash says "no maximum". */}
-      <span className="text-stone-600">/{counter.max ?? '—'}</span>
+          bare 0. The dash says "no maximum" — except where `bare` says
+          the shape is already understood (a money chip). */}
+      {!(bare && counter.max === null) && (
+        <span className="text-stone-600">/{counter.max ?? '—'}</span>
+      )}
     </span>
   );
 }
