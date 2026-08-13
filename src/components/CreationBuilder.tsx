@@ -138,25 +138,22 @@ export function CreationBuilder({
     name: 'What do they call ya?',
     done: 'Welcome to the posse',
   };
+  // The caption under the question — the same italic instruction line
+  // every sheet panel prints beneath its heading.
+  const CAPTIONS: Record<string, string | undefined> = {
+    trade: 'tap one to read it — this is who you are at the table',
+    skills: budget
+      ? `${budget.total} ${budget.die} dice total, ${budget.min}–${budget.max} each — the ${trade?.name ?? 'trade'}'s usual spread is dealt already`
+      : 'the trade set these — adjust if your table allows',
+    gear: `pick ${tier?.packs ?? 1} equipment pack${(tier?.packs ?? 1) > 1 ? 's' : ''} — your starting arms are already in your inventory`,
+    wallet: creation.wallet
+      ? `roll ${creation.wallet.roll} — real dice, on the table — then tap what you rolled`
+      : undefined,
+    keepsake: 'what rides in your pocket from the life before — pick up to two, or none',
+    name: undefined,
+    done: undefined,
+  };
   const accent = trade ? template?.accents?.[trade.name] : undefined;
-
-  // Walking back is free: every step's commit REPLACES what it wrote
-  // (abilities swap with the trade, bundles swap on re-pack, the
-  // keepsakes line rewrites), so second thoughts never double up.
-  const heading = (sub?: string) => (
-    <div className="flex shrink-0 items-baseline gap-3">
-      {step > 0 && (
-        <button
-          className="rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
-          aria-label="back a step"
-          onClick={() => setStep((s) => Math.max(0, s - 1))}
-        >
-          ← back
-        </button>
-      )}
-      {sub && <p className="text-xs text-stone-500">{sub}</p>}
-    </div>
-  );
 
   // One layout family: heading up top, the question's options in a row
   // that PANS on the strip (the shelf gesture) and wraps on a phone.
@@ -182,27 +179,48 @@ export function CreationBuilder({
           and large, for the whole flow. The bar tints to the trade's
           colour the moment one is chosen. */}
       <div
-        className="flex shrink-0 items-center gap-2.5 rounded-md border px-3 py-1.5"
+        className="relative flex shrink-0 flex-col items-center rounded-md border px-12 py-1.5"
         style={{ borderColor: `${accent ?? '#f59e0b'}66` }}
       >
-        <span
-          className="h-px flex-1"
-          style={{ background: `${accent ?? '#f59e0b'}55` }}
-        />
-        <span
-          className="whitespace-nowrap font-serif text-[1.25rem] font-bold uppercase leading-tight tracking-[0.12em]"
-          style={{ color: accent ?? '#f59e0b' }}
-        >
-          {QUESTIONS[here]}
-        </span>
-        <span
-          className="h-px flex-1"
-          style={{ background: `${accent ?? '#f59e0b'}55` }}
-        />
+        {/* Walking back is free: every step's commit REPLACES what it
+            wrote (abilities swap with the trade, bundles swap on
+            re-pack, the keepsakes line rewrites), so second thoughts
+            never double up. */}
+        {step > 0 && (
+          <button
+            className="absolute left-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
+            aria-label="back a step"
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+          >
+            ← back
+          </button>
+        )}
+        <div className="flex w-full items-center gap-2.5">
+          <span
+            className="h-px flex-1"
+            style={{ background: `${accent ?? '#f59e0b'}55` }}
+          />
+          <span
+            className="whitespace-nowrap font-serif text-[1.25rem] font-bold uppercase leading-tight tracking-[0.12em]"
+            style={{ color: accent ?? '#f59e0b' }}
+          >
+            {QUESTIONS[here]}
+          </span>
+          <span
+            className="h-px flex-1"
+            style={{ background: `${accent ?? '#f59e0b'}55` }}
+          />
+        </div>
+        {/* The caption, centered beneath — the sheet's own italic
+            instruction-line treatment. */}
+        {CAPTIONS[here] && (
+          <p className="font-serif text-[0.7rem] italic leading-tight text-stone-500">
+            {CAPTIONS[here]}
+          </p>
+        )}
       </div>
       {here === 'trade' && (
         <>
-          {heading('tap one to read it — this is who you are at the table')}
           {shelf(
             trades.map((t) => {
               const open = confirming === t.id;
@@ -357,11 +375,6 @@ export function CreationBuilder({
 
       {here === 'skills' && trade && (
         <>
-          {heading(
-            budget
-              ? `${budget.total} ${budget.die} dice total, ${budget.min}–${budget.max} each — the ${trade.name}'s usual spread is dealt already`
-              : 'the trade set these — adjust if your table allows',
-          )}
           {shelf(
             Object.entries(skills).map(([label, pool]) => (
               <div
@@ -435,9 +448,6 @@ export function CreationBuilder({
 
       {here === 'gear' && (
         <>
-          {heading(
-            `pick ${tier?.packs ?? 1} equipment pack${(tier?.packs ?? 1) > 1 ? 's' : ''} — your starting arms are already in your inventory`,
-          )}
           {shelf(
             (creation.equipmentPacks ?? []).map((id) => {
               const p = catalog.get(id);
@@ -488,9 +498,6 @@ export function CreationBuilder({
 
       {here === 'wallet' && (
         <>
-          {heading(
-            `roll ${creation.wallet!.roll} — real dice, on the table — then tap what you rolled`,
-          )}
           <div className="flex min-h-0 flex-1 flex-wrap content-center items-center gap-2">
             {faces.map((face) => (
               <button
@@ -542,7 +549,6 @@ export function CreationBuilder({
 
       {here === 'keepsake' && (
         <>
-          {heading('what rides in your pocket from the life before — pick up to two, or none')}
           <div className="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 overflow-y-auto">
             {creation.keepsakes!.map((k) => {
               const picked = keeps.includes(k);
@@ -581,7 +587,6 @@ export function CreationBuilder({
 
       {here === 'name' && (
         <>
-          {heading()}
           <div className="flex min-h-0 flex-1 flex-col justify-center gap-2">
             <div className="flex items-center gap-2">
               <input
@@ -628,13 +633,8 @@ export function CreationBuilder({
 
       {here === 'done' && (
         <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3">
-          <button
-            className="rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
-          >
-            ← back
-          </button>
-          {/* The welcome is in the header bar now; this is the handshake. */}
+          {/* The welcome is in the header bar now (which also carries
+              the back button); this is the handshake. */}
           <h2 className="font-serif text-2xl text-stone-100">
             {nameDraft.trim()
               ? `Pleasure to meet ya, ${nameDraft.trim()}.`
