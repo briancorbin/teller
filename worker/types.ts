@@ -1094,6 +1094,55 @@ export type RulesPack = {
    */
   npcs?: NpcBlueprint[];
   /**
+   * The system's playable trades/classes, as starting kits (TEL-75).
+   *
+   * Structure that references the catalogue rather than carrying it: a
+   * trade names its starting skill pools and points at its ability
+   * entries by id. Creation composes a character FROM one of these —
+   * template kit + trade kit + picks — and the result is an ordinary,
+   * fully editable character (rule 1). The trade's prose stays in the
+   * book; `tagline` is the book's two-word category header, and the
+   * skills map is keyed by whatever field labels this system's sheet
+   * already uses (rule 2: no field name is known here).
+   */
+  trades?: {
+    id: string;
+    name: string;
+    /** The book's category header for the trade ("Healing & Support"). */
+    tagline?: string;
+    page?: number;
+    /** Field label → starting dice pool ("Charm" → "3B"). */
+    skills?: Record<string, string>;
+    /** Catalog item ids (kind 'ability') this trade may pick from. */
+    abilities?: string[];
+    /** The trade's Ace-in-the-Hole pair, unlocked in order. */
+    aceInTheHole?: string[];
+  }[];
+  /**
+   * How this system starts a character, as data the creation flow reads.
+   *
+   * `start` counts how many picks a new character makes from the
+   * trade's lists; `tiers` is the starting-loadout table (WiW p. 33) —
+   * each row proposes counters and gear budget for a posse starting at
+   * that Prestige. All of it seeds ordinary editable state; none of it
+   * is enforced after creation.
+   */
+  creation?: {
+    page?: number;
+    start?: { abilities?: number; aceInTheHole?: number };
+    tiers?: {
+      name: string;
+      prestige: number;
+      /** Gear quality by slot — the words are the system's, not teller's. */
+      ranged?: string;
+      melee?: string;
+      scrap?: number;
+      wallet?: number;
+      packs?: number;
+      items?: number;
+    }[];
+  };
+  /**
    * Book ids (content hashes) this pack is about. A LIST, because the
    * hash is of exact bytes and a corrected re-upload or a copy from
    * another store is a different hash for the same book.

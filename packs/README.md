@@ -140,6 +140,47 @@ This is convention, not enforcement, and it's meant to be: a stranger's
 homebrew Bark Watcher carries its own id and shows up separately —
 which is correct, because it genuinely is a different creature.
 
+### `trades` and `creation` — starting kits (TEL-75)
+
+The system's playable trades/classes, as data a creation flow composes
+from. A trade **references the catalogue instead of carrying it**:
+
+```json
+{
+  "trades": [
+    {
+      "id": "trd_example",
+      "name": "Example Trade",
+      "tagline": "Two-Word Category",
+      "page": 10,
+      "skills": { "Charm": "3B", "Nerve": "2B" },
+      "abilities": ["abl_ex_first", "abl_ex_second"],
+      "aceInTheHole": ["abl_ex_big", "abl_ex_bigger"]
+    }
+  ],
+  "creation": {
+    "page": 12,
+    "start": { "abilities": 1, "aceInTheHole": 1 },
+    "tiers": [
+      {
+        "name": "Example Tier", "prestige": 0,
+        "ranged": "Basic", "melee": "Basic",
+        "scrap": 0, "wallet": 5, "packs": 1, "items": 0
+      }
+    ]
+  }
+}
+```
+
+Again, every value is invented — the shape is public, the contents are
+the book's. `skills` is keyed by whatever field labels the system's
+sheet already uses; `abilities`/`aceInTheHole` are catalog item ids
+(`kind: "ability"`, `group` = the trade's name). `creation.start`
+counts the picks a new character makes; `creation.tiers` is the
+starting-loadout table for a posse beginning at higher Prestige.
+Everything here **seeds ordinary editable state** — a created character
+is a normal character, and none of this is enforced afterward (rule 1).
+
 ### `page` — where it's printed
 
 Optional, on entries and on foes. When the pack's book is on the host,
