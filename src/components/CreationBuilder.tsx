@@ -15,6 +15,7 @@ import {
   spreadTotal,
   withoutInstanced,
 } from '../lib/creation';
+import { SheetHeader } from './sheet/SheetHeader';
 import { SheetPanel } from './sheet/SheetPanel';
 
 // "What's yer trade?" — the rail builder (TEL-75).
@@ -125,10 +126,25 @@ export function CreationBuilder({
   const here = steps[Math.min(step, steps.length - 1)];
   const next = () => setStep((s) => Math.min(s + 1, steps.length - 1));
 
+  // The question lives in the SAME header bar the finished sheet wears
+  // (Brian, 2026-08-13) — and the bar fills in as the character does:
+  // once a trade is chosen its plate and colour appear beside the next
+  // question, so creation visibly becomes the sheet it's building.
+  const QUESTIONS: Record<string, string> = {
+    trade: "What's yer trade?",
+    skills: 'Spread yer skills',
+    gear: 'Grab yer gear',
+    wallet: 'Roll yer wallet',
+    keepsake: 'A keepsake or two',
+    name: 'What do they call ya?',
+    done: 'Welcome to the posse',
+  };
+  const accent = trade ? template?.accents?.[trade.name] : undefined;
+
   // Walking back is free: every step's commit REPLACES what it wrote
   // (abilities swap with the trade, bundles swap on re-pack, the
   // keepsakes line rewrites), so second thoughts never double up.
-  const heading = (text: string, sub?: string) => (
+  const heading = (sub?: string) => (
     <div className="flex shrink-0 items-baseline gap-3">
       {step > 0 && (
         <button
@@ -139,10 +155,7 @@ export function CreationBuilder({
           ← back
         </button>
       )}
-      <div>
-        <h2 className="font-serif text-xl text-stone-100">{text}</h2>
-        {sub && <p className="text-xs text-stone-500">{sub}</p>}
-      </div>
+      {sub && <p className="text-xs text-stone-500">{sub}</p>}
     </div>
   );
 
@@ -164,9 +177,18 @@ export function CreationBuilder({
 
   return (
     <div className="flex min-h-0 w-full flex-1 flex-col gap-2 p-1">
+      <SheetHeader
+        name={QUESTIONS[here]}
+        trade={
+          trade
+            ? { key: 'trade', label: 'Trade', value: trade.name }
+            : undefined
+        }
+        accent={accent}
+      />
       {here === 'trade' && (
         <>
-          {heading("What's yer trade?", 'tap one to read it — this is who you are at the table')}
+          {heading('tap one to read it — this is who you are at the table')}
           {shelf(
             trades.map((t) => {
               const open = confirming === t.id;
@@ -322,7 +344,6 @@ export function CreationBuilder({
       {here === 'skills' && trade && (
         <>
           {heading(
-            'Spread yer skills',
             budget
               ? `${budget.total} ${budget.die} dice total, ${budget.min}–${budget.max} each — the ${trade.name}'s usual spread is dealt already`
               : 'the trade set these — adjust if your table allows',
@@ -401,7 +422,6 @@ export function CreationBuilder({
       {here === 'gear' && (
         <>
           {heading(
-            'Grab yer gear',
             `pick ${tier?.packs ?? 1} equipment pack${(tier?.packs ?? 1) > 1 ? 's' : ''} — your starting arms are already in your inventory`,
           )}
           {shelf(
@@ -455,7 +475,6 @@ export function CreationBuilder({
       {here === 'wallet' && (
         <>
           {heading(
-            'Roll yer wallet',
             `roll ${creation.wallet!.roll} — real dice, on the table — then tap what you rolled`,
           )}
           <div className="flex min-h-0 flex-1 flex-wrap content-center items-center gap-2">
@@ -509,7 +528,7 @@ export function CreationBuilder({
 
       {here === 'keepsake' && (
         <>
-          {heading('A keepsake or two', 'what rides in your pocket from the life before — pick up to two, or none')}
+          {heading('what rides in your pocket from the life before — pick up to two, or none')}
           <div className="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 overflow-y-auto">
             {creation.keepsakes!.map((k) => {
               const picked = keeps.includes(k);
@@ -548,7 +567,7 @@ export function CreationBuilder({
 
       {here === 'name' && (
         <>
-          {heading('What do they call ya?')}
+          {heading()}
           <div className="flex min-h-0 flex-1 flex-col justify-center gap-2">
             <div className="flex items-center gap-2">
               <input
@@ -601,8 +620,11 @@ export function CreationBuilder({
           >
             ← back
           </button>
+          {/* The welcome is in the header bar now; this is the handshake. */}
           <h2 className="font-serif text-2xl text-stone-100">
-            Welcome to the posse{nameDraft.trim() ? `, ${nameDraft.trim()}` : ''}.
+            {nameDraft.trim()
+              ? `Pleasure to meet ya, ${nameDraft.trim()}.`
+              : 'Pleasure to meet ya.'}
           </h2>
           {(creation.questions?.length ?? 0) > 0 && (
             <p className="max-w-xl text-sm text-stone-400">
