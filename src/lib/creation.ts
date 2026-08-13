@@ -107,8 +107,17 @@ function setCounter(
   );
 }
 
-/** A catalog entry, instanced onto a character (ItemSection's shape). */
-export function instanced(entry: CatalogItem): Item {
+/**
+ * A catalog entry, instanced onto a character (ItemSection's shape).
+ *
+ * `n` is how many of it were acquired at once. A quantity is not a new
+ * kind of thing — it's the COUNTER the entry already carries (rule 2:
+ * ammo is a counter, and so is a dose), so two boxes of rounds is one
+ * item reading 6 rather than two items reading 3. An entry that
+ * declares no counter has nothing to count with, so repeats of it stay
+ * separate items; give it a counter in the pack to make it stack.
+ */
+export function instanced(entry: CatalogItem, n = 1): Item {
   return {
     id: newLocalId('itm'),
     name: entry.name,
@@ -117,9 +126,24 @@ export function instanced(entry: CatalogItem): Item {
     counters: (entry.counters ?? []).map((c) => ({
       ...c,
       id: newLocalId('ctr'),
+      current: (c.current ?? 0) * n,
+      ...(c.max != null ? { max: c.max * n } : {}),
     })),
     kind: entry.kind,
   };
+}
+
+/** Entries in first-seen order, each with how many of it were taken. */
+function stacks(entries: CatalogItem[]): { entry: CatalogItem; n: number }[] {
+  const out: { entry: CatalogItem; n: number }[] = [];
+  for (const entry of entries) {
+    const seen = out.find((x) => x.entry.id === entry.id);
+    // Only something with a counter can hold a quantity; anything else
+    // has to arrive as its own tile.
+    if (seen && entry.counters?.length) seen.n += 1;
+    else out.push({ entry, n: 1 });
+  }
+  return out;
 }
 
 /**
@@ -194,22 +218,23 @@ export function applyGear(
 ): CharacterData {
   const { items: catalog } = catalogOf(packs);
   const have = new Set((data.items ?? []).map((i) => i.from));
-  const added = ids
+  const expanded = ids
     .filter((id) => !have.has(id))
     .map((id) => catalog.get(id))
     .filter((e): e is CatalogItem => Boolean(e))
-    // A bundle unpacks: what lands in the inventory is its CONTENTS,
-    // each occurrence its own item ("2× Pain Pills" lists the id
-    // twice, and gets two). Deliberately no dedupe inside a bundle —
-    // repeats there are the author's intent.
+    // A bundle unpacks: what lands in the inventory is its CONTENTS.
+    // Deliberately no dedupe inside a bundle — a repeat there is the
+    // author saying "two of these" ("2x Pain Pills", as printed).
     .flatMap((e) =>
       e.contents?.length
         ? e.contents
             .map((cid) => catalog.get(cid))
             .filter((c): c is CatalogItem => Boolean(c))
         : [e],
-    )
-    .map(instanced);
+    );
+  // …and "two of these" is a quantity, not a second tile. Repeats
+  // collapse into one item carrying twice the counter.
+  const added = stacks(expanded).map(({ entry, n }) => instanced(entry, n));
   return { ...data, items: [...(data.items ?? []), ...added] };
 }
 

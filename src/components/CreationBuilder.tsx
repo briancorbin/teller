@@ -39,6 +39,17 @@ import { Glyph } from './sheet/glyphs';
 // still lists loose chips (keepsakes, the wallet's faces).
 const off = 'border-stone-700 bg-stone-900';
 
+/** Ids in first-seen order, each with how many times it appears. */
+function counted(ids: string[]): { id: string; n: number }[] {
+  const out: { id: string; n: number }[] = [];
+  for (const id of ids) {
+    const seen = out.find((x) => x.id === id);
+    if (seen) seen.n += 1;
+    else out.push({ id, n: 1 });
+  }
+  return out;
+}
+
 export function CreationBuilder({
   character,
   packs,
@@ -674,9 +685,20 @@ export function CreationBuilder({
                           list the sheet will end up carrying — not
                           one word you have to take on trust. */}
                       <ul className="flex min-h-0 w-full flex-col items-center gap-px overflow-hidden font-serif text-[0.72rem] leading-tight text-stone-400">
-                        {(p.contents ?? []).map((cid, i) => (
-                          <li key={`${cid}-${i}`}>
+                        {/* Repeats COUNT rather than repeat. A bundle
+                            lists an id twice to grant two, and two
+                            Pain Pills is what lands — but printing the
+                            line twice reads as a mistake, and the book
+                            writes "2x Pain Pills" for the same reason.
+                            The list is what you're getting; the
+                            inventory still carries them separately,
+                            because you spend one at a time. */}
+                        {counted(p.contents ?? []).map(({ id: cid, n }) => (
+                          <li key={cid}>
                             {catalog.get(cid)?.name ?? cid}
+                            {n > 1 && (
+                              <span className="text-stone-500"> ×{n}</span>
+                            )}
                           </li>
                         ))}
                       </ul>
