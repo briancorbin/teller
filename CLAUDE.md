@@ -318,8 +318,8 @@ place on the FIRST screen is the design work; the rest is arrangement.
 is it MOUNTED or HELD? (See `wide` in `src/views/SeatView.tsx`.) Mounted
 glass — rail panel, table TV, a propped tablet — has plentiful width and
 FIXED height, because nobody flicks a screwed-down panel and a shared
-screen must show everything at once: so it scales to fit and never
-scrolls. Held glass — a phone in a hand — has scarce width and ELASTIC
+screen must show everything at once: so it never scrolls — and never
+scales either. Held glass — a phone in a hand — has scarce width and ELASTIC
 height, because scrolling is free and universally understood: so it runs
 full-width at natural size and may scroll down. Neither ever scrolls
 sideways *by accident* — the PAGE never pans, and layout overflow is a
@@ -330,8 +330,13 @@ a panel min-width rather than declared. That is one decision point
 instead of a per-device matrix, and there is deliberately no list of
 devices anywhere in the client.
 
-`FitBox`'s scale is a **diagnostic**: far below 1 means the layout is
-wrong for that glass, not that the glass is small.
+**Content renders at designed size, always** (Brian, 2026-08-13 —
+`FitBox` removed). There is no scale-to-fit anywhere in the seat: text
+has exactly one size, the one it was designed at. A layout that
+overflows mounted glass is CLIPPED, and the clip is the diagnostic —
+it means the layout is wrong for that glass, and the fix is design
+(fewer blocks on that screen, a shelf, a split), never a transform
+quietly shrinking the type until nobody can read it.
 
 **A LAN host is served over plain HTTP, and that constrains the
 client.** Two consequences that have already bitten:

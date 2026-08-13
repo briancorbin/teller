@@ -52,14 +52,9 @@ export function Screens({
           turn belongs.
 
           **Sticky only where the card scrolls**, which is held glass.
-          Mounted glass is scaled to fit and never scrolls, so there is
-          nothing for the bar to stick to — and it doesn't merely have no
-          job there, it actively breaks: `position: sticky` resolves its
-          offset against the scrollport in UNSCALED coordinates, then gets
-          scaled with everything else, so inside `FitBox` the bar pinned
-          about 40px above its own row and sat on top of the weapons
-          panels. It looked like an overlapping z-index bug; it was
-          sticky and a transform disagreeing about which pixels are which.
+          Mounted glass never scrolls, so there is nothing for the bar
+          to stick to — sticky is a scrolling behaviour and only held
+          glass scrolls.
 
           The condition is exactly the one that decides everything else
           about glass (rule 6): mounted or held. Same question, no second

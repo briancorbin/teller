@@ -89,9 +89,10 @@ export function SizeFrame({
   useEffect(() => {
     const el = box.current;
     if (!el || !size) return;
-    // Synchronous, for the same reason `FitBox` is: a hidden tab never
-    // runs animation frames, and a card that silently never measured
-    // would render at the wrong scale with no clue why.
+    // Synchronous, never deferred to an animation frame: a browser
+    // reports a tab it isn't painting as hidden and never runs its
+    // animation frames, so a deferred measure silently never happens
+    // and the frame renders at the wrong scale with no clue why.
     const fit = () => {
       const w = el.clientWidth;
       const h = el.clientHeight;

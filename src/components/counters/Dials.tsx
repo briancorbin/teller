@@ -39,9 +39,9 @@ function Dial({
   onChange: (next: Counter) => void;
 }) {
   // Generous on purpose. A dial you can hit without looking is the whole
-  // pitch, and `FitBox` shrinks the card if a character carries enough
-  // counters that this stops fitting — so the size can be chosen for the
-  // common case instead of the worst one.
+  // pitch — the size is chosen for the common case, and a character who
+  // carries enough counters that the card stops fitting is a layout
+  // problem for that glass, not a reason to shrink the dial.
   // Two dials stacked need roughly twice this in height, so it's sized
   // for the common case and trimmed when a character carries more than a
   // pair — past that, height is the scarce thing, not legibility.

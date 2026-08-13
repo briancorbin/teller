@@ -15,9 +15,10 @@ import type { PackEntry } from '../../../worker/types';
 // away, over the top of the card rather than pushing it around.
 //
 // **It must overlay, never reflow.** The seat has a hard no-scrolling
-// rule, and a disclosure that grows the card is a disclosure that either
-// scrolls it or makes `FitBox` shrink everything else the moment someone
-// taps. Absolute positioning keeps the card exactly the size it was.
+// rule on mounted glass, and a disclosure that grows the card is a
+// disclosure that either scrolls it or pushes something else off the
+// bottom the moment someone taps. Absolute positioning keeps the card
+// exactly the size it was.
 //
 // **The thing itself is the target — there is no ⓘ.** A dot cost a
 // column in every panel that used one, and made the smallest thing in

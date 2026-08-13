@@ -21,7 +21,6 @@ import { CalibrationOverlay } from '../components/CalibrationOverlay';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { COUNTER_VIEWS } from '../components/counters';
 import { bumped } from '../components/counters/shared';
-import { Fit } from '../components/FitBox';
 import { SEAT_SIZES, SizeFrame, type SeatSize } from '../components/SizeFrame';
 import { TagSection } from '../components/TagSection';
 
@@ -37,12 +36,18 @@ import { TagSection } from '../components/TagSection';
 // The rule used to read "it never scrolls, full stop", which was learned
 // honestly on the rail panel and then over-applied to phones. A panel
 // screwed to the table genuinely can't scroll; a phone in a hand
-// obviously can, and refusing to let it meant `FitBox` squeezing the
-// card to 0.64 to avoid a gesture every human already knows. That cost
+// obviously can, and refusing to let it meant squeezing the card to
+// 0.64 to avoid a gesture every human already knows. That cost
 // legibility AND the width the panels were asking for, to protect a
 // property nobody wanted on that device.
 //
-// So: fluid grids first, then `FitBox` on mounted glass, and on held
+// Mounted glass doesn't SCALE to fit either (Brian, 2026-08-13 —
+// `FitBox` removed). Text renders at exactly one size: the one it was
+// designed at. A layout that overflows mounted glass gets clipped, and
+// the clipping is the bug report — fix the layout for that glass, don't
+// let a transform quietly shrink the type until nobody can read it.
+//
+// So: fluid grids that honestly fit on mounted glass, and on held
 // glass just let it be as tall as it is.
 //
 // **The arrangement is a question, not an answer.** Nobody knows what a
@@ -243,18 +248,15 @@ export function SeatView({
    *     tablet, the table TV. Width is plentiful and height is FIXED,
    *     because nobody flicks a screwed-down panel and a screen the
    *     whole table reads has to show everything at once. So: columns,
-   *     and `FitBox` scales to fit. This is where the no-scrolling rule
-   *     was actually learned.
+   *     no scrolling — and no scaling either (Brian, 2026-08-13): the
+   *     layout is designed to fit this glass, and content that
+   *     overflows is clipped. Clipping is the diagnostic now — it means
+   *     the layout is wrong for that glass, and the fix is design,
+   *     never a transform shrinking the type.
    *   * **Held** — a phone or tablet in someone's hand. Width is the
    *     scarce thing and height is ELASTIC, because scrolling is free
    *     and universally understood. So: one column, full width, natural
    *     size, and it may scroll down.
-   *
-   * Scaling a held phone to fit was the worst of both: at 390x844 the
-   * card wanted 1163px of height in 744, so it rendered at 0.64 — the
-   * panels used 234px of a 390px screen and the headings came out at
-   * 10px. **A `FitBox` scale far below 1 is a diagnostic**: it means the
-   * layout is wrong for that glass, not that the glass is small.
    *
    * Neither family may EVER scroll sideways by accident — the page
    * never pans. A deliberate SHELF may (the item rows on the strip):
@@ -438,11 +440,11 @@ export function SeatView({
         className={`flex min-h-0 gap-2 ${wide ? 'flex-1 flex-row' : 'flex-col'}`}
       >
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-          {/* `FitBox` only on mounted glass. On a phone it was solving
-              the wrong problem — squeezing a card that had somewhere
-              to go — and the squeeze cost both legibility and the
-              width the panels were asking for. */}
-          <Fit on={wide} className="min-h-0 flex-1">
+          {/* No fit wrapper — the card renders at designed size on
+              every glass. Mounted glass clips what overflows (the
+              `main` above hides overflow when `wide`); the clip is a
+              layout bug to fix by design, not by scaling. */}
+          <div className="flex min-h-0 flex-1 flex-col">
             <Counters
               big
               name={character.name}
@@ -491,7 +493,7 @@ export function SeatView({
               note={note}
               onChange={(counters) => patch({ counters })}
             />
-          </Fit>
+          </div>
 
           {/* Stats are reference, not controls — one dense strip.
               Skipped when the layout places them itself, or the same

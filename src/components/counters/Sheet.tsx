@@ -581,8 +581,9 @@ export function Sheet({
   // holding pen is still a TEMP state (TEL-68 decides real screens),
   // but a temp state on the strip obeys the strip's one law all the
   // same: one full-height shelf that pans, never a stack. Stacking
-  // these five blocks is what read as "kind of crazy" — FitBox was
-  // scaling the pile to ~0.57 to make it fit.
+  // these five blocks is what read as "kind of crazy" — the pile
+  // wanted nearly twice the rail's height (the old fit wrapper scaled
+  // it to ~0.57 before it was removed).
   const talentBlock = roster && (
     <TalentPanel
       marks={marks!}
@@ -1023,9 +1024,8 @@ export function Sheet({
             held glass; the strip doesn't scroll down, so it just sits).
             Kind names are the packs' own words, shown as written. */}
         {kinds.length > 1 && (
-          // Sticky only where the card scrolls (held glass) — inside
-          // FitBox's transform, sticky resolves against the wrong
-          // pixels (the segmented bar learned this the hard way).
+          // Sticky only where the card scrolls (held glass) — mounted
+          // glass never scrolls, so there is nothing to stick to.
           <div
             className={`flex shrink-0 flex-col gap-1 self-start ${
               mounted ? '' : 'sticky top-0'

@@ -326,8 +326,8 @@ export function Value({
  * render as "Prestig…" in a narrow column, which is worse than useless:
  * it's two different things wearing the same label.
  *
- * Long names wrap and make the card taller, which `FitBox` answers by
- * scaling. Smaller and complete beats bigger and guessing.
+ * Long names wrap and make the card taller, which mounted glass answers
+ * by clipping. Smaller and complete beats bigger and guessing.
  */
 export function Name({
   counter,
