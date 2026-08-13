@@ -201,7 +201,44 @@ export function CreationBuilder({
                       open ? 'border-[color:var(--sheet-accent)]' : ''
                     }
                   >
-                    <span className="flex min-h-0 flex-1 flex-col gap-1.5 pt-1">
+                    <span
+                      className={`flex min-h-0 flex-1 gap-3 pt-1 ${
+                        open && strip ? 'flex-row' : 'flex-col'
+                      }`}
+                    >
+                      {/* The trade's portrait. Collapsed: a head-and-
+                          shoulders crop filling the card's middle.
+                          Expanded on the strip: the whole figure docks
+                          left at full height and the words flow beside
+                          it. A soft accent glow sits behind either way
+                          — it flatters the cutouts and swallows any
+                          keying residue. */}
+                      {t.art && (
+                        <span
+                          className={`relative block shrink-0 overflow-hidden ${
+                            open && strip
+                              ? 'h-full w-[13rem] self-stretch'
+                              : 'min-h-0 w-full flex-1'
+                          }`}
+                          style={{
+                            background: accent
+                              ? `radial-gradient(ellipse 60% 50% at 50% 45%, ${accent}1f, transparent 75%)`
+                              : undefined,
+                          }}
+                        >
+                          <img
+                            src={`/api/maps/${t.art}`}
+                            alt=""
+                            draggable={false}
+                            className={`h-full w-full ${
+                              open && strip
+                                ? 'object-contain object-bottom'
+                                : 'object-cover object-top'
+                            }`}
+                          />
+                        </span>
+                      )}
+                      <span className="flex min-h-0 flex-1 flex-col gap-1.5">
                   {/* The top of the card is reserved space: the trade's
                       portrait lands here when the art pipeline exists
                       (TEL-83). Until then, the book's introduction
@@ -272,6 +309,7 @@ export function CreationBuilder({
                       </span>
                     </>
                   )}
+                      </span>
                     </span>
                   </SheetPanel>
                 </button>

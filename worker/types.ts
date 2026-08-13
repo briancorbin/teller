@@ -1129,6 +1129,13 @@ export type RulesPack = {
     text?: string;
     /** The fuller portrait, for the card expanded — pack prose. */
     overview?: string;
+    /**
+     * The trade's illustration: a KEY into the shared image store
+     * (served at `/api/maps/<key>`, `~/.teller/<key>` on a host — art
+     * lives beside books, per-instance, never in a repo or a bundle).
+     * Absent, the card simply has no picture.
+     */
+    art?: string;
     page?: number;
     /** Field label → starting dice pool ("Charm" → "3B"). */
     skills?: Record<string, string>;
