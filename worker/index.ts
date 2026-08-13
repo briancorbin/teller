@@ -514,17 +514,44 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json({ ok: true });
   }
 
-  // Serve map images (unguessable random keys; cache hard).
+  // Serve object-store images.
+  //
+  // Two kinds of key live in here and they deserve different answers.
+  // A MINTED key (`map/…`, `handout/…`) is a fresh random string per
+  // upload, and a book's is the sha-256 of its own bytes — in both
+  // cases the key NAMES the bytes, so re-editing means a new URL and
+  // `immutable` is simply true. An AUTHORED key is a path a person
+  // chose (`art/wiw/trd_marshal.png`), and the whole point of such a
+  // name is that it survives the file being corrected. Serving that as
+  // immutable promises something the key can't keep: the portraits
+  // were cleaned up on disk and every panel that had already loaded
+  // them would have gone on showing the old ones for a year.
+  //
+  // So: named-by-content caches forever, named-by-hand revalidates.
+  // The validator makes that cheap — a panel re-asks and gets a
+  // bodiless 304 unless the bytes really moved.
   m = pathname.match(/^\/api\/maps\/(.+)$/);
   if (m && method === 'GET') {
-    const object = await env.MAPS.get(decodeURIComponent(m[1]));
+    const key = decodeURIComponent(m[1]);
+    const object = await env.MAPS.get(key);
     if (!object) return err('not found', 404);
-    return new Response(object.body, {
-      headers: {
-        'content-type': object.httpMetadata?.contentType ?? 'application/octet-stream',
-        'cache-control': 'public, max-age=31536000, immutable',
-      },
-    });
+    const minted = /^(map|handout|books)\//.test(key);
+    const headers: Record<string, string> = {
+      'content-type': object.httpMetadata?.contentType ?? 'application/octet-stream',
+      'cache-control': minted
+        ? 'public, max-age=31536000, immutable'
+        : 'public, no-cache',
+    };
+    // R2 spells it `httpEtag` (already quoted); the host shim supplies
+    // the same field, so the route never learns which one answered.
+    const etag = object.httpEtag ?? undefined;
+    if (!minted && etag) {
+      headers.etag = etag;
+      if (request.headers.get('if-none-match') === etag) {
+        return new Response(null, { status: 304, headers });
+      }
+    }
+    return new Response(object.body, { headers });
   }
 
   // Player-safe campaign snapshot for the passive displays (board,

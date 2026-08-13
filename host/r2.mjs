@@ -82,6 +82,12 @@ export class R2 {
       size: info.size,
       range: range ? { offset: start, length: end - start + 1 } : undefined,
       httpMetadata: contentType ? { contentType } : {},
+      // R2 hands the worker an `httpEtag`, so this store owes it one
+      // too or the route would have to learn which runtime answered.
+      // Size and mtime rather than a hash of the bytes: a validator
+      // only has to CHANGE when the file does, and hashing would mean
+      // reading a 200MB map on every conditional request.
+      httpEtag: `"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`,
       // A web stream, because the worker passes this straight to a
       // Response — so a 100MB map is streamed, not buffered.
       body: Readable.toWeb(createReadStream(path, { start, end })),
