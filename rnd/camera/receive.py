@@ -26,6 +26,7 @@ import argparse
 import base64
 import json
 import threading
+import time
 import urllib.request
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -290,6 +291,22 @@ def ref_ppi(seen: dict, Hinv: np.ndarray) -> tuple[float, float] | None:
     return round(ppi, 1), round(ppi_y, 1)
 
 
+def keepalive():
+    """Re-push the overlay every few seconds regardless of frames.
+
+    The table clears the camera overlay 10s after the last event — but
+    a full-res capture cycle can take LONGER than that, so the markers
+    blinked off between frames and every other capture photographed a
+    marker-less screen. The overlay's liveness now belongs to the
+    bridge process, not to the frame cadence.
+    """
+    while True:
+        time.sleep(5)
+        with state_lock:
+            rings = state['rings']
+        push_to_teller(rings)
+
+
 def push_calibration(ppi: float, ppi_y: float):
     """Write the measured scale onto every table-role display whose
     viewport matches the screen we're solving — the same PATCH the
@@ -365,7 +382,15 @@ def crop_for(H: np.ndarray, img_w: int, img_h: int,
 
 def process(jpeg: bytes, ts: str,
             applied: tuple[float, float, float, float] | None = None) -> str:
-    img = cv2.imdecode(np.frombuffer(jpeg, np.uint8), cv2.IMREAD_COLOR)
+    # IGNORE_ORIENTATION is load-bearing: Eye crops the raw CGImage
+    # bitmap (sensor space), but OpenCV applies EXIF rotation by
+    # default — so crop fractions measured here were 90° off from the
+    # space Eye applied them in, and every crop chopped the wrong side.
+    # Both ends of the contract now speak raw sensor space.
+    img = cv2.imdecode(
+        np.frombuffer(jpeg, np.uint8),
+        cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION,
+    )
     if img is None:
         return 'undecodable frame'
     try:
@@ -380,19 +405,31 @@ def process(jpeg: bytes, ts: str,
         push_to_teller([])
         return f'skipped: {e}'
     # Rectify through the PIN, not the fresh solve — the fresh one only
-    # proves the pin still fits this frame's markers.
+    # proves the pin still fits this frame's markers. Pinning and crop
+    # proposals demand ALL FOUR corners: a 2-marker solve (one edge) is
+    # near-degenerate and "succeeds" into a garbage homography — which
+    # is exactly how a chopped crop kept re-proposing itself. A frame
+    # with fewer markers may still ride an EXISTING pin that fits its
+    # seen corners (a hand over one corner shouldn't stall detection).
     with state_lock:
         H = state['H']
     pin_note = ''
     if H is None:
+        if len(ids) < 4:
+            push_to_teller([])
+            return f'skipped: only markers {ids} — need all 4 to pin'
         H = fresh
         pin_note = ' · pinned'
     else:
         fit = pin_rms(H, seen)
-        if fit > REPIN_RMS:
+        if fit <= REPIN_RMS:
+            err = fit
+        elif len(ids) == 4:
             H, pin_note = fresh, f' · repinned ({fit:.1f}px drift)'
         else:
-            err = fit
+            push_to_teller([])
+            return (f'skipped: pin misfit {fit:.1f}px and only markers '
+                    f'{ids} — need all 4 to repin')
     with state_lock:
         state['H'] = H
     Hinv = np.linalg.inv(H)
@@ -406,7 +443,8 @@ def process(jpeg: bytes, ts: str,
         cal_note = f' · inch card {cal[0]}×{cal[1]} px/in — calibrated, remove card'
 
     with state_lock:
-        state['crop_auto'] = crop_for(H, img.shape[1], img.shape[0], applied)
+        if len(ids) == 4:
+            state['crop_auto'] = crop_for(H, img.shape[1], img.shape[0], applied)
         state['latest_rect'] = rect
         state['frames'] += 1
         if state['baseline'] is None:
@@ -588,6 +626,7 @@ if __name__ == '__main__':
         TELLER_CAMPAIGN = args.campaign
         TELLER_KEY = args.key or (
             Path.home() / '.teller' / 'dm.key').read_text().strip()
+        threading.Thread(target=keepalive, daemon=True).start()
         print(f'bridging to {TELLER} · campaign {TELLER_CAMPAIGN}')
     print(f'listening on 0.0.0.0:{args.port} · screen {SW}x{SH} · watch http://localhost:{args.port}/')
     ThreadingHTTPServer(('0.0.0.0', args.port), Handler).serve_forever()
