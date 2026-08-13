@@ -1050,16 +1050,11 @@ export function Sheet({
     // is a character-level pool wherever the pool's items are shown.
     // No declared screens = one screen, and it arms, as before.
     const arming = !screens?.length || def.arms === true;
-    // The pocket is FURNITURE, not a shelf tile: on the strip it's a
-    // slim column pinned at the screen's left edge, outside the shelf,
-    // so it never pans away — the whole point of money and supplies is
-    // that they're always in reach. Held glass keeps it as a chip row
-    // above the gear (the card scrolls; nothing pans away there).
-    const pocketCol = strip && pocket.length > 0 && (
-      <div className="flex w-[13rem] shrink-0 flex-col justify-center gap-1.5">
-        <PocketPanel counters={pocket} icons={icons!} onChange={update} />
-      </div>
-    );
+    // The pocket is FURNITURE, not a shelf tile: on the strip it lives
+    // in the pinned left column, outside the shelf, so it never pans
+    // away — the whole point of money and supplies is that they're
+    // always in reach. Held glass keeps it as a chip row above the
+    // gear (the card scrolls; nothing pans away there).
     const pocketLead = !strip && pocket.length > 0 && (
       <div key="pocket" className="flex w-full flex-col">
         <PocketPanel counters={pocket} icons={icons!} onChange={update} />
@@ -1071,41 +1066,51 @@ export function Sheet({
         : undefined;
     return (
       <div className="flex min-h-0 flex-1 gap-2">
-        {pocketCol}
-        {/* The filter rail, when this screen holds more than one KIND:
-            a slim column pinned left (sticky where the card scrolls —
-            held glass; the strip doesn't scroll down, so it just sits).
-            Kind names are the packs' own words, shown as written. */}
-        {kinds.length > 1 && (
-          // Sticky only where the card scrolls (held glass) — mounted
-          // glass never scrolls, so there is nothing to stick to.
+        {/* The pinned left column: the filter chips (when this screen
+            holds more than one KIND) with the pocket beneath them —
+            controls above belongings, neither ever pans away. Sticky
+            only where the card scrolls (held glass); mounted glass
+            never scrolls, so there is nothing to stick to. Kind names
+            are the packs' own words, shown as written. */}
+        {(kinds.length > 1 || (strip && pocket.length > 0)) && (
           <div
-            className={`flex shrink-0 flex-col gap-1 self-start ${
-              mounted ? '' : 'sticky top-0'
-            }`}
+            className={`flex shrink-0 flex-col gap-2 self-start ${
+              strip && pocket.length > 0 ? 'w-[13rem] self-stretch justify-center' : ''
+            } ${mounted ? '' : 'sticky top-0'}`}
           >
-            {['', ...kinds].map((kind) => (
-              <button
-                key={kind || 'all'}
-                type="button"
-                onClick={() =>
-                  setShelfKind({ ...shelfKind, [def.name]: kind })
-                }
-                aria-pressed={chosen === kind}
-                className={`max-w-[7rem] break-words rounded-md px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-[0.14em] transition-colors ${
-                  chosen === kind
-                    ? 'text-stone-950'
-                    : 'bg-stone-900 text-stone-400 hover:bg-stone-800 hover:text-stone-100'
+            {kinds.length > 1 && (
+              <div
+                className={`flex gap-1 ${
+                  strip && pocket.length > 0 ? 'flex-wrap' : 'flex-col'
                 }`}
-                style={
-                  chosen === kind
-                    ? { background: 'var(--sheet-accent, #f59e0b)' }
-                    : undefined
-                }
               >
-                {kind || 'all'}
-              </button>
-            ))}
+                {['', ...kinds].map((kind) => (
+                  <button
+                    key={kind || 'all'}
+                    type="button"
+                    onClick={() =>
+                      setShelfKind({ ...shelfKind, [def.name]: kind })
+                    }
+                    aria-pressed={chosen === kind}
+                    className={`max-w-[7rem] break-words rounded-md px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-[0.14em] transition-colors ${
+                      chosen === kind
+                        ? 'text-stone-950'
+                        : 'bg-stone-900 text-stone-400 hover:bg-stone-800 hover:text-stone-100'
+                    }`}
+                    style={
+                      chosen === kind
+                        ? { background: 'var(--sheet-accent, #f59e0b)' }
+                        : undefined
+                    }
+                  >
+                    {kind || 'all'}
+                  </button>
+                ))}
+              </div>
+            )}
+            {strip && pocket.length > 0 && (
+              <PocketPanel counters={pocket} icons={icons!} onChange={update} />
+            )}
           </div>
         )}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
