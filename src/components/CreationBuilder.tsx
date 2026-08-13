@@ -12,6 +12,7 @@ import {
   bundleGrantIds,
   creationOf,
   gimmeName,
+  packArtUrl,
   spreadTotal,
   withoutInstanced,
 } from '../lib/creation';
@@ -298,7 +299,7 @@ export function CreationBuilder({
                           }}
                         >
                           <img
-                            src={`/api/maps/${t.art}`}
+                            src={packArtUrl(t.art, found?.version ?? 0)}
                             alt=""
                             draggable={false}
                             className={`h-full w-full ${

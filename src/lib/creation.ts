@@ -27,10 +27,35 @@ type Tier = NonNullable<Creation['tiers']>[number];
 export function creationOf(packs: RulesPack[]): {
   trades: Trade[];
   creation: Creation;
+  version: number;
 } | null {
   const pack = packs.find((p) => p.trades?.length);
   if (!pack) return null;
-  return { trades: pack.trades!, creation: pack.creation ?? {} };
+  return {
+    trades: pack.trades!,
+    creation: pack.creation ?? {},
+    version: pack.version ?? 0,
+  };
+}
+
+/**
+ * Where a pack's AUTHORED art lives.
+ *
+ * A minted key (a scene, a handout) names its own bytes and is used
+ * bare — a new upload is a new URL. A pack's art key is a name a
+ * PERSON chose, so the file behind it gets corrected in place, and a
+ * screen that already cached it has no reason to ask again. The pack's
+ * own version rides along as the buster, because that number already
+ * means exactly "these contents changed" (rule 4a) — so bumping the
+ * pack is how a corrected portrait reaches a panel that's holding the
+ * old one.
+ *
+ * This matters more than it sounds: the alternative is clearing site
+ * data on the device, and on a paired screen that takes the display id
+ * with it (rule 7) — the panel would need re-adopting by code.
+ */
+export function packArtUrl(key: string, version: number): string {
+  return `/api/maps/${key}?v=${version}`;
 }
 
 /** Set a field by label, if the sheet has one. */
