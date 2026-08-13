@@ -443,8 +443,18 @@ export function SeatView({
           {/* No fit wrapper — the card renders at designed size on
               every glass. Mounted glass clips what overflows (the
               `main` above hides overflow when `wide`); the clip is a
-              layout bug to fix by design, not by scaling. */}
-          <div className="flex min-h-0 flex-1 flex-col">
+              layout bug to fix by design, not by scaling.
+
+              Flex column ONLY when mounted: it stretches the card into
+              the fixed height. On held glass it must be a plain box —
+              flex would let the card's min-h-0 chain squeeze the item
+              rows to the viewport and stack them over each other; held
+              glass grows naturally and scrolls instead. */}
+          <div
+            className={
+              wide ? 'flex min-h-0 flex-1 flex-col' : 'min-h-0 flex-1'
+            }
+          >
             <Counters
               big
               name={character.name}
@@ -455,6 +465,7 @@ export function SeatView({
               accents={template?.accents}
               pins={template?.pins}
               dials={template?.dials}
+              icons={template?.icons}
               strip={strip}
               mounted={wide}
               tags={character.data.tags}

@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 4,
+  version: 5,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
@@ -189,11 +189,26 @@ const wiw: SystemTemplate = {
   screens: [
     { name: 'Weapons', kinds: ['weapon'], arms: true },
     { name: 'Abilities', kinds: ['ability'], counters: ['Aces'] },
-    // The junk drawer: ammo by name, and everything nobody claims —
-    // gear, traps, whatever a table invents — lands here (`rest`)
-    // rather than on the gun rack.
-    { name: 'Items', kinds: ['ammo'], rest: true },
+    // The book's own word (p. 74: "Characters have Inventory to hold
+    // anything they can reasonably carry"): ammo by name, everything
+    // nobody claims (`rest`), and the carrying trio — Wallet, Scrap,
+    // Supplies come from the printed sheet's Inventory panel, and the
+    // book links them mechanically: a used Supply can be BOUGHT into
+    // Inventory to keep it and free the slot (p. 75).
+    {
+      name: 'Inventory',
+      kinds: ['ammo'],
+      rest: true,
+      counters: ['Wallet ($)', 'Scrap (pcs)', 'Supplies'],
+    },
   ],
+  // The pocket chips: these three render compact — glyph, name, value —
+  // in one slim tile at Inventory's left edge, not as full panels.
+  icons: {
+    'Wallet ($)': 'coin',
+    'Scrap (pcs)': 'cog',
+    Supplies: 'satchel',
+  },
   // Talents (p. 32): 4 Prestige buys a category — a skill, a weapon
   // family, Defense, Mechs, Forstalls — and that category rerolls
   // Spurs. Stored as a tag ("Talent: Rifles"), shown as the printed

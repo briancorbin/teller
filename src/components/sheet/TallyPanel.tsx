@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import type { Counter } from '../../../worker/types';
-import { bumped, isGauge, Step, Value } from '../counters/shared';
+import { bumped, isGauge, Step, TypeableValue } from '../counters/shared';
 import { SheetPanel } from './SheetPanel';
 
 // A counter drawn as the printed sheet's tick boxes — WiW's
@@ -41,21 +40,6 @@ export function TallyPanel({
 }) {
   const max = counter.max ?? 0;
   const boxes = isGauge(counter) && max <= BOXES_LIMIT;
-  // Tap the number, type the number. Steppers are fine for spending a
-  // Supply; they are misery for a $37 shop run. The input proposes into
-  // the same slot everything else does — clamped, event-logged,
-  // console-overridable (rule 1). Boxes don't need this: tapping a box
-  // already IS naming a value.
-  const [draft, setDraft] = useState<string | null>(null);
-  const commit = () => {
-    if (draft === null) return;
-    const n = Math.floor(Number(draft));
-    setDraft(null);
-    if (!Number.isFinite(n) || draft.trim() === '') return;
-    const capped = counter.max !== null ? Math.min(n, counter.max) : n;
-    const next = Math.max(0, capped);
-    if (next !== counter.current) onChange({ ...counter, current: next });
-  };
 
   return (
     <SheetPanel title={counter.name} note={note} fill={fill}>
@@ -97,31 +81,15 @@ export function TallyPanel({
               );
             })}
           </div>
-        ) : draft !== null ? (
-          <input
-            autoFocus
-            type="number"
-            inputMode="numeric"
-            className="w-24 rounded-md border border-stone-600 bg-stone-950 px-2 py-1 text-center font-mono text-2xl text-stone-100 outline-none focus:border-amber-500"
-            aria-label={`type a value for ${counter.name}`}
-            defaultValue={counter.current}
-            onFocus={(e) => e.target.select()}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') commit();
-              if (e.key === 'Escape') setDraft(null);
-            }}
-          />
         ) : (
-          <button
-            type="button"
-            aria-label={`edit ${counter.name}`}
-            className="rounded-md px-1 transition-colors hover:bg-stone-800"
-            onClick={() => setDraft(String(counter.current))}
-          >
-            <Value counter={counter} className="text-2xl" />
-          </button>
+          // Boxes don't need typing: tapping a box already IS naming a
+          // value. The bare number gets the tap-to-type treatment.
+          <TypeableValue
+            counter={counter}
+            onChange={onChange}
+            className="text-2xl"
+            inputClassName="w-24 text-2xl"
+          />
         )}
         <Step
           sign="+"

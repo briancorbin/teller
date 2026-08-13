@@ -4,6 +4,7 @@ import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
 import { Screens } from '../sheet/Screens';
+import { PocketPanel } from '../sheet/PocketPanel';
 import { boxable, TallyPanel } from '../sheet/TallyPanel';
 import { CardsPanel, cardable } from '../sheet/CardsPanel';
 import { TalentPanel } from '../sheet/TalentPanel';
@@ -198,6 +199,7 @@ export function Sheet({
   accents,
   pins,
   dials,
+  icons,
   tags = [],
   onTags,
   conditions = [],
@@ -1002,9 +1004,16 @@ export function Sheet({
         : held;
     const minePools = mine.filter((i) => pools.includes(i));
     const mineRest = mine.filter((i) => !pools.includes(i));
-    const tallyPanels = (def.counters ?? [])
+    const claimed = (def.counters ?? [])
       .map((name) => counters.find((c) => c.name === name))
-      .filter((c): c is Counter => Boolean(c))
+      .filter((c): c is Counter => Boolean(c));
+    // Iconed counters band together: one slim tile of compact chips at
+    // the screen's left edge (the pocket), instead of a full panel
+    // each. Membership is the template's declaration (`icons`), never
+    // a name check here.
+    const pocket = claimed.filter((c) => icons?.[c.name]);
+    const tallyPanels = claimed
+      .filter((c) => !icons?.[c.name])
       .map((c) => (
         <div
           key={c.id}
@@ -1041,6 +1050,33 @@ export function Sheet({
     // is a character-level pool wherever the pool's items are shown.
     // No declared screens = one screen, and it arms, as before.
     const arming = !screens?.length || def.arms === true;
+    // The pocket leads the shelf — always the same place, the left
+    // edge — as one slim tile on the strip and a chip row up top on
+    // held glass.
+    const pocketTile = pocket.length > 0 && (
+      <div
+        key="pocket"
+        className={
+          strip
+            ? 'flex w-[17rem] shrink-0 snap-start flex-col self-stretch'
+            : 'flex w-full flex-col'
+        }
+      >
+        <PocketPanel
+          counters={pocket}
+          icons={icons!}
+          onChange={update}
+          fill={strip}
+        />
+      </div>
+    );
+    const lead =
+      pocketTile || tallyPanels.length
+        ? [
+            ...(pocketTile ? [pocketTile] : []),
+            ...tallyPanels,
+          ]
+        : undefined;
     return (
       <div className="flex min-h-0 flex-1 gap-2">
         {/* The filter rail, when this screen holds more than one KIND:
@@ -1087,20 +1123,14 @@ export function Sheet({
             scrolls down anyway, and the rule between gear and pools
             reads well in a column. */}
         {strip
-          ? (mine.length > 0 || tallyPanels.length > 0) &&
-            itemRow(
-              mine,
-              tallyPanels.length ? tallyPanels : undefined,
-              arming ? pools : [],
-              arming,
-              `shelf:${chosen}`,
-            )
+          ? (mine.length > 0 || lead) &&
+            itemRow(mine, lead, arming ? pools : [], arming, `shelf:${chosen}`)
           : (
             <>
-              {(mineRest.length > 0 || tallyPanels.length > 0) &&
+              {(mineRest.length > 0 || lead) &&
                 itemRow(
                   mineRest,
-                  tallyPanels.length ? tallyPanels : undefined,
+                  lead,
                   arming ? pools : [],
                   arming,
                   `gear:${chosen}`,

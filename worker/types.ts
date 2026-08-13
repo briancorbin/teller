@@ -743,6 +743,19 @@ export type SystemTemplate = {
    */
   dials?: Record<string, 'cylinder' | 'cards'>;
   /**
+   * Counter name → glyph, for counters the system dresses compactly.
+   *
+   * An iconed counter renders as a pocket chip — glyph, name, value —
+   * grouped with its fellows into one slim tile at the left edge of
+   * whichever screen claims it, instead of a full panel. The glyph set
+   * is teller's (drawn in the sheet's own line style — see
+   * `src/components/sheet/glyphs.tsx`); WHICH counter wears which
+   * glyph is the system's declaration, so no counter name is ever
+   * special-cased in code (rule 2). An unknown glyph name draws
+   * nothing and the chip still works.
+   */
+  icons?: Record<string, string>;
+  /**
    * How USING an item spends things, when this system prices actions.
    *
    * WiW: firing a weapon costs its Grit and consumes one of whatever
