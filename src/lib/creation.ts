@@ -145,14 +145,37 @@ export function applyGear(
   return { ...data, items: [...(data.items ?? []), ...added] };
 }
 
-/** Step: keepsakes land in notes — flavor the sheet carries, editable. */
+/**
+ * Step: keepsakes land in notes — flavor the sheet carries, editable.
+ * REPLACES any previous keepsakes line, so walking back through the
+ * flow re-decides instead of piling up.
+ */
 export function applyKeepsakes(
   data: CharacterData,
   keepsakes: string[],
 ): CharacterData {
-  if (!keepsakes.length) return data;
+  const kept = data.notes
+    .split('\n')
+    .filter((l) => !l.startsWith('Keepsakes: '))
+    .join('\n');
+  if (!keepsakes.length) return { ...data, notes: kept };
   const line = `Keepsakes: ${keepsakes.join('; ')}`;
-  return { ...data, notes: data.notes ? `${data.notes}\n${line}` : line };
+  return { ...data, notes: kept ? `${kept}\n${line}` : line };
+}
+
+/** Drop carried items instanced from any of these catalog ids/kinds. */
+export function withoutInstanced(
+  data: CharacterData,
+  opts: { kinds?: string[]; from?: string[] },
+): CharacterData {
+  const kinds = new Set(opts.kinds ?? []);
+  const from = new Set(opts.from ?? []);
+  return {
+    ...data,
+    items: (data.items ?? []).filter(
+      (i) => !(kinds.has(i.kind ?? '') || (i.from && from.has(i.from))),
+    ),
+  };
 }
 
 /** Draw from the naming well. */

@@ -12,6 +12,7 @@ import {
   creationOf,
   gimmeName,
   spreadTotal,
+  withoutInstanced,
 } from '../lib/creation';
 
 // "What's yer trade?" — the rail builder (TEL-75).
@@ -122,10 +123,24 @@ export function CreationBuilder({
   const here = steps[Math.min(step, steps.length - 1)];
   const next = () => setStep((s) => Math.min(s + 1, steps.length - 1));
 
+  // Walking back is free: every step's commit REPLACES what it wrote
+  // (abilities swap with the trade, bundles swap on re-pack, the
+  // keepsakes line rewrites), so second thoughts never double up.
   const heading = (text: string, sub?: string) => (
-    <div className="shrink-0">
-      <h2 className="font-serif text-xl text-stone-100">{text}</h2>
-      {sub && <p className="text-xs text-stone-500">{sub}</p>}
+    <div className="flex shrink-0 items-baseline gap-3">
+      {step > 0 && (
+        <button
+          className="rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
+          aria-label="back a step"
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+        >
+          ← back
+        </button>
+      )}
+      <div>
+        <h2 className="font-serif text-xl text-stone-100">{text}</h2>
+        {sub && <p className="text-xs text-stone-500">{sub}</p>}
+      </div>
     </div>
   );
 
@@ -198,10 +213,17 @@ export function CreationBuilder({
                         className="mt-1 rounded-md bg-amber-600 px-3 py-2 text-center text-sm font-semibold text-stone-950"
                         onClick={(e) => {
                           e.stopPropagation();
-                          // Trade + its preset abilities in one write.
+                          // Trade + its preset abilities in one write —
+                          // dropping any OTHER trade's abilities first,
+                          // so backing up and switching trades swaps
+                          // cleanly instead of accumulating.
                           onPatch(
                             applyGear(
-                              applyTrade(data, t, creation),
+                              applyTrade(
+                                withoutInstanced(data, { kinds: ['ability'] }),
+                                t,
+                                creation,
+                              ),
                               packs,
                               [t.abilities?.[0], t.aceInTheHole?.[0]].filter(
                                 (x): x is string => Boolean(x),
@@ -338,7 +360,17 @@ export function CreationBuilder({
             className="shrink-0 self-start rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
             disabled={eqPicks.length === 0}
             onClick={() => {
-              onPatch(applyGear(data, packs, eqPicks));
+              // Swap, don't stack: drop any bundle a previous pass
+              // added before granting this pass's picks.
+              onPatch(
+                applyGear(
+                  withoutInstanced(data, {
+                    from: creation.equipmentPacks ?? [],
+                  }),
+                  packs,
+                  eqPicks,
+                ),
+              );
               next();
             }}
           >
@@ -490,6 +522,12 @@ export function CreationBuilder({
 
       {here === 'done' && (
         <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3">
+          <button
+            className="rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
+            onClick={() => setStep((s) => Math.max(0, s - 1))}
+          >
+            ← back
+          </button>
           <h2 className="font-serif text-2xl text-stone-100">
             Welcome to the posse{nameDraft.trim() ? `, ${nameDraft.trim()}` : ''}.
           </h2>
