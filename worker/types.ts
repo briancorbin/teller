@@ -180,6 +180,14 @@ export type CatalogItem = {
    */
   effects?: PoolEffect[];
   notes?: string;
+  /**
+   * A BUNDLE: catalog ids this entry unpacks into when acquired — an
+   * equipment pack becomes its blanket, rations and compass as
+   * separate carried items, not one word. An id may repeat ("2× Pain
+   * Pills" lists it twice). The bundle entry itself is the picker
+   * card; what lands in inventory is the contents.
+   */
+  contents?: string[];
 };
 
 /** A modification a catalogue item can take. */

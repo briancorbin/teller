@@ -190,6 +190,13 @@ rather than picked (further unlocks are Prestige spends);
 starting-loadout table for a posse beginning at higher Prestige (its
 `packs` column counts equipment-pack picks).
 
+A catalog entry may be a **bundle**: `contents: ["itm_…", …]` lists
+the catalog ids it unpacks into when acquired — an equipment pack
+becomes its blanket, rations and compass as separate carried items,
+never one word in an inventory. An id may repeat ("2× Pain Pills"
+lists it twice, and grants two). The bundle entry itself is the picker
+card; the contents are what land.
+
 The rest of `creation` keeps teller generic (rule 2): `map` says where
 tier numbers LAND (creation-schema key → this system's own counter and
 field names, so no code ever knows a counter is called anything);

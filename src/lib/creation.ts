@@ -141,8 +141,31 @@ export function applyGear(
     .filter((id) => !have.has(id))
     .map((id) => catalog.get(id))
     .filter((e): e is CatalogItem => Boolean(e))
+    // A bundle unpacks: what lands in the inventory is its CONTENTS,
+    // each occurrence its own item ("2× Pain Pills" lists the id
+    // twice, and gets two). Deliberately no dedupe inside a bundle —
+    // repeats there are the author's intent.
+    .flatMap((e) =>
+      e.contents?.length
+        ? e.contents
+            .map((cid) => catalog.get(cid))
+            .filter((c): c is CatalogItem => Boolean(c))
+        : [e],
+    )
     .map(instanced);
   return { ...data, items: [...(data.items ?? []), ...added] };
+}
+
+/** Every id a set of bundles could have granted — for a clean re-swap. */
+export function bundleGrantIds(
+  packs: RulesPack[],
+  bundleIds: string[],
+): string[] {
+  const { items: catalog } = catalogOf(packs);
+  return bundleIds.flatMap((id) => {
+    const e = catalog.get(id);
+    return e ? [id, ...(e.contents ?? [])] : [id];
+  });
 }
 
 /**

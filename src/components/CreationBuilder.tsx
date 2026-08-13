@@ -9,6 +9,7 @@ import {
   applyKeepsakes,
   applySkills,
   applyTrade,
+  bundleGrantIds,
   creationOf,
   gimmeName,
   spreadTotal,
@@ -360,12 +361,12 @@ export function CreationBuilder({
             className="shrink-0 self-start rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950 disabled:opacity-40"
             disabled={eqPicks.length === 0}
             onClick={() => {
-              // Swap, don't stack: drop any bundle a previous pass
-              // added before granting this pass's picks.
+              // Swap, don't stack: drop anything a previous pass's
+              // bundles unpacked before granting this pass's picks.
               onPatch(
                 applyGear(
                   withoutInstanced(data, {
-                    from: creation.equipmentPacks ?? [],
+                    from: bundleGrantIds(packs, creation.equipmentPacks ?? []),
                   }),
                   packs,
                   eqPicks,
