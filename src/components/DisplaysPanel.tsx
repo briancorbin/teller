@@ -39,6 +39,11 @@ export function DisplaysPanel({
   campaignId: string;
   characters: Character[];
 }) {
+  // Seats and badges belong to players. A deployed foe is a character
+  // too (kind 'npc'), but it never gets a screen — nobody sits at
+  // Pondweed Peril's seat.
+  const pcs = characters.filter((c) => c.kind === 'pc');
+
   const [displays, setDisplays] = useState<Display[]>([]);
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
@@ -281,7 +286,7 @@ export function DisplaysPanel({
                   }
                 >
                   <option value="">— whose? —</option>
-                  {characters.map((c) => (
+                  {pcs.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
                     </option>
@@ -395,7 +400,7 @@ export function DisplaysPanel({
         <p className="px-1 text-sm text-stone-500">No screens yet.</p>
       )}
 
-      <SeatPreview characters={characters} />
+      <SeatPreview characters={pcs} />
 
       {calibrating && (
         // The wizard positions itself absolutely; give it the viewport.
