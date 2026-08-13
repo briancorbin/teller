@@ -15,6 +15,7 @@ import {
   spreadTotal,
   withoutInstanced,
 } from '../lib/creation';
+import { SheetPanel } from './sheet/SheetPanel';
 
 // "What's yer trade?" — the rail builder (TEL-75).
 //
@@ -169,22 +170,43 @@ export function CreationBuilder({
           {shelf(
             trades.map((t) => {
               const open = confirming === t.id;
+              // Each card wears its own trade's accent — the same
+              // colour the finished sheet will be tinted with, pulled
+              // from the template's declared accents (the card IS a
+              // preview of the sheet you're choosing).
+              const accent = template?.accents?.[t.name];
               return (
                 <button
                   key={t.id}
-                  className={`${stepBtn} ${open ? on : off} ${tile('flex flex-col gap-1')}`}
+                  className={`${tile('flex flex-col text-left')} transition-transform active:scale-[0.99]`}
+                  style={
+                    accent
+                      ? ({ '--sheet-accent': accent } as React.CSSProperties)
+                      : undefined
+                  }
                   onClick={() => setConfirming(open ? '' : t.id)}
                 >
-                  <span className="font-serif text-lg text-stone-100">{t.name}</span>
-                  {t.tagline && (
-                    <span className="text-[10px] uppercase tracking-widest text-stone-500">
-                      {t.tagline}
+                  <SheetPanel
+                    title={t.name}
+                    note={t.tagline}
+                    fill
+                    className={
+                      open ? 'border-[color:var(--sheet-accent)]' : ''
+                    }
+                  >
+                    <span className="flex min-h-0 flex-1 flex-col gap-1.5 pt-1">
+                  {t.text && (
+                    <span className="font-serif text-sm italic leading-snug text-stone-300">
+                      {t.text}
                     </span>
                   )}
                   <span className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-xs text-stone-400">
                     {Object.entries(t.skills ?? {}).map(([k, v]) => (
                       <span key={k}>
-                        {k} {v}
+                        {k}{' '}
+                        <span style={accent ? { color: accent } : undefined}>
+                          {v}
+                        </span>
                       </span>
                     ))}
                   </span>
@@ -211,7 +233,8 @@ export function CreationBuilder({
                           .join(' · ')}
                       </span>
                       <span
-                        className="mt-1 rounded-md bg-amber-600 px-3 py-2 text-center text-sm font-semibold text-stone-950"
+                        className="mt-1 rounded-md px-3 py-2 text-center text-sm font-semibold text-stone-950"
+                        style={{ background: 'var(--sheet-accent, #f59e0b)' }}
                         onClick={(e) => {
                           e.stopPropagation();
                           // Trade + its preset abilities in one write —
@@ -240,6 +263,8 @@ export function CreationBuilder({
                       </span>
                     </>
                   )}
+                    </span>
+                  </SheetPanel>
                 </button>
               );
             }),

@@ -1125,6 +1125,8 @@ export type RulesPack = {
     name: string;
     /** The book's category header for the trade ("Healing & Support"). */
     tagline?: string;
+    /** The trade's one-line introduction — pack prose for the card. */
+    text?: string;
     page?: number;
     /** Field label → starting dice pool ("Charm" → "3B"). */
     skills?: Record<string, string>;
