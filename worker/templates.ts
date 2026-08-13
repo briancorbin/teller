@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 2,
+  version: 4,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
@@ -92,7 +92,11 @@ const wiw: SystemTemplate = {
       { name: 'Prestige · Unclaimed', current: 0, max: null },
       { name: 'Wallet ($)', current: 0, max: null },
       { name: 'Scrap (pcs)', current: 0, max: null },
-      { name: 'Supplies', current: 0, max: null },
+      // Supply SLOTS (p. 74): everyone carries 1; horses and mechs add
+      // more. The max is the slot count — stored per character and
+      // typed over when a mount arrives (rule 1) — and a small max is
+      // what draws the printed sheet's tick boxes instead of a number.
+      { name: 'Supplies', current: 1, max: 1 },
     ],
     tags: [],
   },

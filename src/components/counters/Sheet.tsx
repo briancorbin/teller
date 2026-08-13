@@ -4,7 +4,7 @@ import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
 import { Screens } from '../sheet/Screens';
-import { TallyPanel } from '../sheet/TallyPanel';
+import { boxable, TallyPanel } from '../sheet/TallyPanel';
 import { CardsPanel, cardable } from '../sheet/CardsPanel';
 import { TalentPanel } from '../sheet/TalentPanel';
 import { PrestigePanel } from '../sheet/PrestigePanel';
@@ -635,30 +635,11 @@ export function Sheet({
       ))}
     </div>
   );
-  const tallyRow = (counter: Counter) => (
-    <div
-      key={counter.id}
-      className="flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1"
-    >
-      <div className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-1.5">
-        <Name
-          counter={counter}
-          className="text-[10px] uppercase tracking-widest text-stone-500"
-        />
-        <Value counter={counter} className="text-base" />
-      </div>
-      <Step
-        sign="−"
-        label={`decrease ${counter.name}`}
-        onClick={() => update(bumped(counter, -1))}
-      />
-      <Step
-        sign="+"
-        label={`increase ${counter.name}`}
-        onClick={() => update(bumped(counter, 1))}
-      />
-    </div>
-  );
+  // Every spare tally is a real panel now — the same TallyPanel the
+  // declared screens use, so Wallet gets a tappable, typeable number
+  // and a Supplies with a max gets the printed sheet's boxes. The old
+  // slim "pocket" rows were the last undesigned rendering in the pen
+  // (TEL-68: blocks first, arrangement later).
 
   const spareScreen = strip ? (
     // The shelf, exactly as the item screens pan it — snap tiles,
@@ -690,13 +671,36 @@ export function Sheet({
           key={counter.id}
           className="flex flex-[1_0_16rem] snap-start flex-col self-stretch"
         >
-          <SheetGauge counter={counter} onChange={update} fill />
+          {/* A slot-shaped gauge (Supplies at 2/3) draws the printed
+              sheet's tick boxes; a big one keeps the bar. */}
+          {boxable(counter) ? (
+            <TallyPanel
+              counter={counter}
+              note={note?.(counter.name)}
+              onChange={update}
+              fill
+            />
+          ) : (
+            <SheetGauge counter={counter} onChange={update} fill />
+          )}
         </div>
       ))}
-      {(fieldChips || spare.tallies.length > 0) && (
-        <div className="flex flex-[1_0_19rem] snap-start flex-col gap-1.5 self-stretch rounded-lg border border-stone-700 bg-stone-900/60 p-2.5">
+      {spare.tallies.map((counter) => (
+        <div
+          key={counter.id}
+          className="flex flex-[1_0_16rem] snap-start flex-col self-stretch"
+        >
+          <TallyPanel
+            counter={counter}
+            note={note?.(counter.name)}
+            onChange={update}
+            fill
+          />
+        </div>
+      ))}
+      {fieldChips && (
+        <div className="flex flex-[1_0_16rem] snap-start flex-col gap-1.5 self-stretch rounded-lg border border-stone-700 bg-stone-900/60 p-2.5">
           {fieldChips}
-          {spare.tallies.map(tallyRow)}
         </div>
       )}
     </div>
@@ -714,17 +718,33 @@ export function Sheet({
             gridAutoRows: 'minmax(0, max-content)',
           }}
         >
-          {spare.gauges.map((counter) => (
-            <SheetGauge key={counter.id} counter={counter} onChange={update} />
-          ))}
+          {spare.gauges.map((counter) =>
+            boxable(counter) ? (
+              <TallyPanel
+                key={counter.id}
+                counter={counter}
+                note={note?.(counter.name)}
+                onChange={update}
+              />
+            ) : (
+              <SheetGauge key={counter.id} counter={counter} onChange={update} />
+            ),
+          )}
         </div>
       )}
       {spare.tallies.length > 0 && (
         <div
-          className="grid shrink-0 gap-1.5"
-          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(11rem, 1fr))' }}
+          className="grid shrink-0 gap-2"
+          style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(13rem, 1fr))' }}
         >
-          {spare.tallies.map(tallyRow)}
+          {spare.tallies.map((counter) => (
+            <TallyPanel
+              key={counter.id}
+              counter={counter}
+              note={note?.(counter.name)}
+              onChange={update}
+            />
+          ))}
         </div>
       )}
     </div>
