@@ -650,12 +650,14 @@ export function CreationBuilder({
                     }
                   >
                     <div className="flex min-h-0 flex-1 flex-col items-center">
-                      {/* The mark takes the room above the list and
-                          centres in it, the way the skills' does —
-                          the panel is 378px tall and the contents
-                          need barely half of it. */}
+                      {/* Mark up top with the list right under it —
+                          NOT the skills' even-spacing treatment. There
+                          the mark is the panel's face with one line
+                          beneath; here the list is the content, and
+                          spreading a nine-item list to the far edge
+                          reads as two unrelated blocks. */}
                       {p.icon && (
-                        <span className="flex min-h-0 flex-1 items-center justify-center py-1">
+                        <span className="mb-2 flex shrink-0 items-center justify-center">
                           <Glyph
                             name={p.icon}
                             className={`h-24 w-24 transition-colors ${
@@ -683,34 +685,43 @@ export function CreationBuilder({
                           and then agree to it, instead of pointing at
                           a thing and reaching somewhere else. It waits
                           for the LAST pick, so a tier with two slots
-                          still gets one button and not two. */}
-                      {picked && eqPicks.length === picks && (
-                        <span
-                          className="mt-2 w-full rounded-md px-3 py-2 text-center text-sm font-semibold text-stone-950"
-                          style={{ background: 'var(--sheet-accent, #f59e0b)' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // Swap, don't stack: drop anything a
-                            // previous pass's bundles unpacked before
-                            // granting this pass's picks.
-                            onPatch(
-                              applyGear(
-                                withoutInstanced(data, {
-                                  from: bundleGrantIds(
-                                    packs,
-                                    creation.equipmentPacks ?? [],
-                                  ),
-                                }),
-                                packs,
-                                eqPicks,
-                              ),
-                            );
-                            next();
-                          }}
-                        >
-                          grab yer pack
-                        </span>
-                      )}
+                          still gets one button and not two.
+                          ALWAYS rendered, merely hidden: appearing
+                          from nothing would shove the mark and the
+                          list up the card at the exact moment you're
+                          reading them to decide. It holds its own
+                          space so choosing changes only colour. */}
+                      <span
+                        aria-hidden={!(picked && eqPicks.length === picks)}
+                        className={`mt-auto w-full rounded-md px-3 py-2 text-center text-sm font-semibold text-stone-950 ${
+                          picked && eqPicks.length === picks
+                            ? ''
+                            : 'invisible pointer-events-none'
+                        }`}
+                        style={{ background: 'var(--sheet-accent, #f59e0b)' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!(picked && eqPicks.length === picks)) return;
+                          // Swap, don't stack: drop anything a
+                          // previous pass's bundles unpacked before
+                          // granting this pass's picks.
+                          onPatch(
+                            applyGear(
+                              withoutInstanced(data, {
+                                from: bundleGrantIds(
+                                  packs,
+                                  creation.equipmentPacks ?? [],
+                                ),
+                              }),
+                              packs,
+                              eqPicks,
+                            ),
+                          );
+                          next();
+                        }}
+                      >
+                        grab yer pack
+                      </span>
                     </div>
                   </SheetPanel>
                 </button>
