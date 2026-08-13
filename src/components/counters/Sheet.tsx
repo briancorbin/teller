@@ -876,6 +876,11 @@ export function Sheet({
     // screen passes the pools and the acts; others pass neither.
     chamber: Item[] = [],
     arming = false,
+    // Changes when the shelf filter does. A narrower filtered row keeps
+    // the old scrollLeft, which can strand the view past the new end —
+    // remounting the container starts every filter at the shelf's left
+    // edge (Brian, 2026-08-13, from the rail).
+    resetKey?: string,
   ) => (
     // On the strip the row is a SHELF: one row, full height, and it
     // PANS sideways past what fits — a deliberate touch gesture on
@@ -886,6 +891,7 @@ export function Sheet({
     // floors them all and the shelf scrolls — no magic number, and a
     // narrower bar degrades to four without anyone deciding it.
     <div
+      key={resetKey}
       className={`flex min-h-0 gap-2 ${
         strip
           ? 'snap-x snap-mandatory flex-1 flex-nowrap items-stretch overflow-x-auto'
@@ -1063,6 +1069,7 @@ export function Sheet({
               tallyPanels.length ? tallyPanels : undefined,
               arming ? pools : [],
               arming,
+              `shelf:${chosen}`,
             )
           : (
             <>
@@ -1072,6 +1079,7 @@ export function Sheet({
                   tallyPanels.length ? tallyPanels : undefined,
                   arming ? pools : [],
                   arming,
+                  `gear:${chosen}`,
                 )}
               {minePools.length > 0 && (
                 <>
@@ -1085,7 +1093,7 @@ export function Sheet({
                       <div className="h-px flex-1 bg-stone-800" />
                     </div>
                   )}
-                  {itemRow(minePools)}
+                  {itemRow(minePools, undefined, [], false, `pools:${chosen}`)}
                 </>
               )}
             </>
