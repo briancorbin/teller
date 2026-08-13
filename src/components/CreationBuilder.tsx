@@ -178,7 +178,14 @@ export function CreationBuilder({
               return (
                 <button
                   key={t.id}
-                  className={`${tile('flex flex-col text-left')} transition-transform active:scale-[0.99]`}
+                  // Tapped, the card GROWS — width, not a modal — and
+                  // shoulders the other trades aside to make room for
+                  // the book's fuller portrait of the life.
+                  className={`flex flex-col text-left ${
+                    strip
+                      ? `${open ? 'w-[38rem]' : 'w-[19rem]'} shrink-0 snap-start self-stretch transition-[width] duration-300`
+                      : 'w-full'
+                  }`}
                   style={
                     accent
                       ? ({ '--sheet-accent': accent } as React.CSSProperties)
@@ -208,6 +215,12 @@ export function CreationBuilder({
                   )}
                   {open && (
                     <>
+                      {/* The fuller portrait of the life, from the pack. */}
+                      {t.overview && (
+                        <span className="mt-1 border-t border-stone-800 pt-2 text-xs leading-relaxed text-stone-400">
+                          {t.overview}
+                        </span>
+                      )}
                       {/* What you START with — the sheet's preset: the
                           first ability and AitH 1. The rest are named
                           so the choice of trade is informed, and they

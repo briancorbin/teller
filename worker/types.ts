@@ -1127,6 +1127,8 @@ export type RulesPack = {
     tagline?: string;
     /** The trade's one-line introduction — pack prose for the card. */
     text?: string;
+    /** The fuller portrait, for the card expanded — pack prose. */
+    overview?: string;
     page?: number;
     /** Field label → starting dice pool ("Charm" → "3B"). */
     skills?: Record<string, string>;
