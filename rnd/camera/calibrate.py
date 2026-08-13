@@ -37,9 +37,15 @@ DICT = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
 
 
 def layout(w: int, h: int):
-    """Marker squares in screen px — must mirror pattern.html's formula."""
-    m = round(0.06 * min(w, h))
-    s = round(0.12 * min(w, h))
+    """Marker squares in screen px — must mirror pattern.html's formula.
+
+    Tight and small on purpose: corner-hugging markers widen the quad
+    the solve is anchored to, and full-res captures keep ~24 camera px
+    per cell even at 7%. The 1% margin keeps the quiet zone on-glass
+    (pad is s/8 < m) — and dodges TV overscan by a hair, no more.
+    """
+    m = round(0.01 * min(w, h))
+    s = round(0.07 * min(w, h))
     origins = {
         0: (m, m),
         1: (w - m - s, m),

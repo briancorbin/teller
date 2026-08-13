@@ -211,8 +211,8 @@ def table_page() -> str:
 <script>
   function layout() {
     const W = innerWidth, H = innerHeight;
-    const m = Math.round(0.06 * Math.min(W, H));
-    const s = Math.round(0.12 * Math.min(W, H));
+    const m = Math.round(0.01 * Math.min(W, H));
+    const s = Math.round(0.07 * Math.min(W, H));
     [[m,m],[W-m-s,m],[m,H-m-s],[W-m-s,H-m-s]].forEach(([x,y],i) => {
       const el = document.getElementById('m'+i);
       el.style.left = x+'px'; el.style.top = y+'px';

@@ -4,8 +4,8 @@
 Four ArUco markers (DICT_4X4_50, ids 0-3) at the corners of the viewport,
 laid out by a formula both this page and calibrate.py compute identically:
 
-    m = round(0.06 * min(W, H))   # margin
-    s = round(0.12 * min(W, H))   # marker side
+    m = round(0.01 * min(W, H))   # margin
+    s = round(0.07 * min(W, H))   # marker side
     id 0 top-left     (m, m)
     id 1 top-right    (W - m - s, m)
     id 2 bottom-left  (m, H - m - s)
@@ -64,8 +64,8 @@ html = f"""<!doctype html>
 <script>
   function layout() {{
     const W = window.innerWidth, H = window.innerHeight;
-    const m = Math.round(0.06 * Math.min(W, H));
-    const s = Math.round(0.12 * Math.min(W, H));
+    const m = Math.round(0.01 * Math.min(W, H));
+    const s = Math.round(0.07 * Math.min(W, H));
     const pos = [[m, m], [W - m - s, m], [m, H - m - s], [W - m - s, H - m - s]];
     pos.forEach(([x, y], i) => {{
       const el = document.getElementById('m' + i);
