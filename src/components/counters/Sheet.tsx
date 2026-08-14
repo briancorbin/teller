@@ -1178,6 +1178,7 @@ export function Sheet({
         player={player}
         trade={title}
         accent={accent}
+        mounted={mounted}
         // The currencies `use` prices, in declaration order — Grit,
         // then the Ace tally the moment `use.costs` names it. Derived,
         // so the header grows a chip when the system grows a price.

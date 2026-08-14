@@ -29,6 +29,7 @@ export function SheetHeader({
   accent,
   costs = [],
   onCost,
+  mounted = false,
 }: {
   /** The character's name — a column, not a field. */
   name?: string;
@@ -44,6 +45,16 @@ export function SheetHeader({
    */
   costs?: { counter: Counter; face?: 'cylinder' | 'cards' }[];
   onCost?: (next: Counter) => void;
+  /**
+   * Mounted glass, where all three answers fit on one line.
+   *
+   * In a hand they don't: 390px minus a name in 1.35rem serif left the
+   * player truncated to "BR…", Grit hanging off the right edge and Aces
+   * off the screen entirely — the two numbers you spend, invisible on
+   * the sheet that prices them. So held glass gets the same three
+   * answers stacked instead of squeezed.
+   */
+  mounted?: boolean;
 }) {
   const [open, setOpen] = useState<string | null>(null);
   const tint = accent ?? '#f59e0b';
@@ -51,6 +62,121 @@ export function SheetHeader({
   const playerValue = player?.value?.trim();
 
   if (!name && !tradeValue && !costs.length) return null;
+
+  // The plate: who this is, with the trade as its caption. The same
+  // block in both arrangements — only what surrounds it changes.
+  const plate = (
+    <span className="flex min-w-0 flex-col items-center px-1">
+      {name && (
+        <span
+          className={`min-w-0 font-serif text-[1.35rem] font-bold leading-tight text-stone-100 ${
+            mounted ? 'max-w-full truncate' : 'break-words text-center'
+          }`}
+        >
+          {name}
+        </span>
+      )}
+      {tradeValue && (
+        <span
+          className="whitespace-nowrap text-[0.7rem] uppercase leading-tight tracking-[0.18em]"
+          style={{ color: tint }}
+        >
+          The {tradeValue}
+        </span>
+      )}
+    </span>
+  );
+
+  // What's left to spend. Just the numbers — the gauges on the Sheet
+  // screen keep the ceilings; up here the question is "can I afford the
+  // next thing". Each chip is still a control (rule 1): tapping it opens
+  // a stepper, so the header never shows a number nobody can change.
+  const chips = costs.map(({ counter, face }) => (
+    <div key={counter.id} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => (o === counter.id ? null : counter.id))}
+        aria-label={`${counter.name}: ${counter.current}`}
+        aria-expanded={open === counter.id}
+        className="flex items-center gap-1.5"
+      >
+        <span className="text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">
+          {counter.name}
+        </span>
+        {/* The chip wears its counter's declared face, never its
+            name: a cylinder is spent in cartridges (flat rim, round
+            nose), a cards counter is a tiny card off the deck, and
+            anything undialled is a plain pill. */}
+        {face === 'cards' ? (
+          <span className="flex h-8 w-6 items-center justify-center rounded-[4px] border border-stone-400 bg-[#f4efe4] font-mono text-sm font-bold text-stone-900">
+            {counter.current}
+          </span>
+        ) : (
+          <span
+            className={`flex h-7 min-w-[2.6rem] items-center justify-center border font-mono text-sm text-stone-100 ${
+              face === 'cylinder'
+                ? 'rounded-l-sm rounded-r-full border-l-2 pl-1.5 pr-2.5'
+                : 'rounded-full px-2.5'
+            }`}
+            style={{ borderColor: tint, background: `${tint}1f` }}
+          >
+            {counter.current}
+          </span>
+        )}
+      </button>
+
+      {open === counter.id && onCost && (
+        <div className="absolute right-0 top-full z-20 mt-1 flex items-center gap-1 rounded-lg border border-stone-700 bg-stone-950 p-1 shadow-lg">
+          <button
+            type="button"
+            aria-label={`decrease ${counter.name}`}
+            onClick={() => onCost(bumped(counter, -1))}
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-800 font-mono text-lg text-stone-100 hover:bg-stone-700"
+          >
+            −
+          </button>
+          <span className="min-w-[2rem] text-center font-mono text-sm text-stone-100">
+            {counter.current}
+          </span>
+          <button
+            type="button"
+            aria-label={`increase ${counter.name}`}
+            onClick={() => onCost(bumped(counter, 1))}
+            className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-800 font-mono text-lg text-stone-100 hover:bg-stone-700"
+          >
+            +
+          </button>
+        </div>
+      )}
+    </div>
+  ));
+
+  // Held glass: two thin rows instead of three squeezed columns. The
+  // plate keeps the whole width and its flanking rules, and underneath
+  // it the row that never changes (whose hand this is) sits opposite
+  // the numbers that change every turn.
+  if (!mounted) {
+    return (
+      <div
+        className="flex shrink-0 flex-col gap-1.5 rounded-md border px-3 py-1.5"
+        style={{ borderColor: `${tint}66` }}
+      >
+        <div className="flex items-center gap-2.5">
+          <span className="h-px flex-1" style={{ background: `${tint}55` }} />
+          {plate}
+          <span className="h-px flex-1" style={{ background: `${tint}55` }} />
+        </div>
+        {(playerValue || costs.length > 0) && (
+          <div className="flex items-center justify-between gap-3">
+            <span className="min-w-0 truncate text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">
+              {playerValue}
+            </span>
+            <div className="flex shrink-0 items-center gap-3">{chips}</div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div
@@ -83,88 +209,11 @@ export function SheetHeader({
           its question in, so a sheet somebody built at the rail ends
           up wearing the header they filled in. The trade keeps the
           accent, because the trade is what chose the colour. */}
-      <span className="flex min-w-0 flex-col items-center px-1">
-        {name && (
-          <span className="max-w-full truncate font-serif text-[1.35rem] font-bold leading-tight text-stone-100">
-            {name}
-          </span>
-        )}
-        {tradeValue && (
-          <span
-            className="whitespace-nowrap text-[0.7rem] uppercase leading-tight tracking-[0.18em]"
-            style={{ color: tint }}
-          >
-            The {tradeValue}
-          </span>
-        )}
-      </span>
+      {plate}
 
-      {/* What's left to spend. Just the numbers — the gauges on the
-          Sheet screen keep the ceilings; up here the question is "can I
-          afford the next thing". Each chip is still a control (rule 1):
-          tapping it opens a stepper, so the header never shows a number
-          nobody can change. */}
       <div className="flex min-w-0 items-center gap-3">
         <span className="h-px flex-1" style={{ background: `${tint}55` }} />
-        {costs.map(({ counter, face }) => (
-            <div key={counter.id} className="relative">
-            <button
-              type="button"
-              onClick={() => setOpen((o) => (o === counter.id ? null : counter.id))}
-              aria-label={`${counter.name}: ${counter.current}`}
-              aria-expanded={open === counter.id}
-              className="flex items-center gap-1.5"
-            >
-              <span className="text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">
-                {counter.name}
-              </span>
-              {/* The chip wears its counter's declared face, never its
-                  name: a cylinder is spent in cartridges (flat rim, round
-                  nose), a cards counter is a tiny card off the deck, and
-                  anything undialled is a plain pill. */}
-              {face === 'cards' ? (
-                <span className="flex h-8 w-6 items-center justify-center rounded-[4px] border border-stone-400 bg-[#f4efe4] font-mono text-sm font-bold text-stone-900">
-                  {counter.current}
-                </span>
-              ) : (
-                <span
-                  className={`flex h-7 min-w-[2.6rem] items-center justify-center border font-mono text-sm text-stone-100 ${
-                    face === 'cylinder'
-                      ? 'rounded-l-sm rounded-r-full border-l-2 pl-1.5 pr-2.5'
-                      : 'rounded-full px-2.5'
-                  }`}
-                  style={{ borderColor: tint, background: `${tint}1f` }}
-                >
-                  {counter.current}
-                </span>
-              )}
-            </button>
-
-            {open === counter.id && onCost && (
-              <div className="absolute right-0 top-full z-20 mt-1 flex items-center gap-1 rounded-lg border border-stone-700 bg-stone-950 p-1 shadow-lg">
-                <button
-                  type="button"
-                  aria-label={`decrease ${counter.name}`}
-                  onClick={() => onCost(bumped(counter, -1))}
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-800 font-mono text-lg text-stone-100 hover:bg-stone-700"
-                >
-                  −
-                </button>
-                <span className="min-w-[2rem] text-center font-mono text-sm text-stone-100">
-                  {counter.current}
-                </span>
-                <button
-                  type="button"
-                  aria-label={`increase ${counter.name}`}
-                  onClick={() => onCost(bumped(counter, 1))}
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-800 font-mono text-lg text-stone-100 hover:bg-stone-700"
-                >
-                  +
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+        {chips}
       </div>
     </div>
   );
