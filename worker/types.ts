@@ -1434,6 +1434,41 @@ export type RulesPack = {
   creation?: {
     page?: number;
     /**
+     * The screen that greets someone before the first question — a
+     * welcome to the game rather than an instruction (Brian, after
+     * running the builder with his dad, 2026-08-14).
+     */
+    welcome?: {
+      title?: string;
+      body: string;
+      /**
+       * The game's own wordmark over the greeting — a key into the
+       * host's image store, exactly as `trades[].art` works. The
+       * publisher's artwork lives beside their book, per-instance, and
+       * never in this repo (rule 4).
+       */
+      art?: string;
+    };
+    /**
+     * What each step SAYS before it asks anything, keyed by step.
+     *
+     * A first-timer arrives at "Spread yer skills" already looking at a
+     * grid of tracks with dice in them, and nothing has said that the
+     * dice are pre-dealt, that they're his to move, or that there's a
+     * budget. The preface says it, once, and the header's ? brings it
+     * back for whichever step you're on.
+     *
+     * PROSE only, and nothing that repeats a number teller can derive
+     * — the builder already computes the budget, the pack count and
+     * the wallet roll for its captions, and it renders those alongside
+     * this. A paragraph that restated them would be a second copy to
+     * keep in step with the first.
+     *
+     * It's data because it's this system's voice (rule 4). Absent for a
+     * step means that step opens straight into itself and wears no ?.
+     */
+    prefaces?: Record<string, string>;
+    /**
      * How many of each list a new character STARTS with — the first N
      * in declared order, preset, never picked (WiW's sheet stamps a
      * Prestige cost on every slot but the first; choosing is what

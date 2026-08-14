@@ -235,6 +235,12 @@ export function CreationBuilder({
   // Choosing abilities is what SPENDING Prestige is for (4 apiece, the
   // menu already prices it) — a higher-tier posse shops after creation.
   const steps = [
+    // A welcome before the first question, when the pack writes one
+    // (Brian, 2026-08-14, after building a character with his dad):
+    // the flow used to open on seven trade cards and an instruction to
+    // tap one, which is a decision before anyone has said what kind of
+    // thing is being decided.
+    ...(creation.welcome ? ['welcome'] : []),
     'trade',
     'skills',
     'gear',
@@ -246,11 +252,34 @@ export function CreationBuilder({
   const here = steps[Math.min(step, steps.length - 1)];
   const next = () => setStep((s) => Math.min(s + 1, steps.length - 1));
 
+  /**
+   * Steps whose preface has been read.
+   *
+   * A preface stands IN FRONT of its step the first time you arrive,
+   * and never again on its own — walking back and forward is a thing
+   * people do while deciding, and re-reading the same page every time
+   * would turn second thoughts into a chore. The ? in the bar is how
+   * it comes back, deliberately: always available, never in the way.
+   */
+  const [read, setRead] = useState<string[]>([]);
+  /** Summoned from the header, whatever `read` says. */
+  const [asking, setAsking] = useState(false);
+  /**
+   * The welcome has no step BEHIND it — it is the whole screen — so it
+   * rides the same rendering with one difference: its button walks on
+   * to the first question instead of getting out of the way.
+   */
+  const preface =
+    here === 'welcome' ? creation.welcome?.body : creation.prefaces?.[here];
+  const prefacing =
+    Boolean(preface) && (here === 'welcome' || asking || !read.includes(here));
+
   // The question lives in the SAME header bar the finished sheet wears
   // (Brian, 2026-08-13) — and the bar fills in as the character does:
   // once a trade is chosen its plate and colour appear beside the next
   // question, so creation visibly becomes the sheet it's building.
   const QUESTIONS: Record<string, string> = {
+    welcome: creation.welcome?.title ?? 'Welcome to the West',
     trade: "What's yer trade?",
     skills: 'Spread yer skills',
     gear: 'Grab yer gear',
@@ -262,6 +291,7 @@ export function CreationBuilder({
   // The caption under the question — the same italic instruction line
   // every sheet panel prints beneath its heading.
   const CAPTIONS: Record<string, string | undefined> = {
+    welcome: undefined,
     trade: 'tap one to read it — this is who you are at the table',
     skills: budget
       ? `${budget.total} ${budget.die} dice total, ${budget.min}–${budget.max} each — the ${trade?.name ?? 'trade'}'s usual spread is dealt already`
@@ -477,9 +507,116 @@ export function CreationBuilder({
           className="h-px flex-1"
           style={{ background: `${accent ?? '#f59e0b'}55` }}
         />
+        {/* The way back to what this step is for. It sits in the gutter
+            the bar already reserves on the right, opposite the back
+            button, and appears only where there's something to say —
+            a ? that opens nothing is worse than no ? at all.
+
+            Hidden while the preface IS what's on screen: the button
+            for the thing you're looking at is a dead control. */}
+        {preface && !prefacing && (
+          <button
+            type="button"
+            className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border font-serif text-base font-bold transition-colors"
+            style={{
+              borderColor: `${accent ?? '#f59e0b'}66`,
+              color: accent ?? '#f59e0b',
+              background: `${accent ?? '#f59e0b'}14`,
+            }}
+            aria-label={`what is this step for?`}
+            onClick={() => setAsking(true)}
+          >
+            ?
+          </button>
+        )}
       </div>
       )}
-      {here === 'trade' && (
+
+      {/* The PREFACE: what's about to be asked, and what you're meant
+          to do about it — in front of the step rather than beside it,
+          because a first-timer reading an instruction next to a grid
+          of dice is already looking at the dice.
+
+          The prose is the pack's (`creation.prefaces`) and the numbers
+          under it are DERIVED — the same caption the bar prints when
+          you're in the step. Which means the pack never writes "twelve
+          dice" and can never be wrong about it. */}
+      {prefacing && (
+        // The welcome hangs from the TOP so the wordmark sits right
+        // under the bar and finishes the sentence the bar starts —
+        // "Welcome to the" / WILD IMAGINARY WEST — with the greeting
+        // set well below it, far enough that the two read as a title
+        // and a paragraph rather than one crowded block (Brian,
+        // 2026-08-14). A preface with no picture stays centred; it's
+        // one column of prose and the middle is where it belongs.
+        <div
+          className={`flex min-h-0 flex-1 flex-col items-center px-6 text-center ${
+            here === 'welcome'
+              ? `justify-start pt-1 ${strip ? 'gap-3' : 'gap-7'}`
+              : 'justify-center gap-4'
+          }`}
+        >
+          {/* The game's own wordmark, on the one screen that's a
+              greeting rather than a question. It's the book's, so it
+              lives on the host and arrives by key (rule 4).
+
+              Capped in `rem`, NOT `vh`. The obvious reach was `22vh`,
+              and viewport units are measured against the real window —
+              which under pretend-glass is not the glass, and in a
+              hidden pane is 0×0, so the logo rendered at literally no
+              size. Two fixed caps chosen by the only question that
+              matters (mounted or held, rule 6) can't be wrong about a
+              window they never ask about. */}
+          {here === 'welcome' && creation.welcome?.art && (
+            <img
+              src={packArtUrl(creation.welcome.art, found?.version ?? 0)}
+              alt=""
+              // Three caps, because HEIGHT is what's scarce and `wide`
+              // doesn't separate the two mounted glasses: a tablet has
+              // 810px to spend and the rail has 515, and at the tablet's
+              // size the greeting ran 26px off the bottom of the bar —
+              // which mounted glass CLIPS rather than scrolls (rule 6).
+              className={`w-auto max-w-[34rem] shrink object-contain ${
+                strip
+                  ? 'max-h-[5rem]'
+                  : wide
+                    ? 'max-h-[10rem]'
+                    : 'max-h-[6rem]'
+              }`}
+            />
+          )}
+          <p
+            className={`max-w-[46rem] whitespace-pre-line font-serif leading-relaxed text-stone-200 ${
+              wide ? 'text-[1.05rem]' : 'text-[0.95rem]'
+            }`}
+          >
+            {preface}
+          </p>
+          {/* No caption here: the bar is still on screen above this and
+              already prints it, derived numbers and all. Rendering it
+              again put "tap one to read it" twice on the same page. */}
+          <button
+            type="button"
+            className="rounded-md border-2 px-6 py-2 font-serif text-sm font-bold uppercase tracking-[0.14em] transition-colors"
+            style={{
+              borderColor: accent ?? '#f59e0b',
+              color: accent ?? '#f59e0b',
+            }}
+            onClick={() => {
+              setAsking(false);
+              setRead((r) => (r.includes(here) ? r : [...r, here]));
+              if (here === 'welcome') next();
+            }}
+          >
+            {here === 'welcome'
+              ? 'make one'
+              : read.includes(here)
+                ? 'back to it'
+                : 'go on then'}
+          </button>
+        </div>
+      )}
+      {!prefacing && here === 'trade' && (
         <>
           {shelf(
             (soloed ? trades.filter((t) => t.id === soloed) : trades).map((t) => {
@@ -670,7 +807,13 @@ export function CreationBuilder({
                           );
                           setSpread(null);
                           setConfirming('');
-                          setStep(1);
+                          // The step AFTER this one, worked out rather
+                          // than written down. It used to be `1`, which
+                          // was right up until the welcome screen took
+                          // index 0 and made 1 mean the trade step
+                          // itself — committing a trade then left you
+                          // exactly where you were.
+                          next();
                         }}
                       >
                         this is me
@@ -688,7 +831,7 @@ export function CreationBuilder({
         </>
       )}
 
-      {here === 'skills' && trade && (
+      {!prefacing && here === 'skills' && trade && (
         <div
           className="flex min-h-0 flex-1 flex-col gap-2"
           style={
@@ -884,7 +1027,7 @@ export function CreationBuilder({
         </div>
       )}
 
-      {here === 'gear' && (
+      {!prefacing && here === 'gear' && (
         <div
           className="flex min-h-0 flex-1 flex-col gap-2"
           style={
@@ -1064,7 +1207,7 @@ export function CreationBuilder({
         </div>
       )}
 
-      {here === 'wallet' && (
+      {!prefacing && here === 'wallet' && (
         <div
           className="flex min-h-0 flex-1 flex-col gap-2"
           style={
@@ -1197,7 +1340,7 @@ export function CreationBuilder({
         </div>
       )}
 
-      {here === 'keepsake' && (
+      {!prefacing && here === 'keepsake' && (
         <div
           className="flex min-h-0 flex-1 flex-col gap-2"
           style={
@@ -1413,7 +1556,7 @@ export function CreationBuilder({
         </div>
       )}
 
-      {here === 'name' && (
+      {!prefacing && here === 'name' && (
         <div
           // `min-w-0`, or a flex child sizes to its own min-content and
           // quietly pushes past the screen — the plate row and the row
@@ -1563,7 +1706,7 @@ export function CreationBuilder({
         </div>
       )}
 
-      {here === 'done' && (
+      {!prefacing && here === 'done' && (
         <div
           className={`flex min-h-0 min-w-0 flex-1 gap-4 ${
             wide ? '' : 'flex-col items-center'
