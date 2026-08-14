@@ -261,6 +261,36 @@ export function CreationBuilder({
   // the rail keeps its neighbours, because there the card grows
   // sideways into width it actually has.
   const soloed = !strip && confirming ? confirming : null;
+
+  /**
+   * A step's footer — the budget it's spending and the way out of it.
+   *
+   * On mounted glass this just sits under the choices, because they
+   * were laid out to fit. On held glass the choices run past the fold
+   * by design (rule 6: scrolling is free in a hand), and a footer that
+   * scrolls with them takes the running total and the continue button
+   * off the screen — you end up spending twelve dice with no idea how
+   * many are left. So it sticks to the bottom instead: same row, same
+   * order, always there.
+   */
+  const footerRow = (gap = 'gap-4') =>
+    `flex shrink-0 items-center justify-center ${gap} ${
+      wide ? '' : 'sticky bottom-0 -mx-1 flex-wrap gap-y-2 bg-stone-950 px-1 py-2'
+    }`;
+  /**
+   * The pool of marks a footer counts with — twelve dice, six slots.
+   *
+   * Twelve at their designed 36px is 432px of row, which a 390px phone
+   * does not have. They wrap onto a second line rather than shrink:
+   * the size was chosen to be tappable and legible, and a bar of
+   * bullets you can't quite make out is worth less than one that takes
+   * two rows. On held glass it claims a whole line and takes it FIRST,
+   * so the two buttons pair up beneath rather than getting a line each
+   * with the pool sitting between them.
+   */
+  const markRow = `flex items-center justify-center gap-1.5 ${
+    wide ? '' : 'order-first basis-full flex-wrap'
+  }`;
   const shelf = (children: React.ReactNode) => (
     <div
       className={
@@ -718,7 +748,7 @@ export function CreationBuilder({
               on skills IS the arithmetic, and the row is only full when
               the spread is legal — which is the same moment the button
               unlocks, so there's one thing to look at, not two. */}
-          <div className="flex shrink-0 items-center justify-center gap-4">
+          <div className={footerRow()}>
             {/* Back to what the trade deals. `spread` is an OVERRIDE
                 over `trade.skills`, so clearing it is the whole reset
                 — there's no second copy of the printed numbers to
@@ -738,7 +768,7 @@ export function CreationBuilder({
             </button>
             {budget && (
               <div
-                className="flex items-center gap-1.5"
+                className={markRow}
                 title={`${left} to place`}
               >
                 {Array.from({ length: budget.total }, (_, i) => (
@@ -943,7 +973,7 @@ export function CreationBuilder({
               usual single pick the card carries the whole decision,
               and a bar counting to one is furniture. */}
           {picks > 1 && (
-            <div className="flex shrink-0 items-center justify-center gap-1.5">
+            <div className={footerRow('gap-1.5')}>
               {Array.from({ length: picks }, (_, i) => (
                 <Glyph
                   key={i}
@@ -1029,8 +1059,8 @@ export function CreationBuilder({
           {/* What you've told it so far, die by die, in the order you
               tapped — and every one of them takes it back, because a
               mis-tap on six dice used to mean starting the roll over. */}
-          <div className="flex shrink-0 items-center justify-center gap-4">
-            <div className="flex items-center gap-1.5">
+          <div className={footerRow()}>
+            <div className={markRow}>
               {Array.from({ length: dice }, (_, i) => {
                 const face = rolled[i];
                 return (
@@ -1209,8 +1239,8 @@ export function CreationBuilder({
                   </span>
                 </button>
               </div>
-              <div className="flex shrink-0 items-center justify-center gap-4">
-                <div className="flex items-center gap-1.5">
+              <div className={footerRow()}>
+                <div className={markRow}>
                   {[0, 1].map((i) => (
                     <Glyph
                       key={i}
