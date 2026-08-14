@@ -549,16 +549,29 @@ export function CreationBuilder({
         // and a paragraph rather than one crowded block (Brian,
         // 2026-08-14). A preface with no picture stays centred; it's
         // one column of prose and the middle is where it belongs.
+        //
+        // **On the rail it lies down instead** (Brian, 2026-08-14).
+        // Stacking is the wrong instinct on a 1920x515 bar: width is
+        // the plentiful dimension there and height the scarce one, so
+        // a column spends the thing there's none of and wastes the
+        // thing there's plenty of — which is why the logo had to
+        // shrink to 80px to survive. Beside the words it's four times
+        // that. Same question as always (rule 6): not which device,
+        // but which dimension is short.
         <div
-          className={`flex min-h-0 flex-1 flex-col items-center px-6 text-center ${
-            here === 'welcome'
-              // The padding above the wordmark and the gap below it are
-              // the SAME value on purpose — the logo should sit in its
-              // own air rather than tucked under the bar with the
-              // greeting crowding it from underneath (Brian, from the
-              // iPad, 2026-08-14).
-              ? `justify-start ${strip ? 'gap-3 pt-3' : 'gap-8 pt-8'}`
-              : 'justify-center gap-4'
+          className={`flex min-h-0 flex-1 px-6 ${
+            strip && here === 'welcome'
+              ? 'flex-row items-center justify-center gap-10 text-left'
+              : `flex-col items-center text-center ${
+                  here === 'welcome'
+                    // The padding above the wordmark and the gap below
+                    // it are the SAME value on purpose — the logo
+                    // should sit in its own air rather than tucked
+                    // under the bar with the greeting crowding it from
+                    // underneath (Brian, from the iPad).
+                    ? 'justify-start gap-8 pt-8'
+                    : 'justify-center gap-4'
+                }`
           }`}
         >
           {/* The game's own wordmark, on the one screen that's a
@@ -583,13 +596,23 @@ export function CreationBuilder({
               // which mounted glass CLIPS rather than scrolls (rule 6).
               className={`w-auto shrink object-contain ${
                 strip
-                  ? 'max-h-[5rem] max-w-[26rem]'
+                  ? 'max-h-[19rem] max-w-[40rem]'
                   : wide
                     ? 'max-h-[18rem] max-w-[52rem]'
                     : 'max-h-[8rem] max-w-[22rem]'
               }`}
             />
           )}
+          {/* The words and the way on. `contents` everywhere but the
+              lying-down rail, so the column layout is exactly what it
+              was and only the row gets a right-hand side. */}
+          <div
+            className={
+              strip && here === 'welcome'
+                ? 'flex min-w-0 max-w-[46rem] flex-col items-start gap-5'
+                : 'contents'
+            }
+          >
           <p
             className={`max-w-[46rem] whitespace-pre-line font-serif leading-relaxed text-stone-200 ${
               wide ? 'text-[1.05rem]' : 'text-[0.95rem]'
@@ -619,6 +642,7 @@ export function CreationBuilder({
                 ? 'back to it'
                 : 'go on then'}
           </button>
+          </div>
         </div>
       )}
       {!prefacing && here === 'trade' && (
