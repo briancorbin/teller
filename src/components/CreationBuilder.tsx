@@ -193,8 +193,10 @@ export function CreationBuilder({
       ? `roll ${creation.wallet.roll} — real dice, on the table — then tap what you rolled`
       : undefined,
     keepsake: 'what rides in your pocket from the life before — pick up to two, or none',
-    name: undefined,
-    done: undefined,
+    name: creation.names
+      ? 'tap it out, or draw one from the well — a name is the easiest thing to change later'
+      : 'tap it out — a name is the easiest thing to change later',
+    done: `that's a character — saddle up and this screen becomes your sheet`,
   };
   const accent = trade ? template?.accents?.[trade.name] : undefined;
 
@@ -1093,27 +1095,9 @@ export function CreationBuilder({
             (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
           }
         >
-          {/* The face they picked, finally standing next to the name
-              going on it. Everything before this was numbers and
-              objects; this screen is the one where a character shows
-              up, so the portrait earns the room. */}
-          {trade?.art && strip && (
-            <span
-              className="relative flex w-[15rem] shrink-0 items-end justify-center overflow-hidden rounded-md"
-              style={{
-                background: accent
-                  ? `radial-gradient(ellipse 70% 55% at 50% 60%, ${accent}22, transparent 75%)`
-                  : undefined,
-              }}
-            >
-              <img
-                src={packArtUrl(trade.art, found?.version ?? 0)}
-                alt=""
-                draggable={false}
-                className="h-full w-full object-contain object-bottom"
-              />
-            </span>
-          )}
+          {/* No portrait here, deliberately (Brian, 2026-08-13): this
+              screen is a keyboard and a plate, and the face belongs to
+              the welcome — which is the moment it's earned. */}
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
             {/* The name in the plate it will WEAR — same serif, same
                 caps, same rules and colour the finished sheet puts at
@@ -1193,27 +1177,62 @@ export function CreationBuilder({
       )}
 
       {here === 'done' && (
-        <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3">
-          {/* The welcome is in the header bar now (which also carries
-              the back button); this is the handshake. */}
-          <h2 className="font-serif text-2xl text-stone-100">
-            {nameDraft.trim()
-              ? `Pleasure to meet ya, ${nameDraft.trim()}.`
-              : 'Pleasure to meet ya.'}
-          </h2>
-          {(creation.questions?.length ?? 0) > 0 && (
-            <p className="max-w-xl text-sm text-stone-400">
-              Your sheet is ready. When you have a quiet minute, the back side
-              wants your story — who you were, what you're after, what you'd
-              never do.
-            </p>
+        <div
+          className="flex min-h-0 flex-1 gap-4"
+          style={
+            (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
+          }
+        >
+          {/* HERE is where the face belongs — not on the keyboard
+              screen before it. By now they have a trade, a spread, a
+              pack, a wallet and a name, and this is the first time
+              all of it is one person standing in front of them. */}
+          {trade?.art && strip && (
+            <span
+              className="relative flex w-[17rem] shrink-0 items-end justify-center overflow-hidden rounded-md"
+              style={{
+                background: accent
+                  ? `radial-gradient(ellipse 70% 55% at 50% 60%, ${accent}26, transparent 75%)`
+                  : undefined,
+              }}
+            >
+              <img
+                src={packArtUrl(trade.art, found?.version ?? 0)}
+                alt=""
+                draggable={false}
+                className="h-full w-full object-contain object-bottom"
+              />
+            </span>
           )}
-          <button
-            className="rounded-md bg-amber-600 px-5 py-2.5 font-semibold text-stone-950"
-            onClick={() => onPatch({ draft: false })}
-          >
-            saddle up
-          </button>
+          <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3">
+            {/* Their name in the plate, one last time — the same one
+                the sheet is about to wear. */}
+            <span
+              className="font-serif text-[1.8rem] font-bold uppercase leading-tight tracking-[0.12em]"
+              style={{ color: accent ?? '#f59e0b' }}
+            >
+              {character.name}
+            </span>
+            <h2 className="font-serif text-2xl text-stone-100">
+              {nameDraft.trim()
+                ? `Pleasure to meet ya, ${nameDraft.trim()}.`
+                : 'Pleasure to meet ya.'}
+            </h2>
+            {(creation.questions?.length ?? 0) > 0 && (
+              <p className="max-w-xl text-sm text-stone-400">
+                Your sheet is ready. When you have a quiet minute, the back
+                side wants your story — who you were, what you're after, what
+                you'd never do.
+              </p>
+            )}
+            <button
+              className="rounded-md px-5 py-2.5 font-semibold text-stone-950"
+              style={{ background: accent ?? '#f59e0b' }}
+              onClick={() => onPatch({ draft: false })}
+            >
+              saddle up
+            </button>
+          </div>
         </div>
       )}
     </div>
