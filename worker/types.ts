@@ -893,6 +893,13 @@ export type SystemTemplate = {
    */
   screens?: {
     name: string;
+    /**
+     * The mark this screen wears on the bar — a glyph name, assigned the
+     * same way `icons` assigns one to a counter. Off mounted glass the
+     * bar has no room for five words, so it shows marks and names only
+     * the screen you're on.
+     */
+    icon?: string;
     kinds: string[];
     counters?: string[];
     arms?: boolean;

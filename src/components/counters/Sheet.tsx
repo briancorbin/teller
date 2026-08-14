@@ -1196,7 +1196,7 @@ export function Sheet({
       <Screens
         mounted={mounted}
         screens={[
-          { name: 'Sheet', render: () => drawn },
+          { name: 'Sheet', icon: 'sheet', render: () => drawn },
           // A declared screen appears when it has something to show —
           // items, or a claimed counter the character actually has. An
           // empty screen advertises somewhere to go and then shows
@@ -1209,10 +1209,18 @@ export function Sheet({
                 counters.some((c) => c.name === name),
               );
             return populated
-              ? [{ name: def.name, render: () => carriedScreen(def, i === 0) }]
+              ? [
+                  {
+                    name: def.name,
+                    icon: def.icon,
+                    render: () => carriedScreen(def, i === 0),
+                  },
+                ]
               : [];
           }),
-          ...(hasSpare ? [{ name: 'More', render: () => spareScreen }] : []),
+          ...(hasSpare
+            ? [{ name: 'More', icon: 'more', render: () => spareScreen }]
+            : []),
         ]}
       />
     </div>

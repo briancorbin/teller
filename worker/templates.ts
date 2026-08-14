@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 8,
+  version: 9,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
@@ -187,8 +187,8 @@ const wiw: SystemTemplate = {
   // are shown, so Weapons carries `arms` (the chamber select and the
   // Aim reticle) and Items merely counts the rounds.
   screens: [
-    { name: 'Weapons', kinds: ['weapon'], arms: true },
-    { name: 'Abilities', kinds: ['ability'], counters: ['Aces'] },
+    { name: 'Weapons', icon: 'sixgun', kinds: ['weapon'], arms: true },
+    { name: 'Abilities', icon: 'star', kinds: ['ability'], counters: ['Aces'] },
     // The book's own word (p. 74: "Characters have Inventory to hold
     // anything they can reasonably carry"): ammo by name, everything
     // nobody claims (`rest`), and the carrying trio — Wallet, Scrap,
@@ -197,6 +197,7 @@ const wiw: SystemTemplate = {
     // Inventory to keep it and free the slot (p. 75).
     {
       name: 'Inventory',
+      icon: 'satchel',
       kinds: ['ammo'],
       rest: true,
       counters: ['Wallet ($)', 'Scrap (pcs)', 'Supplies'],

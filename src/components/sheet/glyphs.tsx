@@ -281,6 +281,41 @@ const GLYPHS: Record<string, React.ReactNode> = {
       <path d="M8.5 13.1h.01M8.1 16.4h.01M15.5 13.1h.01M15.9 16.4h.01" />
     </>
   ),
+
+  // Marks for the screens themselves — what the bar wears when there's
+  // no room for five words. Each is the thing the screen is ABOUT, not
+  // an abstraction of it: the page, the iron, the star, the bag.
+
+  // The sheet: a sheet of paper with a fold, ruled twice.
+  sheet: (
+    <>
+      <path d="M6 3.2h8.5L18 6.7v14.1H6z" />
+      <path d="M14.5 3.2v3.5H18" />
+      <path d="M8.8 11.5h6.4M8.8 15h6.4" />
+    </>
+  ),
+  // A revolver: barrel, cylinder, grip, trigger guard.
+  sixgun: (
+    <>
+      <path d="M3.4 8.6h13.9v3.6H3.4z" />
+      <circle cx="8.4" cy="10.4" r="1.5" />
+      <path d="M17.3 9.4h3.3" />
+      <path d="M11.6 12.2l-2.3 7.4a1 1 0 0 1-1 .7H6.6" />
+      <path d="M5.2 12.2c.6 1.7 1.9 2.6 3.6 2.7" />
+    </>
+  ),
+  // A star, five points — the sheriff's, and what an ability is worth.
+  star: (
+    <path d="M12 3.1l2.5 5.6 6.1.6-4.6 4.1 1.3 6-5.3-3.1-5.3 3.1 1.3-6L3.4 9.3l6.1-.6z" />
+  ),
+  // The junk drawer: three chevrons, the universal "and the rest".
+  more: (
+    <>
+      <circle cx="5.6" cy="12" r="1.3" />
+      <circle cx="12" cy="12" r="1.3" />
+      <circle cx="18.4" cy="12" r="1.3" />
+    </>
+  ),
 };
 
 export function Glyph({
