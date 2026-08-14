@@ -140,6 +140,32 @@ export class CampaignDO {
       case 'notice':
         s.notice = op.text?.trim() ? op.text.trim() : null;
         break;
+      case 'shop':
+        // Opening a shop (or switching vendors) starts with empty
+        // counters — carts belong to a visit, not to a character. Same
+        // reasoning as `rolling` wiping scores: stale state from the
+        // last shop would silently ride into this one.
+        s.store = op.vendorId
+          ? { vendorId: op.vendorId, carts: {}, offered: {} }
+          : null;
+        break;
+      case 'cart':
+        if (!s.store) break;
+        s.store = {
+          ...s.store,
+          carts: { ...s.store.carts, [op.characterId]: op.lines },
+          // Editing a cart takes it back off the counter — what the DM
+          // rules on must be what the player is looking at.
+          offered: { ...s.store.offered, [op.characterId]: false },
+        };
+        break;
+      case 'offer':
+        if (!s.store) break;
+        s.store = {
+          ...s.store,
+          offered: { ...s.store.offered, [op.characterId]: op.on },
+        };
+        break;
     }
     await this.ctx.storage.put('session', s);
     this.broadcast({ type: 'session', state: s });

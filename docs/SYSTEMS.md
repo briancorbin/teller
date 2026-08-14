@@ -142,8 +142,19 @@ at most a someday reference card in the pack.
 
 ## 10. Money, wages, shopping (p. 63) ✅ / 🎲
 
-Wallet is a counter ✅. Wage tables are reference (pack). Prices are
-filing data on catalogue entries ✅. Shopping is conversation 🎲.
+Money is COINS (2026-08-14): each denomination an ordinary counter,
+composed by the template's `currency` declaration; the pocket shows one
+purse chip that opens into the counts ✅. Wage tables are reference
+(pack). Prices are filing data on catalogue entries ✅ — the whole
+priced catalogue is entered (weapons, traps, tools, explosives, first
+aid, shields, batteries, Goods & Services p. 201–203).
+
+Shopping is conversation 🎲 **with a bookkeeper** ✅: vendors are
+campaign entities (derived or curated stock), the DM opens one on every
+seat, carts go on the counter, and the haggle happens out loud — the
+DM types the final figure over the book's total and teller books the
+transfer (coins paid, change back, goods landed, services consumed,
+one event). "Prices are often negotiable" is the book's own economy.
 
 ## 11. Weapons (p. 64–67) ✅ / 🔶
 

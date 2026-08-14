@@ -13,6 +13,7 @@ import { LadderPanel } from '../sheet/LadderPanel';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
 import { SheetHeader } from '../sheet/SheetHeader';
+import { ShopScreen } from '../sheet/ShopScreen';
 import {
   Bar,
   bumped,
@@ -20,6 +21,7 @@ import {
   Refill,
   split,
   Step,
+  stepOf,
   Value,
   type CounterViewProps,
 } from './shared';
@@ -174,13 +176,13 @@ function SheetGauge({
               sign="−"
               className="h-9 flex-1"
               label={`decrease ${counter.name}`}
-              onClick={() => onChange(bumped(counter, -1))}
+              onClick={() => onChange(bumped(counter, -stepOf(counter)))}
             />
             <Step
               sign="+"
               className="h-9 flex-1"
               label={`increase ${counter.name}`}
-              onClick={() => onChange(bumped(counter, 1))}
+              onClick={() => onChange(bumped(counter, stepOf(counter)))}
             />
           </div>
         </div>
@@ -220,6 +222,8 @@ export function Sheet({
   itemsLabel = 'Items',
   packs = [],
   ownCatalog,
+  currency,
+  shop,
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -555,12 +559,12 @@ export function Sheet({
               <Step
                 sign="−"
                 label={`decrease ${counter.name}`}
-                onClick={() => update(bumped(counter, -1))}
+                onClick={() => update(bumped(counter, -stepOf(counter)))}
               />
               <Step
                 sign="+"
                 label={`increase ${counter.name}`}
-                onClick={() => update(bumped(counter, 1))}
+                onClick={() => update(bumped(counter, stepOf(counter)))}
               />
             </div>
           ))}
@@ -1009,11 +1013,17 @@ export function Sheet({
       .filter((c): c is Counter => Boolean(c));
     // Iconed counters band together: one slim tile of compact chips at
     // the screen's left edge (the pocket), instead of a full panel
-    // each. Membership is the template's declaration (`icons`), never
-    // a name check here.
-    const pocket = claimed.filter((c) => icons?.[c.name]);
+    // each. Membership is the template's declaration (`icons` — and
+    // `currency`, whose denominations band further into one purse
+    // chip), never a name check here.
+    const denomNames = new Set(
+      (currency?.denominations ?? []).map((d) => d.counter),
+    );
+    const pocket = claimed.filter(
+      (c) => icons?.[c.name] || denomNames.has(c.name),
+    );
     const tallyPanels = claimed
-      .filter((c) => !icons?.[c.name])
+      .filter((c) => !icons?.[c.name] && !denomNames.has(c.name))
       .map((c) => (
         <div
           key={c.id}
@@ -1057,7 +1067,13 @@ export function Sheet({
     // gear (the card scrolls; nothing pans away there).
     const pocketLead = !strip && pocket.length > 0 && (
       <div key="pocket" className="flex w-full flex-col">
-        <PocketPanel counters={pocket} icons={icons!} onChange={update} row />
+        <PocketPanel
+          counters={pocket}
+          icons={icons ?? {}}
+          currency={currency}
+          onChange={update}
+          row
+        />
       </div>
     );
     const lead =
@@ -1117,7 +1133,12 @@ export function Sheet({
               </div>
             )}
             {strip && pocket.length > 0 && (
-              <PocketPanel counters={pocket} icons={icons!} onChange={update} />
+              <PocketPanel
+                counters={pocket}
+                icons={icons ?? {}}
+                currency={currency}
+                onChange={update}
+              />
             )}
           </div>
         )}
@@ -1236,6 +1257,25 @@ export function Sheet({
                 ]
               : [];
           }),
+          // The open shop, while one is open — the screen appears when
+          // the DM opens a vendor and leaves when the shop closes,
+          // exactly as live as the state it renders.
+          ...(shop
+            ? [
+                {
+                  name: 'Store',
+                  icon: 'coin',
+                  render: () => (
+                    <ShopScreen
+                      shop={shop}
+                      counters={counters}
+                      mounted={mounted}
+                      strip={strip}
+                    />
+                  ),
+                },
+              ]
+            : []),
           ...(hasSpare
             ? [{ name: 'More', icon: 'more', render: () => spareScreen }]
             : []),

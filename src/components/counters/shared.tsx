@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import type {
   CampaignData,
+  CartLine,
   Counter,
   Field,
   Item,
   PackEntry,
   RulesPack,
   SystemTemplate,
+  Vendor,
 } from '../../../worker/types';
+import type { StockLine } from '../../../worker/items';
 
 // The parts every counter layout is built from.
 //
@@ -48,6 +51,8 @@ export type CounterViewProps = {
   dials?: SystemTemplate['dials'];
   /** Counter name → glyph, for counters the system dresses compactly. */
   icons?: SystemTemplate['icons'];
+  /** Physical money: which counters are the coins, and their worth. */
+  currency?: SystemTemplate['currency'];
   /** Mounted glass too short to stack anything — see `strip` in SeatView. */
   strip?: boolean;
   /**
@@ -113,6 +118,26 @@ export type CounterViewProps = {
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
   /** The caption a pack sets under a panel heading, keyed by that heading. */
   note?: (title: string) => string | undefined;
+  /**
+   * The shop that's OPEN, for the seat's Store screen — absent when no
+   * vendor is on the table. Browsing and carting are live session
+   * state; nothing here is a purchase (the DM's confirm is, and it
+   * happens on the console).
+   */
+  shop?: {
+    vendor: Vendor;
+    shelf: StockLine[];
+    cart: CartLine[];
+    offered: boolean;
+    /** The single money counter, for a system without denominations. */
+    counter?: string;
+    /** The purse declaration, when money is coins and paper. */
+    currency?: SystemTemplate['currency'];
+    /** What the table calls the DM — "waiting on the Warden". */
+    gm?: string;
+    onCart: (lines: CartLine[]) => void;
+    onOffer: (on: boolean) => void;
+  };
 };
 
 /** Clamped to [0, max]. A counter never goes negative or past its ceiling. */
@@ -120,6 +145,26 @@ export function bumped(counter: Counter, delta: number): Counter {
   let next = counter.current + delta;
   if (counter.max !== null) next = Math.min(next, counter.max);
   return { ...counter, current: Math.max(next, 0) };
+}
+
+/**
+ * What one TAP of a stepper is worth. A money counter stores cents, and
+ * nobody wants to press + a hundred times for a dollar — the odd nickel
+ * arrives by typing, which parses cents exactly. Deliberately not baked
+ * into `bumped`: a debit (the fire button, a purchase) is an amount, not
+ * a number of taps.
+ */
+export function stepOf(counter: Counter): number {
+  return counter.display === 'money' ? 100 : 1;
+}
+
+/** A money counter's value as its own notation — 450 → "$4.50". */
+export function moneyText(counter: Counter, value = counter.current): string {
+  const sign = value < 0 ? '-' : '';
+  const abs = Math.abs(value);
+  return `${sign}${counter.symbol ?? '$'}${Math.floor(abs / 100)}.${String(
+    abs % 100,
+  ).padStart(2, '0')}`;
 }
 
 /**
@@ -312,9 +357,13 @@ export function TypeableValue({
   bare?: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
+  const money = counter.display === 'money';
   const commit = () => {
     if (draft === null) return;
-    const n = Math.floor(Number(draft));
+    // A money counter is typed in its own notation — "4.50", "$37" —
+    // and stored in cents. Everything else stays whole numbers.
+    const typed = Number(draft.replace(/[^\d.-]/g, ''));
+    const n = money ? Math.round(typed * 100) : Math.floor(typed);
     setDraft(null);
     if (!Number.isFinite(n) || draft.trim() === '') return;
     const capped = counter.max !== null ? Math.min(n, counter.max) : n;
@@ -325,11 +374,11 @@ export function TypeableValue({
     return (
       <input
         autoFocus
-        type="number"
-        inputMode="numeric"
+        type={money ? 'text' : 'number'}
+        inputMode="decimal"
         className={`rounded-md border border-stone-600 bg-stone-950 px-2 py-1 text-center font-mono text-stone-100 outline-none focus:border-amber-500 ${inputClassName}`}
         aria-label={`type a value for ${counter.name}`}
-        defaultValue={counter.current}
+        defaultValue={money ? (counter.current / 100).toFixed(2) : counter.current}
         onFocus={(e) => e.target.select()}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -370,6 +419,7 @@ export function Value({
    */
   bare?: boolean;
 }) {
+  const money = counter.display === 'money';
   return (
     <span
       style={style}
@@ -381,13 +431,16 @@ export function Value({
             : 'text-stone-100'
       } ${className}`}
     >
-      {counter.current}
+      {money ? moneyText(counter) : counter.current}
       {/* An unset ceiling shows as "/—" rather than being left off: a
           bounded stat whose max nobody filled in otherwise renders as a
           bare 0. The dash says "no maximum" — except where `bare` says
-          the shape is already understood (a money chip). */}
-      {!(bare && counter.max === null) && (
-        <span className="text-stone-600">/{counter.max ?? '—'}</span>
+          the shape is already understood (a money chip), and on money,
+          where a ceiling is not a thing wallets have. */}
+      {!((bare || money) && counter.max === null) && (
+        <span className="text-stone-600">
+          /{counter.max === null ? '—' : money ? moneyText(counter, counter.max) : counter.max}
+        </span>
       )}
     </span>
   );

@@ -1,13 +1,16 @@
 import { isPool, parsePool } from './dice';
 import type {
   CampaignData,
+  CartLine,
   CatalogItem,
   CatalogUpgrade,
+  Counter,
   Field,
   Item,
   PoolEffect,
   RulesPack,
   SystemTemplate,
+  Vendor,
 } from './types';
 
 /** The campaign's own gear, which outranks any pack's. */
@@ -406,4 +409,204 @@ export function fittedUpgrades(
     if (upgrade) out.push({ upgrade, range: fit.range });
   }
   return out;
+}
+
+// --- The store --------------------------------------------------------------
+// Shopping arithmetic — cart totals, a shop's shelf. Pure and shared for
+// the same reason as everything above: the seat browsing and the console
+// ruling must resolve the same shop to the same lines.
+
+/**
+ * A price string in integer minor units — "$4.50" → 450 — or null for
+ * anything that isn't a price ("-", "", a word). Integer cents on
+ * purpose: floats drift, and money is the one place nobody forgives it.
+ */
+export function parsePrice(value: string | undefined | null): number | null {
+  if (!value) return null;
+  const m = value.replace(/,/g, '').match(/(\d+)(?:\.(\d{1,2}))?/);
+  if (!m) return null;
+  return Number(m[1]) * 100 + Number((m[2] ?? '0').padEnd(2, '0'));
+}
+
+/** The currency mark a sample price wears — "$4.50" → "$". Data, not ours. */
+export function priceSymbol(sample: string | undefined | null): string {
+  const m = (sample ?? '').match(/^[^\d\s]+/);
+  return m ? m[0] : '';
+}
+
+/** Minor units back to the notation the samples use — 450 → "$4.50". */
+export function formatPrice(cents: number, symbol = '$'): string {
+  const sign = cents < 0 ? '-' : '';
+  const abs = Math.abs(cents);
+  return `${sign}${symbol}${Math.floor(abs / 100)}.${String(abs % 100).padStart(2, '0')}`;
+}
+
+/** One line of a shop's shelf, resolved. */
+export type StockLine = {
+  ref: string;
+  /** Absent when the entry's pack isn't installed — shown as missing, never dropped. */
+  entry?: CatalogItem;
+  /** The asking price — the vendor's override, else the entry's own. */
+  price: string | null;
+  /** Stock remaining. null = unlimited. */
+  qty: number | null;
+};
+
+/**
+ * What a vendor actually has on the shelf.
+ *
+ * Explicit stock resolves line by line; a vendor with no list carries
+ * everything in reach that has a price, narrowed by `groups` and
+ * `filters`. The price field's KEY comes from the template's store
+ * declaration — this code never learns the word "cost" (rule 2).
+ */
+export function vendorStock(
+  vendor: Vendor,
+  packs: RulesPack[],
+  own: OwnCatalog | undefined,
+  store: NonNullable<SystemTemplate['store']>,
+): StockLine[] {
+  const { items } = catalogOf(packs, own);
+  const priceOf = (entry: CatalogItem): string | null =>
+    entry.fields.find((f) => f.key === store.costField)?.value ?? null;
+
+  if (vendor.stock) {
+    return vendor.stock.map((line) => {
+      const entry = items.get(line.ref);
+      return {
+        ref: line.ref,
+        entry,
+        price: line.price ?? (entry ? priceOf(entry) : null),
+        qty: line.qty ?? null,
+      };
+    });
+  }
+
+  const groups = vendor.groups?.length ? new Set(vendor.groups) : null;
+  const out: StockLine[] = [];
+  for (const entry of items.values()) {
+    const price = priceOf(entry);
+    if (parsePrice(price) === null) continue;
+    if (groups && !groups.has(entry.group ?? '')) continue;
+    let carried = true;
+    for (const [key, values] of Object.entries(vendor.filters ?? {})) {
+      if (!values.length) continue;
+      const value = entry.fields.find((f) => f.key === key)?.value;
+      // An entry without the field passes: a filter narrows the things
+      // it describes, it doesn't banish everything else — quality tiers
+      // exist on weapons, and the general store still sells flour.
+      if (value !== undefined && !values.includes(value)) carried = false;
+    }
+    if (carried) out.push({ ref: entry.id, entry, price, qty: null });
+  }
+  return out.sort((a, b) =>
+    (a.entry?.group ?? '').localeCompare(b.entry?.group ?? '') ||
+    (parsePrice(a.price) ?? 0) - (parsePrice(b.price) ?? 0),
+  );
+}
+
+/** A cart against a shelf: line prices resolved, the book's total. */
+export function cartTotal(
+  lines: CartLine[],
+  shelf: StockLine[],
+): { cents: number; symbol: string; missing: string[] } {
+  const byRef = new Map(shelf.map((l) => [l.ref, l]));
+  let cents = 0;
+  let symbol = '';
+  const missing: string[] = [];
+  for (const line of lines) {
+    const stocked = byRef.get(line.ref);
+    const price = parsePrice(stocked?.price);
+    if (!stocked || price === null) {
+      missing.push(line.ref);
+      continue;
+    }
+    cents += price * line.qty;
+    if (!symbol) symbol = priceSymbol(stocked.price);
+  }
+  return { cents, symbol: symbol || '$', missing };
+}
+
+// --- The purse --------------------------------------------------------------
+// Physical money, when a system declares `currency`: denominations are
+// ordinary counters, and these are the shopkeeper's arithmetic over
+// them. Pure and shared, like everything else in this file.
+
+type Currency = NonNullable<SystemTemplate['currency']>;
+
+/** The declared denominations present on this character, largest first. */
+export function purseOf(
+  counters: Counter[],
+  currency: Currency,
+): { counter: Counter; value: number }[] {
+  return currency.denominations
+    .map((d) => {
+      const counter = counters.find((c) => c.name === d.counter);
+      return counter ? { counter, value: d.value } : null;
+    })
+    .filter((x): x is { counter: Counter; value: number } => x !== null)
+    .sort((a, b) => b.value - a.value);
+}
+
+/** Everything in the pouch, in minor units. */
+export function purseTotal(counters: Counter[], currency: Currency): number {
+  return purseOf(counters, currency).reduce(
+    (sum, { counter, value }) => sum + counter.current * value,
+    0,
+  );
+}
+
+/**
+ * Pay a price out of the purse, the way a hand does it at a counter:
+ * exact coins if they're there (largest first), otherwise the smallest
+ * overpayment the pouch can make — and the shopkeeper's change comes
+ * back in the biggest coins that fit.
+ *
+ * Returns the new count per denomination and the story of the exchange
+ * ("paid 35¢, took 5¢ change"), or null when the whole purse can't
+ * cover the price — that ruling belongs to the DM, not to arithmetic.
+ * A PROPOSAL throughout (rule 1): every resulting count lands in a
+ * counter someone can retype.
+ */
+export function makePayment(
+  counters: Counter[],
+  currency: Currency,
+  price: number,
+): { counts: Record<string, number>; paid: number; change: number } | null {
+  const purse = purseOf(counters, currency);
+  const total = purse.reduce((s, p) => s + p.counter.current * p.value, 0);
+  if (total < price) return null;
+
+  // First try exact: largest coins first, bounded by what's held.
+  const counts: Record<string, number> = {};
+  let remaining = price;
+  for (const { counter, value } of purse) {
+    const take = Math.min(Math.floor(remaining / value), counter.current);
+    counts[counter.name] = counter.current - take;
+    remaining -= take * value;
+  }
+  let paid = price - remaining;
+
+  if (remaining > 0) {
+    // No exact change — hand over more, smallest sufficient coin first
+    // (the human move: cover a nickel gap with a dime before breaking
+    // a dollar).
+    for (const { counter, value } of [...purse].reverse()) {
+      while (remaining > 0 && counts[counter.name] > 0) {
+        counts[counter.name] -= 1;
+        remaining -= value;
+        paid += value;
+      }
+      if (remaining <= 0) break;
+    }
+    // The till's change, back in the biggest coins that fit.
+    let change = -remaining;
+    for (const { counter, value } of purse) {
+      const back = Math.floor(change / value);
+      counts[counter.name] = (counts[counter.name] ?? 0) + back;
+      change -= back * value;
+    }
+    return { counts, paid, change: -remaining };
+  }
+  return { counts, paid, change: 0 };
 }

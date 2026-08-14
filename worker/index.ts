@@ -65,13 +65,21 @@ async function poke(env: Env, campaignId: string, characterId: string) {
 }
 
 function countersFrom(
-  defs: { name: string; current?: number; max?: number | null }[],
+  defs: {
+    name: string;
+    current?: number;
+    max?: number | null;
+    display?: Counter['display'];
+    symbol?: string;
+  }[],
 ): Counter[] {
   return defs.map((c) => ({
     id: newId('ctr'),
     name: c.name,
     current: c.current ?? 0,
     max: c.max ?? null,
+    ...(c.display ? { display: c.display } : {}),
+    ...(c.symbol ? { symbol: c.symbol } : {}),
   }));
 }
 
@@ -640,6 +648,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       // find. If you add a patchable key to `CampaignData`, add it here
       // in the same commit.
       catalog: body.data?.catalog ?? campaign.data.catalog,
+      vendors: body.data?.vendors ?? campaign.data.vendors,
       activeHandoutId:
         body.data?.activeHandoutId !== undefined
           ? body.data.activeHandoutId
@@ -1244,22 +1253,30 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       const campaignId = m[1];
       const op = await request.json<SessionOp>();
 
-      // Everything about the fight is the DM's, with ONE exception: a
-      // player reports their own initiative roll from their own seat.
-      // That's the same authority a seat already has over its character
-      // (rule 7) — it isn't rearranging anything, it's saying what its
-      // dice showed, which is the one number nobody else can see.
+      // Everything about the fight is the DM's, with the exceptions a
+      // seat has always had over its own character (rule 7): a player
+      // reports their own initiative roll, and fills their own cart at
+      // an open shop. Neither rearranges anything of anyone else's —
+      // a score is what their dice showed, a cart is what they're
+      // holding, and the ruling on both stays the DM's.
       if (!dm(campaignId)) {
-        if (op.op !== 'score') return err('DM key required', 401);
-        const current = await (
-          await sessionStub(env, campaignId).fetch('https://do/session')
-        ).json<SessionState>();
-        const entry = current.initiative.find((e) => e.id === op.entryId);
-        if (
-          !entry?.characterId ||
-          !canEditCharacter(auth, campaignId, entry.characterId)
-        ) {
-          return err('that roll is not yours to report', 403);
+        if (op.op === 'score') {
+          const current = await (
+            await sessionStub(env, campaignId).fetch('https://do/session')
+          ).json<SessionState>();
+          const entry = current.initiative.find((e) => e.id === op.entryId);
+          if (
+            !entry?.characterId ||
+            !canEditCharacter(auth, campaignId, entry.characterId)
+          ) {
+            return err('that roll is not yours to report', 403);
+          }
+        } else if (op.op === 'cart' || op.op === 'offer') {
+          if (!canEditCharacter(auth, campaignId, op.characterId)) {
+            return err('that cart is not yours to fill', 403);
+          }
+        } else {
+          return err('DM key required', 401);
         }
       }
 

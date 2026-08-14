@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 9,
+  version: 11,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
@@ -90,7 +90,16 @@ const wiw: SystemTemplate = {
       { name: 'Aces', current: 0, max: 6 },
       { name: 'Prestige · Total', current: 0, max: null },
       { name: 'Prestige · Unclaimed', current: 0, max: null },
-      { name: 'Wallet ($)', current: 0, max: null },
+      // Money is COINS AND PAPER (Brian, 2026-08-14): each denomination
+      // is an ordinary counter — a count of physical objects in a
+      // pouch — and `currency` below says what each is worth. The
+      // pocket shows them as one purse chip that opens into the counts.
+      { name: 'Dollars', current: 0, max: null },
+      { name: 'Half Dollars', current: 0, max: null },
+      { name: 'Quarters', current: 0, max: null },
+      { name: 'Dimes', current: 0, max: null },
+      { name: 'Nickels', current: 0, max: null },
+      { name: 'Pennies', current: 0, max: null },
       { name: 'Scrap (pcs)', current: 0, max: null },
       // Supply SLOTS (p. 74): everyone carries 1; horses and mechs add
       // more. The max is the slot count — stored per character and
@@ -187,7 +196,10 @@ const wiw: SystemTemplate = {
   // are shown, so Weapons carries `arms` (the chamber select and the
   // Aim reticle) and Items merely counts the rounds.
   screens: [
-    { name: 'Weapons', icon: 'sixgun', kinds: ['weapon'], arms: true },
+    // Traps live with the weapons: the book treats them as carried,
+    // priced combat gear with a Grit cost of their own (p. 70), and the
+    // fire button already prices "spring the trap".
+    { name: 'Weapons', icon: 'sixgun', kinds: ['weapon', 'trap'], arms: true },
     { name: 'Abilities', icon: 'star', kinds: ['ability'], counters: ['Aces'] },
     // The book's own word (p. 74: "Characters have Inventory to hold
     // anything they can reasonably carry"): ammo by name, everything
@@ -200,16 +212,43 @@ const wiw: SystemTemplate = {
       icon: 'satchel',
       kinds: ['ammo'],
       rest: true,
-      counters: ['Wallet ($)', 'Scrap (pcs)', 'Supplies'],
+      counters: [
+        'Dollars',
+        'Half Dollars',
+        'Quarters',
+        'Dimes',
+        'Nickels',
+        'Pennies',
+        'Scrap (pcs)',
+        'Supplies',
+      ],
     },
   ],
+  // What the money IS: coins and paper, counted like the physical
+  // objects they are — this table's flavor on top of the book's plain
+  // decimal prices (the Guidebook prices a coffee at $0.05 and says no
+  // more about coinage). The purse renders as one chip; the store pays
+  // out of it and proposes the change.
+  currency: {
+    symbol: '$',
+    denominations: [
+      { counter: 'Dollars', value: 100 },
+      { counter: 'Half Dollars', value: 50 },
+      { counter: 'Quarters', value: 25 },
+      { counter: 'Dimes', value: 10 },
+      { counter: 'Nickels', value: 5 },
+      { counter: 'Pennies', value: 1 },
+    ],
+  },
   // Which glyph a named thing wears. The counters here become pocket
   // chips — glyph, name, value — in one slim tile at Inventory's left
   // edge rather than full panels; the four skills wear theirs on the
   // creation cards. Same map either way: a name, a mark, and no code
   // that knows what "Charm" is (rule 2).
   icons: {
-    'Wallet ($)': 'coin',
+    // The purse chip wears the coin; the denominations inside it are
+    // named rows and need no marks of their own.
+    Purse: 'coin',
     'Scrap (pcs)': 'cog',
     Supplies: 'satchel',
     Charm: 'hat',
@@ -264,8 +303,9 @@ const wiw: SystemTemplate = {
     costCounter: 'Grit',
     consumesKind: 'ammo',
     verb: 'Fire',
-    // You fire a weapon; you use an ability (Brian, 2026-08-12).
-    verbs: { ability: 'Use' },
+    // You fire a weapon; you use an ability (Brian, 2026-08-12); you
+    // spring a trap (p. 70 — "spend the associated Grit cost").
+    verbs: { ability: 'Use', trap: 'Spring' },
     // Ace-in-the-Hole (p. 14): usable at six Aces, and using it resets
     // the tally — modelled as a second price, `aces: 6` on the ability,
     // debited whole. Disabled until affordable, like any other cost.
@@ -278,6 +318,14 @@ const wiw: SystemTemplate = {
     actions: [
       { name: 'Aim', cost: 1, text: 'Reroll 1 die in your next Attack. Once per turn.' },
     ],
+  },
+  // Shopping (p. 63: "prices are often negotiable" — the haggle happens
+  // out loud; teller presents the shelf and books the transfer). A
+  // purchase debits the Wallet; a service — a meal, a night's lodging,
+  // a train ticket — is consumed at the counter rather than carried.
+  store: {
+    costField: 'cost',
+    consumes: ['service'],
   },
   // Reputation (Guidebook p. 119): per-faction standing on one
   // five-step ladder, modifying Charm rolls with that faction — in the

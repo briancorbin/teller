@@ -1,5 +1,7 @@
-import type { Counter } from '../../../worker/types';
-import { bumped, Step, TypeableValue } from '../counters/shared';
+import { useState } from 'react';
+import type { Counter, SystemTemplate } from '../../../worker/types';
+import { formatPrice, purseOf, purseTotal } from '../../../worker/items';
+import { bumped, Step, stepOf, TypeableValue } from '../counters/shared';
 import { boxable } from './TallyPanel';
 import { Glyph } from './glyphs';
 
@@ -112,13 +114,101 @@ function Chip({
           <Step
             sign="−"
             label={`decrease ${counter.name}`}
-            onClick={() => onChange(bumped(counter, -1))}
+            onClick={() => onChange(bumped(counter, -stepOf(counter)))}
           />
           <Step
             sign="+"
             label={`increase ${counter.name}`}
-            onClick={() => onChange(bumped(counter, 1))}
+            onClick={() => onChange(bumped(counter, stepOf(counter)))}
           />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The purse: every denomination in one chip — the total at a glance,
+ * the actual coins a tap away.
+ *
+ * The counts are the STORED facts (each denomination is an ordinary
+ * counter, rule 2); the total is derived from the declared values and
+ * never stored, so it can never disagree with the coins. Steppers move
+ * whole coins; the odd figure is typed per denomination (rule 1).
+ */
+function Purse({
+  counters,
+  currency,
+  icon,
+  onChange,
+  compact = false,
+}: {
+  counters: Counter[];
+  currency: NonNullable<SystemTemplate['currency']>;
+  icon: string;
+  onChange: (next: Counter) => void;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const purse = purseOf(counters, currency);
+  if (!purse.length) return null;
+  const total = purseTotal(counters, currency);
+  const symbol = currency.symbol ?? '$';
+
+  return (
+    <div
+      className={`flex flex-col gap-1 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5 ${
+        compact ? 'min-w-[9.5rem] flex-1' : ''
+      }`}
+    >
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-left"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        aria-label={`purse, ${formatPrice(total, symbol)} — ${
+          open ? 'close' : 'open'
+        } the coin counts`}
+      >
+        <Glyph name={icon} className="h-5 w-5 shrink-0 text-stone-400" />
+        {!compact && (
+          <span className="text-[9px] uppercase tracking-widest text-stone-500">
+            Purse
+          </span>
+        )}
+        <span className="font-mono text-base tabular-nums text-stone-100">
+          {formatPrice(total, symbol)}
+        </span>
+        <span className="ml-auto text-[10px] text-stone-600">
+          {open ? '▾' : '▸'}
+        </span>
+      </button>
+      {open && (
+        <div className="flex flex-col gap-1 border-t border-stone-800 pt-1">
+          {purse.map(({ counter }) => (
+            <div key={counter.id} className="flex items-center gap-1.5">
+              <span className="min-w-0 flex-1 break-words text-[11px] text-stone-400">
+                {counter.name}
+              </span>
+              <TypeableValue
+                counter={counter}
+                onChange={onChange}
+                bare
+                className="text-sm"
+                inputClassName="w-12 text-sm"
+              />
+              <Step
+                sign="−"
+                label={`fewer ${counter.name}`}
+                onClick={() => onChange(bumped(counter, -1))}
+              />
+              <Step
+                sign="+"
+                label={`more ${counter.name}`}
+                onClick={() => onChange(bumped(counter, 1))}
+              />
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -128,12 +218,15 @@ function Chip({
 export function PocketPanel({
   counters,
   icons,
+  currency,
   onChange,
   fill = false,
   row = false,
 }: {
   counters: Counter[];
   icons: Record<string, string>;
+  /** Declared money — the matching counters band into one purse chip. */
+  currency?: SystemTemplate['currency'];
   onChange: (next: Counter) => void;
   /** Stretch to the tile's height (the strip); natural height held. */
   fill?: boolean;
@@ -146,13 +239,27 @@ export function PocketPanel({
    */
   row?: boolean;
 }) {
+  const denomNames = new Set(
+    (currency?.denominations ?? []).map((d) => d.counter),
+  );
+  const coins = counters.filter((c) => denomNames.has(c.name));
+  const loose = counters.filter((c) => !denomNames.has(c.name));
   return (
     <div
       className={`flex gap-1.5 ${row ? 'flex-wrap' : 'flex-col'} ${
         fill ? 'min-h-0 flex-1 justify-center' : ''
       }`}
     >
-      {counters.map((counter) => (
+      {currency && coins.length > 0 && (
+        <Purse
+          counters={coins}
+          currency={currency}
+          icon={icons.Purse ?? 'coin'}
+          onChange={onChange}
+          compact={row}
+        />
+      )}
+      {loose.map((counter) => (
         <Chip
           key={counter.id}
           counter={counter}

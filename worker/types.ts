@@ -12,10 +12,15 @@ export type Counter = {
   max: number | null;
   /**
    * Presentation hint only — 'clock' renders as a segmented progress
-   * clock (Blades-style; needs a max). Same data, same events, same
-   * undo; nothing downstream may branch on it except renderers.
+   * clock (Blades-style; needs a max); 'money' renders the value as
+   * currency, stored in integer MINOR units (3700 = $37.00), because
+   * floats drift and money is the one place nobody forgives it. Same
+   * data, same events, same undo; nothing downstream may branch on it
+   * except renderers.
    */
-  display?: 'clock';
+  display?: 'clock' | 'money';
+  /** display 'money': the currency mark the number wears — '$'. */
+  symbol?: string;
   /**
    * Kept out of /public snapshots (board, badge) until the DM reveals
    * it. The seat still sees its own — hidden is about the table-facing
@@ -488,6 +493,53 @@ export type Encounter = {
   notes?: string;
 };
 
+/**
+ * One line of a vendor's stock: a catalogue reference, and what THIS
+ * shop says about it. Both extras are proposals in the rule-1 sense —
+ * the DM types the final figure at the counter regardless.
+ */
+export type VendorLine = {
+  /** Catalogue item id — resolved through packs + the campaign's own. */
+  ref: string;
+  /** This shop's price, over the book's — "$4.50". Absent = the entry's. */
+  price?: string;
+  /**
+   * Stock on hand — "he's only got 3 sticks of dynamite". Absent or
+   * null = unlimited, which is the default on purpose: counting boxes
+   * of matches is bookkeeping nobody asked for (Brian, 2026-08-14).
+   */
+  qty?: number | null;
+};
+
+/**
+ * A shop the posse can walk into — a campaign entity, like an encounter
+ * (rule 9: your world travels; the book's tables stay in the pack it
+ * references).
+ *
+ * Stock is DERIVED unless declared: with no `stock` list, the vendor
+ * carries everything in reach that has a cost, narrowed by `groups`
+ * and `filters`. That's the general store for free; an explicit list
+ * is the curiosity shop, line by line.
+ */
+export type Vendor = {
+  id: string;
+  name: string;
+  /** One line of fiction for the shop's masthead. */
+  blurb?: string;
+  /** Explicit stock. Absent = derived from the catalogue. */
+  stock?: VendorLine[];
+  /** Derived stock: catalogue groups carried. Absent = all of them. */
+  groups?: string[];
+  /**
+   * Derived stock: filing-field key → the values carried, e.g.
+   * { quality: ['Used', 'Basic'] } — the book's own availability dial
+   * (p. 65: "Basic weapons are most commonly found"). The KEY is data
+   * the DM picked off the catalogue, never a word this code knows
+   * (rule 2).
+   */
+  filters?: Record<string, string[]>;
+};
+
 export type CampaignData = {
   /** UI strings per system — e.g. { gm: 'Warden' }. */
   vocabulary: Record<string, string>;
@@ -523,6 +575,8 @@ export type CampaignData = {
   };
   /** Prepared fights — see `Encounter`. Most of what a module is made of. */
   encounters?: Encounter[];
+  /** The shops of this world — see `Vendor`. Travels with the campaign. */
+  vendors?: Vendor[];
   /**
    * Which printing of a foe this table uses, when more than one pack
    * carries it: npc id → pack id.
@@ -623,6 +677,9 @@ export type TemplateCounter = {
   name: string;
   current?: number;
   max?: number | null;
+  /** Seeded onto the counter — see `Counter.display`. */
+  display?: 'clock' | 'money';
+  symbol?: string;
 };
 
 export type SystemTemplate = {
@@ -854,6 +911,51 @@ export type SystemTemplate = {
      * itself is ordinary counter arithmetic the table can reverse.
      */
     actions?: { name: string; cost: number; text?: string }[];
+  };
+  /**
+   * How BUYING works in this system, when it has a store at all.
+   *
+   * Same bargain as `use`: teller ships the arithmetic (cart totals, a
+   * wallet debit) and never the words. The system says which counter is
+   * money and which item kinds are consumed on the spot — a meal, a
+   * night's lodging, a train ticket — rather than landing in inventory.
+   * Code that branched on `kind === 'service'` would be a game concept
+   * wearing a string (rule 2); this declaration is the sanctioned form.
+   *
+   * A system that declares nothing has no store mode, and loses nothing
+   * else.
+   */
+  store?: {
+    /**
+     * The single counter a purchase debits — for a system whose money
+     * is one number. A system that declares `currency` instead pays
+     * from the purse and leaves this out.
+     */
+    counter?: string;
+    /** The item field holding a price — 'cost'. Same bargain as `use.costField`. */
+    costField: string;
+    /** Item kinds consumed at the counter, never added to inventory. */
+    consumes?: string[];
+  };
+  /**
+   * Physical money: which counters are the coins and notes, and what
+   * each is worth in minor units — Dollars 100, Quarters 25, Dimes 10.
+   *
+   * Rule 2 doing what it always does: a denomination is an ORDINARY
+   * counter (a count of physical objects in a pouch), and this
+   * declaration is how they compose into a total. The pocket shows the
+   * purse as one chip that opens into the coin counts; the store pays
+   * out of it like a shopkeeper — largest first, change back — and
+   * every count stays a stored value a person can type over (rule 1).
+   *
+   * Declared alongside `store` but independent of it: wages arrive in
+   * coin whether or not anyone opens a shop.
+   */
+  currency?: {
+    /** Counter name → its value in minor units, any order. */
+    denominations: { counter: string; value: number }[];
+    /** The mark totals wear — '$'. */
+    symbol?: string;
   };
   /**
    * How the sheet splits what a character CARRIES into screens.
@@ -1443,6 +1545,26 @@ export type InitiativeEntry = {
   score?: number | null;
 };
 
+/** One line of a cart: which catalogue entry, and how many. */
+export type CartLine = { ref: string; qty: number };
+
+/**
+ * The shop that's OPEN, and every cart in it. Live state that more than
+ * one screen argues about (a seat fills the cart, the console rules on
+ * it), so it lives here with initiative rather than in the campaign
+ * blob — and like initiative it's ephemeral: closing the shop clears
+ * it, and nothing here is a purchase. The purchase is the DM's confirm,
+ * which lands as one ordinary character PATCH — event-logged, undoable,
+ * every number a person can type over (rule 1).
+ */
+export type StoreSession = {
+  vendorId: string;
+  /** characterId → what they've gathered. */
+  carts: Record<string, CartLine[]>;
+  /** characterId → the cart is on the counter, awaiting the DM. */
+  offered: Record<string, boolean>;
+};
+
 export type SessionState = {
   /**
    * The order, and it is always the DM's to rearrange (rule 5). teller
@@ -1460,6 +1582,8 @@ export type SessionState = {
   round: number;
   /** DM-authored banner shown on the player-facing displays. */
   notice: string | null;
+  /** The open shop, or null. See `StoreSession`. */
+  store?: StoreSession | null;
 };
 
 export type SessionOp =
@@ -1471,7 +1595,13 @@ export type SessionOp =
   | { op: 'next' }
   | { op: 'prev' }
   | { op: 'end' }
-  | { op: 'notice'; text: string | null };
+  | { op: 'notice'; text: string | null }
+  /** Open a vendor for the table, or close the shop (null). DM's call. */
+  | { op: 'shop'; vendorId: string | null }
+  /** One seat's cart, replaced whole — same shape `set` uses for the order. */
+  | { op: 'cart'; characterId: string; lines: CartLine[] }
+  /** Put the cart on the counter (or take it back). */
+  | { op: 'offer'; characterId: string; on: boolean };
 
 /**
  * A character as the player-facing displays see it: seat token and

@@ -29,6 +29,7 @@ import { DisplaysPanel } from '../components/DisplaysPanel';
 import { EncounterPanel } from '../components/EncounterPanel';
 import { EncountersPanel } from '../components/EncountersPanel';
 import { RulesPanel } from '../components/RulesPanel';
+import { StorePanel } from '../components/StorePanel';
 
 /**
  * Who's in the characters pane.
@@ -522,6 +523,37 @@ export function DmView({
           onSpawn={spawnGroup}
           picks={campaign.data.foePicks}
           onPick={pickFoeSource}
+        />
+      </main>
+    );
+  }
+
+  // The world's shops: vendors between sessions, the counter when one
+  // is open. Its own pane because a shop visit is a whole scene — a
+  // DM-screen panel can sit on it while the posse resupplies.
+  if (pane === 'store') {
+    return (
+      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-3 p-3">
+        <ConnectionHint connected={connected} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
+          {paneNav}
+        </div>
+        <StorePanel
+          campaign={campaign}
+          characters={characters}
+          packs={activePacks}
+          template={template}
+          session={session}
+          gm={gm}
+          onVendors={(vendors) => {
+            setCampaign((prev) =>
+              prev ? { ...prev, data: { ...prev.data, vendors } } : prev,
+            );
+            api.patchCampaign(campaignId, { data: { vendors } }).catch(() => refetch());
+          }}
+          onOp={(op) => api.sessionOp(campaignId, op).catch(() => refetch())}
+          onPatchCharacter={patchCharacter}
         />
       </main>
     );

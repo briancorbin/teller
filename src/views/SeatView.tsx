@@ -2,11 +2,13 @@ import { useCallback, useEffect, useState } from 'react';
 import type {
   Calibration,
   Campaign,
+  CartLine,
   Character,
   CharacterData,
   PackRecord,
   SystemTemplate,
 } from '../../worker/types';
+import { vendorStock } from '../../worker/items';
 import { api } from '../lib/api';
 import { usePanelNote, useRuleLookup, useRuleSection } from '../lib/rules';
 import { useSession } from '../lib/use-session';
@@ -243,6 +245,46 @@ export function SeatView({
     ? (character.data.fields.find((f) => f.key === template.initiative!.field)
         ?.value ?? '')
     : '';
+
+  /**
+   * The open shop, resolved for this one seat: its vendor, the shelf
+   * (same resolution the console uses — `vendorStock` is shared so
+   * both sides see the same shop), and this character's own cart out
+   * of the live session. Absent whenever no shop is open, no vendor
+   * matches, or the system declares no store — the screen simply
+   * isn't there, the way every undeclared thing costs nothing.
+   */
+  const shopOpen = session?.store;
+  const shop = (() => {
+    const store = template?.store;
+    if (!shopOpen || !store || !campaign) return undefined;
+    const vendor = (campaign.data.vendors ?? []).find(
+      (v) => v.id === shopOpen.vendorId,
+    );
+    if (!vendor) return undefined;
+    return {
+      vendor,
+      shelf: vendorStock(
+        vendor,
+        packs.map((p) => p.pack),
+        campaign.data.catalog,
+        store,
+      ),
+      cart: shopOpen.carts[characterId] ?? [],
+      offered: shopOpen.offered[characterId] ?? false,
+      counter: store.counter,
+      currency: template?.currency,
+      gm: campaign.data.vocabulary.gm ?? 'DM',
+      onCart: (lines: CartLine[]) =>
+        api
+          .sessionOp(campaign.id, { op: 'cart', characterId, lines })
+          .catch(() => {}),
+      onOffer: (on: boolean) =>
+        api
+          .sessionOp(campaign.id, { op: 'offer', characterId, on })
+          .catch(() => {}),
+    };
+  })();
 
   const Counters = COUNTER_VIEWS[layout];
   /**
@@ -504,6 +546,7 @@ export function SeatView({
               pins={template?.pins}
               dials={template?.dials}
               icons={template?.icons}
+              currency={template?.currency}
               strip={strip}
               mounted={wide}
               tags={character.data.tags}
@@ -515,6 +558,7 @@ export function SeatView({
               marks={template?.marks}
               spends={template?.spends}
               ladders={template?.ladders}
+              shop={shop}
               onFields={
                 ownsTags(layout)
                   ? (next) =>

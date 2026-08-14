@@ -206,6 +206,9 @@ export async function apply(
       // tell "layer onto the table I already started" apart from
       // "start a second one".
       originId: incoming?.id,
+      // The exporter's own inventions — homebrew gear, the shops.
+      ...(incoming?.catalog ? { catalog: incoming.catalog } : {}),
+      ...(incoming?.vendors?.length ? { vendors: incoming.vendors } : {}),
     };
     await env.DB.prepare(
       'INSERT INTO campaigns (id, name, system, data) VALUES (?, ?, ?, ?)',
@@ -373,6 +376,29 @@ export async function apply(
     data.vocabulary = { ...(incoming.vocabulary ?? {}), ...data.vocabulary };
     if (!data.states?.length && incoming.states) {
       data.states = incoming.states as EncounterState[];
+    }
+    // Homebrew gear and shops layer by id, and the table's copy wins on
+    // a collision — an import is a proposal, not an authority (rule 1).
+    if (incoming.catalog) {
+      const haveItems = new Set((data.catalog?.items ?? []).map((i) => i.id));
+      const haveUps = new Set((data.catalog?.upgrades ?? []).map((u) => u.id));
+      data.catalog = {
+        items: [
+          ...(data.catalog?.items ?? []),
+          ...(incoming.catalog.items ?? []).filter((i) => !haveItems.has(i.id)),
+        ],
+        upgrades: [
+          ...(data.catalog?.upgrades ?? []),
+          ...(incoming.catalog.upgrades ?? []).filter((u) => !haveUps.has(u.id)),
+        ],
+      };
+    }
+    if (incoming.vendors?.length) {
+      const have = new Set((data.vendors ?? []).map((v) => v.id));
+      data.vendors = [
+        ...(data.vendors ?? []),
+        ...incoming.vendors.filter((v) => !have.has(v.id)),
+      ];
     }
   }
 

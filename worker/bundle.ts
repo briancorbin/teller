@@ -197,6 +197,13 @@ async function* campaignEntries(
     // decision a person made; it would be silently re-defaulted
     // otherwise, which is rule 1 in miniature.
     foePicks: data.foePicks ?? {},
+    // The table's own inventions travel with it (rule 9: what you
+    // wrote travels; what a publisher wrote stays in the pack this
+    // bundle references). Kitbashed gear and the world's shops are
+    // both yours — a shop's stock references catalogue ids exactly
+    // the way a character's items do.
+    ...(data.catalog ? { catalog: data.catalog } : {}),
+    ...(data.vendors?.length ? { vendors: data.vendors } : {}),
   });
 
   if (npcs.length) yield jsonEntry('bestiary.json', npcs);

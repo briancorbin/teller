@@ -95,16 +95,28 @@ function setField(fields: Field[], label: string, value: string): Field[] {
   return fields.map((f) => (f.label === label ? { ...f, value } : f));
 }
 
-/** Set a counter's current (and optionally max) by name, if present. */
+/**
+ * Set a counter's current (and optionally max) by name, if present.
+ *
+ * The value arrives in the book's own units — a tier says "wallet: 20"
+ * meaning twenty dollars — and a money counter stores minor units, so
+ * the write scales to match the counter it lands in.
+ */
 function setCounter(
   counters: Counter[],
   name: string,
   current: number,
   max?: number | null,
 ): Counter[] {
-  return counters.map((c) =>
-    c.name === name ? { ...c, current, ...(max !== undefined ? { max } : {}) } : c,
-  );
+  return counters.map((c) => {
+    if (c.name !== name) return c;
+    const unit = c.display === 'money' ? 100 : 1;
+    return {
+      ...c,
+      current: current * unit,
+      ...(max !== undefined ? { max: max === null ? null : max * unit } : {}),
+    };
+  });
 }
 
 /**

@@ -7,6 +7,7 @@
 //   map        → scenes · table grid (everything the table TV shows)
 //   characters → the character grid
 //   library    → rules · reference · party resources
+//   store      → the world's shops: vendors, and the counter when one's open
 //   displays   → the screens in the room, and what each one is
 //
 // One list, because two would drift: the console renders from it and the
@@ -20,6 +21,7 @@ export const PANES = [
   'map',
   'characters',
   'library',
+  'store',
   'displays',
 ] as const;
 
