@@ -78,6 +78,106 @@ const GLYPHS: Record<string, React.ReactNode> = {
       <path d="M8.4 8.4h.01M12 12h.01M15.6 15.6h.01" />
     </>
   ),
+  // The keepsakes — the small things that ride in a pocket from the
+  // life before. One mark per object the book offers, drawn from the
+  // words rather than from the page.
+
+  // A letter, flap folded down.
+  letter: (
+    <>
+      <rect x="3" y="5.6" width="18" height="12.8" rx="1.6" />
+      <path d="M3.4 6.6l8.6 6 8.6-6" />
+    </>
+  ),
+  // A homestead: roof, door, and a chimney with something in it.
+  homestead: (
+    <>
+      <path d="M3.4 11.6L12 4.8l8.6 6.8" />
+      <path d="M5.6 10.8v8.4h12.8v-8.4" />
+      <path d="M10.2 19.2v-4.6h3.6v4.6" />
+      <path d="M16.4 8.2V5.6h2.2v4.3" />
+    </>
+  ),
+  // A poster, nailed up at the corners and curling.
+  poster: (
+    <>
+      <path d="M5.4 3.8h13.2v14.4l-2.2 2h-11z" />
+      <path d="M7.6 6.6h8.8M7.6 9.6h8.8M7.6 12.6h5.4" />
+      <path d="M7 5.4h.01M17 5.4h.01" />
+    </>
+  ),
+  // A pocket watch on its bow, hands at a quarter past.
+  watch: (
+    <>
+      <circle cx="12" cy="13.6" r="6.8" />
+      <path d="M10.6 3.6h2.8v2.6h-2.8z" />
+      <path d="M12 9.8v3.8h3" />
+    </>
+  ),
+  // A palette with a brush laid across it.
+  paints: (
+    <>
+      <path d="M11 4.6c4.4 0 7.8 2.9 7.8 6.4 0 2-1.6 2.6-2.9 2.6-1 0-1.8.6-1.8 1.6 0 1.4-1 2.2-2.6 2.2-4.3 0-7.8-2.9-7.8-6.4S6.6 4.6 11 4.6z" />
+      <path d="M8 9.2h.01M11.6 7.8h.01M14.6 9.8h.01" />
+      <path d="M16.4 19.6l4-4.6" />
+    </>
+  ),
+  // A handkerchief, hung by one corner with a mark stitched in it.
+  kerchief: (
+    <>
+      <path d="M12 3.8l7.4 7.4-7.4 7.4-7.4-7.4z" />
+      <path d="M9.8 11.2h4.4M12 9v4.4" />
+    </>
+  ),
+  // A folding knife, blade out of the handle.
+  knife: (
+    <>
+      <path d="M3.6 15.4h11.6a4 4 0 0 0 0-8H8.4" />
+      <path d="M3.6 15.4v2a1.4 1.4 0 0 0 1.4 1.4h9.4" />
+      <path d="M8.4 7.4L5.2 10.6" />
+    </>
+  ),
+  // A locket on its chain, hinged open a crack.
+  locket: (
+    <>
+      <path d="M7.4 3.8l4.6 3.2 4.6-3.2" />
+      <ellipse cx="12" cy="14" rx="5.4" ry="6.2" />
+      <path d="M12 7.8v12.4" />
+    </>
+  ),
+  // A dried flower, pressed flat.
+  flower: (
+    <>
+      <circle cx="12" cy="7.6" r="2" />
+      <path d="M12 5.6c0-2 1.4-3 2.8-2.2 1.3.8 1.2 2.6-.4 3.6M12 5.6c0-2-1.4-3-2.8-2.2-1.3.8-1.2 2.6.4 3.6" />
+      <path d="M13.9 8.7c1.7-1 3.4-.5 3.5 1s-1.5 2.4-3.3 2M10.1 8.7c-1.7-1-3.4-.5-3.5 1s1.5 2.4 3.3 2" />
+      <path d="M12 9.8v10.4" />
+    </>
+  ),
+  // A fossil: the coiled shell every kid finds first.
+  fossil: (
+    <>
+      <path d="M12 3.6a8.4 8.4 0 1 1-8.4 8.4A6.2 6.2 0 0 1 9.8 5.8 4.4 4.4 0 0 1 14.2 10a3 3 0 0 1-3 3" />
+      <path d="M14.4 4.4l1.4 2.6M18.4 6.6l-1.8 2.2M20.2 10.4l-2.6.8" />
+    </>
+  ),
+  // A crumpled note, creased across.
+  note: (
+    <>
+      <path d="M5.8 4.4h9l3.4 3.4v11.8H5.8z" />
+      <path d="M14.8 4.4v3.4h3.4" />
+      <path d="M8 11.2l3.4 1.6-2.4 1.8 3.6 1.4" />
+    </>
+  ),
+  // Something of your own — the blank slot the book leaves open.
+  quill: (
+    <>
+      <path d="M19.6 4.2c-6 .4-11 3.6-12.4 9.4l-2.4 6" />
+      <path d="M19.6 4.2c.6 6.6-3 11.4-9.4 12.2" />
+      <path d="M6.2 16.2h4.6" />
+    </>
+  ),
+
   // The die faces. WiW's Black die shows Hits, Aces, Blanks and Spurs,
   // and the book prints its own symbols for them — these are teller's
   // drawings of the same four ideas, in the set's one stroke weight.

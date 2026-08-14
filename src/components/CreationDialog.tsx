@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import {
   composeAll,
   creationOf,
+  keepsakeOf,
   gimmeName,
   spreadTotal,
 } from '../lib/creation';
@@ -285,11 +286,12 @@ export function CreationDialog({
           <div className="space-y-1">
             <span className={sectionLabel}>a keepsake or two</span>
             <div className="flex flex-wrap gap-1.5">
-              {creation.keepsakes!.map((k) => {
-                const on = keeps.includes(k);
+              {creation.keepsakes!.map((entry) => {
+                const k = keepsakeOf(entry);
+                const on = keeps.includes(k.text);
                 return (
                   <button
-                    key={k}
+                    key={k.text}
                     className={`rounded-full border px-2 py-1 text-[11px] transition-colors ${
                       on
                         ? 'border-amber-500 bg-amber-950/40 text-stone-100'
@@ -297,11 +299,13 @@ export function CreationDialog({
                     }`}
                     onClick={() =>
                       setKeeps(
-                        on ? keeps.filter((x) => x !== k) : [...keeps, k].slice(-2),
+                        on
+                          ? keeps.filter((x) => x !== k.text)
+                          : [...keeps, k.text].slice(-2),
                       )
                     }
                   >
-                    {k}
+                    {k.text}
                   </button>
                 );
               })}

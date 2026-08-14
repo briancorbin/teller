@@ -12,6 +12,7 @@ import {
   bundleGrantIds,
   creationOf,
   gimmeName,
+  keepsakeOf,
   packArtUrl,
   skillLore,
   spreadTotal,
@@ -110,6 +111,9 @@ export function CreationBuilder({
   // hand that one back.
   const [rolled, setRolled] = useState<string[]>([]);
   const [keeps, setKeeps] = useState<string[]>([]);
+  // Null while picking from the drawer; a string once you've opened
+  // the "of your own creation" the book allows.
+  const [ownKeepsake, setOwnKeepsake] = useState<string | null>(null);
   const [nameDraft, setNameDraft] = useState('');
 
   const gmWord = vocabulary?.gm ?? 'Warden';
@@ -123,6 +127,12 @@ export function CreationBuilder({
   /** Already sitting on the printed numbers — nothing for reset to do. */
   const atTradeSpread = Object.entries(trade?.skills ?? {}).every(
     ([label, pool]) => skills[label] === pool,
+  );
+  /** The keepsakes the pack prints — anything else you wrote yourself. */
+  const offered = useMemo(
+    () =>
+      new Set((creation.keepsakes ?? []).map((k) => keepsakeOf(k).text)),
+    [creation],
   );
   // What the book says each skill is FOR. Keyed off the trade's own
   // spread, so the labels asked about are the ones this sheet has.
@@ -902,41 +912,178 @@ export function CreationBuilder({
       )}
 
       {here === 'keepsake' && (
-        <>
-          <div className="flex min-h-0 flex-1 flex-wrap content-start gap-1.5 overflow-y-auto">
-            {creation.keepsakes!.map((k) => {
-              const picked = keeps.includes(k);
-              return (
+        <div
+          className="flex min-h-0 flex-1 flex-col gap-2"
+          style={
+            (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
+          }
+        >
+          {ownKeepsake === null ? (
+            <>
+              {/* Twelve small objects laid out like objects, not like a
+                  dropdown — each with its own mark, so the row reads as
+                  a drawer you're picking something out of. */}
+              <div
+                className={`grid min-h-0 flex-1 gap-1.5 ${
+                  strip ? 'grid-cols-7 grid-rows-2' : 'grid-cols-2 overflow-y-auto'
+                }`}
+              >
+                {creation.keepsakes!.map((entry) => {
+                  const k = keepsakeOf(entry);
+                  const picked = keeps.includes(k.text);
+                  return (
+                    <button
+                      key={k.text}
+                      className={`flex flex-col items-center justify-start gap-1 rounded-md border p-2 text-center transition-colors ${
+                        picked ? '' : `${off} opacity-60`
+                      }`}
+                      style={
+                        picked
+                          ? {
+                              borderColor: accent ?? '#f59e0b',
+                              background: `${accent ?? '#f59e0b'}14`,
+                            }
+                          : undefined
+                      }
+                      onClick={() =>
+                        setKeeps(
+                          picked
+                            ? keeps.filter((x) => x !== k.text)
+                            : [...keeps, k.text].slice(-2),
+                        )
+                      }
+                    >
+                      {k.icon && (
+                        <Glyph
+                          name={k.icon}
+                          className={`h-10 w-10 shrink-0 transition-colors ${
+                            picked
+                              ? 'text-[color:var(--sheet-accent,#f59e0b)]'
+                              : 'text-stone-500'
+                          }`}
+                        />
+                      )}
+                      <span className="font-serif text-[0.7rem] leading-tight text-stone-300">
+                        {k.text}
+                      </span>
+                    </button>
+                  );
+                })}
+                {/* Anything you wrote yourself, sitting in the drawer
+                    beside the printed ones — otherwise your own
+                    keepsake vanishes the moment you confirm it, with
+                    no way to read it back or change your mind. */}
+                {keeps
+                  .filter((k) => !offered.has(k))
+                  .map((k) => (
+                    <button
+                      key={k}
+                      className="flex flex-col items-center justify-start gap-1 rounded-md border p-2 text-center"
+                      style={{
+                        borderColor: accent ?? '#f59e0b',
+                        background: `${accent ?? '#f59e0b'}14`,
+                      }}
+                      onClick={() => setKeeps(keeps.filter((x) => x !== k))}
+                    >
+                      <Glyph
+                        name="quill"
+                        className="h-10 w-10 shrink-0 text-[color:var(--sheet-accent,#f59e0b)]"
+                      />
+                      <span className="font-serif text-[0.7rem] leading-tight text-stone-300">
+                        {k}
+                      </span>
+                    </button>
+                  ))}
+                {/* "…or of your own creation", which the book offers and
+                    this screen used not to. It's the thirteenth object
+                    in the drawer rather than a link under it. */}
                 <button
-                  key={k}
-                  className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                    picked
-                      ? 'border-amber-500 bg-amber-950/40 text-stone-100'
-                      : 'border-stone-700 bg-stone-900 text-stone-400'
-                  }`}
-                  onClick={() =>
-                    setKeeps(
-                      picked
-                        ? keeps.filter((x) => x !== k)
-                        : [...keeps, k].slice(-2),
-                    )
-                  }
+                  className={`flex flex-col items-center justify-start gap-1 rounded-md border border-dashed p-2 text-center ${off} opacity-60`}
+                  onClick={() => setOwnKeepsake('')}
                 >
-                  {k}
+                  <Glyph name="quill" className="h-10 w-10 shrink-0 text-stone-500" />
+                  <span className="font-serif text-[0.7rem] leading-tight text-stone-300">
+                    Something of your own
+                  </span>
                 </button>
-              );
-            })}
-          </div>
-          <button
-            className="shrink-0 self-start rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950"
-            onClick={() => {
-              if (keeps.length) onPatch(applyKeepsakes(data, keeps));
-              next();
-            }}
-          >
-            {keeps.length ? 'tucked away' : 'travelin’ light'}
-          </button>
-        </>
+              </div>
+              <div className="flex shrink-0 items-center justify-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  {[0, 1].map((i) => (
+                    <Glyph
+                      key={i}
+                      name="satchel"
+                      className={`h-8 w-8 transition-colors ${
+                        i < keeps.length
+                          ? 'text-[color:var(--sheet-accent,#f59e0b)]'
+                          : 'text-stone-800'
+                      }`}
+                    />
+                  ))}
+                </div>
+                {/* The book says one or two — but it's flavour, and a
+                    player who wants none owns that call (rule 1), so
+                    the button changes its words instead of locking. */}
+                <button
+                  className="rounded-md px-4 py-2 text-sm font-semibold transition-colors"
+                  style={
+                    keeps.length
+                      ? { background: accent ?? '#f59e0b', color: '#1c1917' }
+                      : { background: '#292524', color: '#a8a29e' }
+                  }
+                  onClick={() => {
+                    onPatch(applyKeepsakes(data, keeps));
+                    next();
+                  }}
+                >
+                  {keeps.length ? 'tucked away' : 'travelin’ light'}
+                </button>
+              </div>
+            </>
+          ) : (
+            /* Writing your own. Same keyboard the name step uses — the
+               rail has no other one, and a keepsake is a sentence. */
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
+              <div className="w-full max-w-[46rem] rounded-md border border-stone-600 bg-stone-950 px-3 py-2 text-center font-serif text-xl text-stone-100">
+                {ownKeepsake || (
+                  <span className="text-stone-600">what do you carry?</span>
+                )}
+              </div>
+              <Keyboard
+                onKey={(key) =>
+                  setOwnKeepsake((v) => {
+                    if (key === '⌫') return (v ?? '').slice(0, -1);
+                    if (key === 'space') return `${v ?? ''} `;
+                    return `${v ?? ''}${key}`;
+                  })
+                }
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  className="rounded-md border border-stone-700 px-3 py-2 text-xs uppercase tracking-widest text-stone-400"
+                  onClick={() => setOwnKeepsake(null)}
+                >
+                  never mind
+                </button>
+                <button
+                  className="rounded-md px-4 py-2 text-sm font-semibold text-stone-950 disabled:bg-stone-800 disabled:text-stone-600"
+                  style={
+                    ownKeepsake.trim()
+                      ? { background: accent ?? '#f59e0b' }
+                      : undefined
+                  }
+                  disabled={!ownKeepsake.trim()}
+                  onClick={() => {
+                    setKeeps((k) => [...k, ownKeepsake.trim()].slice(-2));
+                    setOwnKeepsake(null);
+                  }}
+                >
+                  that's mine
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {here === 'name' && (

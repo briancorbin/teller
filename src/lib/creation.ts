@@ -283,6 +283,19 @@ export function withoutInstanced(
   };
 }
 
+/**
+ * A keepsake in one shape, whichever way the pack wrote it.
+ *
+ * The stored value is always the TEXT — a memento is a line on a
+ * sheet, and picking one must not make the sheet depend on the pack
+ * still being installed to say what you're carrying.
+ */
+export function keepsakeOf(
+  k: NonNullable<Creation['keepsakes']>[number],
+): { text: string; icon?: string } {
+  return typeof k === 'string' ? { text: k } : k;
+}
+
 /** Draw from the naming well. */
 export function gimmeName(creation: Creation): string {
   const first = creation.names?.first ?? [];

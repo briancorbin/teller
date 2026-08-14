@@ -1210,8 +1210,16 @@ export type RulesPack = {
     weapons?: string[];
     /** Catalog ids of the starting bundles; a tier says how many to pick. */
     equipmentPacks?: string[];
-    /** Small mementos to pick from — flavor the sheet carries as a note. */
-    keepsakes?: string[];
+    /**
+     * Small mementos to pick from — flavor the sheet carries as a note.
+     *
+     * A bare string is the memento itself. The object form lets the pack
+     * hand it a mark from teller's glyph set, the same bargain
+     * `CatalogItem.icon` strikes: we draw, the content assigns. Both
+     * forms are accepted forever — a pack that never wants pictures
+     * shouldn't have to wrap every line in an object to say so.
+     */
+    keepsakes?: (string | { text: string; icon?: string })[];
     /**
      * The naming well: draw a random first + last for the "gimme a
      * name" button. Personalities/features ride along for NPC sparks.
