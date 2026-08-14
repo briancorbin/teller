@@ -1087,40 +1087,100 @@ export function CreationBuilder({
       )}
 
       {here === 'name' && (
-        <>
-          <div className="flex min-h-0 flex-1 flex-col justify-center gap-2">
-            <div className="flex items-center gap-2">
-              <input
-                className="min-w-0 flex-1 rounded-md border border-stone-600 bg-stone-950 px-3 py-2 font-serif text-xl text-stone-100 outline-none focus:border-amber-500"
-                placeholder={trade ? `New ${trade.name}` : 'a name'}
-                value={nameDraft}
-                onChange={(e) => setNameDraft(e.target.value)}
+        <div
+          className="flex min-h-0 flex-1 gap-3"
+          style={
+            (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
+          }
+        >
+          {/* The face they picked, finally standing next to the name
+              going on it. Everything before this was numbers and
+              objects; this screen is the one where a character shows
+              up, so the portrait earns the room. */}
+          {trade?.art && strip && (
+            <span
+              className="relative flex w-[15rem] shrink-0 items-end justify-center overflow-hidden rounded-md"
+              style={{
+                background: accent
+                  ? `radial-gradient(ellipse 70% 55% at 50% 60%, ${accent}22, transparent 75%)`
+                  : undefined,
+              }}
+            >
+              <img
+                src={packArtUrl(trade.art, found?.version ?? 0)}
+                alt=""
+                draggable={false}
+                className="h-full w-full object-contain object-bottom"
               />
-              {creation.names && (
-                <button
-                  className="rounded-md bg-stone-800 px-3 py-2 text-sm text-stone-200 active:bg-amber-700"
-                  onClick={() => setNameDraft(gimmeName(creation))}
-                >
-                  gimme a name
-                </button>
-              )}
+            </span>
+          )}
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
+            {/* The name in the plate it will WEAR — same serif, same
+                caps, same rules and colour the finished sheet puts at
+                the top. You're not filling in a form field, you're
+                watching the sheet's headline fill in. */}
+            <div className="flex w-full items-center gap-2.5 px-6">
+              <span
+                className="h-px flex-1"
+                style={{ background: `${accent ?? '#f59e0b'}55` }}
+              />
+              <span
+                className="max-w-full truncate font-serif text-[1.6rem] font-bold uppercase leading-tight tracking-[0.12em]"
+                style={{ color: accent ?? '#f59e0b' }}
+              >
+                {nameDraft || (
+                  <span className="text-stone-700">
+                    {trade ? `the ${trade.name}` : 'nameless'}
+                  </span>
+                )}
+                <span className="animate-pulse font-normal text-stone-500">
+                  |
+                </span>
+              </span>
+              <span
+                className="h-px flex-1"
+                style={{ background: `${accent ?? '#f59e0b'}55` }}
+              />
             </div>
             {/* The bar has no OS keyboard — teller brings its own. */}
-            <Keyboard onKey={(k) =>
-              setNameDraft((n) =>
-                k === '⌫' ? n.slice(0, -1) : k === 'space' ? n + ' ' : n + k,
-              )
-            } />
-            <div className="flex items-center gap-3">
+            <Keyboard
+              onKey={(k) =>
+                setNameDraft((n) =>
+                  k === '⌫' ? n.slice(0, -1) : k === 'space' ? n + ' ' : n + k,
+                )
+              }
+            />
+            <div className="flex items-center gap-2">
+              {creation.names && (
+                <button
+                  className="rounded-md border px-3 py-2 text-xs uppercase tracking-widest transition-colors"
+                  style={{
+                    borderColor: `${accent ?? '#f59e0b'}66`,
+                    color: accent ?? '#f59e0b',
+                  }}
+                  onClick={() => setNameDraft(gimmeName(creation))}
+                >
+                  {nameDraft ? 'another' : 'gimme a name'}
+                </button>
+              )}
               <button
-                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950"
+                className="rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:bg-stone-800 disabled:text-stone-600"
+                style={
+                  nameDraft.trim()
+                    ? { background: accent ?? '#f59e0b', color: '#1c1917' }
+                    : undefined
+                }
+                disabled={!nameDraft.trim()}
                 onClick={() => {
-                  if (nameDraft.trim()) onName(nameDraft.trim());
+                  onName(nameDraft.trim());
                   next();
                 }}
               >
                 that's me
               </button>
+              {/* Naming is the one step a person can genuinely want to
+                  sleep on, so it stays skippable (rule 1) — quietly,
+                  and saying who'll pick it up. */}
               <button
                 className="text-xs text-stone-500 underline-offset-2 hover:underline"
                 onClick={next}
@@ -1129,7 +1189,7 @@ export function CreationBuilder({
               </button>
             </div>
           </div>
-        </>
+        </div>
       )}
 
       {here === 'done' && (
