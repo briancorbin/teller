@@ -15,7 +15,7 @@
 import { createServer } from 'node:http';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
-import { networkInterfaces, homedir } from 'node:os';
+import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
@@ -27,6 +27,7 @@ import { Assets } from './assets.mjs';
 import { migrate } from './migrate.mjs';
 import { sweep } from './library.mjs';
 import { sweep as sweepPacks } from './packs.mjs';
+import { addresses, nameFor, openTunnel } from './reach.mjs';
 
 // Resolved from this file, so the same layout works whether it's the
 // repo or an installed copy — `dist/`, `migrations/` and `host/` sit
@@ -60,18 +61,6 @@ export async function dmKey(data, { reset = false } = {}) {
   return key;
 }
 
-/** Every address a screen in this room could reach us on. */
-function addresses() {
-  const found = [];
-  for (const [name, addrs] of Object.entries(networkInterfaces())) {
-    for (const addr of addrs ?? []) {
-      if (addr.family !== 'IPv4' || addr.internal) continue;
-      found.push({ name, address: addr.address });
-    }
-  }
-  return found;
-}
-
 /** node's req/res are not fetch's Request/Response. Translate, both ways. */
 function toRequest(req, origin) {
   const url = new URL(req.url, origin);
@@ -99,7 +88,7 @@ async function send(res, response) {
   Readable.fromWeb(response.body).pipe(res);
 }
 
-export async function serve({ data = defaultData(), port = 4525 } = {}) {
+export async function serve({ data = defaultData(), port = 4525, tunnel = null } = {}) {
   const DATA = data;
   const PORT = port;
   console.log('\n  teller\n');
@@ -149,42 +138,6 @@ export async function serve({ data = defaultData(), port = 4525 } = {}) {
   server.headersTimeout = 0;
   server.keepAliveTimeout = 76_000;
 
-  // 0.0.0.0, deliberately: this is meant to be reachable by every screen
-  // in the room. That's the whole point, and it's why the host belongs on
-  // a network you trust.
-  server.listen(PORT, '0.0.0.0', () => {
-    log(`data      ${DATA}`);
-    log(`warden key ${env.DM_KEY}`);
-    console.log('');
-    log('open on this machine:');
-    log(`  http://localhost:${PORT}`);
-    const nics = addresses();
-    if (nics.length) {
-      log('other screens in the room:');
-      for (const { name, address } of nics) log(`  http://${address}:${PORT}   (${name})`);
-    }
-    console.log('\n  ctrl-c to stop\n');
-
-    // Reading books happens here, not in the worker and not in a
-    // browser: pdfjs stays out of the runtime-agnostic half, a phone
-    // never parses a 300-page rulebook, and it happens once for the
-    // table instead of once per screen.
-    //
-    // The same pass picks up PDFs dropped into the books folder by hand,
-    // which is what the loader program used to be for.
-    //
-    // The pack shelf rides along on the same tick, for the same reason:
-    // a `.pack` dropped into the folder should just be there, without
-    // anyone restarting anything.
-    const scan = () =>
-      Promise.all([
-        sweep(db.raw, DATA).catch((e) => console.error(`  library: ${e.message}`)),
-        sweepPacks(db.raw, DATA).catch((e) => console.error(`  packs: ${e.message}`)),
-      ]);
-    void scan();
-    setInterval(scan, 10_000).unref?.();
-  });
-
   server.on('error', (e) => {
     console.error(
       e.code === 'EADDRINUSE'
@@ -193,5 +146,95 @@ export async function serve({ data = defaultData(), port = 4525 } = {}) {
     );
     process.exit(1);
   });
+
+  // 0.0.0.0, deliberately: this is meant to be reachable by every screen
+  // in the room. That's the whole point, and it's why the host belongs on
+  // a network you trust.
+  await new Promise((up) => server.listen(PORT, '0.0.0.0', up));
+
+  log(`data       ${DATA}`);
+  log(`warden key ${env.DM_KEY}`);
+  console.log('');
+  log('on this machine');
+  log(`  http://localhost:${PORT}`);
+
+  // Every route it's actually reachable on, not just the room's. A
+  // tailnet costs nothing to notice and is the whole remote story for
+  // anyone who already runs one (docs/REACH.md).
+  const nics = addresses();
+  const room = nics.filter((n) => n.kind === 'lan');
+  const net = nics.filter((n) => n.kind === 'tailnet');
+  if (room.length) {
+    console.log('');
+    log('screens in the room');
+    for (const { name, address } of room) log(`  http://${address}:${PORT}   (${name})`);
+  }
+  if (net.length) {
+    console.log('');
+    log('over your tailnet');
+    for (const { address } of net) {
+      // Name first — it's the one worth writing down, and the one a
+      // kiosk should boot to. The address stays underneath it because
+      // MagicDNS is the OTHER end's setting: a guest who has it off can
+      // still reach the number.
+      const name = await nameFor(address);
+      if (name) log(`  http://${name}:${PORT}`);
+      log(`  http://${address}:${PORT}`);
+    }
+  }
+
+  // A tunnel is one more address, never a different teller: whoever
+  // opens it lands on the same pairing screen as the phone across the
+  // table, and joining still costs a code the warden types (rule 7).
+  let pipe = null;
+  if (tunnel) {
+    console.log('');
+    log(`opening a ${tunnel} tunnel…`);
+    try {
+      pipe = await openTunnel({
+        port: PORT,
+        onExit: () => console.error('\n  the tunnel closed — the room is still served locally.\n'),
+      });
+      log(`  ${pipe.url}`);
+      log('  anyone with that link reaches the pairing screen; nothing more.');
+      log('  it is minted fresh every run — send the new one each time.');
+    } catch (e) {
+      log(`  no tunnel: ${e.message}`);
+      log('  the room is served locally regardless.');
+    }
+  }
+
+  // Whatever we opened, we close. A tunnel that outlives the host it
+  // points at is a URL that 502s at somebody else's table.
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    pipe?.close();
+    process.exit(0);
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+
+  console.log('\n  ctrl-c to stop\n');
+
+  // Reading books happens here, not in the worker and not in a
+  // browser: pdfjs stays out of the runtime-agnostic half, a phone
+  // never parses a 300-page rulebook, and it happens once for the
+  // table instead of once per screen.
+  //
+  // The same pass picks up PDFs dropped into the books folder by hand,
+  // which is what the loader program used to be for.
+  //
+  // The pack shelf rides along on the same tick, for the same reason:
+  // a `.pack` dropped into the folder should just be there, without
+  // anyone restarting anything.
+  const scan = () =>
+    Promise.all([
+      sweep(db.raw, DATA).catch((e) => console.error(`  library: ${e.message}`)),
+      sweepPacks(db.raw, DATA).catch((e) => console.error(`  packs: ${e.message}`)),
+    ]);
+  void scan();
+  setInterval(scan, 10_000).unref?.();
 }
 

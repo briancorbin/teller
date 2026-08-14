@@ -12,6 +12,7 @@
 import { readFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { route } from './reach.mjs';
 import { defaultData, dmKey, serve } from './serve.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -37,6 +38,7 @@ const HELP = `
   options
     --port <n>                default 4525
     --data <path>             where campaigns live (default ~/.teller)
+    --tunnel cloudflared      also reachable from outside the room
     --reset                   with 'key': mint a new one
 
   a path given to 'host' is the same as --data, so a campaign can live
@@ -46,6 +48,12 @@ const HELP = `
 
   once it's up, every other screen in the room just opens the address it
   prints. nothing is installed on any of them.
+
+  a friend joining from their house is a matter of how this machine is
+  reachable, and that's your call — a tailnet you already run (teller
+  just notices it), a cloudflared tunnel, or your own reverse proxy.
+  whichever route they arrive by, they arrive at a pairing screen and
+  you still type the code. see docs/REACH.md.
 `;
 
 /** Long flags with values, plus bare positionals. No cleverness wanted. */
@@ -99,8 +107,12 @@ async function main() {
       if (!Number.isInteger(port) || port < 1 || port > 65535) {
         throw new Error(`${opts.port} is not a port`);
       }
+      // Resolved before anything binds a port: a typo in the route is
+      // worth a sentence, not a server that comes up half of what you
+      // asked for.
+      const tunnel = 'tunnel' in opts ? route(opts.tunnel) : null;
       await requireSqlite();
-      await serve({ data, port });
+      await serve({ data, port, tunnel });
       return;
     }
 

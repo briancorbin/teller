@@ -90,6 +90,11 @@ It is no longer where play happens.
   guesses in a week. Mechanics only (rule 4); the book's prose stays
   in the pack. It maps the domain; screens are still designed one at
   a time.
+- **`docs/REACH.md`** — how the table is reachable, and the honest
+  tradeoff per route: LAN, tailnet, cloudflared, the future relay, your
+  own proxy. The invariant it all rests on is rule 7 — the transport
+  never carries authority — so adding a route is never an auth
+  decision. Read it before touching `host/reach.mjs` or the boot print.
 - **`packs/README.md`** — the pack format. The JSON itself is gitignored.
 
 ## RULES
