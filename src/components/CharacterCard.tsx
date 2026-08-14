@@ -26,6 +26,7 @@ export function CharacterCard({
   packs = [],
   ownCatalog,
   template,
+  holders,
   onOwnCatalog,
 }: {
   character: Character;
@@ -41,6 +42,13 @@ export function CharacterCard({
   /** The campaign's own gear, which outranks nothing and travels. */
   ownCatalog?: OwnCatalog;
   template?: SystemTemplate | null;
+  /**
+   * Tier → who in the posse already holds one, for the rise proposal's
+   * one-of notice. Computed once across the whole cast by the caller —
+   * it's a fact about the TABLE, and every card asking for it
+   * separately would be the same sweep run once per character.
+   */
+  holders?: Map<string, { item: string; who: string; id: string }[]>;
   /** Absent on a surface that may look but not write to the campaign. */
   onOwnCatalog?: (next: NonNullable<OwnCatalog>) => void;
 }) {
@@ -111,6 +119,8 @@ export function CharacterCard({
         packs={packs}
         own={ownCatalog}
         dice={template?.dice}
+        growth={template?.growth}
+        holders={holders}
         onChange={(items) => onPatch({ data: { items } })}
         onOwnChange={onOwnCatalog}
         label={vocabulary.gear ?? 'Gear'}

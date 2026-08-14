@@ -11,7 +11,9 @@ import {
   fittedUpgrades,
   itemRanges,
   resolveItem,
+  standingOf,
   type OwnCatalog,
+  type Standing,
 } from '../../worker/items';
 import { newLocalId } from '../lib/api';
 import { btnGhost, input, sectionLabel } from '../lib/ui';
@@ -38,11 +40,104 @@ function Problem({ text }: { text: string }) {
   );
 }
 
+/**
+ * The rise: the one place a notched thing climbs its ladder.
+ *
+ * Everything about it is a PROPOSAL until the DM presses the button
+ * (rule 1). Crossing a threshold does not promote anything — it makes
+ * an offer here, prefilled with the tier the ladder names and the name
+ * the thing already has, and both are typed over. The count that
+ * earned it is the player's list of deeds and this never edits that:
+ * rising is a thing that happens BECAUSE of the history, not to it.
+ *
+ * What it writes is one ordinary field override plus a name. No new
+ * mechanism — a risen weapon is a weapon somebody typed a better tier
+ * onto, which is exactly what a DM could always have done by hand and
+ * what `resolveItem` has always understood.
+ */
+function Rise({
+  item,
+  standing,
+  growth,
+  label,
+  holders,
+  onChange,
+  onDone,
+}: {
+  item: Item;
+  standing: Standing;
+  growth: NonNullable<SystemTemplate['growth']>;
+  /** The sheet's own word for the tier field — "Quality". */
+  label: string;
+  /** Who already holds something at the tier being proposed. */
+  holders: { item: string; who: string; id: string }[];
+  onChange: (next: Item) => void;
+  onDone: () => void;
+}) {
+  const next = standing.next!;
+  const [tier, setTier] = useState(next.to);
+  const [name, setName] = useState(item.name);
+  // A thing can't be its own precedent — an item already at this tier
+  // that is THIS item would otherwise warn about itself the moment the
+  // DM reopened the proposal.
+  const others = holders.filter((h) => h.id !== item.id);
+
+  const raise = () => {
+    const trimmed = tier.trim();
+    if (!trimmed) return;
+    onChange({
+      ...item,
+      name: name.trim() || item.name,
+      fields: [
+        ...item.fields.filter((f) => f.key !== growth.field),
+        { key: growth.field, label, value: trimmed },
+      ],
+    });
+    onDone();
+  };
+
+  return (
+    <div className="mt-2 space-y-1 rounded-md border border-amber-800/60 bg-amber-950/20 p-2">
+      <div className="flex items-center gap-2">
+        <input
+          className={`${input} min-w-0 flex-1 py-1 text-[12px]`}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          aria-label="its name now"
+          placeholder="a name of its own"
+        />
+        <input
+          className={`${input} w-28 shrink-0 py-1 text-[12px]`}
+          value={tier}
+          onChange={(e) => setTier(e.target.value)}
+          aria-label={label}
+        />
+      </div>
+      {others.length > 0 && (
+        <p className="text-[11px] text-amber-600/90">
+          this posse already has {others.length === 1 ? 'a' : `${others.length}`}{' '}
+          {tier}: {others.map((h) => `${h.item} (${h.who})`).join(', ')}
+        </p>
+      )}
+      <div className="flex items-center gap-2">
+        <button className={btnGhost} onClick={raise}>
+          raise it
+        </button>
+        <button className={btnGhost} onClick={onDone}>
+          not yet
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ItemRow({
   item,
   packs,
   own,
   dice,
+  growth,
+  holders,
   onChange,
   onRemove,
 }: {
@@ -50,14 +145,20 @@ function ItemRow({
   packs: RulesPack[];
   own?: OwnCatalog;
   dice?: SystemTemplate['dice'];
+  /** The system's ladder, when it declares one. */
+  growth?: SystemTemplate['growth'];
+  /** Tier → who already holds one, for the rise's one-of notice. */
+  holders?: Map<string, { item: string; who: string; id: string }[]>;
   onChange: (next: Item) => void;
   onRemove: () => void;
 }) {
   const [fitting, setFitting] = useState(false);
+  const [rising, setRising] = useState(false);
 
   const resolved = resolveItem(item, packs, dice, own);
   const fitted = fittedUpgrades(item, packs, own);
   const ranges = itemRanges(item, packs, dice, own);
+  const standing = standingOf(item.history, resolved.fields, growth);
   const offered = useMemo(
     () => fittableUpgrades(item, packs, dice, own),
     [item, packs, dice, own],
@@ -80,6 +181,14 @@ function ItemRow({
     <div className="rounded-lg border border-stone-800 bg-stone-900/60 px-3 py-2">
       <div className="flex items-center gap-2">
         <input
+          // Keyed on the name so a rename from ANYWHERE ELSE lands here.
+          // It's uncontrolled (typing shouldn't patch per keystroke), and
+          // an uncontrolled input ignores a changed `defaultValue` — so
+          // renaming a weapon in the rise proposal left this field
+          // showing the old name until something happened to remount the
+          // card. The key doesn't churn while you type: `item.name` only
+          // moves on blur.
+          key={item.name}
           className="min-w-0 flex-1 bg-transparent text-sm text-stone-100 focus:outline-none"
           defaultValue={item.name}
           onBlur={(e) =>
@@ -173,6 +282,47 @@ function ItemRow({
         </div>
       )}
 
+      {/* What it's been through, and where that puts it. The deeds
+          themselves are the player's — read here, edited on their own
+          card — so this is a count and an offer, not a list. */}
+      {growth && standing.deeds > 0 && (
+        <div className="mt-1 flex items-center gap-2">
+          <span className="text-[11px] text-stone-500">
+            {standing.deeds} {growth.noun ?? 'notch'}
+            {standing.deeds === 1 ? '' : 'es'}
+            {standing.next && !standing.ready && (
+              <span className="text-stone-600">
+                {' '}
+                · {standing.next.at - standing.deeds} to {standing.next.to}
+              </span>
+            )}
+          </span>
+          {standing.ready && !rising && (
+            <button
+              className={`${btnGhost} text-amber-400 hover:text-amber-300`}
+              onClick={() => setRising(true)}
+            >
+              ready to rise to {standing.next!.to} →
+            </button>
+          )}
+        </div>
+      )}
+
+      {rising && growth && standing.next && (
+        <Rise
+          item={item}
+          standing={standing}
+          growth={growth}
+          label={
+            resolved.fields.find((f) => f.key === growth.field)?.label ??
+            growth.field
+          }
+          holders={holders?.get(standing.next.to) ?? []}
+          onChange={onChange}
+          onDone={() => setRising(false)}
+        />
+      )}
+
       {item.from && (
         <button className={`${btnGhost} mt-1`} onClick={() => setFitting(!fitting)}>
           {fitting ? 'done' : '+ fit an upgrade'}
@@ -222,6 +372,8 @@ export function ItemSection({
   packs,
   own,
   dice,
+  growth,
+  holders,
   onChange,
   onOwnChange,
   label = 'Gear',
@@ -231,6 +383,10 @@ export function ItemSection({
   /** The campaign's own gear, which travels with it. */
   own?: OwnCatalog;
   dice?: SystemTemplate['dice'];
+  /** The system's ladder, when it declares one — see `growth`. */
+  growth?: SystemTemplate['growth'];
+  /** Tier → who already holds one, for the rise's one-of notice. */
+  holders?: Map<string, { item: string; who: string; id: string }[]>;
   onChange: (next: Item[]) => void;
   /** Absent on a surface that may look but not write to the campaign. */
   onOwnChange?: (next: NonNullable<OwnCatalog>) => void;
@@ -293,6 +449,8 @@ export function ItemSection({
             packs={packs}
             own={own}
             dice={dice}
+            growth={growth}
+            holders={holders}
             onChange={(next) =>
               onChange(items.map((i) => (i.id === next.id ? next : i)))
             }

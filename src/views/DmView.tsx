@@ -12,6 +12,7 @@ import type {
 } from '../../worker/types';
 import { api, ApiError, getDmKey, newLocalId, setDmKey } from '../lib/api';
 import type { SourcedNpc } from '../../worker/bestiary';
+import { tierHolders } from '../../worker/items';
 import { PANES } from '../lib/panes';
 import { useRuleLookup } from '../lib/rules';
 import { useSession } from '../lib/use-session';
@@ -181,6 +182,33 @@ export function DmView({
     const byId = new Map(packs.map((p) => [p.id, p.pack]));
     return claim.map((id) => byId.get(id)).filter((p): p is RulesPack => Boolean(p));
   }, [packs, campaign?.data.packs]);
+
+  /**
+   * Who already holds something at each tier, for the rise proposal's
+   * one-of notice.
+   *
+   * Off `characters` and never `shownCast`: the question is "does this
+   * posse already have a Legendary", and it does whether or not the
+   * name filter happens to be showing that person right now.
+   *
+   * Up HERE, above the loading and error returns, because that's where
+   * hooks have to live — placing it beside the cast it's about read
+   * better and cost a blank console, since a render that takes an early
+   * return would have run one hook fewer (React #310).
+   */
+  const tiersHeld = useMemo(
+    () =>
+      template?.growth
+        ? tierHolders(
+            characters,
+            activePacks,
+            campaign?.data.catalog,
+            template.growth,
+            template.dice,
+          )
+        : undefined,
+    [characters, activePacks, campaign?.data.catalog, template],
+  );
 
   // SSE poke → debounced refetch (a burst of taps = one fetch).
   useWakeLock();
@@ -1133,6 +1161,7 @@ export function DmView({
                 packs={activePacks}
                 ownCatalog={campaign.data.catalog}
                 template={template}
+                holders={tiersHeld}
                 onOwnCatalog={(catalog) =>
                   api
                     .patchCampaign(campaign.id, { data: { catalog } })

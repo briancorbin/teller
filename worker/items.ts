@@ -688,3 +688,36 @@ export function standingOf(
     ready: next ? count >= next.at : false,
   };
 }
+
+/**
+ * Who in the posse already holds something at each tier.
+ *
+ * For the rise proposal's one-of notice, and it is a NOTICE — teller
+ * says "there's already a Legendary in this posse, and it's Sundowner";
+ * it never refuses. Enforcing uniqueness would be rule 1 backwards, and
+ * the DM is the only one who knows whether this is the campaign where
+ * two of them is the point.
+ *
+ * Resolved rather than read off stored fields, so a weapon that ROSE to
+ * a tier (a typed override) and one that was BOUGHT at it (the
+ * catalogue's own value) both count. They should: the notice is about
+ * how many exist, not how they got there.
+ */
+export function tierHolders(
+  cast: { name: string; data: { items?: Item[] } }[],
+  packs: RulesPack[],
+  own: OwnCatalog | undefined,
+  growth: NonNullable<SystemTemplate['growth']>,
+  dice?: SystemTemplate['dice'],
+): Map<string, { item: string; who: string; id: string }[]> {
+  const out = new Map<string, { item: string; who: string; id: string }[]>();
+  for (const who of cast) {
+    for (const item of who.data.items ?? []) {
+      const { name, fields } = resolveItem(item, packs, dice, own);
+      const tier = fields.find((f) => f.key === growth.field)?.value?.trim();
+      if (!tier) continue;
+      out.set(tier, [...(out.get(tier) ?? []), { item: name, who: who.name, id: item.id }]);
+    }
+  }
+  return out;
+}
