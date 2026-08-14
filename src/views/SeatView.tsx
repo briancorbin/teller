@@ -479,6 +479,7 @@ export function SeatView({
                   setCharacter({ ...character, name });
                   api.patchCharacter(characterId, { name }).catch(() => refetch());
                 }}
+                wide={wide}
                 strip={strip}
                 seatName={seatName}
               />

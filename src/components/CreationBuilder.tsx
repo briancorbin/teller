@@ -40,6 +40,25 @@ import { Glyph } from './sheet/glyphs';
 // still lists loose chips (keepsakes, the wallet's faces).
 const off = 'border-stone-700 bg-stone-900';
 
+/**
+ * How to divide the glass: as many columns as it can hold at a readable
+ * width, and never more than there are things to divide it between.
+ *
+ * Rule 6 asks for the visible count to come from a panel min-width
+ * rather than be declared, and this is that in one expression. The
+ * track floor is the LARGER of the readable minimum and an even share,
+ * so a 1920 bar with four skills gets four columns that fill it rather
+ * than eight half-empty ones, while a laptop with seven trades gets
+ * however many actually fit. `min(100%, …)` keeps a container narrower
+ * than one card from overflowing instead of wrapping.
+ *
+ * Nothing here knows what device it's on, and nothing should.
+ */
+function columns(n: number, min: string, gap = '0.5rem') {
+  const even = `calc((100% - ${Math.max(0, n - 1)} * ${gap}) / ${n})`;
+  return `repeat(auto-fit, minmax(min(100%, max(${min}, ${even})), 1fr))`;
+}
+
 /** Ids in first-seen order, each with how many times it appears. */
 function counted(ids: string[]): { id: string; n: number }[] {
   const out: { id: string; n: number }[] = [];
@@ -58,6 +77,7 @@ export function CreationBuilder({
   vocabulary,
   onPatch,
   onName,
+  wide = false,
   strip = false,
   seatName,
 }: {
@@ -68,6 +88,22 @@ export function CreationBuilder({
   vocabulary?: { gm?: string };
   onPatch: (data: Partial<Character['data']>) => void;
   onName: (name: string) => void;
+  /**
+   * Is this glass MOUNTED? The seat's own question (rule 6), and the
+   * one that decides every layout here.
+   *
+   * It used to be `strip` that decided, which quietly made "not the
+   * rail" mean "a phone" — so a laptop, a tablet in landscape and the
+   * table TV all got a phone's single scrolling column, on glass that
+   * by rule may not scroll at all. Mounted glass divides; held glass
+   * stacks at natural size and lets the page scroll.
+   */
+  wide?: boolean;
+  /**
+   * Is it the RAIL — mounted, and short enough that things must pan?
+   * Only two things still ask: the trades' snap shelf, and teller's own
+   * keyboard, which exists because that glass has no OS one.
+   */
   strip?: boolean;
   /** What this screen is called — the default for the player box. */
   seatName?: string;
@@ -196,24 +232,49 @@ export function CreationBuilder({
       ? `roll ${creation.wallet.roll} — real dice, on the table — then tap what you rolled`
       : undefined,
     keepsake: 'what rides in your pocket from the life before — pick up to two, or none',
-    name: creation.names
-      ? 'tap it out, or draw one from the well — a name is the easiest thing to change later'
-      : 'tap it out — a name is the easiest thing to change later',
+    // "Tap it out" is the rail's instruction, because the rail's
+    // keyboard is a row of buttons. Anywhere else there's a real one.
+    name: `${strip ? 'tap it out' : 'type it in'}${
+      creation.names ? ', or draw one from the well' : ''
+    } — a name is the easiest thing to change later`,
     done: `that's a character — saddle up and this screen becomes your sheet`,
   };
   const accent = trade ? template?.accents?.[trade.name] : undefined;
 
-  // The trades still PAN — there are seven of them, one expands to
-  // twice its width, and reading them one at a time is the point. The
-  // steps that offer a handful of alternatives divide the glass
-  // instead; each says so where it lays itself out.
+  // The trades still PAN on the rail — there are seven of them, one
+  // expands to twice its width, and reading them one at a time is the
+  // point. Other mounted glass has height to spend instead, so they
+  // WRAP into a grid and all seven are in front of you at once; held
+  // glass gets the one column it has room for. The steps that offer a
+  // handful of alternatives divide the glass instead; each says so
+  // where it lays itself out.
+  //
+  // On glass that wraps, an OPEN card takes the whole area rather than
+  // its cell, and the rest step aside entirely. Seven cards and a full
+  // reading pane do not fit in two rows of an 800px screen — tried it,
+  // and what falls out the bottom of the squeezed card is the confirm
+  // button. The strip can shoulder its neighbours sideways because it
+  // has one row and infinite width; a grid has neither, so the only
+  // honest way to give the words room is to give them the screen.
+  const soloed = !strip && wide && confirming ? confirming : null;
   const shelf = (children: React.ReactNode) => (
     <div
-      className={`flex min-h-0 flex-1 gap-2 ${
+      className={
         strip
-          ? 'snap-x snap-mandatory flex-nowrap items-stretch overflow-x-auto overflow-y-hidden'
-          : 'flex-wrap content-start overflow-y-auto'
-      }`}
+          ? 'flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap items-stretch gap-2 overflow-x-auto overflow-y-hidden'
+          : wide
+            ? 'grid min-h-0 flex-1 auto-rows-fr gap-2 overflow-hidden'
+            : 'flex flex-col gap-2'
+      }
+      style={
+        !strip && wide
+          ? {
+              gridTemplateColumns: soloed
+                ? '1fr'
+                : columns(trades.length || 1, '17rem'),
+            }
+          : undefined
+      }
     >
       {children}
     </div>
@@ -266,9 +327,16 @@ export function CreationBuilder({
         {/* The rules flank the whole block — question AND caption — so
             the bar reads as one centered plate rather than a ruled
             title with a line of small print hung underneath. */}
-        <div className="flex flex-col items-center">
+        <div className="flex min-w-0 flex-col items-center text-center">
           <span
-            className="whitespace-nowrap font-serif text-[1.25rem] font-bold uppercase leading-tight tracking-[0.12em]"
+            // One line on glass that has the width for it. In a hand
+            // it wraps instead — "Welcome to the posse" is wider than
+            // a phone once the back button's gutter is taken out, and
+            // the question is not a thing to clip (rule 6 clips
+            // LAYOUT that's wrong for the glass; a heading just wraps).
+            className={`font-serif text-[1.25rem] font-bold uppercase leading-tight tracking-[0.12em] ${
+              wide ? 'whitespace-nowrap' : ''
+            }`}
             style={{ color: accent ?? '#f59e0b' }}
           >
             {QUESTIONS[here]}
@@ -287,7 +355,7 @@ export function CreationBuilder({
       {here === 'trade' && (
         <>
           {shelf(
-            trades.map((t) => {
+            (soloed ? trades.filter((t) => t.id === soloed) : trades).map((t) => {
               const open = confirming === t.id;
               // Each card wears its own trade's accent — the same
               // colour the finished sheet will be tinted with, pulled
@@ -299,11 +367,15 @@ export function CreationBuilder({
                   key={t.id}
                   // Tapped, the card GROWS — width, not a modal — and
                   // shoulders the other trades aside to make room for
-                  // the book's fuller portrait of the life.
+                  // the book's fuller portrait of the life. On the bar
+                  // that's a widening card among its neighbours; in a
+                  // grid the neighbours are gone and it has the floor.
                   className={`flex flex-col text-left ${
                     strip
                       ? `${open ? 'w-[38rem]' : 'w-[19rem]'} shrink-0 snap-start self-stretch transition-[width] duration-300`
-                      : 'w-full'
+                      : wide
+                        ? ''
+                        : 'w-full'
                   }`}
                   style={
                     accent
@@ -315,14 +387,14 @@ export function CreationBuilder({
                   <SheetPanel
                     title={t.name}
                     note={t.tagline}
-                    fill
+                    fill={wide}
                     className={
                       open ? 'border-[color:var(--sheet-accent)]' : ''
                     }
                   >
                     <span
                       className={`flex min-h-0 flex-1 gap-3 pt-1 ${
-                        open && strip ? 'flex-row' : 'flex-col'
+                        open && wide ? 'flex-row' : 'flex-col'
                       }`}
                     >
                       {/* The trade's portrait. Collapsed: a head-and-
@@ -334,10 +406,18 @@ export function CreationBuilder({
                           keying residue. */}
                       {t.art && (
                         <span
+                          // Held glass has no height to hand out, so a
+                          // portrait told to fill what's left gets
+                          // nothing: it's a fixed crop there, and the
+                          // card is as tall as it needs to be.
                           className={`relative block shrink-0 overflow-hidden ${
-                            open && strip
-                              ? 'h-full w-[13rem] self-stretch'
-                              : 'min-h-0 w-full flex-1'
+                            open && wide
+                              ? `h-full self-stretch ${
+                                  soloed ? 'w-[26rem]' : 'w-[13rem]'
+                                }`
+                              : wide
+                                ? 'min-h-0 w-full flex-1'
+                                : 'h-52 w-full'
                           }`}
                           style={{
                             background: accent
@@ -350,14 +430,22 @@ export function CreationBuilder({
                             alt=""
                             draggable={false}
                             className={`h-full w-full ${
-                              open && strip
+                              open && wide
                                 ? 'object-contain object-bottom'
                                 : 'object-cover object-top'
                             }`}
                           />
                         </span>
                       )}
-                      <span className="flex min-h-0 flex-1 flex-col gap-1.5">
+                      {/* A measure, not a width. Given the whole
+                          screen the words would otherwise run 1100px
+                          to the line, which is the one thing a card
+                          full of prose must not do. */}
+                      <span
+                        className={`flex min-h-0 flex-1 flex-col gap-1.5 ${
+                          soloed ? 'max-w-[46rem] justify-center' : ''
+                        }`}
+                      >
                   {/* The top of the card is reserved space: the trade's
                       portrait lands here when the art pipeline exists
                       (TEL-83). Until then, the book's introduction
@@ -397,8 +485,25 @@ export function CreationBuilder({
                           .filter(Boolean)
                           .join(' · ')}
                       </span>
+                      {/* A way back to the other six, for the one
+                          layout that hides them while you read. The
+                          card itself still closes on a tap, but a
+                          screen showing exactly one trade shouldn't
+                          make you guess that. */}
+                      <span className="mt-1 flex items-center gap-2">
+                      {soloed && (
+                        <span
+                          className="shrink-0 rounded-md border border-stone-700 px-3 py-2 text-center text-xs uppercase tracking-widest text-stone-400"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirming('');
+                          }}
+                        >
+                          the others
+                        </span>
+                      )}
                       <span
-                        className="mt-1 rounded-md px-3 py-2 text-center text-sm font-semibold text-stone-950"
+                        className="flex-1 rounded-md px-3 py-2 text-center text-sm font-semibold text-stone-950"
                         style={{ background: 'var(--sheet-accent, #f59e0b)' }}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -426,6 +531,7 @@ export function CreationBuilder({
                       >
                         this is me
                       </span>
+                      </span>
                     </>
                   )}
                       </span>
@@ -449,20 +555,22 @@ export function CreationBuilder({
               sheet has, they all matter equally, and nothing here is
               worth panning past — so they divide the glass evenly
               instead of queueing at 19rem apiece and leaving a third
-              of the bar empty. Columns come from the COUNT, so a
-              system with three skills or five still fills its width. */}
+              of the bar empty. How many columns that is comes from the
+              glass, capped at the count: four on the bar, four on a
+              laptop, two on a tablet, one in a hand. */}
           <div
             className={
-              strip
-                ? 'grid min-h-0 flex-1 gap-2'
-                : 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto'
+              wide
+                ? 'grid min-h-0 flex-1 auto-rows-fr gap-2 overflow-hidden'
+                : 'flex flex-col gap-2'
             }
             style={
-              strip
+              wide
                 ? {
-                    gridTemplateColumns: `repeat(${
-                      Object.keys(skills).length || 1
-                    }, minmax(0, 1fr))`,
+                    gridTemplateColumns: columns(
+                      Object.keys(skills).length || 1,
+                      '15rem',
+                    ),
                   }
                 : undefined
             }
@@ -478,16 +586,21 @@ export function CreationBuilder({
                   // it — this is the book talking about the skill, so
                   // it lives in the pack and never in here (rule 4).
                   note={lore?.text}
-                  fill
+                  fill={wide}
                   className={off}
                 >
                   <div className="flex min-h-0 flex-1 flex-col items-center gap-2">
                     {/* The mark takes the whole gap between the book's
                         words and the dice, and centres in it — so it
                         reads as the panel's face rather than a bullet
-                        point that wandered into the middle. */}
+                        point that wandered into the middle. Held glass
+                        has no spare gap to take, so it just sits. */}
                     {glyph && (
-                      <span className="flex min-h-0 flex-1 items-center justify-center py-1">
+                      <span
+                        className={`flex items-center justify-center py-1 ${
+                          wide ? 'min-h-0 flex-1' : ''
+                        }`}
+                      >
                         <Glyph
                           name={glyph}
                           className="h-24 w-24 text-[color:var(--sheet-accent,#f59e0b)]"
@@ -631,21 +744,22 @@ export function CreationBuilder({
             (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
           }
         >
-          {/* Same shape as the skills: the choices divide the glass
-              evenly, because they're alternatives to weigh side by
-              side rather than a list to pan through. */}
+          {/* Same shape as the skills: the choices divide the glass,
+              because they're alternatives to weigh side by side rather
+              than a list to pan through. */}
           <div
             className={
-              strip
-                ? 'grid min-h-0 flex-1 gap-2'
-                : 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto'
+              wide
+                ? 'grid min-h-0 flex-1 auto-rows-fr gap-2 overflow-hidden'
+                : 'flex flex-col gap-2'
             }
             style={
-              strip
+              wide
                 ? {
-                    gridTemplateColumns: `repeat(${
-                      (creation.equipmentPacks ?? []).length || 1
-                    }, minmax(0, 1fr))`,
+                    gridTemplateColumns: columns(
+                      (creation.equipmentPacks ?? []).length || 1,
+                      '16rem',
+                    ),
                   }
                 : undefined
             }
@@ -668,7 +782,7 @@ export function CreationBuilder({
                 >
                   <SheetPanel
                     title={p.name}
-                    fill
+                    fill={wide}
                     className={`w-full transition-colors ${
                       picked
                         ? 'border-[color:var(--sheet-accent)]'
@@ -680,7 +794,17 @@ export function CreationBuilder({
                         : undefined
                     }
                   >
-                    <div className="flex min-h-0 flex-1 flex-col items-center">
+                    {/* On the bar this block fills the card and the
+                        commit pins to the bottom edge. On a tall card
+                        that same pin strands the button 400px under
+                        the list it belongs to — so off the bar the
+                        group is its own height and CENTRES, mark over
+                        list over button, with nothing stretched. */}
+                    <div
+                      className={`flex flex-col items-center ${
+                        strip ? 'min-h-0 flex-1' : ''
+                      }`}
+                    >
                       {/* Mark up top with the list right under it —
                           NOT the skills' even-spacing treatment. There
                           the mark is the panel's face with one line
@@ -735,7 +859,9 @@ export function CreationBuilder({
                           space so choosing changes only colour. */}
                       <span
                         aria-hidden={!(picked && eqPicks.length === picks)}
-                        className={`mt-auto w-full rounded-md px-3 py-2 text-center text-sm font-semibold text-stone-950 ${
+                        className={`w-full rounded-md px-3 py-2 text-center text-sm font-semibold text-stone-950 ${
+                          strip ? 'mt-auto' : 'mt-3'
+                        } ${
                           picked && eqPicks.length === picks
                             ? ''
                             : 'invisible pointer-events-none'
@@ -804,15 +930,13 @@ export function CreationBuilder({
               their verbs. */}
           <div
             className={
-              strip
-                ? 'grid min-h-0 flex-1 gap-2'
-                : 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto'
+              wide
+                ? 'grid min-h-0 flex-1 auto-rows-fr gap-2 overflow-hidden'
+                : 'grid grid-cols-2 gap-2'
             }
             style={
-              strip
-                ? {
-                    gridTemplateColumns: `repeat(${faces.length || 1}, minmax(0, 1fr))`,
-                  }
+              wide
+                ? { gridTemplateColumns: columns(faces.length || 1, '11rem') }
                 : undefined
             }
           >
@@ -827,8 +951,12 @@ export function CreationBuilder({
                   disabled={rolled.length >= dice}
                   onClick={() => setRolled((r) => [...r, face].slice(0, dice))}
                 >
-                  <SheetPanel title={face} fill className={`w-full ${off}`}>
-                    <div className="flex min-h-0 flex-1 flex-col items-center">
+                  <SheetPanel title={face} fill={wide} className={`w-full ${off}`}>
+                    <div
+                      className={`flex flex-col items-center ${
+                        strip ? 'min-h-0 flex-1' : ''
+                      }`}
+                    >
                       <span className="mb-2 flex shrink-0 items-center justify-center">
                         <Glyph
                           name={template?.icons?.[face] ?? face}
@@ -842,7 +970,11 @@ export function CreationBuilder({
                       <span className="font-serif text-[0.8rem] italic text-stone-400">
                         {worth ? `worth $${worth}` : 'worth nothing'}
                       </span>
-                      <span className="mt-auto font-mono text-2xl text-stone-100">
+                      <span
+                        className={`font-mono text-2xl text-stone-100 ${
+                          strip ? 'mt-auto' : 'mt-3'
+                        }`}
+                      >
                         {mine}
                       </span>
                     </div>
@@ -929,9 +1061,31 @@ export function CreationBuilder({
                   dropdown — each with its own mark, so the row reads as
                   a drawer you're picking something out of. */}
               <div
-                className={`grid min-h-0 flex-1 gap-1.5 ${
-                  strip ? 'grid-cols-7 grid-rows-2' : 'grid-cols-2 overflow-y-auto'
+                className={`grid gap-1.5 ${
+                  strip
+                    ? 'min-h-0 flex-1 grid-cols-7 grid-rows-2'
+                    : wide
+                      ? // Small objects in a drawer, not panels. Two
+                        // rows of equal height across a 1280 screen
+                        // made each trinket 200px tall with its word
+                        // stranded at the top — they're the size of
+                        // what's in them, and the drawer sits in the
+                        // middle of the glass rather than spreading
+                        // down it.
+                        'min-h-0 flex-1 auto-rows-min content-center overflow-hidden'
+                      : 'grid-cols-2'
                 }`}
+                style={
+                  !strip && wide
+                    ? {
+                        gridTemplateColumns: columns(
+                          (creation.keepsakes?.length ?? 0) + 1,
+                          '9rem',
+                          '0.375rem',
+                        ),
+                      }
+                    : undefined
+                }
               >
                 {creation.keepsakes!.map((entry) => {
                   const k = keepsakeOf(entry);
@@ -1049,20 +1203,39 @@ export function CreationBuilder({
             /* Writing your own. Same keyboard the name step uses — the
                rail has no other one, and a keepsake is a sentence. */
             <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
-              <div className="w-full max-w-[46rem] rounded-md border border-stone-600 bg-stone-950 px-3 py-2 text-center font-serif text-xl text-stone-100">
-                {ownKeepsake || (
-                  <span className="text-stone-600">what do you carry?</span>
-                )}
-              </div>
-              <Keyboard
-                onKey={(key) =>
-                  setOwnKeepsake((v) => {
-                    if (key === '⌫') return (v ?? '').slice(0, -1);
-                    if (key === 'space') return `${v ?? ''} `;
-                    return `${v ?? ''}${key}`;
-                  })
-                }
-              />
+              {strip ? (
+                <div className="w-full max-w-[46rem] rounded-md border border-stone-600 bg-stone-950 px-3 py-2 text-center font-serif text-xl text-stone-100">
+                  {ownKeepsake || (
+                    <span className="text-stone-600">what do you carry?</span>
+                  )}
+                </div>
+              ) : (
+                <input
+                  value={ownKeepsake}
+                  onChange={(e) => setOwnKeepsake(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && ownKeepsake.trim()) {
+                      setKeeps((k) => [...k, ownKeepsake.trim()].slice(-2));
+                      setOwnKeepsake(null);
+                    }
+                  }}
+                  autoFocus
+                  aria-label="your own keepsake"
+                  placeholder="what do you carry?"
+                  className="w-full max-w-[46rem] rounded-md border border-stone-600 bg-stone-950 px-3 py-2 text-center font-serif text-xl text-stone-100 outline-none placeholder:text-stone-600"
+                />
+              )}
+              {strip && (
+                <Keyboard
+                  onKey={(key) =>
+                    setOwnKeepsake((v) => {
+                      if (key === '⌫') return (v ?? '').slice(0, -1);
+                      if (key === 'space') return `${v ?? ''} `;
+                      return `${v ?? ''}${key}`;
+                    })
+                  }
+                />
+              )}
               <div className="flex items-center gap-2">
                 <button
                   className="rounded-md border border-stone-700 px-3 py-2 text-xs uppercase tracking-widest text-stone-400"
@@ -1111,32 +1284,60 @@ export function CreationBuilder({
                 className="h-px flex-1"
                 style={{ background: `${accent ?? '#f59e0b'}55` }}
               />
-              <span
-                className="max-w-full truncate font-serif text-[1.6rem] font-bold uppercase leading-tight tracking-[0.12em]"
-                style={{ color: accent ?? '#f59e0b' }}
-              >
-                {nameDraft || (
-                  <span className="text-stone-700">
-                    {trade ? `the ${trade.name}` : 'nameless'}
+              {/* On the rail the plate is a rendering of what teller's
+                  own keyboard has typed so far. Anywhere else the plate
+                  IS the field — same serif, same caps, same rules — so
+                  a person with a keyboard in front of them just types,
+                  and a phone raises the one it already has. */}
+              {strip ? (
+                <span
+                  className="max-w-full truncate font-serif text-[1.6rem] font-bold uppercase leading-tight tracking-[0.12em]"
+                  style={{ color: accent ?? '#f59e0b' }}
+                >
+                  {nameDraft || (
+                    <span className="text-stone-700">
+                      {trade ? `the ${trade.name}` : 'nameless'}
+                    </span>
+                  )}
+                  <span className="animate-pulse font-normal text-stone-500">
+                    |
                   </span>
-                )}
-                <span className="animate-pulse font-normal text-stone-500">
-                  |
                 </span>
-              </span>
+              ) : (
+                <input
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && nameDraft.trim()) {
+                      onName(nameDraft.trim());
+                      next();
+                    }
+                  }}
+                  autoFocus
+                  aria-label="character name"
+                  placeholder={trade ? `the ${trade.name}` : 'nameless'}
+                  className="min-w-0 max-w-[24rem] flex-1 bg-transparent text-center font-serif text-[1.6rem] font-bold uppercase leading-tight tracking-[0.12em] outline-none placeholder:text-stone-700"
+                  style={{ color: accent ?? '#f59e0b' }}
+                />
+              )}
               <span
                 className="h-px flex-1"
                 style={{ background: `${accent ?? '#f59e0b'}55` }}
               />
             </div>
-            {/* The bar has no OS keyboard — teller brings its own. */}
-            <Keyboard
-              onKey={(k) =>
-                setNameDraft((n) =>
-                  k === '⌫' ? n.slice(0, -1) : k === 'space' ? n + ' ' : n + k,
-                )
-              }
-            />
+            {/* The bar has no OS keyboard — teller brings its own.
+                Every other screen does, and printing a second one under
+                the real thing is how you get a keyboard nobody can put
+                a capital letter through. */}
+            {strip && (
+              <Keyboard
+                onKey={(k) =>
+                  setNameDraft((n) =>
+                    k === '⌫' ? n.slice(0, -1) : k === 'space' ? n + ' ' : n + k,
+                  )
+                }
+              />
+            )}
             <div className="flex items-center gap-2">
               {creation.names && (
                 <button
@@ -1181,7 +1382,9 @@ export function CreationBuilder({
 
       {here === 'done' && (
         <div
-          className="flex min-h-0 flex-1 gap-4"
+          className={`flex min-h-0 flex-1 gap-4 ${
+            wide ? '' : 'flex-col items-center'
+          }`}
           style={
             (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
           }
@@ -1189,10 +1392,16 @@ export function CreationBuilder({
           {/* HERE is where the face belongs — not on the keyboard
               screen before it. By now they have a trade, a spread, a
               pack, a wallet and a name, and this is the first time
-              all of it is one person standing in front of them. */}
-          {trade?.art && strip && (
+              all of it is one person standing in front of them.
+              It used to hang on `strip`, which meant the one screen
+              with room to spare — a laptop — was the one that never
+              got to show it. Mounted glass stands them beside the
+              words; held glass stands them above. */}
+          {trade?.art && (
             <span
-              className="relative flex w-[17rem] shrink-0 items-end justify-center overflow-hidden rounded-md"
+              className={`relative flex shrink-0 items-end justify-center overflow-hidden rounded-md ${
+                wide ? (strip ? 'w-[17rem]' : 'w-[24rem]') : 'h-64 w-full'
+              }`}
               style={{
                 background: accent
                   ? `radial-gradient(ellipse 70% 55% at 50% 60%, ${accent}26, transparent 75%)`
@@ -1207,7 +1416,11 @@ export function CreationBuilder({
               />
             </span>
           )}
-          <div className="flex min-h-0 flex-1 flex-col items-start justify-center gap-3">
+          <div
+            className={`flex min-h-0 flex-1 flex-col justify-center gap-3 ${
+              wide ? 'items-start' : 'items-center text-center'
+            }`}
+          >
             {/* Their name in the plate, one last time — the same one
                 the sheet is about to wear. */}
             <span
