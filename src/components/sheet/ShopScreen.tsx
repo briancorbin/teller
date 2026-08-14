@@ -34,6 +34,81 @@ import { StatRow } from './StatRow';
 
 type Shop = NonNullable<CounterViewProps['shop']>;
 
+/** What this character is carrying, in minor units. Null = unsaid. */
+function holdingOf(shop: Shop, counters: Counter[]): number | null {
+  if (shop.currency) return purseTotal(counters, shop.currency);
+  const wallet = shop.counter
+    ? counters.find((c) => c.name === shop.counter)
+    : undefined;
+  return wallet && wallet.display === 'money' ? wallet.current : null;
+}
+
+/**
+ * The cart, and the one verb: put it on the counter.
+ *
+ * Rendered as the store screen's FOOTER rather than at the end of its
+ * column, so it holds still on a phone the way it always did on
+ * mounted glass — what you've gathered and what it comes to should
+ * never be something you have to scroll back to find.
+ */
+export function ShopCart({
+  shop,
+  counters,
+}: {
+  shop: Shop;
+  counters: Counter[];
+}) {
+  const { cart, shelf, offered, onOffer } = shop;
+  if (!cart.length) return null;
+  const total = cartTotal(cart, shelf);
+  const holding = holdingOf(shop, counters);
+  const short = holding !== null && holding < total.cents;
+  return (
+    <div
+      className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-2 ${
+        offered
+          ? 'border-amber-600/60 bg-amber-950/95'
+          : 'border-stone-800 bg-stone-950/95'
+      }`}
+    >
+      <span className="text-[11px] uppercase tracking-widest text-stone-500">
+        cart
+      </span>
+      <span className="font-mono text-sm text-stone-100">
+        {formatPrice(total.cents, total.symbol)}
+      </span>
+      {short && (
+        <span className="text-[11px] text-red-400">
+          more than you're carrying
+        </span>
+      )}
+      {offered ? (
+        <>
+          <span className="text-[12px] text-amber-300">
+            on the counter — waiting on the {shop.gm ?? 'DM'}
+          </span>
+          <button
+            type="button"
+            className="ml-auto rounded-md bg-stone-800 px-3 py-1.5 text-[12px] text-stone-200 transition-colors hover:bg-stone-700"
+            onClick={() => onOffer(false)}
+          >
+            take it back
+          </button>
+        </>
+      ) : (
+        <button
+          type="button"
+          className="ml-auto rounded-md px-3 py-1.5 text-[12px] font-medium text-stone-950 transition-colors"
+          style={{ background: 'var(--sheet-accent, #f59e0b)' }}
+          onClick={() => onOffer(true)}
+        >
+          put it on the counter
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** The rule between shelves, when the whole store is on display. */
 function GroupRule({ label, strip }: { label: string; strip: boolean }) {
   if (strip) {
@@ -77,7 +152,7 @@ export function ShopScreen({
   mounted?: boolean;
   strip?: boolean;
 }) {
-  const { vendor, shelf, cart, offered, onCart, onOffer } = shop;
+  const { vendor, shelf, cart, onCart } = shop;
   const [group, setGroup] = useState('');
   /** The thing being examined, by catalogue id. Null = the shelf. */
   const [detail, setDetail] = useState<string | null>(null);
@@ -123,18 +198,12 @@ export function ShopScreen({
     onCart(next);
   };
 
-  const total = cartTotal(cart, shelf);
   // What this character is carrying: the purse when money is coins,
   // the single money counter otherwise. Null = the system said nothing.
   const wallet = shop.counter
     ? counters.find((c) => c.name === shop.counter)
     : undefined;
-  const holding = shop.currency
-    ? purseTotal(counters, shop.currency)
-    : wallet && wallet.display === 'money'
-      ? wallet.current
-      : null;
-  const short = holding !== null && holding < total.cents;
+  const holding = holdingOf(shop, counters);
 
   const stepBtn =
     'flex h-8 min-w-8 shrink-0 select-none items-center justify-center rounded-lg bg-stone-800 text-lg text-stone-200 transition-colors hover:bg-stone-700 active:bg-amber-700 active:text-stone-950 disabled:pointer-events-none disabled:opacity-30';
@@ -526,52 +595,9 @@ export function ShopScreen({
         </>
       )}
 
-      {/* The cart, always in reach: what's gathered, what the book says
-          it costs, and the one verb — put it on the counter. */}
-      {cart.length > 0 && (
-        <div
-          className={`flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border px-3 py-2 ${
-            offered
-              ? 'border-amber-600/60 bg-amber-950/30'
-              : 'border-stone-800 bg-stone-900/80'
-          }`}
-        >
-          <span className="text-[11px] uppercase tracking-widest text-stone-500">
-            cart
-          </span>
-          <span className="font-mono text-sm text-stone-100">
-            {formatPrice(total.cents, total.symbol)}
-          </span>
-          {short && (
-            <span className="text-[11px] text-red-400">
-              more than you're carrying
-            </span>
-          )}
-          {offered ? (
-            <>
-              <span className="text-[12px] text-amber-300">
-                on the counter — waiting on the {shop.gm ?? 'DM'}
-              </span>
-              <button
-                type="button"
-                className="ml-auto rounded-md bg-stone-800 px-3 py-1.5 text-[12px] text-stone-200 transition-colors hover:bg-stone-700"
-                onClick={() => onOffer(false)}
-              >
-                take it back
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="ml-auto rounded-md px-3 py-1.5 text-[12px] font-medium text-stone-950 transition-colors"
-              style={{ background: 'var(--sheet-accent, #f59e0b)' }}
-              onClick={() => onOffer(true)}
-            >
-              put it on the counter
-            </button>
-          )}
-        </div>
-      )}
+      {/* The cart is NOT here — it's the screen's footer, pinned with
+          the bar (see `Screen.footer`), so it holds still on a phone
+          instead of scrolling away with the shelf. */}
     </div>
   );
 }

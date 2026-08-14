@@ -21,6 +21,18 @@ export type Screen = {
   /** The mark it wears when there's no room for the word. */
   icon?: string;
   render: () => React.ReactNode;
+  /**
+   * What stays put while this screen scrolls — the store's cart.
+   *
+   * It rides in the same pinned block as the bar rather than at the
+   * end of the screen's own column, which is the only way it can hold
+   * still on HELD glass: there the whole card scrolls, so anything
+   * merely last in the flow scrolls away with it (mounted glass never
+   * scrolls, so the cart was already still there and this changes
+   * nothing for the rail). Stacking it with the bar is also what
+   * avoids pinning it to a hardcoded guess at the bar's height.
+   */
+  footer?: () => React.ReactNode;
 };
 
 export function Screens({
@@ -80,12 +92,20 @@ export function Screens({
 
           The condition is exactly the one that decides everything else
           about glass (rule 6): mounted or held. Same question, no second
-          device matrix. */}
-      <nav
-        aria-label="screens"
-        className={`z-10 flex shrink-0 gap-1 rounded-lg bg-stone-950/85 p-1 backdrop-blur-sm ${
+          device matrix.
+
+          The screen's own footer pins in the SAME block, so the two
+          hold still together and neither has to know the other's
+          height. */}
+      <div
+        className={`z-10 flex shrink-0 flex-col gap-2 ${
           mounted ? '' : 'sticky bottom-0'
         }`}
+      >
+      {screens[current].footer?.()}
+      <nav
+        aria-label="screens"
+        className="flex shrink-0 gap-1 rounded-lg bg-stone-950/85 p-1 backdrop-blur-sm"
       >
         {screens.map((screen, i) => {
           // Five words don't fit across a phone. They used to try, and
@@ -156,6 +176,7 @@ export function Screens({
           );
         })}
       </nav>
+      </div>
     </div>
   );
 }

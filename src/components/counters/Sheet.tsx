@@ -13,7 +13,7 @@ import { LadderPanel } from '../sheet/LadderPanel';
 import { SkillPanel } from '../sheet/SkillPanel';
 import { StatusPanel } from '../sheet/StatusPanel';
 import { SheetHeader } from '../sheet/SheetHeader';
-import { ShopScreen } from '../sheet/ShopScreen';
+import { ShopCart, ShopScreen } from '../sheet/ShopScreen';
 import {
   Bar,
   bumped,
@@ -1274,6 +1274,10 @@ export function Sheet({
                       strip={strip}
                     />
                   ),
+                  // Pinned with the bar rather than left at the end of
+                  // the shelf, so what you've gathered is never
+                  // something you have to scroll back for.
+                  footer: () => <ShopCart shop={shop} counters={counters} />,
                 },
               ]
             : []),
