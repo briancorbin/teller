@@ -1269,6 +1269,7 @@ export function Sheet({
                     <ShopScreen
                       shop={shop}
                       counters={counters}
+                      dice={dice}
                       mounted={mounted}
                       strip={strip}
                     />

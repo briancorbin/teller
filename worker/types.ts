@@ -169,6 +169,12 @@ export type CatalogItem = {
   /** Free-text grouping for the picker — "Rifles", "Melee". */
   group?: string;
   kind?: string;
+  /**
+   * The page this is printed on, when it came from a book — the same
+   * enrichment `PackEntry.page` and `NpcBlueprint.page` carry, and it
+   * was already in the data before it was ever in this type.
+   */
+  page?: number;
   /** How many upgrades it can take. */
   slots?: number;
   /** Base stats, before anything is bolted on. */
@@ -205,6 +211,17 @@ export type CatalogItem = {
    * the card still works.
    */
   icon?: string;
+  /**
+   * A picture of the thing: a KEY into the shared image store (served
+   * at `/api/maps/<key>`, `~/.teller/<key>` on a host), exactly as
+   * `trades[].art` works — a publisher's artwork lives beside their
+   * books, per-instance, and never in this repo or a bundle (rule 4).
+   *
+   * Shown where you're CHOOSING the thing (the store's detail view),
+   * which is the moment a picture earns its place. Absent, the entry's
+   * `icon` stands in; absent both, the block isn't drawn at all.
+   */
+  art?: string;
 };
 
 /** A modification a catalogue item can take. */

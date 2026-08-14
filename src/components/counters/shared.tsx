@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type {
   CampaignData,
   CartLine,
+  CatalogItem,
   Counter,
   Field,
   Item,
@@ -133,6 +134,13 @@ export type CounterViewProps = {
     counter?: string;
     /** The purse declaration, when money is coins and paper. */
     currency?: SystemTemplate['currency'];
+    /**
+     * Everything the campaign can reach, for the detail view to resolve
+     * what a bundle CONTAINS — an equipment pack is one card on the
+     * shelf and a fistful of things once bought, and it should say so
+     * before you buy it.
+     */
+    catalog?: Map<string, CatalogItem>;
     /** What the table calls the DM — "waiting on the Warden". */
     gm?: string;
     onCart: (lines: CartLine[]) => void;

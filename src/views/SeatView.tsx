@@ -8,7 +8,7 @@ import type {
   PackRecord,
   SystemTemplate,
 } from '../../worker/types';
-import { vendorStock } from '../../worker/items';
+import { catalogOf, vendorStock } from '../../worker/items';
 import { api } from '../lib/api';
 import { usePanelNote, useRuleLookup, useRuleSection } from '../lib/rules';
 import { useSession } from '../lib/use-session';
@@ -262,14 +262,11 @@ export function SeatView({
       (v) => v.id === shopOpen.vendorId,
     );
     if (!vendor) return undefined;
+    const reach = packs.map((p) => p.pack);
     return {
       vendor,
-      shelf: vendorStock(
-        vendor,
-        packs.map((p) => p.pack),
-        campaign.data.catalog,
-        store,
-      ),
+      shelf: vendorStock(vendor, reach, campaign.data.catalog, store),
+      catalog: catalogOf(reach, campaign.data.catalog).items,
       cart: shopOpen.carts[characterId] ?? [],
       offered: shopOpen.offered[characterId] ?? false,
       counter: store.counter,

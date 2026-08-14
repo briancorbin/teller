@@ -15,7 +15,7 @@ import {
 import { bumped, isGauge, Step } from '../counters/shared';
 import { Reticle } from './Reticle';
 import { SheetPanel } from './SheetPanel';
-import { looksLikePool, Track } from './Track';
+import { PROSE, StatRow } from './StatRow';
 
 // One thing a character carries, laid out like the printed block.
 //
@@ -31,96 +31,10 @@ import { looksLikePool, Track } from './Track';
 // steppers. Tags become chips. The same panel will draw an ability, a
 // spell focus or a saddlebag when someone writes one down.
 //
-// The one judgement it does make is presentational and derived: a SHORT
-// value gets a box, a long one gets a line. That's the difference
-// between the Grit box and the Manufacturer rule on the printed page,
-// and it is a fact about the string rather than about the game.
-
-/** Past this a value is a word on a line, not a number in a box. */
-const BOXY = 4;
-/** Past this it is prose, and prose does not belong in a label column. */
-const PROSE = 22;
-
-/**
- * One line of an item, shaped by what the value IS.
- *
- * Three shapes, all derived rather than declared, which is what lets one
- * renderer draw a weapon's Grit cost, its ranges and its upgrades
- * without being told which is which:
- *
- *   * **a pool** → the track, exactly as a Skill draws it
- *   * **something short** → a box, like the printed Grit square
- *   * **prose** → the label on its own line with the text beneath, which
- *     is how the sheet prints upgrades: a name, then what it does.
- *     Forcing those through a label column crushed "Kickback Stabilizer"
- *     into a two-line sliver beside its own effect.
- */
-function ItemRow({
-  label,
-  value,
-  dice,
-  overridden,
-  derived,
-}: {
-  label: string;
-  value: string;
-  dice?: SystemTemplate['dice'];
-  /** A person typed this and the derivation stepped aside (rule 1). */
-  overridden?: boolean;
-  derived?: string;
-}) {
-  const pool = looksLikePool(value, dice);
-  const boxy = !pool && value.length > 0 && value.length <= BOXY;
-  const prose = !pool && !boxy && value.length > PROSE;
-
-  const Label = (
-    <span
-      className={`break-words text-[0.7rem] uppercase leading-tight tracking-[0.1em] ${
-        prose ? '' : 'w-[6.5rem] shrink-0 text-right'
-      }`}
-      style={{ color: 'var(--sheet-accent, #f59e0b)' }}
-    >
-      {label}
-    </span>
-  );
-
-  if (prose) {
-    return (
-      <div className="flex flex-col gap-0.5 border-l-2 border-stone-700 py-1 pl-2">
-        {Label}
-        <span className="break-words text-[0.8rem] leading-snug text-stone-300">
-          {value}
-        </span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center gap-2 py-0.5">
-      {Label}
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-        {boxy ? (
-          <span className="flex h-7 min-w-8 items-center justify-center rounded-[3px] border-2 border-stone-400 px-1.5 font-mono text-sm text-stone-100">
-            {value}
-          </span>
-        ) : (
-          <Track value={value} dice={dice} bonus={0} />
-        )}
-        {/* Marked, not hidden. A number somebody typed over the book's
-            beats it (rule 1) — and the player should be able to see
-            that it was overridden, and what it was. */}
-        {overridden && (
-          <span
-            className="whitespace-nowrap text-[0.6rem] uppercase tracking-wider text-stone-500"
-            title={derived ? `the book and its upgrades say ${derived}` : undefined}
-          >
-            · set by hand{derived ? ` (was ${derived})` : ''}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
+// The one judgement it does make is presentational and derived — a
+// SHORT value gets a box, a long one gets a line — and that judgement
+// lives in `StatRow`, shared with the store's detail view so a rifle
+// reads the same on the shelf as it does in your hands.
 
 /** Ammunition and anything else the item counts down. */
 function ItemCounter({
@@ -304,7 +218,7 @@ export function ItemPanel({
             noise above the dice mid-fight (see `Field.filing`). */}
         {!flipped &&
           [...(costRow ? [costRow] : []), ...bodyRows].map((field) => (
-          <ItemRow
+          <StatRow
             key={field.key}
             label={field.label}
             value={field.value}
