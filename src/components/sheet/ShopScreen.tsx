@@ -86,8 +86,14 @@ export function ShopScreen({
     return (
       <div
         key={line.ref}
+        // Fixed card on the strip's pan; a wrapping ~two-across grid on
+        // wider mounted glass; full-width rows in a hand.
         className={`flex items-center gap-2 rounded-lg border border-stone-800 bg-stone-900/60 px-3 py-2 ${
-          strip ? 'w-[22rem] shrink-0 snap-start' : ''
+          strip
+            ? 'w-[22rem] shrink-0 snap-start'
+            : mounted
+              ? 'min-w-[18rem] flex-1 basis-[18rem] self-start'
+              : ''
         }`}
       >
         <div className="flex min-w-0 flex-1 flex-col">
@@ -183,15 +189,24 @@ export function ShopScreen({
         </div>
       )}
 
-      {/* The shelf. On the strip it PANS, the deliberate gesture the
-          item shelves already taught; held glass stacks and scrolls. */}
+      {/* The shelf. On the strip it PANS sideways, the deliberate
+          gesture the item shelves already taught; on other mounted
+          touch glass (an iPad on the table) it wraps into rows and the
+          REGION scrolls down — the store is the one screen whose
+          content is genuinely unbounded, and no fixed layout holds
+          three hundred goods (Brian, 2026-08-14, extending the
+          shelf's amendment: the page never scrolls, a deliberate
+          shelf may). Held glass stacks and the card scrolls, as it
+          always did. */}
       <div
         key={`shop:${group}`}
         className={`flex min-h-0 flex-1 gap-2 ${
           strip
             ? 'snap-x snap-mandatory flex-nowrap items-start overflow-x-auto overflow-y-hidden'
-            : 'flex-col content-start'
-        } ${mounted && !strip ? 'flex-wrap' : ''}`}
+            : mounted
+              ? 'flex-wrap content-start overflow-y-auto'
+              : 'flex-col content-start'
+        }`}
       >
         {shown.map(stockRow)}
         {shown.length === 0 && (

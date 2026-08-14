@@ -328,7 +328,12 @@ full-height row of item panels pans past what fits, the same gesture
 family as swiping between screens, with the visible count derived from
 a panel min-width rather than declared. That is one decision point
 instead of a per-device matrix, and there is deliberately no list of
-devices anywhere in the client.
+devices anywhere in the client. Extended 2026-08-14 (Brian, from the
+iPad): on mounted touch glass a deliberate shelf may also scroll DOWN,
+inside its own bounded region — the store's shelf forced it, being the
+first screen whose content is genuinely unbounded. The page still never
+scrolls, and a screwed-down panel still never asks for a gesture nobody
+can make at it.
 
 **Content renders at designed size, always** (Brian, 2026-08-13 —
 `FitBox` removed). There is no scale-to-fit anywhere in the seat: text
