@@ -3,6 +3,7 @@ import type { Counter, Field, Item } from '../../../worker/types';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
+import { NotchDialog } from '../sheet/NotchDialog';
 import { Screens } from '../sheet/Screens';
 import { PocketPanel } from '../sheet/PocketPanel';
 import { boxable, TallyPanel } from '../sheet/TallyPanel';
@@ -224,6 +225,7 @@ export function Sheet({
   ownCatalog,
   currency,
   shop,
+  notch,
 }: CounterViewProps) {
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
@@ -898,6 +900,18 @@ export function Sheet({
    */
   const [shelfKind, setShelfKind] = useState<Record<string, string>>({});
 
+  /**
+   * Which item is having a notch cut, by id — the dialog itself belongs
+   * to the SCREEN rather than to the panel that asked for it.
+   *
+   * A panel's height is set by how many stat rows its catalogue entry
+   * carries (a rifle 453px, a knife 162px), so a dialog pinned inside
+   * one had room on some weapons and spilled out the bottom of others.
+   * The screen is the same size whatever you tapped, which is the only
+   * container here whose height isn't an accident of content.
+   */
+  const [notching, setNotching] = useState<string | null>(null);
+
   const itemRow = (
     row: Item[],
     lead?: React.ReactNode,
@@ -969,6 +983,11 @@ export function Sheet({
             available={available}
             tags={tags}
             marks={marks}
+            // Only where this surface can write. A seat showing someone
+            // else's card, or a passive display, has no business
+            // offering to etch anything.
+            notch={onItems ? notch : undefined}
+            onNotch={() => setNotching(item.id)}
             onFire={
               onSpend ? (cost, extras) => fire(item, cost, extras) : undefined
             }
@@ -1085,7 +1104,38 @@ export function Sheet({
       // to their right. In a hand that column costs 7rem of a 390px
       // screen for three words, so the whole thing lies down: filters
       // across the top, items under them, full width.
-      <div className={`flex min-h-0 flex-1 gap-2 ${mounted ? '' : 'flex-col'}`}>
+      <div
+        className={`relative flex min-h-0 flex-1 gap-2 ${
+          mounted ? '' : 'flex-col'
+        }`}
+      >
+        {/* Cutting a notch, over the whole screen — see `notching`. It
+            reads the item back out of `items` by id rather than being
+            handed one, so the write below is always against what's
+            stored now and never a stale copy captured on open. */}
+        {notching && notch && (() => {
+          const target = items.find((i) => i.id === notching);
+          if (!target) return null;
+          return (
+            <NotchDialog
+              noun={notch.growth.noun}
+              candidates={notch.candidates}
+              where={notch.where}
+              round={notch.round}
+              mounted={mounted}
+              onCut={(deed) =>
+                onItems?.(
+                  items.map((i) =>
+                    i.id === target.id
+                      ? { ...i, history: [...(i.history ?? []), deed] }
+                      : i,
+                  ),
+                )
+              }
+              onClose={() => setNotching(null)}
+            />
+          );
+        })()}
         {/* The pinned left column: the filter chips (when this screen
             holds more than one KIND) with the pocket beneath them —
             controls above belongings, neither ever pans away. Sticky

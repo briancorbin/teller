@@ -6,6 +6,7 @@ import type {
   CatalogUpgrade,
   Counter,
   Field,
+  Deed,
   Item,
   PoolEffect,
   RulesPack,
@@ -465,6 +466,17 @@ export function vendorStock(
   packs: RulesPack[],
   own: OwnCatalog | undefined,
   store: NonNullable<SystemTemplate['store']>,
+  /**
+   * The ladder, when the system declares one — read ONLY for its
+   * `unstocked` tiers, which derived stock leaves off the shelf so the
+   * top of the ladder isn't for sale by accident.
+   *
+   * Explicit stock ignores this entirely, and that asymmetry is the
+   * point: a curated list is a DM saying exactly what's behind this
+   * counter, and teller does not overrule a person who typed something
+   * (rule 1). Derived stock is a guess, so the guess is conservative.
+   */
+  growth?: SystemTemplate['growth'],
 ): StockLine[] {
   const { items } = catalogOf(packs, own);
   const priceOf = (entry: CatalogItem): string | null =>
@@ -483,11 +495,19 @@ export function vendorStock(
   }
 
   const groups = vendor.groups?.length ? new Set(vendor.groups) : null;
+  const offLimits =
+    growth?.unstocked?.length && growth.field
+      ? { field: growth.field, tiers: new Set(growth.unstocked) }
+      : null;
   const out: StockLine[] = [];
   for (const entry of items.values()) {
     const price = priceOf(entry);
     if (parsePrice(price) === null) continue;
     if (groups && !groups.has(entry.group ?? '')) continue;
+    if (offLimits) {
+      const tier = entry.fields.find((f) => f.key === offLimits.field)?.value;
+      if (tier !== undefined && offLimits.tiers.has(tier)) continue;
+    }
     let carried = true;
     for (const [key, values] of Object.entries(vendor.filters ?? {})) {
       if (!values.length) continue;
@@ -609,4 +629,62 @@ export function makePayment(
     return { counts, paid, change: -remaining };
   }
   return { counts, paid, change: 0 };
+}
+
+// ── Notches ───────────────────────────────────────────────────────────
+//
+// What a well-used thing has been through, and where that puts it on
+// the ladder its system declares (`SystemTemplate.growth`).
+//
+// Pure arithmetic over stored values, which is the only kind of
+// computing rule 1 has ever forbidden teller from doing badly: every
+// function here PROPOSES — a count to show, a rung that's now in reach
+// — and none of them writes anything. Crossing a threshold makes an
+// offer the DM rules on. It never promotes a weapon.
+
+/** Where a thing stands on the ladder, and what's next. */
+export type Standing = {
+  /** Notches cut so far. Derived from the list; never stored beside it. */
+  deeds: number;
+  /** The tier it currently wears, as the growth field reads today. */
+  tier?: string;
+  /** The next rung, when there is one. Absent at the top of the ladder. */
+  next?: { to: string; at: number };
+  /** True when `deeds` has reached `next.at` — an offer, not a promotion. */
+  ready: boolean;
+};
+
+/**
+ * Read a thing's standing off its marks and its own tier field.
+ *
+ * `fields` is the RESOLVED list (catalogue base, upgrades, then
+ * anything typed), so a tier a person typed by hand is read exactly
+ * like one teller wrote — which is what lets a DM hand out a Premium
+ * rifle that never cut a notch, and lets the ladder pick up from
+ * wherever that lands.
+ *
+ * A tier the ladder doesn't list is not an error and not corrected: it
+ * simply has no next rung. Homebrew vocabulary keeps working, it just
+ * doesn't climb.
+ */
+export function standingOf(
+  history: Deed[] | undefined,
+  fields: Field[],
+  growth: SystemTemplate['growth'],
+): Standing {
+  const count = history?.length ?? 0;
+  if (!growth) return { deeds: count, ready: false };
+
+  const tier = fields.find((f) => f.key === growth.field)?.value?.trim() || undefined;
+  const at = growth.steps.findIndex((s) => s.to === tier);
+
+  // Unlisted tier (or none yet): the next rung is the first one, so a
+  // thing that arrived with no tier at all can still start climbing.
+  const next = at === -1 ? growth.steps[0] : growth.steps[at + 1];
+  return {
+    deeds: count,
+    tier,
+    next,
+    ready: next ? count >= next.at : false,
+  };
 }

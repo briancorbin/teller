@@ -96,6 +96,65 @@ export type Field = {
  * It lives in the JSON blob (rule 8), so absent simply means none and no
  * migration is needed.
  */
+/**
+ * One thing this object was there for, as the player etched it. WiW
+ * calls it a notch; that word is the template's (`growth.noun`), not
+ * this file's.
+ *
+ * Named `Deed` rather than `Mark` on purpose: `SystemTemplate.marks` is
+ * already the Talent tick, whose own comment records that it was twice
+ * misread as Aim. Two unrelated "marks" in one contract is how a thing
+ * gets misread a third time.
+ *
+ * A SNAPSHOT, and that is the whole point — everywhere else in teller
+ * the discipline runs the other way. `Item.from` points at the
+ * catalogue so a correction to the book reaches every character at
+ * once; a bundle references packs and books rather than carrying them
+ * (rule 9). Here that would be a bug, because what a mark names is
+ * deliberately ephemeral: a deployed foe is an ordinary character row
+ * that gets DELETED when the table clears, and a reference-based notch
+ * would go blank the moment the fight was tidied up. Different
+ * lifetime, opposite rule. Copy everything at tap time.
+ *
+ * It has to live here rather than in the event log for the same family
+ * of reason: `worker/bundle.ts` carries characters and never events, so
+ * a history stored only in the log would not survive an export — and a
+ * weapon whose entire value is its history is exactly the wrong thing
+ * to lose in a `.story`. What you wrote travels (rule 9). The log still
+ * gets its row per notch, as the audit trail that makes this undoable.
+ *
+ * Generic on purpose: "things that happened to this thing, in order"
+ * is not a game concept. A hat can have marks, so can a horse, so can
+ * the posse's truck. Nothing in code may read `what` and act on it.
+ */
+export type Deed = {
+  id: string;
+  /** What it was, in whatever words were on screen at the time. */
+  what: string;
+  /**
+   * The blueprint it came off, when it came off one — kept so a later
+   * screen could count KINDS ("nine coyotes") without re-parsing names.
+   * Absent for anything typed by hand, which stays first-class.
+   */
+  from?: string;
+  /** Where: the active scene's name when it happened. */
+  where?: string;
+  /** The round, when combat was running. Absent otherwise. */
+  round?: number;
+  /**
+   * When, ISO, stamped by the SEAT rather than the server.
+   *
+   * A mark is a story record, not an audit trail — the audit trail is
+   * the event log, which the host stamps and which nobody can edit. So
+   * a phone's wrong clock costs a wrong date on one line, and the DM
+   * types over it (rule 1). Worth it to keep the write an ordinary
+   * character PATCH with no special case anywhere in the route.
+   */
+  when: string;
+  /** The player's own words. The reason anyone will read this later. */
+  note?: string;
+};
+
 export type Item = {
   id: string;
   name: string;
@@ -132,6 +191,21 @@ export type Item = {
    * pattern, the same way `dials` matches counter names.)
    */
   kind?: string;
+  /**
+   * What this thing has been through, oldest first. See `Deed`.
+   *
+   * Absent means nobody has started a tally, which is the default and
+   * stays the default: etching is opt-in, and the first notch creates
+   * the list. Nothing auto-adds this to weapons — that would mean code
+   * branching on `kind === 'weapon'`, which is precisely the rule 2
+   * trap. A player CHOOSING to start marking their pistol is also
+   * better than every gun silently keeping score.
+   *
+   * The count is derived from this and never stored beside it, the
+   * same discipline as the purse total: two places to hold one number
+   * is one place for them to disagree.
+   */
+  history?: Deed[];
   /**
    * The consumable currently chambered — another item's id.
    *
@@ -955,6 +1029,50 @@ export type SystemTemplate = {
     consumes?: string[];
   };
   /**
+   * The ladder a well-used thing can climb, as data.
+   *
+   * WiW already prints one — Used, Basic, Premium, Elite, described as
+   * quality AND rarity — and every catalogue entry carries it in the
+   * same `quality` field the store filters on. So this isn't a new axis
+   * bolted on; it's the existing ladder climbed instead of purchased.
+   * Which leaves both roads open, and they stay distinguishable
+   * without any code trying: a bought Elite has no marks, an earned one
+   * has thirty. Nothing enforces that. It just falls out.
+   *
+   * Mechanics as data (rule 4), so a second system gets this by adding
+   * a row rather than by anyone touching TypeScript. No counter is
+   * named here because there is no counter — the tally is `marks.length`
+   * and the thresholds are cumulative, so nothing resets and the
+   * history is never broken to make the arithmetic easier.
+   *
+   * Rising is a PROPOSAL and nothing here fires on its own: crossing a
+   * threshold makes the console offer, and the DM rules (rule 1). A
+   * step's `at` is a number teller shows a human, never one it acts on.
+   */
+  growth?: {
+    /** The field a rise writes — the same key the store reads for tiers. */
+    field: string;
+    /** The rungs in order, each naming what it writes and what it costs. */
+    steps: { to: string; at: number }[];
+    /**
+     * What one mark is called in this system's voice — 'notch'. The
+     * vocabulary is the template's, never teller's (rule 4).
+     */
+    noun?: string;
+    /**
+     * Tiers a vendor's derived stock leaves out, so the top of the
+     * ladder isn't simply for sale by default.
+     *
+     * An exclusion, never a prohibition: a DM who wants the legendary
+     * rifle in a locked case behind the counter puts it in a curated
+     * vendor's stock and it appears. Forbidding that would be rule 1
+     * backwards, and an absurd price is a better gate than a missing
+     * listing — a posse CAN pool everything for it and then go hungry,
+     * which is a story teller should let them have.
+     */
+    unstocked?: string[];
+  };
+  /**
    * Physical money: which counters are the coins and notes, and what
    * each is worth in minor units — Dollars 100, Quarters 25, Dimes 10.
    *
@@ -1638,8 +1756,12 @@ export type PublicCharacter = {
      * Qualitative state derived server-side from the first max-bearing
      * counter — the table may know a wolf is Bloodied, NEVER its
      * numbers. Drives reactive token effects.
+     *
+     * `down` is "at zero", not "dead": what zero MEANS is the table's
+     * ruling, not teller's (see `vitalityOf`). It floats a foe to the
+     * top of the notch panel; it never decides anything.
      */
-    vitality?: 'healthy' | 'bloodied' | 'critical';
+    vitality?: 'healthy' | 'bloodied' | 'critical' | 'down';
   };
 };
 

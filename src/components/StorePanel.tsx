@@ -119,7 +119,7 @@ export function StorePanel({
   }
 
   const shelfOf = (vendor: Vendor) =>
-    vendorStock(vendor, packs, campaign.data.catalog, store);
+    vendorStock(vendor, packs, campaign.data.catalog, store, template?.growth);
 
   const saveVendor = (next: Vendor) =>
     onVendors(vendors.map((v) => (v.id === next.id ? next : v)));

@@ -265,7 +265,7 @@ export function SeatView({
     const reach = packs.map((p) => p.pack);
     return {
       vendor,
-      shelf: vendorStock(vendor, reach, campaign.data.catalog, store),
+      shelf: vendorStock(vendor, reach, campaign.data.catalog, store, template?.growth),
       catalog: catalogOf(reach, campaign.data.catalog).items,
       cart: shopOpen.carts[characterId] ?? [],
       offered: shopOpen.offered[characterId] ?? false,
@@ -282,6 +282,37 @@ export function SeatView({
           .catch(() => {}),
     };
   })();
+
+  /**
+   * Etching a notch (`SystemTemplate.growth`).
+   *
+   * The candidates are the TURN ORDER, and that's a semantic choice
+   * rather than a redaction one: what can take a notch is what's in
+   * the fight, which is exactly what the order lists — and it's
+   * already on this screen, so offering it costs no new exposure.
+   *
+   * No `down` hint yet. It wants each foe's vitality, which is derived
+   * server-side from counters this seat doesn't hold (`/api/seat`
+   * returns one character — its own). Worth a second fetch later if
+   * scanning the list turns out to be the annoying part; not worth
+   * guessing at now.
+   *
+   * `data.scene` is a /public-only derivation, so the active scene is
+   * resolved here from the library the seat actually has.
+   */
+  const notch = template?.growth
+    ? {
+        growth: template.growth,
+        candidates: initiative
+          // Yourself excluded: the whole point is what you shot.
+          .filter((e) => e.characterId !== character.id)
+          .map((e) => ({ id: e.id, label: e.label })),
+        where: (campaign?.data.maps ?? []).find(
+          (m) => m.id === campaign?.data.activeMapId,
+        )?.name,
+        round: session?.turn != null ? session.round : undefined,
+      }
+    : undefined;
 
   const Counters = COUNTER_VIEWS[layout];
   /**
@@ -556,6 +587,7 @@ export function SeatView({
               spends={template?.spends}
               ladders={template?.ladders}
               shop={shop}
+              notch={ownsTags(layout) ? notch : undefined}
               onFields={
                 ownsTags(layout)
                   ? (next) =>

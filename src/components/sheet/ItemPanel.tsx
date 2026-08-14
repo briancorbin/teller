@@ -10,9 +10,11 @@ import {
   describeEffect,
   fittedUpgrades,
   resolveItem,
+  standingOf,
   type OwnCatalog,
 } from '../../../worker/items';
 import { bumped, isGauge, Step } from '../counters/shared';
+import type { Candidate } from './NotchDialog';
 import { Reticle } from './Reticle';
 import { SheetPanel } from './SheetPanel';
 import { PROSE, StatRow } from './StatRow';
@@ -86,6 +88,8 @@ export function ItemPanel({
   balances = {},
   tags = [],
   marks,
+  notch,
+  onNotch,
 }: {
   item: Item;
   dice?: SystemTemplate['dice'];
@@ -127,6 +131,34 @@ export function ItemPanel({
   tags?: string[];
   /** The system's mark declaration — see `SystemTemplate.marks`. */
   marks?: SystemTemplate['marks'];
+  /**
+   * Etching, when the system declares a ladder to climb
+   * (`SystemTemplate.growth`) and this surface can write.
+   *
+   * Absent means no history face and no button — which is also what a
+   * system without a ladder gets, and what a read-only screen gets.
+   * Present with an empty `candidates` still works: outside a fight you
+   * type the name yourself.
+   */
+  notch?: {
+    growth: NonNullable<SystemTemplate['growth']>;
+    candidates: Candidate[];
+    where?: string;
+    round?: number;
+  };
+  /**
+   * Ask for the cutting dialog — which is rendered by the SCREEN, not
+   * here.
+   *
+   * It lived in this panel first and pinned itself to it, which broke
+   * the moment anyone opened it on a knife: a panel's height comes from
+   * how many stat rows its catalogue entry has, so a rifle's panel is
+   * 453px and the Colorado Toothpick's is 162px, and a dialog needing
+   * ~172px spilled straight out of the bottom of the short one. The
+   * dialog's room must not depend on which weapon you tapped, so the
+   * screen owns it — the same answer the store's detail view reached.
+   */
+  onNotch?: () => void;
 }) {
   // A pool that's gone missing (deleted, traded away) simply deselects.
   const chambered = ammo.find((a) => a.id === item.loaded);
@@ -153,11 +185,15 @@ export function ItemPanel({
   // An item that points at nothing comes back exactly as it was stored.
   const resolved = resolveItem(item, packs, dice, ownCatalog, chambered);
   const fitted = fittedUpgrades(item, packs, ownCatalog);
-  // The panel has two FACES: stats, and the upgrades bolted on. A flip
-  // rather than a disclosure, because an inline expansion changes the
-  // panel's height and three weapons in a row stop lining up — the
-  // back face borrows the front's frame and gives it back.
-  const [flipped, setFlipped] = useState(false);
+  // The panel has FACES: stats, the upgrades bolted on, and what it's
+  // been through. A flip rather than a disclosure, because an inline
+  // expansion changes the panel's height and three weapons in a row
+  // stop lining up — a back face borrows the front's frame and gives
+  // it back.
+  const [face, setFace] = useState<'stats' | 'upgrades' | 'history'>('stats');
+  /** The notch being read, picked off the strip. Tapping it again lets go. */
+  const [picked, setPicked] = useState<string | null>(null);
+  const flipped = face === 'upgrades';
   // An effect names a field KEY; the sheet's own word for it is on the
   // resolved field, so an upgrade reads "Long Range +2B" rather than
   // "long +2B" without this file knowing any range names.
@@ -203,6 +239,12 @@ export function ItemPanel({
   const bodyRows = costRow ? shown.filter((f) => f !== costRow) : shown;
   /** The back face exists when there's upgrade real estate at all. */
   const flippable = resolved.slots != null || fitted.length > 0;
+  // Where this thing stands on its system's ladder, read off its own
+  // resolved tier field and the deeds it carries. Pure arithmetic that
+  // PROPOSES: `ready` lights a word on a button, and a human decides
+  // whether anything happens (rule 1).
+  const standing = standingOf(item.history, resolved.fields, notch?.growth);
+  const deeds = item.history ?? [];
 
   return (
     <SheetPanel
@@ -216,7 +258,7 @@ export function ItemPanel({
             catalogue, where you're choosing the thing — Quality and
             Cost are most of the decision at the gunsmith's and pure
             noise above the dice mid-fight (see `Field.filing`). */}
-        {!flipped &&
+        {face === 'stats' &&
           [...(costRow ? [costRow] : []), ...bodyRows].map((field) => (
           <StatRow
             key={field.key}
@@ -265,6 +307,134 @@ export function ItemPanel({
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* The HISTORY face: what this thing has been through, newest
+            first, because the notch you just cut is the one you want
+            to see.
+
+            **A mark per DEED, not a progress bar** (Brian, 2026-08-14).
+            This began as `TallyPanel` — the Ace tally's tick boxes —
+            with the next rung as its max, and that was wrong twice
+            over. It carried steppers, and there is nothing here to
+            step: the count is derived from the deeds, and cutting one
+            is the only way it moves. And a box that stands for a
+            fraction of a threshold is a box you can't tap, whereas a
+            box that IS a notch has something to say — which is what
+            these do. They're the marks on the stock; the rung is a
+            line of text, where a number belongs. */}
+        {face === 'history' && (
+          <div className="flex min-h-0 flex-1 flex-col gap-1">
+            {deeds.length > 0 && (
+              <div className="flex max-h-[4.5rem] flex-wrap gap-1 overflow-y-auto">
+                {deeds.map((deed, i) => (
+                  <button
+                    key={deed.id}
+                    type="button"
+                    onClick={() =>
+                      setPicked(picked === deed.id ? null : deed.id)
+                    }
+                    aria-pressed={picked === deed.id}
+                    aria-label={`${notch?.growth.noun ?? 'notch'} ${i + 1}: ${deed.what}`}
+                    className={`h-5 w-3 shrink-0 rounded-[2px] border transition-colors ${
+                      picked === deed.id
+                        ? 'border-stone-100'
+                        : 'border-transparent opacity-80 hover:opacity-100'
+                    }`}
+                    style={{ background: 'var(--sheet-accent, #f59e0b)' }}
+                  />
+                ))}
+              </div>
+            )}
+            {standing.next && (
+              <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
+                {standing.ready ? (
+                  // No name for who rules on it: this panel doesn't
+                  // hold the campaign's word for its GM, and guessing
+                  // "DM" at a table that says "Warden" is worse than
+                  // saying nothing (rule 4 — the vocabulary is the
+                  // template's).
+                  <span style={{ color: 'var(--sheet-accent, #f59e0b)' }}>
+                    ready to rise to {standing.next.to}
+                  </span>
+                ) : (
+                  `${standing.next.at - standing.deeds} more to ${standing.next.to}`
+                )}
+              </span>
+            )}
+            {deeds.length === 0 && (
+              <span className="text-[0.75rem] leading-snug text-stone-500">
+                nothing yet
+              </span>
+            )}
+            {/* A bounded shelf that may scroll DOWN — a history is
+                genuinely unbounded, which is the case that earned
+                mounted touch glass its exception (rule 6). The page
+                still never moves. */}
+            <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+              {/* Picking a mark brings its own line up here rather than
+                  opening anything: the story is already on this face,
+                  and a popover over a list you can read is a second
+                  place to look at the same words. So the strip and the
+                  list are one control — tap a notch, its line lights
+                  and comes into view. */}
+              {[...deeds].reverse().map((deed) => (
+                <div
+                  key={deed.id}
+                  ref={(el) => {
+                    if (el && picked === deed.id) {
+                      el.scrollIntoView({ block: 'nearest' });
+                    }
+                  }}
+                  className={`flex items-baseline gap-2 border-l-2 pl-2 transition-colors ${
+                    picked === deed.id ? '' : 'border-stone-700'
+                  }`}
+                  style={
+                    picked === deed.id
+                      ? { borderColor: 'var(--sheet-accent, #f59e0b)' }
+                      : undefined
+                  }
+                >
+                  <div className="min-w-0 flex-1">
+                    <span className="block break-words text-[0.75rem] leading-snug text-stone-200">
+                      {deed.what}
+                    </span>
+                    <span className="block break-words text-[0.6rem] uppercase tracking-widest text-stone-500">
+                      {[
+                        deed.where,
+                        deed.round != null ? `round ${deed.round}` : null,
+                        deed.when.slice(0, 10),
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                    {deed.note && (
+                      <span className="block break-words text-[0.75rem] leading-snug text-stone-400">
+                        {deed.note}
+                      </span>
+                    )}
+                  </div>
+                  {/* A mis-tap mid-fight is the likeliest way this goes
+                      wrong, and a record nobody can correct would be a
+                      rule 1 hole. Removing one is the player's own, on
+                      their own weapon. */}
+                  <button
+                    type="button"
+                    aria-label={`remove ${deed.what}`}
+                    onClick={() =>
+                      onChange({
+                        ...item,
+                        history: deeds.filter((d) => d.id !== deed.id),
+                      })
+                    }
+                    className="shrink-0 px-1 text-stone-600 transition-colors hover:text-stone-300"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -413,22 +583,69 @@ export function ItemPanel({
           </div>
         )}
 
-        {/* The flip. The slot count is the book's own constraint and
-            the thing a player actually asks — "can I fit another
-            one?" — so it IS the button. Same line on every panel. */}
-        {flippable && (
-          <button
-            type="button"
-            className="self-start text-left text-[0.65rem] uppercase tracking-widest text-stone-500 transition-colors hover:text-stone-300"
-            onClick={() => setFlipped(!flipped)}
-            aria-expanded={flipped}
-          >
-            {flipped
-              ? '◂ stats'
-              : `Upgrades ${
+        {/* The flips. A count is the book's own constraint and the
+            thing a player actually asks — "can I fit another one?",
+            "how close am I?" — so the count IS the button, and neither
+            face costs the panel any height until you're on it. One
+            line on every panel, whatever it offers. */}
+        {(flippable || notch) && (
+          <div className="flex flex-wrap items-baseline gap-x-3">
+            {flippable && face !== 'upgrades' && (
+              <button
+                type="button"
+                className="text-left text-[0.65rem] uppercase tracking-widest text-stone-500 transition-colors hover:text-stone-300"
+                onClick={() => setFace('upgrades')}
+              >
+                {`Upgrades ${
                   resolved.slots ? `${resolved.slotsUsed}/${resolved.slots}` : fitted.length
                 } ▸`}
-          </button>
+              </button>
+            )}
+            {/* The tally, worn as the way IN to it. A weapon nobody has
+                started etching says so plainly rather than showing a
+                zero — starting is a choice, and an empty counter on
+                every gun in the game is what opting in avoids. */}
+            {notch && face !== 'history' && (
+              <button
+                type="button"
+                className="text-left text-[0.65rem] uppercase tracking-widest transition-colors hover:text-stone-300"
+                style={
+                  standing.ready
+                    ? { color: 'var(--sheet-accent, #f59e0b)' }
+                    : { color: 'rgb(120 113 108)' }
+                }
+                onClick={() => setFace('history')}
+              >
+                {deeds.length === 0
+                  ? `${notch.growth.noun ?? 'notch'}es ▸`
+                  : `${notch.growth.noun ?? 'notch'}es ${standing.deeds}${
+                      standing.next ? `/${standing.next.at}` : ''
+                    } ▸`}
+              </button>
+            )}
+            {face !== 'stats' && (
+              <button
+                type="button"
+                className="text-left text-[0.65rem] uppercase tracking-widest text-stone-500 transition-colors hover:text-stone-300"
+                onClick={() => setFace('stats')}
+              >
+                ◂ stats
+              </button>
+            )}
+            {/* Cutting one is only offered on the face that shows
+                them, so the front of a weapon never grows a control
+                for a thing you may never do with it. */}
+            {notch && face === 'history' && (
+              <button
+                type="button"
+                className="text-left text-[0.65rem] uppercase tracking-widest transition-colors hover:text-stone-300"
+                style={{ color: 'var(--sheet-accent, #f59e0b)' }}
+                onClick={onNotch}
+              >
+                + cut a {notch.growth.noun ?? 'notch'}
+              </button>
+            )}
+          </div>
         )}
 
         {/* Chips, because a tag is a word that is either there or not —

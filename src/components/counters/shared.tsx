@@ -12,6 +12,7 @@ import type {
   Vendor,
 } from '../../../worker/types';
 import type { StockLine } from '../../../worker/items';
+import type { Candidate } from '../sheet/NotchDialog';
 
 // The parts every counter layout is built from.
 //
@@ -145,6 +146,20 @@ export type CounterViewProps = {
     gm?: string;
     onCart: (lines: CartLine[]) => void;
     onOffer: (on: boolean) => void;
+  };
+  /**
+   * Etching notches, when the system declares a ladder to climb — see
+   * `SystemTemplate.growth` and `ItemPanel`'s `notch`.
+   *
+   * Live session data (who's in the fight, where, which round) reaching
+   * an item panel, exactly as `shop` does. Absent on read-only surfaces
+   * and on systems with no ladder.
+   */
+  notch?: {
+    growth: NonNullable<SystemTemplate['growth']>;
+    candidates: Candidate[];
+    where?: string;
+    round?: number;
   };
 };
 

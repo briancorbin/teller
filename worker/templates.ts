@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 11,
+  version: 12,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
@@ -326,6 +326,34 @@ const wiw: SystemTemplate = {
   store: {
     costField: 'cost',
     consumes: ['service'],
+  },
+  // Notches (Brian's table, 2026-08-14 — not a Guidebook mechanic).
+  //
+  // The book's gear tiers are quality AND rarity (p. 60), handed out by
+  // the Warden and bought at a price. This climbs the same ladder from
+  // the other end: a Used pistol that has been there for enough of it
+  // becomes something, and the player etches each one by hand.
+  //
+  // Legendary is the fifth rung and the book has no such tier — it's
+  // the one-of-a-kind step, and the reason it's here rather than in the
+  // shop's vocabulary alone is that it should mostly be EARNED. Mostly,
+  // not only: it's excluded from derived stock, so a vendor lists one
+  // only when a DM deliberately puts it there (the locked case behind
+  // the counter, at a price that costs the posse its supplies).
+  //
+  // Thresholds are a guess and are meant to be tuned in play — they're
+  // data precisely so that tuning them is a pack edit and not a commit.
+  // Cumulative, so nothing ever resets and the history stays whole.
+  growth: {
+    field: 'quality',
+    noun: 'notch',
+    steps: [
+      { to: 'Basic', at: 5 },
+      { to: 'Premium', at: 15 },
+      { to: 'Elite', at: 35 },
+      { to: 'Legendary', at: 75 },
+    ],
+    unstocked: ['Legendary'],
   },
   // Reputation (Guidebook p. 119): per-faction standing on one
   // five-step ladder, modifying Charm rolls with that faction — in the
