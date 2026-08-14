@@ -446,7 +446,16 @@ export function SeatView({
         rather than a pixel breakpoint, because 1920×515 and 1024×600
         want the same treatment for the same reason. */}
       <div
-        className={`flex min-h-0 gap-2 ${wide ? 'flex-1 flex-row' : 'flex-col'}`}
+        // `grow shrink-0` on held glass, and it is what lets the card's
+        // own bottom bar sit at the bottom. Without it this box is only
+        // as tall as what's in it, so on a short screen — two weapons —
+        // every height below it collapsed to the content and the bar
+        // came to rest halfway up the phone. Grow to fill the glass,
+        // never shrink below the content, and the page still scrolls
+        // when there's more than fits.
+        className={`flex min-h-0 gap-2 ${
+          wide ? 'flex-1 flex-row' : 'shrink-0 grow flex-col'
+        }`}
       >
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
           {/* No fit wrapper — the card renders at designed size on

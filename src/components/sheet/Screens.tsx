@@ -57,7 +57,15 @@ export function Screens({
         mounted ? '' : 'min-h-full'
       }`}
     >
-      <div className="flex min-h-0 flex-1 flex-col">
+      {/* Room to scroll CLEAR of the bar. The bar is sticky, so on the
+          way down the last panel passes underneath it and the two end
+          up touching; a screen's worth of belongings should finish with
+          the same breath between it and the bar that the panels keep
+          between each other. Only where it scrolls — mounted glass has
+          no travel to run out of. */}
+      <div
+        className={`flex min-h-0 flex-1 flex-col ${mounted ? '' : 'pb-2'}`}
+      >
         {screens[current].render()}
       </div>
 
@@ -97,9 +105,14 @@ export function Screens({
               onClick={() => go(i)}
               aria-current={i === current}
               aria-label={screen.name}
-              className={`flex min-w-0 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[0.7rem] uppercase tracking-[0.18em] transition-colors ${
-                named ? 'flex-1' : 'shrink-0'
-              } ${
+              // `flex-grow` is animatable, which is the whole reason
+              // the swap can be a movement rather than a jump: the one
+              // you tapped grows from 0 to 1 while the one you left
+              // gives its share back, and the labels slide out and in
+              // underneath. Colour rides the same curve.
+              className={`flex min-w-0 items-center justify-center rounded-md px-2 py-1.5 text-[0.7rem] uppercase tracking-[0.18em] transition-[flex-grow,background-color,color] duration-300 ease-out ${
+                named ? 'flex-1' : 'shrink-0 grow-0'
+              } ${mounted ? 'gap-1.5' : ''} ${
                 i === current
                   ? 'text-stone-950'
                   : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100'
@@ -116,9 +129,28 @@ export function Screens({
               {/* `break-words`, never `truncate` — a cut-off label is a
                   label that says something else, and this one names the
                   place you're trying to get to. A screen with no mark
-                  always shows its word; it has nothing else to show. */}
-              {(named || !screen.icon) && (
+                  always shows its word; it has nothing else to show.
+
+                  Off mounted glass the word is always RENDERED and
+                  animates its own width instead of appearing from
+                  nothing: mounting a label mid-transition pops, and the
+                  point of the movement is that you can see where the
+                  space went. `max-w` is generous enough that no name
+                  clips at rest — the clipping only ever happens
+                  mid-slide, which is what makes it a slide. */}
+              {mounted || !screen.icon ? (
                 <span className="min-w-0 break-words">{screen.name}</span>
+              ) : (
+                <span
+                  aria-hidden={!named}
+                  className={`overflow-hidden whitespace-nowrap transition-[max-width,opacity,margin] duration-300 ease-out ${
+                    named
+                      ? 'ml-1.5 max-w-[10rem] opacity-100'
+                      : 'ml-0 max-w-0 opacity-0'
+                  }`}
+                >
+                  {screen.name}
+                </span>
               )}
             </button>
           );

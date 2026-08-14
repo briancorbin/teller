@@ -39,9 +39,17 @@ function Chip({
     <div
       title={compact ? counter.name : undefined}
       className={`flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5 ${
-        // An equal share of the row each, so three pockets read as one
-        // band rather than three differently-sized boxes.
-        compact ? 'min-w-0 flex-1' : ''
+        // Three equal shares of one row was too mean: a number and its
+        // two steppers in 101px put the buttons over the top of the
+        // figure they change. So the SHAPE decides how much room it
+        // gets, not the name — a counter you step needs the width for
+        // a number and two buttons, and one you tap out in boxes wants
+        // a line of its own for the boxes.
+        compact
+          ? boxable(counter)
+            ? 'w-full'
+            : 'min-w-[9.5rem] flex-1'
+          : ''
       }`}
     >
       <Glyph name={icon} className="h-5 w-5 shrink-0 text-stone-400" />

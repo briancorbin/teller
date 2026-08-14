@@ -1170,7 +1170,16 @@ export function Sheet({
     // the ROOT so the segmented bar is tinted too — the bar belongs to
     // the card, not to any one screen.
     <div
-      className="flex min-h-0 flex-1 flex-col gap-2"
+      // `min-h-full` off mounted glass, because the seat hands the card
+      // a plain BLOCK there (deliberately — a flex parent would let this
+      // card's own min-h-0 chain squeeze the item rows into each other).
+      // In a block, `flex-1` says nothing, so the card was only as tall
+      // as its contents and the bar at the bottom of it came to rest
+      // halfway up a phone. The block's height IS definite — it's a flex
+      // item above — so a percentage minimum resolves against it.
+      className={`flex min-h-0 flex-1 flex-col gap-2 ${
+        mounted ? '' : 'min-h-full'
+      }`}
       style={
         {
           '--sheet-accent': accent ?? '#f59e0b',
