@@ -1057,7 +1057,7 @@ export function Sheet({
     // gear (the card scrolls; nothing pans away there).
     const pocketLead = !strip && pocket.length > 0 && (
       <div key="pocket" className="flex w-full flex-col">
-        <PocketPanel counters={pocket} icons={icons!} onChange={update} />
+        <PocketPanel counters={pocket} icons={icons!} onChange={update} row />
       </div>
     );
     const lead =
@@ -1065,7 +1065,11 @@ export function Sheet({
         ? [...(pocketLead ? [pocketLead] : []), ...tallyPanels]
         : undefined;
     return (
-      <div className="flex min-h-0 flex-1 gap-2">
+      // A ROW on mounted glass — controls pinned at the left, belongings
+      // to their right. In a hand that column costs 7rem of a 390px
+      // screen for three words, so the whole thing lies down: filters
+      // across the top, items under them, full width.
+      <div className={`flex min-h-0 flex-1 gap-2 ${mounted ? '' : 'flex-col'}`}>
         {/* The pinned left column: the filter chips (when this screen
             holds more than one KIND) with the pocket beneath them —
             controls above belongings, neither ever pans away. Sticky
@@ -1074,14 +1078,18 @@ export function Sheet({
             are the packs' own words, shown as written. */}
         {(kinds.length > 1 || (strip && pocket.length > 0)) && (
           <div
-            className={`flex shrink-0 flex-col gap-2 self-start ${
+            className={`flex shrink-0 gap-2 self-start ${
+              mounted ? 'flex-col' : 'w-full'
+            } ${
               strip && pocket.length > 0 ? 'w-[13rem] self-stretch justify-center' : ''
-            } ${mounted ? '' : 'sticky top-0'}`}
+            } ${mounted ? '' : 'sticky top-0 z-10'}`}
           >
             {kinds.length > 1 && (
               <div
                 className={`flex gap-1 ${
-                  strip && pocket.length > 0 ? 'flex-wrap' : 'flex-col'
+                  !mounted || (strip && pocket.length > 0)
+                    ? 'flex-wrap'
+                    : 'flex-col'
                 }`}
               >
                 {['', ...kinds].map((kind) => (

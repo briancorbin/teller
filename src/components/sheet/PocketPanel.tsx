@@ -17,21 +17,46 @@ function Chip({
   counter,
   icon,
   onChange,
+  compact = false,
 }: {
   counter: Counter;
   icon: string;
   onChange: (next: Counter) => void;
+  /**
+   * Side by side rather than stacked, and no name printed.
+   *
+   * Three chips across a phone have no room for "WALLET ($)" over the
+   * number, and don't need it (Brian, 2026-08-14): the glyph is what
+   * the counter IS, and a system that gave a counter a mark already
+   * said the mark carries it. The word stays in `title` and
+   * `aria-label`, so it's a press away and a screen reader still reads
+   * the full thing.
+   */
+  compact?: boolean;
 }) {
   const max = counter.max ?? 0;
   return (
-    <div className="flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5">
+    <div
+      title={compact ? counter.name : undefined}
+      className={`flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5 ${
+        // An equal share of the row each, so three pockets read as one
+        // band rather than three differently-sized boxes.
+        compact ? 'min-w-0 flex-1' : ''
+      }`}
+    >
       <Glyph name={icon} className="h-5 w-5 shrink-0 text-stone-400" />
       <div className="flex min-w-0 flex-1 flex-col">
-        <span className="text-[9px] uppercase tracking-widest text-stone-500">
-          {counter.name}
-        </span>
+        {!compact && (
+          <span className="text-[9px] uppercase tracking-widest text-stone-500">
+            {counter.name}
+          </span>
+        )}
         {boxable(counter) ? (
-          <div className="mt-0.5 flex flex-wrap items-center gap-1">
+          <div
+            className={`flex flex-wrap items-center gap-1 ${
+              compact ? '' : 'mt-0.5'
+            }`}
+          >
             {Array.from({ length: max }, (_, i) => {
               const filled = i < counter.current;
               return (
@@ -97,16 +122,25 @@ export function PocketPanel({
   icons,
   onChange,
   fill = false,
+  row = false,
 }: {
   counters: Counter[];
   icons: Record<string, string>;
   onChange: (next: Counter) => void;
   /** Stretch to the tile's height (the strip); natural height held. */
   fill?: boolean;
+  /**
+   * Shoulder to shoulder on one line, instead of a stack.
+   *
+   * What a character carries in loose change is three facts, and three
+   * facts should cost one row of a sheet — not three, which is what a
+   * phone was spending on them before the items even started.
+   */
+  row?: boolean;
 }) {
   return (
     <div
-      className={`flex flex-col gap-1.5 ${
+      className={`flex gap-1.5 ${row ? 'flex-wrap' : 'flex-col'} ${
         fill ? 'min-h-0 flex-1 justify-center' : ''
       }`}
     >
@@ -116,6 +150,7 @@ export function PocketPanel({
           counter={counter}
           icon={icons[counter.name] ?? ''}
           onChange={onChange}
+          compact={row}
         />
       ))}
     </div>
