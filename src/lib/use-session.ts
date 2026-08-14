@@ -55,7 +55,15 @@ function open(campaignId: string, stream: Stream): void {
     .streamTicket(campaignId)
     .then((res) => {
       stream.opening = false;
-      if (!streams.has(campaignId)) return; // everyone left while we asked
+      // Still the CURRENT stream for this campaign? Not just "is there
+      // one" — a screen that learns its handle mid-flight tears this
+      // stream down and builds another under the same key, and the
+      // `has` check waved the old one through to open a connection
+      // nobody was listening to. An orphan like that can never be
+      // closed (the map holds its replacement) and holds one of the
+      // browser's six until the tab does, which is the failure rule 6
+      // exists to prevent.
+      if (streams.get(campaignId) !== stream) return;
       const params = new URLSearchParams({ t: res.ticket });
       if (stream.handle) params.set('display', stream.handle);
       // Close whatever was here first. A screen learns its handle while

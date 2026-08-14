@@ -43,10 +43,18 @@ export function StatRow({
   const boxy = !pool && value.length > 0 && value.length <= BOXY;
   const prose = !pool && !boxy && value.length > PROSE;
 
+  // LEFT-aligned, and that's load-bearing rather than taste. A fixed
+  // label column reads as aligned only while every label fits on one
+  // line: right-aligned, "Status Severity" wrapped inside its 6.5rem
+  // and its ragged left edge drifted in toward the value while every
+  // other label in the panel stayed put (Brian, 2026-08-14, on the
+  // Ironcore Battery). Left alignment is stable under wrapping — which
+  // is the property that matters when the labels come out of a pack
+  // and this code has no idea how long a system's words are (rule 2).
   const Label = (
     <span
       className={`break-words text-[0.7rem] uppercase leading-tight tracking-[0.1em] ${
-        prose ? '' : 'w-[6.5rem] shrink-0 text-right'
+        prose ? '' : 'w-[6.5rem] shrink-0'
       }`}
       style={{ color: 'var(--sheet-accent, #f59e0b)' }}
     >
@@ -54,9 +62,13 @@ export function StatRow({
     </span>
   );
 
+  // Prose keeps its own shape — label over full-width text — but not
+  // its own left edge. The indent it used to carry put its label 10px
+  // in from every other label in the same block, which is exactly the
+  // misalignment the column above was fixed for.
   if (prose) {
     return (
-      <div className="flex flex-col gap-0.5 border-l-2 border-stone-700 py-1 pl-2">
+      <div className="flex flex-col gap-0.5 py-1">
         {Label}
         <span className="break-words text-[0.8rem] leading-snug text-stone-300">
           {value}

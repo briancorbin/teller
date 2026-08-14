@@ -45,7 +45,23 @@ export { CampaignDO };
 
 // --- helpers ---------------------------------------------------------------
 
-const json = (data: unknown, status = 200) => Response.json(data, { status });
+/**
+ * Every JSON answer, and **none of them may be cached**.
+ *
+ * A response with no freshness information is one a browser is allowed
+ * to cache by guesswork (RFC 9111's heuristic freshness), and Safari
+ * takes that offer readily. The symptom is a screen that reloads into
+ * the PAST: an iPad seat came back holding a template from before the
+ * system declared a store, so its Store screen was missing while every
+ * other screen — rendered from that same stale template — looked
+ * perfectly normal (Brian, 2026-08-14).
+ *
+ * Nothing behind `/api` is ever safely stale: it is all live table
+ * state. Images and book bytes are served elsewhere and keep their own
+ * caching, which is where caching actually earns something.
+ */
+const json = (data: unknown, status = 200) =>
+  Response.json(data, { status, headers: { 'cache-control': 'no-store' } });
 const err = (message: string, status: number) => json({ error: message }, status);
 
 function hasKey(request: Request, env: Env): boolean {
