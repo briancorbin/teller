@@ -249,14 +249,18 @@ export function CreationBuilder({
   // handful of alternatives divide the glass instead; each says so
   // where it lays itself out.
   //
-  // On glass that wraps, an OPEN card takes the whole area rather than
-  // its cell, and the rest step aside entirely. Seven cards and a full
-  // reading pane do not fit in two rows of an 800px screen — tried it,
-  // and what falls out the bottom of the squeezed card is the confirm
-  // button. The strip can shoulder its neighbours sideways because it
-  // has one row and infinite width; a grid has neither, so the only
-  // honest way to give the words room is to give them the screen.
-  const soloed = !strip && wide && confirming ? confirming : null;
+  // Everywhere but the rail, an OPEN card takes the whole screen and
+  // the others step aside entirely.
+  //
+  // On a grid that's a necessity: seven cards and a full reading pane
+  // do not fit in two rows of an 800px screen — tried it, and what
+  // falls out the bottom of the squeezed card is the confirm button.
+  // In a hand it's a preference (Brian, 2026-08-14), and the better
+  // one — a card expanding inside a scrolling list means reading about
+  // a trade with six others still shouldering in at the edges. Only
+  // the rail keeps its neighbours, because there the card grows
+  // sideways into width it actually has.
+  const soloed = !strip && confirming ? confirming : null;
   const shelf = (children: React.ReactNode) => (
     <div
       className={
@@ -264,7 +268,11 @@ export function CreationBuilder({
           ? 'flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap items-stretch gap-2 overflow-x-auto overflow-y-hidden'
           : wide
             ? 'grid min-h-0 flex-1 auto-rows-fr gap-2 overflow-hidden'
-            : 'flex flex-col gap-2'
+            : // Held glass: a column that scrolls, unless one card has
+              // the floor — then it fills the glass instead, so the
+              // face and the words own the screen the way they do on
+              // mounted glass.
+              `flex flex-col gap-2 ${soloed ? 'min-h-0 flex-1' : ''}`
       }
       style={
         !strip && wide
@@ -281,12 +289,29 @@ export function CreationBuilder({
   );
 
   return (
-    <div className="flex min-h-0 w-full flex-1 flex-col gap-2 p-1">
+    // `flex-1` says nothing here — the seat hands the builder a plain
+    // BLOCK, so on held glass this box is whatever its contents are and
+    // the page scrolls, which is the contract. A soloed card is the one
+    // thing that must fit the glass exactly instead, so it asks for the
+    // block's height outright.
+    <div
+      className={`flex min-h-0 w-full flex-1 flex-col gap-2 p-1 ${
+        soloed && !wide ? 'h-full' : ''
+      }`}
+    >
       {/* The screen's question, worn the way the finished sheet wears
           its header: the same bordered bar, the same ruled hairlines,
           the plate treatment — but the QUESTION is the plate, centered
           and large, for the whole flow. The bar tints to the trade's
-          colour the moment one is chosen. */}
+          colour the moment one is chosen.
+
+          It stands down for a soloed card (Brian, 2026-08-14). Reading
+          one trade is not a step in a flow, it's a page about a person
+          — and the question it would still be asking is one you've
+          stopped answering for as long as you're in there. Nothing is
+          lost with it: the trade step has no back button (it's step
+          zero), and "the others" is the way out. */}
+      {!soloed && (
       <div
         className="relative flex shrink-0 items-center gap-2.5 rounded-md border py-1.5 pl-14 pr-14"
         style={{ borderColor: `${accent ?? '#f59e0b'}66` }}
@@ -352,6 +377,7 @@ export function CreationBuilder({
           style={{ background: `${accent ?? '#f59e0b'}55` }}
         />
       </div>
+      )}
       {here === 'trade' && (
         <>
           {shelf(
@@ -375,7 +401,7 @@ export function CreationBuilder({
                       ? `${open ? 'w-[38rem]' : 'w-[19rem]'} shrink-0 snap-start self-stretch transition-[width] duration-300`
                       : wide
                         ? ''
-                        : 'w-full'
+                        : `w-full ${soloed ? 'min-h-0 flex-1' : ''}`
                   }`}
                   style={
                     accent
@@ -387,7 +413,7 @@ export function CreationBuilder({
                   <SheetPanel
                     title={t.name}
                     note={t.tagline}
-                    fill={wide}
+                    fill={wide || Boolean(soloed)}
                     className={
                       open ? 'border-[color:var(--sheet-accent)]' : ''
                     }
@@ -410,14 +436,28 @@ export function CreationBuilder({
                           // portrait told to fill what's left gets
                           // nothing: it's a fixed crop there, and the
                           // card is as tall as it needs to be.
-                          className={`relative block shrink-0 overflow-hidden ${
+                          // `shrink-0` belongs only on the two sizes
+                          // that are DECLARED. On the ones that take
+                          // what's left it's a contradiction — the
+                          // portrait refused to give any of it back,
+                          // and the soloed card ran 888px down an
+                          // 844px phone.
+                          className={`relative block overflow-hidden ${
                             open && wide
-                              ? `h-full self-stretch ${
+                              ? // Side by side: the figure docks, the
+                                // words flow beside it.
+                                `h-full shrink-0 self-stretch ${
                                   soloed ? 'w-[26rem]' : 'w-[13rem]'
                                 }`
-                              : wide
-                                ? 'min-h-0 w-full flex-1'
-                                : 'h-52 w-full'
+                              : wide || soloed
+                                ? // Stacked and given the room that's
+                                  // left — a grid cell's, or a phone's
+                                  // whole screen above the words.
+                                  'min-h-0 w-full flex-1'
+                                : // A crop in a list. Held glass hands
+                                  // out no height, so a portrait told
+                                  // to fill what's left gets nothing.
+                                  'h-52 w-full shrink-0'
                           }`}
                           style={{
                             background: accent
@@ -442,9 +482,12 @@ export function CreationBuilder({
                           to the line, which is the one thing a card
                           full of prose must not do. */}
                       <span
-                        className={`flex min-h-0 flex-1 flex-col gap-1.5 ${
-                          soloed ? 'max-w-[46rem] justify-center' : ''
-                        }`}
+                        className={`flex min-h-0 flex-col gap-1.5 ${
+                          // Stacked on held glass the words take the
+                          // height they need and the face keeps the
+                          // rest; side by side they take the column.
+                          soloed && !wide ? 'flex-none' : 'flex-1'
+                        } ${soloed ? 'max-w-[46rem] justify-center' : ''}`}
                       >
                   {/* The top of the card is reserved space: the trade's
                       portrait lands here when the art pipeline exists
