@@ -315,6 +315,21 @@ export function CreationBuilder({
   });
   /** A mark in a `markRow` cell: square, and as big as the cell. */
   const markSize = 'aspect-square h-auto w-full';
+
+  /**
+   * Size a textarea to its contents — one line until the words need
+   * two. Clearing the height before measuring is the whole trick;
+   * without it `scrollHeight` never reports less than the height
+   * already set, so the box only ever grows.
+   *
+   * Passed as a `ref` as well as called on change, so a name that
+   * arrives from somewhere else — "gimme a name" — sizes the box too.
+   */
+  const grow = (el: HTMLTextAreaElement | null) => {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
   const shelf = (children: React.ReactNode) => (
     <div
       className={
@@ -1402,7 +1417,7 @@ export function CreationBuilder({
                   and a phone raises the one it already has. */}
               {strip ? (
                 <span
-                  className="max-w-full truncate font-serif text-[1.6rem] font-bold uppercase leading-tight tracking-[0.12em]"
+                  className="min-w-0 break-words text-center font-serif text-[1.6rem] font-bold uppercase leading-tight tracking-[0.12em]"
                   style={{ color: accent ?? '#f59e0b' }}
                 >
                   {nameDraft || (
@@ -1415,19 +1430,37 @@ export function CreationBuilder({
                   </span>
                 </span>
               ) : (
-                <input
+                /* A TEXTAREA, for a single-line thing — because an
+                   input cannot wrap, and a name that doesn't fit was
+                   scrolling out of sight inside the field (Brian,
+                   2026-08-14: never cut off). It behaves like an
+                   input: one row to start, Enter commits rather than
+                   breaking the line, and it grows a line at a time as
+                   the name earns it. `break-words` so a name with no
+                   spaces in it wraps too — someone leaning on one key
+                   gets a tall plate, which is between them and their
+                   Warden. */
+                <textarea
                   value={nameDraft}
-                  onChange={(e) => setNameDraft(e.target.value)}
+                  rows={1}
+                  ref={grow}
+                  onChange={(e) => {
+                    setNameDraft(e.target.value.replace(/\n/g, ''));
+                    grow(e.target);
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' && nameDraft.trim()) {
-                      onName(nameDraft.trim());
-                      next();
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      if (nameDraft.trim()) {
+                        onName(nameDraft.trim());
+                        next();
+                      }
                     }
                   }}
                   autoFocus
                   aria-label="character name"
                   placeholder={trade ? `the ${trade.name}` : 'nameless'}
-                  className="min-w-0 max-w-[24rem] flex-1 bg-transparent text-center font-serif text-[1.6rem] font-bold uppercase leading-tight tracking-[0.12em] outline-none placeholder:text-stone-700"
+                  className="min-w-0 max-w-[24rem] flex-1 resize-none overflow-hidden break-words bg-transparent text-center font-serif text-[1.6rem] font-bold uppercase leading-tight tracking-[0.12em] outline-none placeholder:text-stone-700"
                   style={{ color: accent ?? '#f59e0b' }}
                 />
               )}
@@ -1496,7 +1529,7 @@ export function CreationBuilder({
 
       {here === 'done' && (
         <div
-          className={`flex min-h-0 flex-1 gap-4 ${
+          className={`flex min-h-0 min-w-0 flex-1 gap-4 ${
             wide ? '' : 'flex-col items-center'
           }`}
           style={
@@ -1531,19 +1564,22 @@ export function CreationBuilder({
             </span>
           )}
           <div
-            className={`flex min-h-0 flex-1 flex-col justify-center gap-3 ${
+            className={`flex min-h-0 w-full min-w-0 flex-1 flex-col justify-center gap-3 ${
               wide ? 'items-start' : 'items-center text-center'
             }`}
           >
             {/* Their name in the plate, one last time — the same one
-                the sheet is about to wear. */}
+                the sheet is about to wear. It WRAPS: this is the first
+                thing a player sees of the character they just made,
+                and "Josiah Bartholomew Pikeworth" running off the edge
+                is a poor way to meet him. */}
             <span
-              className="font-serif text-[1.8rem] font-bold uppercase leading-tight tracking-[0.12em]"
+              className="w-full min-w-0 break-words font-serif text-[1.8rem] font-bold uppercase leading-tight tracking-[0.12em]"
               style={{ color: accent ?? '#f59e0b' }}
             >
               {character.name}
             </span>
-            <h2 className="font-serif text-2xl text-stone-100">
+            <h2 className="w-full min-w-0 break-words font-serif text-2xl text-stone-100">
               {nameDraft.trim()
                 ? `Pleasure to meet ya, ${nameDraft.trim()}.`
                 : 'Pleasure to meet ya.'}
