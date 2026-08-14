@@ -552,7 +552,12 @@ export function CreationBuilder({
         <div
           className={`flex min-h-0 flex-1 flex-col items-center px-6 text-center ${
             here === 'welcome'
-              ? `justify-start pt-1 ${strip ? 'gap-3' : 'gap-7'}`
+              // The padding above the wordmark and the gap below it are
+              // the SAME value on purpose — the logo should sit in its
+              // own air rather than tucked under the bar with the
+              // greeting crowding it from underneath (Brian, from the
+              // iPad, 2026-08-14).
+              ? `justify-start ${strip ? 'gap-3 pt-3' : 'gap-8 pt-8'}`
               : 'justify-center gap-4'
           }`}
         >
@@ -576,12 +581,12 @@ export function CreationBuilder({
               // 810px to spend and the rail has 515, and at the tablet's
               // size the greeting ran 26px off the bottom of the bar —
               // which mounted glass CLIPS rather than scrolls (rule 6).
-              className={`w-auto max-w-[34rem] shrink object-contain ${
+              className={`w-auto shrink object-contain ${
                 strip
-                  ? 'max-h-[5rem]'
+                  ? 'max-h-[5rem] max-w-[26rem]'
                   : wide
-                    ? 'max-h-[10rem]'
-                    : 'max-h-[6rem]'
+                    ? 'max-h-[18rem] max-w-[52rem]'
+                    : 'max-h-[8rem] max-w-[22rem]'
               }`}
             />
           )}
