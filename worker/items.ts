@@ -721,3 +721,23 @@ export function tierHolders(
   }
   return out;
 }
+
+/**
+ * May this thing be notched?
+ *
+ * One answer, so the seat's button and the console's rise proposal
+ * can't disagree about what's notchable.
+ *
+ * A thing that ALREADY carries deeds always qualifies, whatever the
+ * declaration says now. Someone wrote those, and a template edit — or
+ * a kind renamed on an item — must never make a history unreachable
+ * (rule 1). It only ever narrows what you can START.
+ */
+export function notchable(
+  item: Item,
+  growth: SystemTemplate['growth'],
+): boolean {
+  if (!growth) return false;
+  if (item.history?.length) return true;
+  return !growth.kinds?.length || growth.kinds.includes(item.kind ?? '');
+}

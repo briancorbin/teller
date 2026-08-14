@@ -18,6 +18,7 @@ import {
   spreadTotal,
   withoutInstanced,
 } from '../lib/creation';
+import { BackButton } from './sheet/BackButton';
 import { SheetPanel } from './sheet/SheetPanel';
 import { Glyph } from './sheet/glyphs';
 
@@ -434,28 +435,16 @@ export function CreationBuilder({
             never double up. The bar reserves its gutter whether or not
             the button is there, so the rules never run under it. */}
         {step > 0 && (
-          <button
-            className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border transition-colors"
-            style={{
-              borderColor: `${accent ?? '#f59e0b'}66`,
-              color: accent ?? '#f59e0b',
-              background: `${accent ?? '#f59e0b'}14`,
-            }}
-            aria-label="back a step"
+          <BackButton
+            label="back a step"
+            accent={accent ?? '#f59e0b'}
+            // No word beside it here: the bar's gutter is 14 units wide
+            // and the step's own rules run through the middle of it.
+            // `BackButton` hides the label rather than the mark, so the
+            // accessible name survives (`aria-label`).
+            className="absolute left-3 top-1/2 -translate-y-1/2 [&>span:last-child]:hidden"
             onClick={() => setStep((s) => Math.max(0, s - 1))}
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-5 w-5"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M14.5 5.5 8 12l6.5 6.5" />
-            </svg>
-          </button>
+          />
         )}
         <span
           className="h-px flex-1"

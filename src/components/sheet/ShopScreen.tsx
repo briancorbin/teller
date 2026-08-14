@@ -8,6 +8,7 @@ import {
   type StockLine,
 } from '../../../worker/items';
 import { moneyText, type CounterViewProps } from '../counters/shared';
+import { BackButton } from './BackButton';
 import { Glyph } from './glyphs';
 import { SheetPanel } from './SheetPanel';
 import { StatRow } from './StatRow';
@@ -347,13 +348,11 @@ export function ShopScreen({
           .filter((e): e is NonNullable<typeof e> => Boolean(e));
     return (
       <div className="flex min-h-0 flex-1 flex-col gap-2">
-        <button
-          type="button"
-          className="shrink-0 self-start text-[0.7rem] uppercase tracking-widest text-stone-400 transition-colors hover:text-stone-100"
+        <BackButton
+          label="the shelf"
+          className="self-start"
           onClick={() => setDetail(null)}
-        >
-          ◂ the shelf
-        </button>
+        />
         <div
           className={`flex min-h-0 flex-1 flex-col gap-2 ${
             mounted ? 'overflow-y-auto' : ''

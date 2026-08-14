@@ -1060,6 +1060,22 @@ export type SystemTemplate = {
      */
     noun?: string;
     /**
+     * Which item KINDS can be notched at all — `['weapon']`.
+     *
+     * Declared rather than assumed, because the alternative is code
+     * saying `kind === 'weapon'`, which is the rule 2 trap exactly:
+     * teller would have learned a game word. Matching against a kind
+     * the TEMPLATE names is the sanctioned pattern, the same one
+     * `use.consumesKind` and `store.consumes` use.
+     *
+     * Absent means every kind, which is the general primitive — marks
+     * are "things that happened to this thing" and a system where a
+     * horse or a coat earns them is a system that says nothing here.
+     * WiW says weapons, because offering to notch a jar of Pain Pills
+     * put the control on all ninety things in a pack.
+     */
+    kinds?: string[];
+    /**
      * Tiers a vendor's derived stock leaves out, so the top of the
      * ladder isn't simply for sale by default.
      *

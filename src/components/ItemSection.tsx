@@ -10,6 +10,7 @@ import {
   fittableUpgrades,
   fittedUpgrades,
   itemRanges,
+  notchable,
   resolveItem,
   standingOf,
   type OwnCatalog,
@@ -285,7 +286,7 @@ function ItemRow({
       {/* What it's been through, and where that puts it. The deeds
           themselves are the player's — read here, edited on their own
           card — so this is a count and an offer, not a list. */}
-      {growth && standing.deeds > 0 && (
+      {growth && notchable(item, growth) && standing.deeds > 0 && (
         <div className="mt-1 flex items-center gap-2">
           <span className="text-[11px] text-stone-500">
             {standing.deeds} {growth.noun ?? 'notch'}

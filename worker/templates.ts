@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 12,
+  version: 13,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
@@ -347,6 +347,11 @@ const wiw: SystemTemplate = {
   growth: {
     field: 'quality',
     noun: 'notch',
+    // Weapons only. Without this the control appeared on every jar of
+    // pain pills and every coil of rope a posse was carrying — the
+    // primitive is general (marks are "things that happened to this
+    // thing"), but WHICH things is the system's call, not teller's.
+    kinds: ['weapon'],
     steps: [
       { to: 'Basic', at: 5 },
       { to: 'Premium', at: 15 },

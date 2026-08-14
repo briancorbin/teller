@@ -9,6 +9,7 @@ import {
   catalogOf,
   describeEffect,
   fittedUpgrades,
+  notchable,
   resolveItem,
   standingOf,
   type OwnCatalog,
@@ -245,6 +246,10 @@ export function ItemPanel({
   // whether anything happens (rule 1).
   const standing = standingOf(item.history, resolved.fields, notch?.growth);
   const deeds = item.history ?? [];
+  // Whether this thing takes notches AT ALL — the system's call, not
+  // this file's (`growth.kinds`). Without it the control appeared on
+  // every jar of pain pills in the pack.
+  const etchable = Boolean(notch) && notchable(item, notch?.growth);
 
   return (
     <SheetPanel
@@ -588,7 +593,7 @@ export function ItemPanel({
             "how close am I?" — so the count IS the button, and neither
             face costs the panel any height until you're on it. One
             line on every panel, whatever it offers. */}
-        {(flippable || notch) && (
+        {(flippable || etchable) && (
           <div className="flex flex-wrap items-baseline gap-x-3">
             {flippable && face !== 'upgrades' && (
               <button
@@ -605,7 +610,7 @@ export function ItemPanel({
                 started etching says so plainly rather than showing a
                 zero — starting is a choice, and an empty counter on
                 every gun in the game is what opting in avoids. */}
-            {notch && face !== 'history' && (
+            {etchable && notch && face !== 'history' && (
               <button
                 type="button"
                 className="text-left text-[0.65rem] uppercase tracking-widest transition-colors hover:text-stone-300"
@@ -635,7 +640,7 @@ export function ItemPanel({
             {/* Cutting one is only offered on the face that shows
                 them, so the front of a weapon never grows a control
                 for a thing you may never do with it. */}
-            {notch && face === 'history' && (
+            {etchable && notch && face === 'history' && (
               <button
                 type="button"
                 className="text-left text-[0.65rem] uppercase tracking-widest transition-colors hover:text-stone-300"
