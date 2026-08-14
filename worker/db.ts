@@ -188,12 +188,20 @@ export function publicScene(data: CampaignData): Scene | null {
  * Qualitative wound state from the first max-bearing counter (the
  * vitality-by-convention slot). A STATE, not a number — safe to show
  * the table even for NPCs.
+ *
+ * `down` means the counter is at zero, and it is deliberately not
+ * called `dead`. At Brian's table zero kills by default — if you want
+ * a prisoner you keep them above it — but an important NPC may bleed
+ * out instead, which is an ordinary counter the Warden adds (rule 2).
+ * So teller reports where the number is and the table rules on what
+ * that means; nothing in code may branch on what `down` implies.
  */
 function vitalityOf(
   counters: Counter[],
-): 'healthy' | 'bloodied' | 'critical' | undefined {
+): 'healthy' | 'bloodied' | 'critical' | 'down' | undefined {
   const vital = counters.find((c) => c.max !== null && c.max > 0);
   if (!vital) return undefined;
+  if (vital.current <= 0) return 'down';
   const ratio = vital.current / vital.max!;
   return ratio <= 0.25 ? 'critical' : ratio <= 0.5 ? 'bloodied' : 'healthy';
 }

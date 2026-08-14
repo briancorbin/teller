@@ -276,6 +276,13 @@ export function TableView({
             const vitality = linked?.data.vitality;
             const isTurn =
               token.characterId != null && token.characterId === turnCharacterId;
+            // `down` gets no glow at all, deliberately. A glow says
+            // "still in this" — pulsing red is the thing that's about
+            // to happen, not the thing that already did. Something at
+            // zero goes quiet and dims instead, so the table can read
+            // the fight's remaining threats at a glance without the
+            // spent ones competing for the same attention.
+            const down = vitality === 'down';
             const glow = isTurn
               ? `0 0 ${size * 0.6}px ${size * 0.2}px rgba(251,191,36,0.75)`
               : vitality === 'critical'
@@ -286,9 +293,15 @@ export function TableView({
             return (
               <div
                 key={token.id}
-                className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 font-mono font-bold text-stone-950 ${
-                  isTurn || vitality === 'critical' ? 'animate-pulse' : ''
-                } ${vitality === 'bloodied' || vitality === 'critical' ? 'border-red-900' : 'border-stone-950/80'}`}
+                className={`absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 font-mono font-bold text-stone-950 transition-opacity ${
+                  down ? 'opacity-40' : ''
+                } ${!down && (isTurn || vitality === 'critical') ? 'animate-pulse' : ''} ${
+                  down
+                    ? 'border-stone-950'
+                    : vitality === 'bloodied' || vitality === 'critical'
+                      ? 'border-red-900'
+                      : 'border-stone-950/80'
+                }`}
                 style={{
                   left: rect.left + token.u * nat.w * rect.sx,
                   top: rect.top + token.v * nat.h * rect.sy,
