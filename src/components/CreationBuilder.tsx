@@ -275,7 +275,14 @@ export function CreationBuilder({
    */
   const footerRow = (gap = 'gap-4') =>
     `flex shrink-0 items-center justify-center ${gap} ${
-      wide ? '' : 'sticky bottom-0 -mx-1 flex-wrap gap-y-2 bg-stone-950 px-1 py-2'
+      wide
+        ? ''
+        : // Flush to the bottom edge, not floating 16px above it: the
+          // negative margins cancel the seat's own padding (12px) and
+          // the builder's (4px), and the matching padding puts the
+          // controls back where they were. A bar with a gap under it
+          // reads as a thing that came loose.
+          'sticky bottom-[-0.75rem] -mx-4 -mb-4 flex-wrap gap-y-2 bg-stone-950 px-4 pb-5 pt-2'
     }`;
   /**
    * The pool of marks a footer counts with — twelve dice, six slots.
@@ -284,13 +291,30 @@ export function CreationBuilder({
    * does not have. They wrap onto a second line rather than shrink:
    * the size was chosen to be tappable and legible, and a bar of
    * bullets you can't quite make out is worth less than one that takes
-   * two rows. On held glass it claims a whole line and takes it FIRST,
-   * so the two buttons pair up beneath rather than getting a line each
+   * two rows — and two rows cost more of a phone than the marks were
+   * worth (Brian, 2026-08-14), so they give up size instead and stay
+   * one row always.
+   *
+   * The size is DERIVED, not declared, the same way the columns are:
+   * each mark takes an equal share of the row, capped at the 36px it
+   * was drawn at. Twelve on a 1920 bar are 36px; twelve on a 390px
+   * phone are 26px; six are 36px on both. Nothing here counts dice or
+   * knows what a phone is.
+   *
+   * On held glass the row claims a whole line and takes it FIRST, so
+   * the two buttons pair up beneath rather than getting a line each
    * with the pool sitting between them.
    */
-  const markRow = `flex items-center justify-center gap-1.5 ${
-    wide ? '' : 'order-first basis-full flex-wrap'
+  const markRow = `mx-auto grid items-center gap-1.5 ${
+    wide ? '' : 'order-first basis-full'
   }`;
+  const markCols = (n: number): React.CSSProperties => ({
+    gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`,
+    maxWidth: `calc(${n} * 2.25rem + ${Math.max(0, n - 1)} * 0.375rem)`,
+    width: '100%',
+  });
+  /** A mark in a `markRow` cell: square, and as big as the cell. */
+  const markSize = 'aspect-square h-auto w-full';
   const shelf = (children: React.ReactNode) => (
     <div
       className={
@@ -769,6 +793,7 @@ export function CreationBuilder({
             {budget && (
               <div
                 className={markRow}
+                style={markCols(budget.total)}
                 title={`${left} to place`}
               >
                 {Array.from({ length: budget.total }, (_, i) => (
@@ -779,7 +804,7 @@ export function CreationBuilder({
                     // and a system that spends dice says so instead of
                     // inheriting a cowboy's ammunition (rule 2).
                     name={template?.icons?.[budget.die] ?? 'die'}
-                    className={`h-9 w-9 transition-colors ${
+                    className={`${markSize} transition-colors ${
                       i < spent
                         ? 'text-[color:var(--sheet-accent,#f59e0b)]'
                         : 'text-stone-800'
@@ -1060,7 +1085,7 @@ export function CreationBuilder({
               tapped — and every one of them takes it back, because a
               mis-tap on six dice used to mean starting the roll over. */}
           <div className={footerRow()}>
-            <div className={markRow}>
+            <div className={markRow} style={markCols(dice)}>
               {Array.from({ length: dice }, (_, i) => {
                 const face = rolled[i];
                 return (
@@ -1074,7 +1099,7 @@ export function CreationBuilder({
                   >
                     <Glyph
                       name={face ? (template?.icons?.[face] ?? face) : 'die'}
-                      className={`h-9 w-9 transition-colors ${
+                      className={`${markSize} transition-colors ${
                         face
                           ? 'text-[color:var(--sheet-accent,#f59e0b)]'
                           : 'text-stone-800'
@@ -1240,12 +1265,12 @@ export function CreationBuilder({
                 </button>
               </div>
               <div className={footerRow()}>
-                <div className={markRow}>
+                <div className={markRow} style={markCols(2)}>
                   {[0, 1].map((i) => (
                     <Glyph
                       key={i}
                       name="satchel"
-                      className={`h-8 w-8 transition-colors ${
+                      className={`${markSize} transition-colors ${
                         i < keeps.length
                           ? 'text-[color:var(--sheet-accent,#f59e0b)]'
                           : 'text-stone-800'
@@ -1309,7 +1334,7 @@ export function CreationBuilder({
                   }
                 />
               )}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 <button
                   className="rounded-md border border-stone-700 px-3 py-2 text-xs uppercase tracking-widest text-stone-400"
                   onClick={() => setOwnKeepsake(null)}
@@ -1339,7 +1364,11 @@ export function CreationBuilder({
 
       {here === 'name' && (
         <div
-          className="flex min-h-0 flex-1 gap-3"
+          // `min-w-0`, or a flex child sizes to its own min-content and
+          // quietly pushes past the screen — the plate row and the row
+          // of buttons both did, by 19px, which is exactly the sort of
+          // sideways overflow rule 6 says is always a bug.
+          className="flex min-h-0 min-w-0 flex-1 gap-3"
           style={
             (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
           }
@@ -1347,14 +1376,23 @@ export function CreationBuilder({
           {/* No portrait here, deliberately (Brian, 2026-08-13): this
               screen is a keyboard and a plate, and the face belongs to
               the welcome — which is the moment it's earned. */}
-          <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2">
+          <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col items-center justify-center gap-2">
             {/* The name in the plate it will WEAR — same serif, same
                 caps, same rules and colour the finished sheet puts at
                 the top. You're not filling in a form field, you're
                 watching the sheet's headline fill in. */}
-            <div className="flex w-full items-center gap-2.5 px-6">
+            {/* The rules flank; they don't COMPETE. Greedy on both
+                sides of a 390px screen they took two thirds of it
+                between them and squeezed the field down to "THE M" —
+                so in a hand they're a short flourish at a fixed width
+                and the name gets the room. */}
+            <div
+              className={`flex w-full items-center gap-2.5 ${
+                wide ? 'px-6' : 'px-1'
+              }`}
+            >
               <span
-                className="h-px flex-1"
+                className={`h-px ${wide ? 'flex-1' : 'w-5 shrink-0'}`}
                 style={{ background: `${accent ?? '#f59e0b'}55` }}
               />
               {/* On the rail the plate is a rendering of what teller's
@@ -1394,7 +1432,7 @@ export function CreationBuilder({
                 />
               )}
               <span
-                className="h-px flex-1"
+                className={`h-px ${wide ? 'flex-1' : 'w-5 shrink-0'}`}
                 style={{ background: `${accent ?? '#f59e0b'}55` }}
               />
             </div>
@@ -1411,7 +1449,10 @@ export function CreationBuilder({
                 }
               />
             )}
-            <div className="flex items-center gap-2">
+            {/* Three controls of very different lengths — one of them
+                a whole sentence about the Warden — so they wrap rather
+                than run off the sides of a phone. */}
+            <div className="flex flex-wrap items-center justify-center gap-2 px-2 text-center">
               {creation.names && (
                 <button
                   className="rounded-md border px-3 py-2 text-xs uppercase tracking-widest transition-colors"
