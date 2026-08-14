@@ -78,6 +78,45 @@ const GLYPHS: Record<string, React.ReactNode> = {
       <path d="M8.4 8.4h.01M12 12h.01M15.6 15.6h.01" />
     </>
   ),
+  // The die faces. WiW's Black die shows Hits, Aces, Blanks and Spurs,
+  // and the book prints its own symbols for them — these are teller's
+  // drawings of the same four ideas, in the set's one stroke weight.
+
+  // A hit: struck dead centre, and the strike radiating out of it.
+  hit: (
+    <>
+      <circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none" />
+      <path d="M12 3.2v3.4M12 17.4v3.4M3.2 12h3.4M17.4 12h3.4" />
+      <path d="M6.2 6.2l2.4 2.4M15.4 15.4l2.4 2.4M17.8 6.2l-2.4 2.4M8.6 15.4l-2.4 2.4" />
+    </>
+  ),
+  // An ace: the pip alone, which is how a card shows its rank at a
+  // glance across a table.
+  ace: (
+    <>
+      <path
+        d="M12 3.4c2.4 3.4 7 6 7 9.4a3.4 3.4 0 0 1-5.9 2.3c.2 2 .7 3.4 1.5 4.5H9.4c.8-1.1 1.3-2.5 1.5-4.5A3.4 3.4 0 0 1 5 12.8c0-3.4 4.6-6 7-9.4z"
+        fill="currentColor"
+        stroke="none"
+      />
+    </>
+  ),
+  // A blank: the face that came up with nothing on it.
+  blank: (
+    <>
+      <circle cx="12" cy="12" r="8.4" />
+      <path d="M8.6 12h6.8" />
+    </>
+  ),
+  // A spur: the rowel and the heel band it turns on.
+  spur: (
+    <>
+      <circle cx="14.6" cy="12" r="3.4" />
+      <path d="M14.6 5.6v2.2M14.6 16.2v2.2M8.2 12h2.2M18.8 12h2.2M10.4 7.8l1.6 1.6M17.2 14.6l1.6 1.6M18.8 7.8l-1.6 1.6M12 14.6l-1.6 1.6" />
+      <path d="M7.4 6.2a7.6 7.6 0 0 0 0 11.6" />
+    </>
+  ),
+
   // The kit marks. Each equipment pack is told apart by the one thing
   // only it carries, so the mark is that thing rather than four
   // variations on a rucksack.

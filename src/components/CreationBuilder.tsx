@@ -105,7 +105,10 @@ export function CreationBuilder({
   const [confirming, setConfirming] = useState('');
   const [spread, setSpread] = useState<Record<string, string> | null>(null);
   const [eqPicks, setEqPicks] = useState<string[]>([]);
-  const [tally, setTally] = useState<Record<string, number>>({});
+  // What the dice on the table came up, IN TAP ORDER — a list rather
+  // than a per-face tally, so a slot knows which die it is and can
+  // hand that one back.
+  const [rolled, setRolled] = useState<string[]>([]);
   const [keeps, setKeeps] = useState<string[]>([]);
   const [nameDraft, setNameDraft] = useState('');
 
@@ -132,8 +135,10 @@ export function CreationBuilder({
   // system's dice, the prices are the pack's.
   const rollsWallet = Boolean(creation.wallet) && (tier?.prestige ?? 0) === 0;
   const faces = Object.keys(template?.dice?.values ?? {});
-  const walletTotal = Object.entries(tally).reduce(
-    (sum, [face, n]) => sum + n * (creation.wallet?.values[face] ?? 0),
+  /** How many dice the roll calls for — "6B" is six of them. */
+  const dice = parseInt(creation.wallet?.roll ?? '', 10) || 0;
+  const walletTotal = rolled.reduce(
+    (sum, face) => sum + (creation.wallet?.values[face] ?? 0),
     0,
   );
 
@@ -772,29 +777,107 @@ export function CreationBuilder({
       )}
 
       {here === 'wallet' && (
-        <>
-          <div className="flex min-h-0 flex-1 flex-wrap content-center items-center gap-2">
-            {faces.map((face) => (
-              <button
-                key={face}
-                className="min-w-24 rounded-md bg-stone-800 px-4 py-3 text-left active:bg-stone-700"
-                aria-label={`add a ${face}`}
-                onClick={() =>
-                  setTally((t) => ({ ...t, [face]: (t[face] ?? 0) + 1 }))
-                }
-              >
-                <span className="font-mono text-xl text-stone-100">
-                  {tally[face] ?? 0}
-                </span>
-                <span className="ml-2 text-sm text-stone-400">{face}</span>
-                <span className="ml-1 text-[10px] text-stone-600">
-                  ${creation.wallet!.values[face] ?? 0}
-                </span>
-              </button>
-            ))}
-            <span className="font-mono text-3xl text-amber-300">${walletTotal}</span>
+        <div
+          className="flex min-h-0 flex-1 flex-col gap-2"
+          style={
+            (accent ? { '--sheet-accent': accent } : {}) as React.CSSProperties
+          }
+        >
+          {/* The dice are on the TABLE — this screen only asks what
+              they came up. One panel per face, tapped once per die,
+              with what that face is worth printed where the skills put
+              their verbs. */}
+          <div
+            className={
+              strip
+                ? 'grid min-h-0 flex-1 gap-2'
+                : 'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto'
+            }
+            style={
+              strip
+                ? {
+                    gridTemplateColumns: `repeat(${faces.length || 1}, minmax(0, 1fr))`,
+                  }
+                : undefined
+            }
+          >
+            {faces.map((face) => {
+              const worth = creation.wallet!.values[face] ?? 0;
+              const mine = rolled.filter((f) => f === face).length;
+              return (
+                <button
+                  key={face}
+                  className="flex text-left disabled:opacity-40"
+                  aria-label={`add a ${face}`}
+                  disabled={rolled.length >= dice}
+                  onClick={() => setRolled((r) => [...r, face].slice(0, dice))}
+                >
+                  <SheetPanel title={face} fill className={`w-full ${off}`}>
+                    <div className="flex min-h-0 flex-1 flex-col items-center">
+                      <span className="mb-2 flex shrink-0 items-center justify-center">
+                        <Glyph
+                          name={template?.icons?.[face] ?? face}
+                          className={`h-24 w-24 ${
+                            worth
+                              ? 'text-[color:var(--sheet-accent,#f59e0b)]'
+                              : 'text-stone-600'
+                          }`}
+                        />
+                      </span>
+                      <span className="font-serif text-[0.8rem] italic text-stone-400">
+                        {worth ? `worth $${worth}` : 'worth nothing'}
+                      </span>
+                      <span className="mt-auto font-mono text-2xl text-stone-100">
+                        {mine}
+                      </span>
+                    </div>
+                  </SheetPanel>
+                </button>
+              );
+            })}
+          </div>
+          {/* What you've told it so far, die by die, in the order you
+              tapped — and every one of them takes it back, because a
+              mis-tap on six dice used to mean starting the roll over. */}
+          <div className="flex shrink-0 items-center justify-center gap-4">
+            <div className="flex items-center gap-1.5">
+              {Array.from({ length: dice }, (_, i) => {
+                const face = rolled[i];
+                return (
+                  <button
+                    key={i}
+                    aria-label={face ? `take back the ${face}` : 'empty die'}
+                    disabled={!face}
+                    onClick={() =>
+                      setRolled((r) => r.filter((_, at) => at !== i))
+                    }
+                  >
+                    <Glyph
+                      name={face ? (template?.icons?.[face] ?? face) : 'die'}
+                      className={`h-9 w-9 transition-colors ${
+                        face
+                          ? 'text-[color:var(--sheet-accent,#f59e0b)]'
+                          : 'text-stone-800'
+                      }`}
+                    />
+                  </button>
+                );
+              })}
+            </div>
+            <span
+              className="font-serif text-3xl font-bold tabular-nums"
+              style={{ color: accent ?? '#f59e0b' }}
+            >
+              ${walletTotal}
+            </span>
             <button
-              className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-stone-950"
+              className="rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:bg-stone-800 disabled:text-stone-600"
+              style={
+                rolled.length === dice
+                  ? { background: accent ?? '#f59e0b', color: '#1c1917' }
+                  : undefined
+              }
+              disabled={rolled.length !== dice}
               onClick={() => {
                 const walletName = Array.isArray(creation.map?.wallet)
                   ? creation.map!.wallet[0]
@@ -806,20 +889,16 @@ export function CreationBuilder({
                     ),
                   });
                 }
-                setTally({});
+                setRolled([]);
                 next();
               }}
             >
-              that's my roll
-            </button>
-            <button
-              className="text-xs text-stone-500 underline-offset-2 hover:underline"
-              onClick={() => setTally({})}
-            >
-              clear
+              {rolled.length === dice
+                ? "that's my roll"
+                : `${dice - rolled.length} more`}
             </button>
           </div>
-        </>
+        </div>
       )}
 
       {here === 'keepsake' && (

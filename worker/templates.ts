@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 7,
+  version: 8,
   name: 'Wild Imaginary West',
   vocabulary: {
     gm: 'Warden',
@@ -217,6 +217,11 @@ const wiw: SystemTemplate = {
     Nerve: 'horseshoe',
     // The Black die, keyed by its own name: this table spends bullets.
     B: 'bullet',
+    // …and its four faces, for the screens that ask what you rolled.
+    hit: 'hit',
+    ace: 'ace',
+    blank: 'blank',
+    spur: 'spur',
   },
   // Talents (p. 32): 4 Prestige buys a category — a skill, a weapon
   // family, Defense, Mechs, Forstalls — and that category rerolls
