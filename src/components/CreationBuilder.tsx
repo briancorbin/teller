@@ -59,6 +59,44 @@ function columns(n: number, min: string, gap = '0.5rem') {
   return `repeat(auto-fit, minmax(min(100%, max(${min}, ${even})), 1fr))`;
 }
 
+/**
+ * A mark: the pack's own art for it if there is any, teller's drawn
+ * glyph if there isn't.
+ *
+ * The art is used as a MASK filled with `currentColor`, not as an
+ * image — so a scan of the book's own die faces keeps every bit of the
+ * colour behaviour the drawn glyphs had (accent when it's spent, dark
+ * when it isn't, and a transition between). An `<img>` would be stuck
+ * at whatever colour it was printed.
+ */
+function Mark({
+  art,
+  name,
+  className = '',
+}: {
+  art?: string;
+  name: string;
+  className?: string;
+}) {
+  if (!art) return <Glyph name={name} className={className} />;
+  return (
+    <span
+      aria-hidden="true"
+      className={`block bg-current ${className}`}
+      style={{
+        maskImage: `url("${art}")`,
+        WebkitMaskImage: `url("${art}")`,
+        maskSize: 'contain',
+        WebkitMaskSize: 'contain',
+        maskRepeat: 'no-repeat',
+        WebkitMaskRepeat: 'no-repeat',
+        maskPosition: 'center',
+        WebkitMaskPosition: 'center',
+      }}
+    />
+  );
+}
+
 /** Ids in first-seen order, each with how many times it appears. */
 function counted(ids: string[]): { id: string; n: number }[] {
   const out: { id: string; n: number }[] = [];
@@ -315,6 +353,11 @@ export function CreationBuilder({
   });
   /** A mark in a `markRow` cell: square, and as big as the cell. */
   const markSize = 'aspect-square h-auto w-full';
+  /** The pack's own art for a mark, if it brought any. */
+  const markArt = (name: string) =>
+    creation.marks?.[name]
+      ? packArtUrl(creation.marks[name], found?.version ?? 0)
+      : undefined;
 
   /**
    * Size a textarea to its contents — one line until the words need
@@ -812,12 +855,14 @@ export function CreationBuilder({
                 title={`${left} to place`}
               >
                 {Array.from({ length: budget.total }, (_, i) => (
-                  <Glyph
+                  <Mark
                     key={i}
                     // WHICH mark the pool wears is the system's call,
                     // keyed by the die's own name — WiW spends bullets,
                     // and a system that spends dice says so instead of
-                    // inheriting a cowboy's ammunition (rule 2).
+                    // inheriting a cowboy's ammunition (rule 2). If the
+                    // pack shipped the book's own die, that wins.
+                    art={markArt(budget.die)}
                     name={template?.icons?.[budget.die] ?? 'die'}
                     className={`${markSize} transition-colors ${
                       i < spent
@@ -1071,7 +1116,8 @@ export function CreationBuilder({
                       }`}
                     >
                       <span className="mb-2 flex shrink-0 items-center justify-center">
-                        <Glyph
+                        <Mark
+                          art={markArt(face)}
                           name={template?.icons?.[face] ?? face}
                           className={`h-24 w-24 ${
                             worth
@@ -1112,7 +1158,8 @@ export function CreationBuilder({
                       setRolled((r) => r.filter((_, at) => at !== i))
                     }
                   >
-                    <Glyph
+                    <Mark
+                      art={markArt(face ?? 'die')}
                       name={face ? (template?.icons?.[face] ?? face) : 'die'}
                       className={`${markSize} transition-colors ${
                         face

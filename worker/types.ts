@@ -1221,6 +1221,23 @@ export type RulesPack = {
      */
     keepsakes?: (string | { text: string; icon?: string })[];
     /**
+     * Art for the system's marks, by the system's own name for them —
+     * a die ("B"), a face ("hit"), or "die" for an empty slot.
+     *
+     * The other half of the icons bargain. `SystemTemplate.icons` says
+     * WHICH of teller's glyphs a name wears, and that stays the default;
+     * this says the pack has the real thing and teller should use it
+     * instead. Same reason `trades[].art` exists: a book's own marks
+     * beat a drawn approximation of them, and like every other piece of
+     * a publisher's artwork they live on the host and are referenced by
+     * key — never in this repo (rule 4).
+     *
+     * Rendered as a MASK filled with the current colour, so art keeps
+     * the tinting the drawn glyphs have: lit in the trade's accent when
+     * spent, dark when not.
+     */
+    marks?: Record<string, string>;
+    /**
      * The naming well: draw a random first + last for the "gimme a
      * name" button. Personalities/features ride along for NPC sparks.
      */
