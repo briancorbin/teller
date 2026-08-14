@@ -64,9 +64,17 @@ export function SeatView({
   glass = null,
   ppi = null,
   displayId,
+  seatName,
 }: {
   characterId: string;
   layout?: string | null;
+  /**
+   * What the DM called this screen. A seat is assigned to a PERSON
+   * (rule 6), so its name is very often the player's — which makes it
+   * the right default for the sheet's player box when a character is
+   * built here, and a proposal like any other (rule 1).
+   */
+  seatName?: string;
   /**
    * This screen's own id, so it can recognise calibration mail
    * addressed to it. Absent in the console's preview, which is not a
@@ -472,6 +480,7 @@ export function SeatView({
                   api.patchCharacter(characterId, { name }).catch(() => refetch());
                 }}
                 strip={strip}
+                seatName={seatName}
               />
             ) : (
             <Counters

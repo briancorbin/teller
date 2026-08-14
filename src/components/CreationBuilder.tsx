@@ -59,6 +59,7 @@ export function CreationBuilder({
   onPatch,
   onName,
   strip = false,
+  seatName,
 }: {
   character: Character;
   packs: RulesPack[];
@@ -68,6 +69,8 @@ export function CreationBuilder({
   onPatch: (data: Partial<Character['data']>) => void;
   onName: (name: string) => void;
   strip?: boolean;
+  /** What this screen is called — the default for the player box. */
+  seatName?: string;
 }) {
   const found = useMemo(() => creationOf(packs), [packs]);
   const trades = found?.trades ?? [];
@@ -1228,7 +1231,24 @@ export function CreationBuilder({
             <button
               className="rounded-md px-5 py-2.5 font-semibold text-stone-950"
               style={{ background: accent ?? '#f59e0b' }}
-              onClick={() => onPatch({ draft: false })}
+              onClick={() => {
+                // The sheet's player box, filled from the seat's own
+                // name. A character built HERE was built by whoever is
+                // sitting here, and the screen already carries what the
+                // DM called them — so the one box the flow never asked
+                // about stops coming out blank. Only when it's empty,
+                // and typed over like any other field (rule 1).
+                const playerKey = template?.groups?.player?.[0];
+                const fields =
+                  playerKey && seatName
+                    ? data.fields.map((f) =>
+                        f.key === playerKey && !f.value?.trim()
+                          ? { ...f, value: seatName }
+                          : f,
+                      )
+                    : data.fields;
+                onPatch({ draft: false, fields });
+              }}
             >
               saddle up
             </button>
