@@ -109,9 +109,19 @@ function describeBoard(
   scene: Scene | undefined,
   characters: Character[],
   foeId: string,
+  /**
+   * The map's true height in inches — width × the image's aspect,
+   * which only the caller can know (the image lives in the object
+   * store; this module takes state as arguments and reads nothing).
+   * A token's v spans the HEIGHT: computing y as v×width overstated
+   * every vertical position by the aspect ratio, which put the Bark
+   * Watchers off the bottom of their own map.
+   */
+  heightInches?: number,
 ): string {
   if (!scene) return 'BOARD: no active scene — positions unknown.';
   const width = scene.widthInches;
+  const tall = heightInches ?? width;
   const unit = width ? 'inches from the map left/top edge' : 'map fraction 0..1';
   const byId = new Map(characters.map((c) => [c.id, c]));
   const rows = (scene.tokens ?? [])
@@ -124,25 +134,61 @@ function describeBoard(
       const who = t.characterId ? byId.get(t.characterId) : undefined;
       return who?.kind === 'npc';
     })
-    .map((t) => {
+  // Ground, with its geometry. A zone's CELLS are what let a token be
+  // "standing in water" rather than the board vaguely containing some —
+  // the difference between trivia and something a Pondweed Peril can
+  // act on. Cells are 1-inch map tiles indexed [col, row]; a token's
+  // cell is just its position floored.
+  const ground = new Map<string, Set<string>>();
+  for (const z of scene.zones ?? []) {
+    if (z.hidden) continue;
+    let cells = ground.get(z.effect);
+    if (!cells) ground.set(z.effect, (cells = new Set()));
+    for (const [col, row] of z.cells) cells.add(`${col},${row}`);
+  }
+  const standing = (u: number, v: number): string => {
+    if (!width) return '';
+    const col = Math.floor(u * width);
+    const row = Math.floor(v * tall!);
+    const notes: string[] = [];
+    for (const [effect, cells] of ground) {
+      if (cells.has(`${col},${row}`)) notes.push(`in ${effect}`);
+      else {
+        let beside = false;
+        for (let dc = -1; dc <= 1 && !beside; dc++)
+          for (let dr = -1; dr <= 1 && !beside; dr++)
+            if (cells.has(`${col + dc},${row + dr}`)) beside = true;
+        if (beside) notes.push(`at the edge of ${effect}`);
+      }
+    }
+    return notes.length ? ` — ${notes.join(', ')}` : '';
+  };
+
+  const rows2 = rows.map((t) => {
       const who = t.characterId ? byId.get(t.characterId) : undefined;
       const x = width ? round2(t.u * width) : round2(t.u);
-      const y = width ? round2(t.v * width) : round2(t.v);
+      const y = width ? round2(t.v * tall!) : round2(t.v);
       const tag = who ? (who.kind === 'pc' ? 'PC' : 'foe') : 'marker';
       const cover = t.hidden
         ? t.characterId === foeId
           ? ' — HIDDEN: the posse cannot see it'
           : ' — hidden, unseen by the posse'
         : '';
-      return `- ${t.label} (${tag}) at x=${x}, y=${y}${t.effect ? `, in ${t.effect}` : ''}${cover}`;
+      return `- ${t.label} (${tag}) at x=${x}, y=${y}${t.effect ? `, in ${t.effect}` : ''}${standing(t.u, t.v)}${cover}`;
     });
-  const zones = (scene.zones ?? [])
-    .filter((z) => !z.hidden)
-    .map((z) => `- ${z.effect} covering ${z.cells.length} square inch(es)`);
+  const zones = [...ground.entries()].map(([effect, cells]) => {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const key of cells) {
+      const [c, r] = key.split(',').map(Number);
+      if (c < x0) x0 = c; if (c > x1) x1 = c;
+      if (r < y0) y0 = r; if (r > y1) y1 = r;
+    }
+    return `- ${effect}: ${cells.size} square inches, spanning x=${x0}..${x1 + 1}, y=${y0}..${y1 + 1}`;
+  });
   return [
-    `BOARD (positions in ${unit}; the map is ${width ? `${width} inches wide` : 'uncalibrated'}):`,
-    rows.length ? rows.join('\n') : '- no tokens placed',
-    ...(zones.length ? ['ground effects:', ...zones] : []),
+    `BOARD (positions in ${unit}; the map is ${width ? `${width} inches wide${heightInches ? ` and ${round2(heightInches)} inches tall` : ''}` : 'uncalibrated'}):`,
+    rows2.length ? rows2.join('\n') : '- no tokens placed',
+    ...(zones.length ? ['terrain / ground effects:', ...zones] : []),
   ].join('\n');
 }
 
@@ -271,6 +317,8 @@ export async function suggestTurn(
   characters: Character[],
   session: SessionState | null,
   foe: Character,
+  /** True map height in inches, when the caller could measure the art. */
+  heightInches?: number,
 ): Promise<TurnSuggestion> {
   const scene =
     campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
@@ -290,7 +338,7 @@ export async function suggestTurn(
     profile
       ? `PROFILE (how it acts — follow this): ${profile}`
       : 'PROFILE: none written. Infer temperament from its name and stats, and say you did in premises.',
-    describeBoard(scene, characters, foe.id),
+    describeBoard(scene, characters, foe.id, heightInches),
     describeFight(session, characters, foe.id),
     `\nWhat would ${foe.name} do this turn?`,
   ].join('\n\n');

@@ -261,10 +261,32 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       await sessionStub(env, campaignId).fetch('https://do/session')
     ).json<SessionState>();
 
+    // The map's true height: width × the art's aspect ratio, read off
+    // the PNG header (8 bytes at offset 16) rather than stored — the
+    // image already knows its own shape. Non-PNG art quietly degrades
+    // to the old square assumption.
+    const campaign = toCampaign(campaignRow as never);
+    let heightInches: number | undefined;
+    const scene =
+      campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
+      campaign.data.maps?.[0];
+    if (scene?.key && scene.widthInches) {
+      const head = await env.MAPS.get(scene.key, { range: { offset: 0, length: 32 } });
+      if (head) {
+        const bytes = new Uint8Array(await head.arrayBuffer()).slice(0, 32);
+        const isPng =
+          bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+        if (isPng && bytes.length >= 24) {
+          const view = new DataView(bytes.buffer, bytes.byteOffset);
+          const w = view.getUint32(16);
+          const h = view.getUint32(20);
+          if (w > 0 && h > 0) heightInches = (scene.widthInches * h) / w;
+        }
+      }
+    }
+
     try {
-      return json(
-        await suggestTurn(env, toCampaign(campaignRow as never), characters, session, foe),
-      );
+      return json(await suggestTurn(env, campaign, characters, session, foe, heightInches));
     } catch (e) {
       return err((e as Error).message, 502);
     }
