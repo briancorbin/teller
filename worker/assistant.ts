@@ -253,6 +253,7 @@ function describeBoard(
     return [...hit.entries()].map(([label, n]) => `${label} (${n} in.)`);
   };
 
+  const self2 = rows.find((t) => t.characterId === foeId);
   const rows2 = rows.map((t) => {
       const who = t.characterId ? byId.get(t.characterId) : undefined;
       const x = width ? round2(t.u * width) : round2(t.u);
@@ -263,7 +264,23 @@ function describeBoard(
           ? ' — HIDDEN: the posse cannot see it'
           : ' — hidden, unseen by the posse'
         : '';
-      return `- ${t.label} (${tag}) at x=${x}, y=${y}${t.effect ? `, in ${t.effect}` : ''}${standing(t.u, t.v)}${cover}`;
+      // The DISTANCE, measured rather than inferred.
+      //
+      // Positions alone made the model derive a gap, map it to a band,
+      // then check an attack's band against it — three steps, and it
+      // bent the last one: told to avoid a fire it had been handed, it
+      // decided a MELEE Strangle could be thrown to Short rather than
+      // use the Short attack printed directly beneath it. Geometry is
+      // teller's to do. Which band the number falls in stays the
+      // system's business (its own `space` prose says), so nothing
+      // here learns what "Short" means — no game concepts in code.
+      const gap =
+        self2 && t.id !== self2.id && width
+          ? ` — ${round2(
+              Math.hypot((t.u - self2.u) * width, (t.v - self2.v) * tall!),
+            )}in from you`
+          : '';
+      return `- ${t.label} (${tag}) at x=${x}, y=${y}${gap}${t.effect ? `, in ${t.effect}` : ''}${standing(t.u, t.v)}${cover}`;
     });
   const zones = [...ground.entries()].map(([effect, cells]) => {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -276,11 +293,10 @@ function describeBoard(
   });
   // Only from the acting foe, and only where something is actually in
   // the way — a line per pair would be noise on a busy board.
-  const self = rows.find((t) => t.characterId === foeId);
-  const crossings = self
+  const crossings = self2
     ? rows
-        .filter((t) => t.id !== self.id)
-        .map((t) => ({ label: t.label, what: between(self, t) }))
+        .filter((t) => t.id !== self2.id)
+        .map((t) => ({ label: t.label, what: between(self2, t) }))
         .filter((c) => c.what.length > 0)
         .map((c) => `- to ${c.label}: ${c.what.join(', ')}`)
     : [];
@@ -408,6 +424,7 @@ Hard rules:
 - Suggest the ACTION only. Never roll dice, never state damage dealt or outcomes — the table's dice decide outcomes.
 - Never decide for a player character.
 - Base position reasoning only on the board given. When you assume something the board doesn't state, say so in premises.
+- An attack's printed BAND is strict. An attack listed under one band cannot be used from another — if the distance given puts every attack out of reach, the honest turn is to close, reposition, wait, or use something that does reach. Never widen an attack's band to make a plan work, and never do it to avoid a hazard: picking a different attack or a different route is the answer, not reinterpreting the book.
 - The GROUND is part of the decision, not scenery. What a creature stands in, what it would have to cross, and what lies between it and a target are all stated. A hazard in the way is a real reason to go around, wait, pick a different target, or accept the cost on purpose — and when the ground changes your choice, say which ground and why in the rationale.
 
 Respond with ONLY a JSON object, no other text:
