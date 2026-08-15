@@ -1849,6 +1849,18 @@ export type TurnSuggestion = {
 };
 
 /**
+ * The second half of a suggested turn (TEL-86, Brian's two-step): the
+ * Warden ran the action with REAL dice, typed what the table rolled,
+ * and Teller dresses the already-decided facts as words to read aloud.
+ * The dice stay physical and the model narrates, never rolls — the
+ * thesis, applied to prose.
+ */
+export type TurnNarration = {
+  narration: string;
+  model: string;
+};
+
+/**
  * The shop that's OPEN, and every cart in it. Live state that more than
  * one screen argues about (a seat fills the cart, the console rules on
  * it), so it lives here with initiative rather than in the campaign

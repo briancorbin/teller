@@ -23,6 +23,7 @@ import type {
   Character,
   Scene,
   SessionState,
+  TurnNarration,
   TurnSuggestion,
 } from './types';
 
@@ -320,17 +321,15 @@ function parseSuggestion(reply: string, model: string): TurnSuggestion {
  * One foe's turn, proposed. Reads are arguments; there is no way for
  * this function to write anything anywhere.
  */
-export async function suggestTurn(
-  env: AssistantEnv,
+/** Everything both asks share: the foe, the board, the physics, the fight. */
+function assembleContext(
   campaign: Campaign,
   characters: Character[],
   session: SessionState | null,
   foe: Character,
-  /** True map height in inches, when the caller could measure the art. */
   heightInches?: number,
-  /** The system's own scale contract — `SystemTemplate.space`. */
   space?: string,
-): Promise<TurnSuggestion> {
+): string {
   const scene =
     campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
     campaign.data.maps?.[0];
@@ -344,7 +343,7 @@ export async function suggestTurn(
     : '';
 
   const profile = profileOf(foe);
-  const user = [
+  return [
     describeFoe(foe) + concealment,
     profile
       ? `PROFILE (how it acts — follow this): ${profile}`
@@ -352,10 +351,69 @@ export async function suggestTurn(
     describeBoard(scene, characters, foe.id, heightInches),
     space ? `SPACE & MOVEMENT (this system's rules — use these, don't guess): ${space}` : '',
     describeFight(session, characters, foe.id),
-    `\nWhat would ${foe.name} do this turn?`,
   ]
     .filter(Boolean)
     .join('\n\n');
+}
 
+export async function suggestTurn(
+  env: AssistantEnv,
+  campaign: Campaign,
+  characters: Character[],
+  session: SessionState | null,
+  foe: Character,
+  /** True map height in inches, when the caller could measure the art. */
+  heightInches?: number,
+  /** The system's own scale contract — `SystemTemplate.space`. */
+  space?: string,
+): Promise<TurnSuggestion> {
+  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space)}\n\n\nWhat would ${foe.name} do this turn?`;
   return parseSuggestion(await complete(env, SYSTEM, user), env.ASSISTANT_MODEL!);
+}
+
+const NARRATE_SYSTEM = `You are Teller, the bookkeeping assistant at an in-person tabletop RPG session. A foe's turn was just RESOLVED at the table: the Warden picked an action and the players rolled REAL dice. Your job is to dress the already-decided facts as a moment of story.
+
+Write 2–4 vivid sentences the Warden can read aloud to the players, present tense, concrete and sensory — the kind of beat that makes a table lean in.
+
+Hard rules:
+- The dice already decided everything. Narrate ONLY what the given action and results state — never add damage, statuses, movement or events they don't contain, and never soften or improve an outcome.
+- This will be read TO THE PLAYERS: never mention anything marked hidden or unseen-by-the-posse unless the resolved action itself reveals it.
+- Never describe what a player character thinks or feels; their bodies may react, their minds are their players'.
+- No rules language in the prose — no dice, Grit, or bracketed statuses; say what Trapped [4] LOOKS like, not what it's called.
+
+Respond with ONLY a JSON object, no other text:
+{"narration": "the read-aloud text"}`;
+
+/**
+ * The second click: results in, story out. `action` is what the Warden
+ * actually ran (the suggestion, edited or not) and `result` is what the
+ * table's dice said — both arrive as the Warden's own words, and the
+ * model may not embellish past them.
+ */
+export async function narrateOutcome(
+  env: AssistantEnv,
+  campaign: Campaign,
+  characters: Character[],
+  session: SessionState | null,
+  foe: Character,
+  action: string,
+  result: string,
+  heightInches?: number,
+  space?: string,
+): Promise<TurnNarration> {
+  const user = [
+    assembleContext(campaign, characters, session, foe, heightInches, space),
+    `THE ACTION THE WARDEN RAN: ${action}`,
+    `WHAT THE DICE SAID (the table's results, already final): ${result}`,
+    `\nNarrate what just happened.`,
+  ].join('\n\n');
+  const reply = await complete(env, NARRATE_SYSTEM, user);
+  const start = reply.indexOf('{');
+  const end = reply.lastIndexOf('}');
+  if (start < 0 || end <= start) {
+    throw new Error(`assistant replied without JSON: ${reply.slice(0, 200)}`);
+  }
+  const parsed = JSON.parse(reply.slice(start, end + 1)) as { narration?: string };
+  if (!parsed.narration) throw new Error('assistant narration was empty');
+  return { narration: String(parsed.narration), model: env.ASSISTANT_MODEL! };
 }

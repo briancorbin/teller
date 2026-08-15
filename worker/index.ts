@@ -34,7 +34,7 @@ import {
   type IncomingPack,
 } from './packs';
 import { rollInitiative } from './dice';
-import { assistantInfo, assistantConfigured, suggestTurn } from './assistant';
+import { assistantInfo, assistantConfigured, narrateOutcome, suggestTurn } from './assistant';
 import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
 import type {
@@ -228,18 +228,27 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     return json(assistantInfo(env));
   }
 
-  // One foe's turn, proposed. Reads everything, writes NOTHING — not
-  // even an event, because no state changed (rule 3 logs mutations,
-  // and a suggestion the Warden may ignore isn't one).
-  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/assistant\/turn$/);
+  // The assistant's two asks — both read everything and write NOTHING,
+  // not even an event (rule 3 logs mutations; words the Warden may
+  // ignore aren't one). /turn proposes; /narrate dresses results the
+  // table's real dice already decided.
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/assistant\/(turn|narrate)$/);
   if (m && method === 'POST') {
     if (!dm()) return err('DM key required', 401);
     if (!assistantConfigured(env)) {
       return err('no assistant configured — see ~/.teller/assistant.json', 503);
     }
     const campaignId = m[1];
-    const { characterId } = await request.json<{ characterId?: string }>();
+    const ask = m[2];
+    const { characterId, action, result } = await request.json<{
+      characterId?: string;
+      action?: string;
+      result?: string;
+    }>();
     if (!characterId) return err('characterId required', 400);
+    if (ask === 'narrate' && (!action || !result)) {
+      return err('narrate needs the action run and what the dice said', 400);
+    }
 
     const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
       .bind(campaignId)
@@ -288,15 +297,27 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     try {
       const template = await getSystem(env, campaign.system);
       return json(
-        await suggestTurn(
-          env,
-          campaign,
-          characters,
-          session,
-          foe,
-          heightInches,
-          template?.space,
-        ),
+        ask === 'narrate'
+          ? await narrateOutcome(
+              env,
+              campaign,
+              characters,
+              session,
+              foe,
+              action!,
+              result!,
+              heightInches,
+              template?.space,
+            )
+          : await suggestTurn(
+              env,
+              campaign,
+              characters,
+              session,
+              foe,
+              heightInches,
+              template?.space,
+            ),
       );
     } catch (e) {
       return err((e as Error).message, 502);

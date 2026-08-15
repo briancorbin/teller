@@ -534,6 +534,12 @@ export function DmView({
       onSuggest={
         assistantOn ? (characterId) => api.suggestTurn(campaignId, characterId) : undefined
       }
+      onNarrate={
+        assistantOn
+          ? (characterId, action, result) =>
+              api.narrateTurn(campaignId, characterId, action, result)
+          : undefined
+      }
     />
   );
 

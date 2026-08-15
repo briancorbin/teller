@@ -17,6 +17,7 @@ import type {
   SessionOp,
   SessionState,
   SystemTemplate,
+  TurnNarration,
   TurnSuggestion,
 } from '../../worker/types';
 import type { BundleSummary } from '../../worker/import';
@@ -122,6 +123,13 @@ export const api = {
     req<TurnSuggestion>(`/api/campaigns/${campaignId}/assistant/turn`, {
       method: 'POST',
       body: JSON.stringify({ characterId }),
+    }),
+
+  /** The second click: the table's real results in, read-aloud story out. */
+  narrateTurn: (campaignId: string, characterId: string, action: string, result: string) =>
+    req<TurnNarration>(`/api/campaigns/${campaignId}/assistant/narrate`, {
+      method: 'POST',
+      body: JSON.stringify({ characterId, action, result }),
     }),
 
   listCampaigns: () => req<Campaign[]>('/api/campaigns'),

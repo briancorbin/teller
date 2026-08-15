@@ -8,6 +8,7 @@ import type {
   InitiativeEntry,
   SessionOp,
   SessionState,
+  TurnNarration,
   TurnSuggestion,
 } from '../../worker/types';
 import { newLocalId } from '../lib/api';
@@ -64,6 +65,7 @@ export function EncounterPanel({
   onSpawn,
   onRollNpcs,
   onSuggest,
+  onNarrate,
 }: {
   session: SessionState | null;
   characters: Character[];
@@ -84,6 +86,16 @@ export function EncounterPanel({
    * unconfigured host never nags (rule 7).
    */
   onSuggest?: (characterId: string) => Promise<TurnSuggestion>;
+  /**
+   * The second click (Brian's two-step): the Warden runs the action
+   * with REAL dice, types what the table rolled, and Teller hands back
+   * words to read aloud. Absent alongside onSuggest.
+   */
+  onNarrate?: (
+    characterId: string,
+    action: string,
+    result: string,
+  ) => Promise<TurnNarration>;
 }) {
   const [draft, setDraft] = useState('');
   /** Rows opened to show the whole sheet. Running a monster shouldn't
@@ -96,7 +108,18 @@ export function EncounterPanel({
    * never session state, and dismissing one leaves no trace anywhere.
    */
   const [advice, setAdvice] = useState<
-    Record<string, { busy: boolean; suggestion?: TurnSuggestion; error?: string }>
+    Record<
+      string,
+      {
+        busy: boolean;
+        suggestion?: TurnSuggestion;
+        error?: string;
+        /** The Warden's own record of what the dice said. */
+        result?: string;
+        narrating?: boolean;
+        narration?: TurnNarration;
+      }
+    >
   >({});
   const ask = (entryId: string, characterId: string) => {
     if (!onSuggest) return;
@@ -105,6 +128,8 @@ export function EncounterPanel({
       [entryId]: { busy: true, suggestion: prev[entryId]?.suggestion },
     }));
     onSuggest(characterId)
+      // A fresh suggestion starts a fresh turn: whatever results or
+      // narration the LAST turn earned would be stale under it.
       .then((s) =>
         setAdvice((prev) => ({ ...prev, [entryId]: { busy: false, suggestion: s } })),
       )
@@ -112,6 +137,27 @@ export function EncounterPanel({
         setAdvice((prev) => ({
           ...prev,
           [entryId]: { busy: false, error: (e as Error).message },
+        })),
+      );
+  };
+  const tell = (entryId: string, characterId: string) => {
+    const a = advice[entryId];
+    if (!onNarrate || !a?.suggestion || !a.result?.trim()) return;
+    setAdvice((prev) => ({
+      ...prev,
+      [entryId]: { ...prev[entryId], busy: false, narrating: true },
+    }));
+    onNarrate(characterId, a.suggestion.action, a.result.trim())
+      .then((n) =>
+        setAdvice((prev) => ({
+          ...prev,
+          [entryId]: { ...prev[entryId], narrating: false, narration: n },
+        })),
+      )
+      .catch((e) =>
+        setAdvice((prev) => ({
+          ...prev,
+          [entryId]: { ...prev[entryId], narrating: false, error: (e as Error).message },
         })),
       );
   };
@@ -536,6 +582,43 @@ export function EncounterPanel({
                         <p className="text-[11px] leading-snug text-stone-400">
                           {advice[entry.id].suggestion!.rationale}
                         </p>
+                      )}
+
+                      {/*
+                        The second click. The Warden runs the action
+                        with the table's REAL dice, types what they
+                        said, and Teller hands back words to read
+                        aloud — narration is downstream of dice, never
+                        a substitute for them (the thesis, in prose).
+                      */}
+                      {onNarrate && (
+                        <div className="flex items-center gap-1.5 pt-0.5">
+                          <input
+                            className="min-w-0 flex-1 rounded bg-stone-900 px-2 py-1 font-mono text-[11px] text-stone-200 placeholder:text-stone-600 focus:outline-none"
+                            placeholder="what the dice said — hits, damage dealt, statuses…"
+                            value={advice[entry.id].result ?? ''}
+                            onChange={(e) =>
+                              setAdvice((prev) => ({
+                                ...prev,
+                                [entry.id]: { ...prev[entry.id], result: e.target.value },
+                              }))
+                            }
+                            onKeyDown={(e) => e.key === 'Enter' && tell(entry.id, character.id)}
+                          />
+                          <button
+                            className={`${btnGhost} ${advice[entry.id].narrating ? 'animate-pulse text-amber-300' : ''}`}
+                            title="turn the results into words for the table"
+                            disabled={advice[entry.id].narrating || !advice[entry.id].result?.trim()}
+                            onClick={() => tell(entry.id, character.id)}
+                          >
+                            tell it ⟶
+                          </button>
+                        </div>
+                      )}
+                      {advice[entry.id].narration && (
+                        <blockquote className="border-l-2 border-amber-600 pl-2.5 text-[13px] italic leading-snug text-stone-100">
+                          {advice[entry.id].narration!.narration}
+                        </blockquote>
                       )}
                     </>
                   )}
