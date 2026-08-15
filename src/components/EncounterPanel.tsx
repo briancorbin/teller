@@ -64,6 +64,25 @@ function expandPool(pool: string): string[] {
   return out;
 }
 
+/**
+ * Roll a pool digitally — for FOES only, and the result lands in the
+ * same tappable chips, so any die is one tap from overruled (rule 1).
+ * Rolling for monsters is settled ground (rule 5, as amended): the
+ * players' dice stay physical; a handful of monster dice is exactly
+ * the bookkeeping teller may take. Uniform pick over the faces array
+ * IS the die — B lists hit twice and blank twice, so the weights ride
+ * in for free.
+ */
+function rollPool(pool: string, dice: SystemTemplate['dice']): string[] {
+  const letters = expandPool(pool);
+  const picks = new Uint32Array(letters.length);
+  crypto.getRandomValues(picks);
+  return letters.map((letter, i) => {
+    const faces = dice?.faces[letter] ?? [];
+    return faces.length ? faces[picks[i] % faces.length] : 'blank';
+  });
+}
+
 /** What the tapped dice add up to, in the system's own unit. */
 function tallyFaces(
   faces: (string | null)[],
@@ -710,6 +729,24 @@ export function EncounterPanel({
                               {dice.unit ?? ''}
                             </span>
                           )}
+                          <button
+                            className={`${btnGhost} ml-auto text-[11px]`}
+                            title="teller rolls the foe's dice — tap any die to correct it"
+                            onClick={() =>
+                              setAdvice((prev) => ({
+                                ...prev,
+                                [entry.id]: {
+                                  ...prev[entry.id],
+                                  faces: rollPool(
+                                    prev[entry.id].suggestion!.roll!.dice,
+                                    dice,
+                                  ),
+                                },
+                              }))
+                            }
+                          >
+                            roll for me
+                          </button>
                         </div>
                       )}
 
