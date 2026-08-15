@@ -1944,7 +1944,7 @@ export type CameraOverlay = {
   rings: [number, number][];
 };
 
-export type StreamEvent =
+export type StreamEvent = (
   | { type: 'hello'; state: SessionState }
   | { type: 'session'; state: SessionState }
   | { type: 'character'; characterId: string }
@@ -1966,4 +1966,15 @@ export type StreamEvent =
    * frame preview tracks a calibration the console didn't perform.
    */
   | { type: 'display'; displayId: string }
-  | { type: 'ping' };
+  | { type: 'ping' }
+) & {
+  /**
+   * Who a targeted event was aimed at — present only on a SHARED
+   * socket (`display=*`), where one connection carries every screen's
+   * mail and each tab keeps what names its own handle (rule 6: one
+   * browser, many tabs, one of the six connections). A dedicated
+   * socket receives only its own mail and needs no addressing. The
+   * tag is a handle: it identifies a screen, it grants nothing.
+   */
+  to?: string;
+};

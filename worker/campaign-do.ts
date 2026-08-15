@@ -215,13 +215,27 @@ export class CampaignDO {
     this.send(event, null);
   }
 
-  /** handle null = everyone; otherwise just that screen's connections. */
+  /**
+   * handle null = everyone; otherwise that screen's connections — and
+   * every SHARED connection (`display=*`), which is one browser's
+   * single socket standing in for all of its tabs (rule 6: six
+   * connections per plain-HTTP origin, so tabs pool onto one).
+   *
+   * Shared sockets get targeted events tagged `to`, so the right tab
+   * can claim its mail client-side. That widens delivery, not
+   * authority: everything on this stream is already gated by the
+   * campaign ticket, and a handle identifies a screen — it has never
+   * granted anything (rule 7).
+   */
   private send(event: StreamEvent, handle: string | null): void {
-    const bytes = new TextEncoder().encode(sse(event));
+    const encoder = new TextEncoder();
+    const bytes = encoder.encode(sse(event));
+    const tagged =
+      handle !== null ? encoder.encode(sse({ ...event, to: handle })) : bytes;
     for (const [client, id] of this.clients) {
-      if (handle !== null && id !== handle) continue;
+      if (handle !== null && id !== handle && id !== '*') continue;
       try {
-        client.enqueue(bytes);
+        client.enqueue(handle !== null && id === '*' ? tagged : bytes);
       } catch {
         this.clients.delete(client);
       }
