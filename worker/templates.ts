@@ -62,10 +62,14 @@ const wiw: SystemTemplate = {
   // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
   // about 5 yards of world.
   space:
-    'Scale: 1 inch on the table ≈ 5 yards in the world. Range bands: ' +
-    "Arm's Reach = within 1 inch · Short = within 6 inches (~30 yards) · " +
-    'Long = 6–18 inches (30–90 yards) · Distant = beyond 18 inches ' +
-    '(takes 6 Grit and at least two turns to cross). ' +
+    // The book defines band PAIRS, not a per-inch scale — Arm's Reach
+    // (1" = about a yard) breaks the 5-yards-per-inch line that Short
+    // and Long imply, so state the table and let the bands do the work.
+    'Distance works in RANGE BANDS, each a table-inches to world ' +
+    "distance pair: Arm's Reach = within 1 inch (within arm's reach) · " +
+    'Short = within 6 inches (up to 30 yards) · Long = 6–18 inches ' +
+    '(30–90 yards) · Distant = beyond 18 inches (past 90 yards; takes ' +
+    '6 Grit and at least two turns to cross). ' +
     'Attacks are listed by band and only work there: Melee attacks ' +
     "require Arm's Reach (within 1 inch; melee weapons can also be " +
     'thrown to Short), SHORT RANGE attacks reach up to 6 inches, LONG ' +
