@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   Character,
   RulesPack,
@@ -18,6 +18,7 @@ import {
   spreadTotal,
   withoutInstanced,
 } from '../lib/creation';
+import { combinePools, expandPool, rollPool } from '../lib/dice';
 import { BackButton } from './sheet/BackButton';
 import { SheetPanel } from './sheet/SheetPanel';
 import { Glyph } from './sheet/glyphs';
@@ -180,7 +181,43 @@ export function CreationBuilder({
   const tradeName = data.fields.find((f) => f.label === tradeLabel)?.value ?? '';
   const trade = trades.find((t) => t.name === tradeName);
   const derived = !trade ? 0 : 1;
-  const [step, setStep] = useState(derived);
+  /**
+   * Where this DEVICE had got to — remembered across a reload.
+   *
+   * The data says whether a trade was picked and nothing finer, so
+   * `derived` alone sent every refresh back to the trade cards no
+   * matter how far in you were ("it's always bringing me back to the
+   * beginning" — 2026-08-15). Deriving the rest from the sheet doesn't
+   * work: a wallet can legitimately roll $0 and "no keepsake" is a
+   * real answer, so half the steps have a finished state that is
+   * indistinguishable from an untouched one.
+   *
+   * So it's remembered rather than inferred, and it's remembered HERE
+   * — a wizard's position is this screen's business and nothing another
+   * display argues about (rule 9). Keyed by character, so a seat
+   * re-pointed at somebody else starts where THAT character stands.
+   *
+   * `derived` stays as the floor: whatever is stored, you can never
+   * resume past a trade that isn't chosen. Storage is best-effort —
+   * if it throws, the flow just behaves the way it did before.
+   */
+  const stepKey = `teller.creation.step.${character.id}`;
+  const [step, setStep] = useState(() => {
+    try {
+      const saved = parseInt(localStorage.getItem(stepKey) ?? '', 10);
+      return Number.isFinite(saved) ? Math.max(derived, saved) : derived;
+    } catch {
+      return derived;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(stepKey, String(step));
+    } catch {
+      // A device that won't remember is a device that restarts the
+      // flow, which is exactly where we came in — no worse.
+    }
+  }, [step, stepKey]);
   const [confirming, setConfirming] = useState('');
   const [spread, setSpread] = useState<Record<string, string> | null>(null);
   const [eqPicks, setEqPicks] = useState<string[]>([]);
@@ -196,15 +233,55 @@ export function CreationBuilder({
 
   const gmWord = vocabulary?.gm ?? 'Warden';
   const budget = creation.skills;
-  const skills = spread ?? trade?.skills ?? {};
+  /**
+   * Every skill at zero — where the spread now STARTS (Brian,
+   * 2026-08-15, watching his dad do this).
+   *
+   * It used to open on the trade's printed spread, which is a screen
+   * that looks FINISHED. Nothing about it says the numbers are yours
+   * to move, so the only affordance he found was the minus button —
+   * "I can only hit the minus button?" — and a full pool with nothing
+   * left to place gives the marks row no story to tell either. Twelve
+   * unplaced dice and four empty skills is a screen that is visibly
+   * not done, and the only way to finish it is to spend them, which
+   * is the thing we wanted him to learn.
+   *
+   * The trade's spread didn't go away — it's the button beside the
+   * pool now, one tap, for anyone who'd rather take the book's advice
+   * than think about it (rule 1: teller proposes, the human decides).
+   */
+  const zeroed = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.keys(trade?.skills ?? {}).map((label) => [
+          label,
+          `0${budget?.die ?? ''}`,
+        ]),
+      ),
+    [trade, budget],
+  );
+  const skills = spread ?? zeroed;
   const spent = budget ? spreadTotal(skills, budget.die) : 0;
   /** Dice still in hand. The pool is the constraint the screen shows. */
   const left = budget ? budget.total - spent : 0;
   /** How many equipment packs this tier gets to choose. */
   const picks = tier?.packs ?? 1;
-  /** Already sitting on the printed numbers — nothing for reset to do. */
+  /** Already sitting on the printed numbers — nothing for the deal to do. */
   const atTradeSpread = Object.entries(trade?.skills ?? {}).every(
     ([label, pool]) => skills[label] === pool,
+  );
+  /**
+   * A skill still under the book's floor.
+   *
+   * The floor is the pack's (`min`) and it stays the pack's — the book
+   * says nobody has none of a skill. What moved is WHEN it's enforced:
+   * it used to clamp the minus button, which meant the spread could
+   * never start empty. Now it's the condition for LEAVING, so you can
+   * take a skill to nothing while you're rearranging and simply can't
+   * walk out that way.
+   */
+  const bare = Object.values(skills).some(
+    (pool) => (parseInt(pool, 10) || 0) < (budget?.min ?? 0),
   );
   /** The keepsakes the pack prints — anything else you wrote yourself. */
   const offered = useMemo(
@@ -294,7 +371,7 @@ export function CreationBuilder({
     welcome: undefined,
     trade: 'tap one to read it — this is who you are at the table',
     skills: budget
-      ? `${budget.total} ${budget.die} dice total, ${budget.min}–${budget.max} each — the ${trade?.name ?? 'trade'}'s usual spread is dealt already`
+      ? `place all ${budget.total} dice — at least ${budget.min} in every skill, ${budget.max} at most`
       : 'the trade set these — adjust if your table allows',
     gear: `pick ${tier?.packs ?? 1} equipment pack${(tier?.packs ?? 1) > 1 ? 's' : ''} — your starting arms are already in your inventory`,
     wallet: creation.wallet
@@ -309,6 +386,53 @@ export function CreationBuilder({
     done: `that's a character — saddle up and this screen becomes your sheet`,
   };
   const accent = trade ? template?.accents?.[trade.name] : undefined;
+
+  /**
+   * How tall this box may be while a KEYBOARD is covering the screen.
+   *
+   * `sticky` was not enough on the iPad (Brian, 2026-08-15, photo of
+   * the name step with the bar gone). A software keyboard doesn't
+   * politely make the page shorter — the browser keeps the layout at
+   * full height and SCROLLS to reveal the focused field, which walks
+   * the header off the top whatever its position value says.
+   *
+   * So the box is told how much screen there actually is. `innerHeight`
+   * is what the layout thinks it has, `visualViewport.height` is what
+   * you can see; the difference is the keyboard. Clamp to what's
+   * visible and the flex column simply lays out inside it — header at
+   * the top, field in the middle of what's left — with nothing to
+   * scroll and so nothing to scroll away. Then put the page back where
+   * it belongs, because Safari has usually moved it already.
+   *
+   * This asks the viewport a question, never the device (rule 6): a
+   * Bluetooth keyboard takes no bite and gets no clamp, and a browser
+   * with no `visualViewport` behaves exactly as it did before.
+   */
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [lidded, setLidded] = useState<number | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const measure = () => {
+      const el = rootRef.current;
+      // Under ~100px is a URL bar collapsing, not a keyboard.
+      const bite = window.innerHeight - vv.height;
+      if (!el || bite < 100) {
+        setLidded(null);
+        return;
+      }
+      window.scrollTo(0, 0);
+      const top = el.getBoundingClientRect().top;
+      setLidded(Math.max(200, Math.min(vv.height, vv.height - top)));
+    };
+    measure();
+    vv.addEventListener('resize', measure);
+    vv.addEventListener('scroll', measure);
+    return () => {
+      vv.removeEventListener('resize', measure);
+      vv.removeEventListener('scroll', measure);
+    };
+  }, []);
 
   // The trades still PAN on the rail — there are seven of them, one
   // expands to twice its width, and reading them one at a time is the
@@ -341,11 +465,30 @@ export function CreationBuilder({
    * off the screen — you end up spending twelve dice with no idea how
    * many are left. So it sticks to the bottom instead: same row, same
    * order, always there.
+   *
+   * `lead` lifts the row ABOVE the choices on mounted glass (Brian,
+   * 2026-08-15, watching his dad build a character): "laid out to fit"
+   * is true of the pixels and false of the eye. On the steps that
+   * spend a pool — the skills spread and the wallet roll — the thing
+   * you're watching is the pool, and a pool parked under four big
+   * panels at the bottom edge of a fixed screen is a thing people
+   * genuinely do not see; he filled the spread and then waited, having
+   * never found "that's my spread". Above the panels it sits directly
+   * under the question that asked for it, which is where the eye
+   * already is.
+   *
+   * Held glass is deliberately NOT included. Its bar is sticky, so it
+   * was never the thing being missed, and the bottom of a phone is
+   * where a thumb is — moving it up would cost reach to fix a problem
+   * that surface doesn't have. Order by glass, same as everything
+   * else here (rule 6).
    */
-  const footerRow = (gap = 'gap-4') =>
+  const footerRow = (gap = 'gap-4', lead = false) =>
     `flex shrink-0 items-center justify-center ${gap} ${
       wide
-        ? ''
+        ? lead
+          ? 'order-first'
+          : ''
         : // Flush to the bottom edge, not floating 16px above it: the
           // negative margins cancel the seat's own padding (12px) and
           // the builder's (4px), and the matching padding puts the
@@ -438,9 +581,13 @@ export function CreationBuilder({
     // thing that must fit the glass exactly instead, so it asks for the
     // block's height outright.
     <div
+      ref={rootRef}
       className={`flex min-h-0 w-full flex-1 flex-col gap-2 p-1 ${
         soloed && !wide ? 'h-full' : ''
       }`}
+      // Only ever set while a keyboard is up; `undefined` the rest of
+      // the time, so every other screen keeps the box it always had.
+      style={lidded ? { maxHeight: `${lidded}px` } : undefined}
     >
       {/* The screen's question, worn the way the finished sheet wears
           its header: the same bordered bar, the same ruled hairlines,
@@ -455,8 +602,20 @@ export function CreationBuilder({
           lost with it: the trade step has no back button (it's step
           zero), and "the others" is the way out. */}
       {!soloed && (
+      // `sticky top-0` because a KEYBOARD moves the page even where
+      // nothing else does (Brian, 2026-08-15, on "what do they call
+      // ya"). Raising the on-screen keyboard shrinks the visual
+      // viewport and the browser scrolls the focused field into view on
+      // its own — which walked the bar off the top edge, taking the
+      // question, the back button and the ? with it, on the one step
+      // where a first-timer is most likely to want all three.
+      //
+      // It's the mirror of what the footer already does in a hand: pin
+      // the thing you always need to the edge it belongs to, and let
+      // the middle move. Opaque, or the step's own content slides
+      // underneath it and shows through.
       <div
-        className="relative flex shrink-0 items-center gap-2.5 rounded-md border py-1.5 pl-14 pr-14"
+        className="sticky top-0 z-10 flex shrink-0 items-center gap-2.5 rounded-md border bg-stone-950 py-1.5 pl-14 pr-14"
         style={{ borderColor: `${accent ?? '#f59e0b'}66` }}
       >
         {/* Walking back is free: every step's commit REPLACES what it
@@ -940,17 +1099,28 @@ export function CreationBuilder({
                         onClick={() => {
                           if (!budget) return;
                           setSpread((prev) => {
-                            const cur = prev ?? trade?.skills ?? {};
+                            const cur = prev ?? zeroed;
                             const n = parseInt(cur[label] ?? '0', 10) || 0;
-                            const v = Math.max(budget.min, n - 1);
+                            // Down to nothing, not down to the book's
+                            // floor — the floor is what stops you
+                            // LEAVING now, not what stops you editing.
+                            const v = Math.max(0, n - 1);
                             return { ...cur, [label]: `${v}${budget.die}` };
                           });
                         }}
                       >
                         −
                       </button>
+                      {/* The NUMBER is what's being changed, so it's
+                          what's legible. "3B" set whole read as a code
+                          rather than a count — "what's 1b 2b 3b?"
+                          (2026-08-15) — so the die's letter stays, small
+                          and dim, annotating instead of competing. */}
                       <span className="font-mono text-2xl text-stone-100">
-                        {pool}
+                        {parseInt(pool, 10) || 0}
+                        <span className="ml-0.5 text-sm text-stone-500">
+                          {budget?.die ?? ''}
+                        </span>
                       </span>
                       <button
                         className="h-12 min-w-12 rounded-lg bg-stone-800 text-2xl active:bg-amber-700 disabled:bg-stone-900 disabled:text-stone-700"
@@ -961,7 +1131,7 @@ export function CreationBuilder({
                         onClick={() => {
                           if (!budget) return;
                           setSpread((prev) => {
-                            const cur = prev ?? trade?.skills ?? {};
+                            const cur = prev ?? zeroed;
                             // The pool check reads CUR, not the `left`
                             // this handler closed over. A drummed
                             // finger fires several taps inside one
@@ -991,7 +1161,7 @@ export function CreationBuilder({
               on skills IS the arithmetic, and the row is only full when
               the spread is legal — which is the same moment the button
               unlocks, so there's one thing to look at, not two. */}
-          <div className={footerRow()}>
+          <div className={footerRow('gap-4', true)}>
             {/* Back to what the trade deals. `spread` is an OVERRIDE
                 over `trade.skills`, so clearing it is the whole reset
                 — there's no second copy of the printed numbers to
@@ -1004,10 +1174,10 @@ export function CreationBuilder({
                 borderColor: `${accent ?? '#f59e0b'}66`,
                 color: accent ?? '#f59e0b',
               }}
-              disabled={!spread || atTradeSpread}
-              onClick={() => setSpread(null)}
+              disabled={atTradeSpread}
+              onClick={() => setSpread(trade.skills ?? zeroed)}
             >
-              the {trade.name}'s spread
+              deal the {trade.name}'s spread
             </button>
             {budget && (
               <div
@@ -1040,17 +1210,26 @@ export function CreationBuilder({
             <button
               className="rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:bg-stone-800 disabled:text-stone-600"
               style={
-                left === 0
+                left === 0 && !bare
                   ? { background: accent ?? '#f59e0b', color: '#1c1917' }
                   : undefined
               }
-              disabled={left !== 0}
+              disabled={left !== 0 || bare}
               onClick={() => {
                 onPatch(applySkills(data, skills));
                 next();
               }}
             >
-              {left === 0 ? "that's my spread" : `${left} to place`}
+              {/* The button says what's WRONG, in the order you'd fix
+                  it: dice still in hand first, then the empty skill
+                  that's keeping you here. "12 to place" on a screen
+                  you just arrived at is also the clearest statement
+                  that the screen isn't finished yet. */}
+              {left !== 0
+                ? `${left} to place`
+                : bare
+                  ? `at least ${budget?.min ?? 1} in every skill`
+                  : "that's my spread"}
             </button>
           </div>
         </div>
@@ -1306,7 +1485,7 @@ export function CreationBuilder({
           {/* What you've told it so far, die by die, in the order you
               tapped — and every one of them takes it back, because a
               mis-tap on six dice used to mean starting the roll over. */}
-          <div className={footerRow()}>
+          <div className={footerRow('gap-4', true)}>
             <div className={markRow} style={markCols(dice)}>
               {Array.from({ length: dice }, (_, i) => {
                 const face = rolled[i];
@@ -1338,6 +1517,42 @@ export function CreationBuilder({
             >
               ${walletTotal}
             </span>
+            {/* For the person who hasn't got the dice yet.
+
+                The screen asks for a physical roll and should keep
+                asking — that's the thesis, and it's the better moment.
+                But "roll six dice" is an instruction you cannot follow
+                on the evening you're building your first character with
+                a set still in the post ("I don't have dice" — Brian's
+                dad, 2026-08-15), and the alternative to this button is
+                not a physical roll, it's a stuck screen.
+
+                It throws only the dice still MISSING and appends them,
+                so it can never overwrite a face a human already tapped
+                (rule 1), and every die it throws stays one tap from
+                being taken back — the same chips, the same behaviour as
+                a hand-entered roll. */}
+            {rolled.length < dice && (
+              <button
+                className="rounded-md border px-3 py-2 text-xs uppercase tracking-widest transition-colors"
+                style={{
+                  borderColor: `${accent ?? '#f59e0b'}66`,
+                  color: accent ?? '#f59e0b',
+                }}
+                onClick={() => {
+                  const rest = expandPool(creation.wallet!.roll).slice(
+                    rolled.length,
+                  );
+                  const thrown = rollPool(
+                    combinePools(rest.map((letter) => `1${letter}`)),
+                    template?.dice,
+                  );
+                  setRolled((r) => [...r, ...thrown].slice(0, dice));
+                }}
+              >
+                no dice? roll for me
+              </button>
+            )}
             <button
               className="rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:bg-stone-800 disabled:text-stone-600"
               style={
@@ -1818,6 +2033,15 @@ export function CreationBuilder({
                           : f,
                       )
                     : data.fields;
+                // Creation is over — forget where it stood, so a
+                // character built again on this device (or one that
+                // gets its draft flag back) opens at the top rather
+                // than on a step from last time.
+                try {
+                  localStorage.removeItem(stepKey);
+                } catch {
+                  // Nothing to clean up if nothing was stored.
+                }
                 onPatch({ draft: false, fields });
               }}
             >
