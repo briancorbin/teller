@@ -1887,6 +1887,31 @@ export type TurnNarration = {
 };
 
 /**
+ * A token crossing ground (Brian, 2026-08-15: "movement and
+ * positioning should absolutely be included").
+ *
+ * The scene records where everything IS, which is a photograph. It has
+ * never recorded that anything MOVED, so a creature could watch someone
+ * walk out of its reach and know only that they are now far away — not
+ * that they backed off, nor that it has itself been sitting in the same
+ * water for three rounds. Positions are state; crossing ground is an
+ * event, and only one of those was being written down.
+ *
+ * Distances are in the map's own inches, which is the unit the system's
+ * range bands are written in.
+ */
+export type TokenMove = {
+  tokenId: string;
+  /** Absent for a token that isn't anybody — a marker, a prop. */
+  characterId?: string;
+  label: string;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  distance: number;
+  round: number;
+};
+
+/**
  * One exchange, as the table ruled it (Brian, 2026-08-15).
  *
  * The event log already recorded that a character changed — rule 3 has

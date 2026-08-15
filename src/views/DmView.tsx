@@ -752,6 +752,7 @@ export function DmView({
                 kind: c.kind,
               }))}
               onChange={onSceneChange}
+              onMoved={(move) => api.logMove(campaignId, move).catch(() => {})}
               fights={arrangeable.map((e) => ({ id: e.id, name: e.name }))}
               arrangingId={arrangingId}
               onArrange={setArrangingId}

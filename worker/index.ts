@@ -44,6 +44,7 @@ import type {
   Character,
   CharacterData,
   ResolvedTurn,
+  TokenMove,
   Counter,
   RulesPack,
   SessionOp,
@@ -337,6 +338,37 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     const recent = [...seen.entries()].sort(([a], [b]) => a - b).map(([, r]) => r);
 
+    // Movement, same selection rule: this creature's own crossings
+    // never age out, and the rest is whoever moved lately.
+    const [ownMoves, lateMoves] = await Promise.all([
+      env.DB.prepare(
+        `SELECT id, payload FROM events
+           WHERE campaign_id = ? AND kind = 'token.moved' AND entity_id = ?
+           ORDER BY id DESC LIMIT 6`,
+      )
+        .bind(campaignId, characterId)
+        .all(),
+      env.DB.prepare(
+        `SELECT id, payload FROM events
+           WHERE campaign_id = ? AND kind = 'token.moved'
+           ORDER BY id DESC LIMIT 10`,
+      )
+        .bind(campaignId)
+        .all(),
+    ]);
+    const movesById = new Map<number, TokenMove>();
+    for (const row of [...ownMoves.results, ...lateMoves.results]) {
+      const { id, payload } = row as { id: number; payload: string };
+      if (movesById.has(id)) continue;
+      try {
+        const parsed = JSON.parse(String(payload)) as TokenMove;
+        if (parsed?.tokenId && parsed.to) movesById.set(id, parsed);
+      } catch {
+        // One unreadable line of history, not an error.
+      }
+    }
+    const moves = [...movesById.entries()].sort(([a], [b]) => a - b).map(([, m]) => m);
+
     try {
       const template = await getSystem(env, campaign.system);
       return json(
@@ -352,6 +384,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               heightInches,
               template?.space,
               recent,
+              moves,
             )
           : await suggestTurn(
               env,
@@ -362,6 +395,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               heightInches,
               template?.space,
               recent,
+              moves,
             ),
       );
     } catch (e) {
@@ -1386,6 +1420,42 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .bind(target.id)
       .first();
     return json({ character: toCharacter(updated as never), resolved });
+  }
+
+  /**
+   * A token finished crossing ground. Records only — the scene write
+   * that moved it already happened, and re-applying it here would make
+   * two authorities for one position. If this call is lost, the token
+   * is still where the Warden put it and only the history is thinner.
+   */
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/moved$/);
+  if (m && method === 'POST') {
+    const campaignId = m[1];
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const body = await request.json<Omit<TokenMove, 'round'>>();
+    if (!body?.tokenId || !body.from || !body.to) return err('a move needs its ends', 400);
+
+    const session = await (
+      await sessionStub(env, campaignId).fetch('https://do/session')
+    ).json<SessionState>();
+    const move: TokenMove = {
+      tokenId: body.tokenId,
+      ...(body.characterId ? { characterId: body.characterId } : {}),
+      label: String(body.label ?? 'something'),
+      from: { x: Number(body.from.x) || 0, y: Number(body.from.y) || 0 },
+      to: { x: Number(body.to.x) || 0, y: Number(body.to.y) || 0 },
+      distance: Math.round((Number(body.distance) || 0) * 10) / 10,
+      round: session?.round ?? 1,
+    };
+    await logEvent(
+      env,
+      campaignId,
+      move.characterId ?? null,
+      actorOf(auth),
+      'token.moved',
+      move,
+    );
+    return json({ ok: true });
   }
 
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/spawn$/);

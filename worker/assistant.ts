@@ -24,6 +24,7 @@ import type {
   Scene,
   SessionState,
   ResolvedTurn,
+  TokenMove,
   TurnNarration,
   TurnSuggestion,
 } from './types';
@@ -304,6 +305,46 @@ function describeHistory(recent: ResolvedTurn[], foeId: string): string {
   ].join('\n');
 }
 
+/**
+ * Who crossed ground, and whether it was toward or away from YOU.
+ *
+ * Raw coordinates are noise in a prompt — the useful shape of a move
+ * is what a creature would actually register about it: someone came
+ * closer, someone backed off, and by how much. So each move is
+ * measured against the acting foe's own position, and the verb falls
+ * out of the sign.
+ *
+ * The other half is what did NOT happen: a creature that hasn't left
+ * its water in three rounds is the sort of fact a profile turns on,
+ * and it can only be stated by something that has been watching.
+ */
+function describeMoves(
+  moves: TokenMove[],
+  actor: { x: number; y: number } | null,
+  actorId: string,
+): string {
+  if (!moves.length) return '';
+  const gap = (p: { x: number; y: number }) =>
+    actor ? Math.hypot(p.x - actor.x, p.y - actor.y) : null;
+  const lines = moves.map((mv) => {
+    const mine = mv.characterId === actorId;
+    const before = gap(mv.from);
+    const after = gap(mv.to);
+    let sense = '';
+    if (!mine && before !== null && after !== null) {
+      const delta = before - after;
+      const verb = Math.abs(delta) < 0.5 ? 'staying about as far off' : delta > 0 ? 'toward you' : 'away from you';
+      sense = ` — ${verb}, now ${round2(after)}in from you (was ${round2(before)}in)`;
+    }
+    return `round ${mv.round}: ${mine ? 'YOU' : mv.label} moved ${round2(mv.distance)}in${sense}`;
+  });
+  const stillness =
+    actor && !moves.some((mv) => mv.characterId === actorId)
+      ? ['You have not moved in any of the turns recorded above.']
+      : [];
+  return ['WHO HAS MOVED (oldest first):', ...lines, ...stillness].join('\n');
+}
+
 const SYSTEM = `You are Teller, the bookkeeping assistant at an in-person tabletop RPG session. The Warden (GM) is running a fight and asks: what would this foe do on its turn?
 
 You PROPOSE; the Warden decides. Suggest one turn's worth of action for the named foe, played true to its profile and current condition — not optimally. A cowardly creature flees at the wrong moment; a beast attacks the nearest threat, not the healer.
@@ -436,6 +477,7 @@ function assembleContext(
   heightInches?: number,
   space?: string,
   recent: ResolvedTurn[] = [],
+  moves: TokenMove[] = [],
 ): string {
   const scene =
     campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
@@ -459,6 +501,16 @@ function assembleContext(
     space ? `SPACE & MOVEMENT (this system's rules — use these, don't guess): ${space}` : '',
     describeFight(session, characters, foe.id),
     describeHistory(recent, foe.id),
+    describeMoves(
+      moves,
+      ownToken && scene?.widthInches
+        ? {
+            x: ownToken.u * scene.widthInches,
+            y: ownToken.v * (heightInches ?? scene.widthInches),
+          }
+        : null,
+      foe.id,
+    ),
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -476,8 +528,9 @@ export async function suggestTurn(
   space?: string,
   /** Exchanges already resolved this fight, oldest first. */
   recent: ResolvedTurn[] = [],
+  moves: TokenMove[] = [],
 ): Promise<TurnSuggestion> {
-  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space, recent)}\n\n\nWhat would ${foe.name} do this turn?`;
+  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves)}\n\n\nWhat would ${foe.name} do this turn?`;
   return parseSuggestion(await complete(env, SYSTEM, user), env.ASSISTANT_MODEL!);
 }
 
@@ -512,9 +565,10 @@ export async function narrateOutcome(
   heightInches?: number,
   space?: string,
   recent: ResolvedTurn[] = [],
+  moves: TokenMove[] = [],
 ): Promise<TurnNarration> {
   const user = [
-    assembleContext(campaign, characters, session, foe, heightInches, space, recent),
+    assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves),
     `THE ACTION THE WARDEN RAN: ${action}`,
     `WHAT THE DICE SAID (the table's results, already final): ${result}`,
     `\nNarrate what just happened.`,

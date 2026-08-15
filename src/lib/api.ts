@@ -197,6 +197,26 @@ export const api = {
       { method: 'POST', body: JSON.stringify(body) },
     ),
 
+  /**
+   * A token crossed ground. Records the move; the scene write that
+   * actually moved it is separate and already done.
+   */
+  logMove: (
+    campaignId: string,
+    move: {
+      tokenId: string;
+      characterId?: string;
+      label: string;
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      distance: number;
+    },
+  ) =>
+    req<{ ok: true }>(`/api/campaigns/${campaignId}/moved`, {
+      method: 'POST',
+      body: JSON.stringify(move),
+    }),
+
   deleteCampaign: (id: string) =>
     req<{ ok: true }>(`/api/campaigns/${id}`, { method: 'DELETE' }),
 
