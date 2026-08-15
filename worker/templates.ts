@@ -70,15 +70,17 @@ const wiw: SystemTemplate = {
     'Short = within 6 inches (up to 30 yards) · Long = 6–18 inches ' +
     '(30–90 yards) · Distant = beyond 18 inches (past 90 yards; takes ' +
     '6 Grit and at least two turns to cross). ' +
-    'Attacks are listed by band and only work there: Melee attacks ' +
-    "require Arm's Reach (within 1 inch; melee weapons can also be " +
-    'thrown to Short), SHORT RANGE attacks reach up to 6 inches, LONG ' +
-    'RANGE attacks reach 6–18 inches. ' +
-    'Moving costs Grit by speed: Normal = 1 Grit per Short Range ' +
-    'distance (6 inches) · Slow = 2 Grit per Short · Very Slow = 3 Grit ' +
-    'per Short · Fast = two Shorts per 1 Grit. Rough terrain (dense ' +
-    'forest, steep slopes, knee-deep water) doubles the Grit cost of ' +
-    'moving through it.',
+    'Attacks are listed by band: Melee attacks require Arm\'s Reach ' +
+    '(within 1 inch; melee weapons can also be thrown to Short). SHORT ' +
+    'RANGE attacks reach up to 6 inches AND can also be used within ' +
+    "Arm's Reach — but not vice versa, and there is no other overlap " +
+    'between bands (a Long attack cannot be used at Short, etc). ' +
+    'Moving costs Grit by speed (a creature\'s Speed field names its ' +
+    "speed): moving within Arm's Reach (1 inch) costs 1 Grit · Normal " +
+    '= 1 Grit per Short Range distance (6 inches) · Slow = 2 Grit per ' +
+    'Short · Very Slow = 3 Grit per Short · Fast = two Shorts per 1 ' +
+    'Grit. Rough terrain (dense forest, steep slopes, knee-deep water) ' +
+    'doubles the Grit cost of moving through it.',
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',
