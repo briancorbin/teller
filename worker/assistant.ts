@@ -140,11 +140,20 @@ function describeBoard(
   // act on. Cells are 1-inch map tiles indexed [col, row]; a token's
   // cell is just its position floored.
   const ground = new Map<string, Set<string>>();
+  const paint = (label: string, cells: [number, number][]) => {
+    let set = ground.get(label);
+    if (!set) ground.set(label, (set = new Set()));
+    for (const [col, row] of cells) set.add(`${col},${row}`);
+  };
+  // Both halves of the ground model land here: TERRAIN (what a tile
+  // is — static, data-only, the art is its rendering) and ZONES (what's
+  // happening to it — dynamic, drawn on the table). The assistant
+  // doesn't care which layer a fact came from; a Pondweed cares that
+  // the water is there, not who painted it.
+  for (const t of scene.terrain ?? []) paint(t.kind, t.cells);
   for (const z of scene.zones ?? []) {
     if (z.hidden) continue;
-    let cells = ground.get(z.effect);
-    if (!cells) ground.set(z.effect, (cells = new Set()));
-    for (const [col, row] of z.cells) cells.add(`${col},${row}`);
+    paint(z.effect, z.cells);
   }
   const standing = (u: number, v: number): string => {
     if (!width) return '';

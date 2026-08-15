@@ -510,6 +510,31 @@ export type Fog = {
   regions?: FogRegion[];
 };
 
+/**
+ * What a tile IS — the static half of the two-layer ground model
+ * (Brian, 2026-08-15): "a separate layer of tile info that is static —
+ * this is lake tile deep water, this is shoreline, this is sand — that
+ * doesn't render on the map, and then a separate layer for dynamic tile
+ * states like on fire."
+ *
+ * The render rule that falls out: **draw what the art doesn't show.**
+ * The map's picture already depicts the lake, so terrain never renders
+ * on play surfaces (the scene editor may visualize it while editing);
+ * a fire that starts in round 2 isn't in the picture, so `TileZone`
+ * effects do render. Same cells, opposite visibility, and the
+ * assistant reads both: terrain is what ground you're on, zones are
+ * what's happening to it.
+ *
+ * `kind` is the author's own word — 'deep water', 'shoreline', 'sand'
+ * — not an enum (rule 2: teller has no opinion on what kinds of ground
+ * a world contains, and never adjudicates what standing there means).
+ */
+export type TerrainPatch = {
+  id?: string;
+  kind: string;
+  cells: [number, number][];
+};
+
 export type Scene = {
   id: string;
   key: string;
@@ -518,6 +543,8 @@ export type Scene = {
   view?: SceneView;
   tokens?: Token[];
   zones?: TileZone[];
+  /** Static ground semantics — data-only, see `TerrainPatch`. */
+  terrain?: TerrainPatch[];
   fog?: Fog;
   /**
    * The grid belongs to the MAP, not the screen: drawn in map space on
