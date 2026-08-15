@@ -179,7 +179,9 @@ export async function serve({ data = defaultData(), port = 4525 } = {}) {
     const scan = () =>
       Promise.all([
         sweep(db.raw, DATA).catch((e) => console.error(`  library: ${e.message}`)),
-        sweepPacks(db.raw, DATA).catch((e) => console.error(`  packs: ${e.message}`)),
+        sweepPacks(db.raw, DATA, { maps: env.MAPS, worker }).catch((e) =>
+          console.error(`  packs: ${e.message}`),
+        ),
       ]);
     void scan();
     setInterval(scan, 10_000).unref?.();

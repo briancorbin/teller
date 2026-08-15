@@ -37,7 +37,9 @@ export async function readZip(buffer: ArrayBuffer): Promise<Map<string, ZipFile>
       break;
     }
   }
-  if (eocd < 0) throw new Error("that doesn't look like a .story file");
+  // Named generically because packs are archives too now — a `.pack`
+  // failing to open used to claim it wasn't a `.story`.
+  if (eocd < 0) throw new Error("that doesn't look like a teller file");
 
   const count = view.getUint16(eocd + 10, true);
   let offset = view.getUint32(eocd + 16, true);

@@ -1,5 +1,16 @@
 import { newId, toPackRecord, type Env } from './db';
 import type { Campaign, PackRecord, RulesPack } from './types';
+import { readZip, type ZipFile } from './unzip';
+import {
+  ART_PREFIX,
+  absolutizeArt,
+  artKey,
+  artPaths,
+  assemble,
+  parts,
+  relativizeArt,
+} from './packfile';
+import { zipStream, type ZipEntry } from './zip';
 
 // Where packs live, and who is allowed to overwrite one.
 //
@@ -86,6 +97,113 @@ export async function savePack(
     .bind(pack.system, pack.name, JSON.stringify(pack), pack.id)
     .run();
   return { pack, outcome: 'updated' };
+}
+
+/** A pack as it arrives: the assembled row, plus bytes still to be written. */
+export type IncomingPack = {
+  pack: RulesPack;
+  /** Pack-relative path (`art/logo.png`) → the bytes for it. */
+  art: Map<string, () => Promise<Uint8Array>>;
+};
+
+/** A `.pack` archive begins like every zip does. */
+export const looksLikeArchive = (bytes: Uint8Array) =>
+  bytes.length > 3 &&
+  bytes[0] === 0x50 &&
+  bytes[1] === 0x4b &&
+  (bytes[2] === 0x03 || bytes[2] === 0x05) &&
+  (bytes[3] === 0x04 || bytes[3] === 0x06);
+
+/**
+ * Read a `.pack` archive into something installable.
+ *
+ * Nothing is written and nothing is resolved here — the caller may be
+ * deciding whether this pack wins at all (see `PackOrigin`), and reading
+ * a file someone handed you should never be the thing that changes your
+ * host.
+ */
+export async function readPackArchive(buffer: ArrayBuffer): Promise<IncomingPack> {
+  const files = await readZip(buffer);
+  const json = new Map<string, unknown>();
+  const art = new Map<string, () => Promise<Uint8Array>>();
+  const decoder = new TextDecoder();
+
+  for (const [name, file] of files) {
+    if (name.startsWith(ART_PREFIX)) {
+      art.set(name, () => file.bytes());
+      continue;
+    }
+    if (!name.endsWith('.json') || name.includes('/')) continue;
+    try {
+      json.set(name, JSON.parse(decoder.decode(await (file as ZipFile).bytes())));
+    } catch {
+      throw new Error(`${name} in this pack isn't valid JSON`);
+    }
+  }
+  return { pack: assemble(json), art };
+}
+
+const contentTypeFor = (path: string) =>
+  /\.png$/i.test(path)
+    ? 'image/png'
+    : /\.jpe?g$/i.test(path)
+      ? 'image/jpeg'
+      : /\.webp$/i.test(path)
+        ? 'image/webp'
+        : /\.svg$/i.test(path)
+          ? 'image/svg+xml'
+          : 'application/octet-stream';
+
+/**
+ * Install a pack and its art together.
+ *
+ * Order matters and is the whole reason this isn't two calls at a call
+ * site: `savePack` decides whether this pack wins, and art is only
+ * written if it did. A proposal that loses on version must not quietly
+ * replace the pictures of the pack it lost to.
+ */
+export async function installPack(
+  env: Env,
+  incoming: IncomingPack,
+  origin: PackOrigin,
+): Promise<{ pack: IdentifiedPack; outcome: SaveOutcome }> {
+  const withId = identify(incoming.pack);
+  const resolved = absolutizeArt(withId, withId.id) as IdentifiedPack;
+  const result = await savePack(env, resolved, origin);
+  if (result.outcome === 'kept') return result;
+
+  for (const [path, bytes] of incoming.art) {
+    await env.MAPS.put(artKey(withId.id, path), await bytes(), {
+      httpMetadata: { contentType: contentTypeFor(path) },
+    });
+  }
+  return result;
+}
+
+/**
+ * Write a pack out as the file you'd hand someone.
+ *
+ * Art paths go back to being pack-relative on the way out, so the file
+ * says nothing about the host that produced it — the same pack installs
+ * under a different id somewhere else and still finds its own pictures.
+ */
+export function packArchive(env: Env, pack: IdentifiedPack): ReadableStream<Uint8Array> {
+  const relative = relativizeArt(pack, pack.id);
+  const encoder = new TextEncoder();
+
+  async function* entries(): AsyncGenerator<ZipEntry> {
+    for (const part of parts(relative)) {
+      yield { name: part.name, data: encoder.encode(`${JSON.stringify(part.json, null, 2)}\n`) };
+    }
+    // Only what the pack actually refers to. A stray file in the object
+    // store isn't part of the pack just because it shares a prefix.
+    for (const path of artPaths(pack, pack.id)) {
+      const object = await env.MAPS.get(artKey(pack.id, path));
+      if (!object?.body) continue;
+      yield { name: path, data: object.body };
+    }
+  }
+  return zipStream(entries());
 }
 
 /**

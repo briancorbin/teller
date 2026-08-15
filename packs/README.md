@@ -4,11 +4,36 @@ A pack is **the unit of content** for a system: the distilled rulings
 that come up mid-game, and the bestiary that goes with them. Rulebook
 excerpts for your own table, or homebrew.
 
-**A pack is a file.** Drop a `.pack` into `~/.teller/packs/` and the host
-sweeps it in within ten seconds — no restart, no upload step. The Rules
-panel's "add a pack" does the same thing through the browser, and packs
-that arrived that way get written back out to the folder, so the folder
-is always the complete shelf and always something you can hand someone.
+**A pack is an archive — and a folder.** Drop a `.pack` into
+`~/.teller/packs/` and the host sweeps it in within ten seconds; drop an
+unzipped *directory* there and it installs identically. No restart, no
+upload step. The Rules panel's "add a pack" does the same through the
+browser, and packs that arrived that way get written back out as
+folders, so the shelf always shows everything this host has.
+
+The two forms are the same format for different jobs:
+
+- **A folder is what you author in.** Open `bestiary.json`, fix the foe,
+  bump `version` in `pack.json` — live within ten seconds. No zipping,
+  no copying, no upload.
+- **An archive is what you hand someone.** `GET /api/packs/:id/file`
+  builds one on demand, art included.
+
+```
+wiw-guidebook/            ← or wiw-guidebook.pack, zipped
+  pack.json               id, system, name, version, rights, books
+  sections.json           the rulings
+  bestiary.json           the foes
+  catalog.json            items and upgrades
+  trades.json             the playable trades
+  creation.json           the creation flow's own prose
+  notes.json              the sheet's panel captions
+  art/                    the pictures
+```
+
+Only `pack.json` is required. Everything else is optional and a pack
+declares itself by what it contains — a bestiary-only pack and a whole
+core book are the same format.
 
 A pack needs **no PDF at all** to be useful — most Wardens own paper.
 A book, when you have one, attaches by hash and adds the page and the
@@ -36,6 +61,8 @@ anyone, and it's the same deal books have always had.
 
 ## Format
 
+`pack.json` — who this pack is, and nothing else:
+
 ```json
 {
   "id": "pak_4f1c9a2b7e03",
@@ -43,32 +70,67 @@ anyone, and it's the same deal books have always had.
   "name": "My Guidebook Pack",
   "version": 1,
   "rights": { "status": "personal", "holder": "Example Games Ltd" },
-  "books": ["bok_a23d630c48f7"],
-  "sections": [
-    {
-      "title": "Statuses",
-      "entries": [
-        {
-          "name": "Example Status",
-          "meta": "Nerve",
-          "text": "Your own words — short enough to read aloud mid-turn.",
-          "page": 62
-        }
-      ]
-    }
-  ],
-  "npcs": [
-    {
-      "id": "npc_example_varmint",
-      "name": "Example Varmint",
-      "fields": [{ "key": "defense", "label": "Defense", "value": "3G" }],
-      "counters": [{ "id": "ctr_hp", "name": "Health", "current": 24, "max": 24 }],
-      "tags": [],
-      "page": 186
-    }
-  ]
+  "books": ["bok_a23d630c48f7"]
 }
 ```
+
+`sections.json` — the rulings:
+
+```json
+[
+  {
+    "title": "Statuses",
+    "entries": [
+      {
+        "name": "Example Status",
+        "meta": "Nerve",
+        "text": "Your own words — short enough to read aloud mid-turn.",
+        "page": 62
+      }
+    ]
+  }
+]
+```
+
+`bestiary.json` — the foes:
+
+```json
+[
+  {
+    "id": "npc_example_varmint",
+    "name": "Example Varmint",
+    "fields": [{ "key": "defense", "label": "Defense", "value": "3G" }],
+    "counters": [{ "id": "ctr_hp", "name": "Health", "current": 24, "max": 24 }],
+    "tags": [],
+    "page": 186
+  }
+]
+```
+
+Each part file holds a bare array or object — no wrapper key, because
+the file name already said what it is. `catalog.json`, `trades.json`,
+`creation.json` and `notes.json` follow the same rule.
+
+### `art/` — the pictures
+
+Anything under `art/` travels with the pack, at whatever paths the pack
+refers to:
+
+```
+art/
+  logo.png
+  wiw/trd_gunslinger.png
+```
+
+**Reference art relative to the pack** — `"art": "art/logo.png"` — and
+never as a global key. teller resolves it to `art/<pak_id>/…` in the
+object store when the pack is installed, and turns it back into a
+relative path on export. That's what lets two packs both carry an
+`art/logo.png` without meeting, and lets the same file install on any
+host and still find its own pictures.
+
+A book does NOT travel with a pack. It's referenced by hash, because a
+book is something the recipient owns; a monster portrait isn't.
 
 Every value above is invented. A pack's contents are somebody's rules
 text, and this file is public — so the example teaches the shape and

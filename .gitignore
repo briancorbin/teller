@@ -5,7 +5,12 @@ dist/
 .DS_Store
 *.log
 
-# Rules pack content (rulebook excerpts) stays out of the public repo —
-# personal-use data uploaded to your own instance. See packs/README.md.
-packs/*.json
+# Rules pack content stays out of the repo — rule 4's one absolute line.
+# A pack may carry anything its author has the right to carry; the REPO
+# may carry none of it. Everything here is ignored except the format
+# doc, because a pack is a FOLDER now (pack.json, bestiary.json, art/…)
+# and a rule that only named `*.json` would have let the first converted
+# pack walk straight in.
+packs/*
+!packs/README.md
 build/

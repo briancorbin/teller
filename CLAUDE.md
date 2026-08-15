@@ -243,9 +243,29 @@ its author's choice** — a personal pack is usually distilled to what
 gets looked up at the table, and a publisher's own could be the whole
 book (rule 4). The format doesn't care which.
 
-**A pack lives in `~/.teller/packs/` as a `.pack` file**, swept in on
-boot exactly like a book — drop one in and it's installed. It carries a
-**minted `pak_` id, assigned once at authoring and baked into the file**.
+**A pack lives in `~/.teller/packs/`**, swept in on boot exactly like a
+book — drop one in and it's installed. It carries a **minted `pak_` id,
+assigned once at authoring and baked into the file**.
+
+**A pack is an ARCHIVE, and equally a FOLDER** (2026-08-15): `pack.json`
+(id, system, name, version, rights, books) beside `sections.json`,
+`bestiary.json`, `catalog.json`, `trades.json`, `creation.json`,
+`notes.json` and `art/`. Zipped it's a `.pack` you hand someone;
+unzipped it's a directory on the shelf you edit in place — same format,
+same sweep, no build step. **The file split is a serialization, not a
+data model**: everything assembles back into one `RulesPack`, so the
+bestiary, creation and merge code never learned this happened.
+
+Two consequences worth keeping:
+
+- **A pack carries its art**, which is what makes it self-contained —
+  the point of the change (TEL-88). Inside a pack, art is referenced
+  RELATIVE (`art/logo.png`); teller resolves that to an object key
+  (`art/<pak_id>/…`) at install, so nobody types a global key and two
+  packs can't name the same picture. Export reverses it, so a pack
+  installs under any id on any host and still finds its own pictures.
+- **A book still doesn't ride along.** Referenced by hash, as ever — a
+  book is a thing the recipient owns; a monster portrait isn't.
 Not a content hash: a book can hash its own bytes because a book is
 immutable, but a pack is edited, and hashing would rename it on every
 correction. Identity is the id, never the name (the lesson blueprints

@@ -23,7 +23,16 @@ import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
 import { bundleFilename, exportCampaign } from './bundle';
 import { bestiaryFor, findBlueprint, stamp } from './bestiary';
-import { listPacks, missingPacks, packsFor, savePack } from './packs';
+import {
+  installPack,
+  listPacks,
+  looksLikeArchive,
+  missingPacks,
+  packArchive,
+  packsFor,
+  readPackArchive,
+  type IncomingPack,
+} from './packs';
 import { rollInitiative } from './dice';
 import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
@@ -42,6 +51,24 @@ import type {
 import { tokenColor } from './tokens';
 
 export { CampaignDO };
+
+// For the host shim, which reads the pack shelf off a real disk before
+// any request has happened and so can't go through a route.
+//
+// Re-exported rather than reimplemented in `host/*.mjs`: a pack's file
+// layout is one set of rules, and the two-runtime contract only holds
+// while the shims supply plumbing rather than second opinions. The host
+// owns the folder; it does not own the format.
+export { readZip } from './unzip';
+export {
+  ART_PREFIX,
+  absolutizeArt,
+  artKey,
+  artPaths,
+  assemble,
+  parts,
+  relativizeArt,
+} from './packfile';
 
 // --- helpers ---------------------------------------------------------------
 
@@ -133,18 +160,56 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
 
   if (pathname === '/api/packs' && method === 'PUT') {
     if (!dm()) return err('DM key required', 401);
-    const pack = await request.json<RulesPack>();
-    if (!pack.system || !pack.name || !Array.isArray(pack.sections)) {
-      return err('pack requires system, name, sections[]', 400);
+
+    // A `.pack` is an archive (TEL-88), and that's what the console
+    // sends when someone adds one. JSON is still accepted because this
+    // is an API rather than a file format — it's the shape everything
+    // internal already speaks, and a pack with no art has nothing an
+    // archive would carry.
+    const buffer = await request.arrayBuffer();
+    let incoming: IncomingPack;
+    if (looksLikeArchive(new Uint8Array(buffer.slice(0, 4)))) {
+      try {
+        incoming = await readPackArchive(buffer);
+      } catch (e) {
+        return err((e as Error).message, 400);
+      }
+    } else {
+      let pack: RulesPack;
+      try {
+        pack = JSON.parse(new TextDecoder().decode(buffer)) as RulesPack;
+      } catch {
+        return err("that isn't a pack — expected a .pack archive or JSON", 400);
+      }
+      if (!pack.system || !pack.name) return err('pack requires system and name', 400);
+      incoming = { pack, art: new Map() };
     }
+
     // Uploading is intent, so it replaces — see `PackOrigin`. The saved
     // pack comes back carrying its id, which is how a file that was
     // written without one learns its permanent name.
-    const { pack: saved } = await savePack(env, pack, 'upload');
+    const { pack: saved } = await installPack(env, incoming, 'upload');
     const row = await env.DB.prepare('SELECT * FROM packs WHERE id = ?')
       .bind(saved.id)
       .first();
     return json(toPackRecord(row as never), 201);
+  }
+
+  // The file you hand someone: the pack, its parts, and its art.
+  m = pathname.match(/^\/api\/packs\/([^/]+)\/file$/);
+  if (m && method === 'GET') {
+    if (!dm()) return err('DM key required', 401);
+    const row = await env.DB.prepare('SELECT * FROM packs WHERE id = ?').bind(m[1]).first();
+    if (!row) return err('not found', 404);
+    const record = toPackRecord(row as never);
+    const pack = { ...record.pack, id: record.id };
+    const name = `${record.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.pack`;
+    return new Response(packArchive(env, pack), {
+      headers: {
+        'content-type': 'application/zip',
+        'content-disposition': `attachment; filename="${name}"`,
+      },
+    });
   }
 
   m = pathname.match(/^\/api\/packs\/([^/]+)$/);
