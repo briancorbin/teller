@@ -14,12 +14,20 @@ A pack needs **no PDF at all** to be useful — most Wardens own paper.
 A book, when you have one, attaches by hash and adds the page and the
 art. Enrichment, never a prerequisite.
 
-**Content never ships in this repo.** `*.json` here is gitignored on
-purpose: rulebook text is typically copyrighted, and your paste of it
-is personal use — the moment it's committed to a public repo it's
-redistribution. Keep authoring copies in this folder locally; the host's
-own shelf is `~/.teller/packs/`; git never sees either. (Homebrew you own
-the rights to can of course be shared anywhere.)
+**A pack may contain IP. The repo may not.** That's the whole of rule 4
+(rewritten 2026-08-14), and the two halves are worth stating separately
+because they used to be one blurry sentence:
+
+- **The repo carries nobody's book — absolute.** `*.json` here is
+  gitignored on purpose. Keep authoring copies in this folder locally;
+  the host's own shelf is `~/.teller/packs/`; git never sees either.
+- **A pack carries whatever its author has the right to put in it.**
+  Rules, prose, descriptions, stat blocks — the lot. A pack built from
+  a book you own is personal use, exactly like the notebook it replaces.
+  A pack a publisher sanctions can carry their whole book.
+
+What *does* vary is who may hand the file to someone else, and since
+that outlives whoever knew, the pack says so itself — see `rights`.
 
 A `.story` **references** packs and never carries them, so back up
 `~/.teller/packs/` alongside your bundles — the bundle alone won't
@@ -34,6 +42,7 @@ anyone, and it's the same deal books have always had.
   "system": "wiw",
   "name": "My Guidebook Pack",
   "version": 1,
+  "rights": { "status": "personal", "holder": "Example Games Ltd" },
   "books": ["bok_a23d630c48f7"],
   "sections": [
     {
@@ -100,6 +109,44 @@ Per-foe exceptions are the "printed in 2 books" picker in the bestiary.
 
 Declare nothing and every pack for the system applies, in the order they
 arrived on the host. A one-pack host should never make anyone tick a box.
+
+### `rights` — is this mine to share?
+
+The one question a pack can't answer by being opened, and the one whose
+answer outlives everybody who knew it. Three statuses, no fourth:
+
+| `status` | what it means | may it travel? |
+| --- | --- | --- |
+| `homebrew` | the author's own work | yes, anywhere |
+| `personal` | someone else's IP, for the author's own table | **no** |
+| `licensed` | someone else's IP, sanctioned to travel | yes, on its `terms` |
+
+```json
+"rights": {
+  "status": "licensed",
+  "holder": "Example Games Ltd",
+  "terms": "Distributed by the publisher; see examplegames.com/vtt"
+}
+```
+
+`holder` is attribution in plain words. `terms` is prose on purpose —
+the real answers are wider than an enum survives.
+
+**Absent means unknown, and unknown reads as `personal`.** That's the
+safe default both for packs that predate the field and for anything a
+stranger hands you.
+
+Three things this is NOT:
+
+- **Not verified.** It's the author's claim, and teller has no way to
+  check it. Anything showing it says *the author says* — never a badge
+  implying somebody checked.
+- **Not a gate.** A pack with no `rights` works completely: foes deploy,
+  pages open, nothing asks permission. Same bargain `books` makes — the
+  reference identifies, it never authorises.
+- **Not enforcement.** It can't stop a file being copied and isn't
+  trying to. It exists so an export path can warn you, and so the
+  honest answer is in the file instead of in someone's memory.
 
 ### `books` — which rulebook this is about
 

@@ -147,25 +147,75 @@ stepping back instead of fighting each other. What doesn't exist yet is
 a *readable* combat log or history for the DM (TEL-5) — the data is
 there, nothing renders it.
 
-### 4. Never publisher TEXT — mechanics are fine, and belong in the template
+### 4. The REPO carries no publisher text — a pack may carry anything its author has the right to
 
-*Split 2026-08-10. The IP half is learned; the "no mechanics" half was
-assumed and is gone.*
+*Split 2026-08-10; the IP half rewritten 2026-08-14 (Brian), because it
+was aimed at the wrong object. Twice now this rule has been too broad
+and had to be narrowed — both times because a real constraint was
+stated as a wider one that was easier to remember.*
 
-This rule used to say two things at once, and only one of them was ever
-about IP:
+**The only place IP cannot exist is IN THE REPO. Full stop.** (Brian,
+2026-08-14.) Everywhere else is fair game — packs, campaigns, `.story`
+bundles, homebrew, whatever someone builds on their own host out of
+their own books. The rule kept getting written as though publisher text
+were radioactive, which is a different and wrong claim; it was only ever
+about **where** it may live and **who** may hand it on.
 
-- **The line that stays.** No publisher text in the repo, and none
-  distributed: no spell descriptions, no stat blocks, no prose lifted
-  from a book. That's expression, it's protected, and it's what
-  `packs/*.json` being gitignored enforces. **Closed 2026-08-10**
-  (TEL-62): a bundle used to be ~96% pack text while claiming to be safe
-  to hand to anyone; it now references packs instead of carrying them,
-  so the line is structural rather than remembered.
-- **The line that's gone.** "No mechanics in code" was never an IP
-  concern — game *mechanics* aren't protected, only their expression.
-  It was scope fear dressed as a legal rule, and it blocked things the
-  table actually wants, like rolling initiative.
+Three separate things, and only the first is absolute:
+
+- **The repo, and teller itself, carry nobody's book. Absolute.** No
+  spell descriptions, no stat blocks, no prose lifted from a book, in
+  `src/`, `worker/`, `host/`, docs or templates. `packs/*.json` is
+  gitignored to enforce it. teller is presentation and bookkeeping
+  software; it ships empty and it stays empty. **teller hosts no
+  content** — that half of 4a is unchanged and load-bearing.
+- **A pack may contain IP. Done.** (Brian, 2026-08-14.) Rules, prose,
+  descriptions, stat blocks, the lot — a pack is *the* sanctioned home
+  for content, and pretending its contents had to be sanitized made the
+  best version of a pack impossible to build. What a pack may contain is
+  decided by what its author has the RIGHT to put in it, which is not
+  teller's business to police and never was. The same goes for a
+  campaign, a `.story`, a homebrew: content is the author's affair.
+- **Distribution follows the content, not the format.** A pack holding
+  someone's IP may be distributed only by that rightsholder, or by
+  someone they've authorized — a licensee or a storefront counts; it
+  needn't be the publisher personally. A pack that's all homebrew is its
+  author's to hand out freely. **Both are ordinary packs.** Everything
+  in between (homebrew for a licensed system, a pack quoting one table)
+  is the author's call, and their assertion — teller cannot verify a
+  claim about rights and must never present one as verified. **A pack
+  says which it is, in `rights`** (`homebrew` | `personal` | `licensed`,
+  plus holder and terms; absent reads as `personal`). It gates nothing
+  at the table — it exists so the answer lives in the file instead of in
+  whoever happened to know. See `packs/README.md`.
+
+The everyday case is untouched and stays comfortable: **a DM's own pack,
+built from their own book, on their own host, shared with nobody.** That
+is personal use, it's what `~/.teller/packs/` is for, and rule 4a already
+says what people do with files they have is between them and the
+publisher.
+
+**What this makes possible, and why it was worth rewriting** (Brian,
+2026-08-14): the Wild Imaginary West pack is being built as a **proposal
+to Boylei Hobby Time** — seeded with the book's rules, descriptions and
+prose, complete rather than distilled, so there's something real to show
+a publisher who might want to distribute it themselves. Under the old
+wording, the most persuasive artifact teller could produce was the one
+thing it forbade. Until such a pack is sanctioned it is personal-use and
+goes to nobody — not playtesters, not a friend's table, not a bundle.
+
+**TEL-62 now reads differently, and better.** A `.story` referencing
+packs by id instead of carrying them was filed as an IP safety measure.
+Its actual value is structural and survives this rewrite intact: **a
+pack's distribution is decided by the pack, separately from the campaign
+that names it.** That's exactly what makes a publisher-distributed pack
+coherent — your campaign travels, and the licensed content it sits on
+arrives from whoever has the right to send it.
+
+**The line that's gone (2026-08-10).** "No mechanics in code" was never
+an IP concern — game *mechanics* aren't protected, only their
+expression. It was scope fear dressed as a legal rule, and it blocked
+things the table actually wants, like rolling initiative.
 
 So a template = structure + vocabulary + **mechanics**: field lists,
 counter names, "Warden" vs "DM", and how this system rolls. Dice live
@@ -186,9 +236,12 @@ teller are the same kind of thing and neither outranks the other.
 is now a distributable artifact, not a row in someone's database.*
 
 Rules CONTENT has a sanctioned home: **packs**. A pack carries the
-distilled rulings that come up mid-game AND the bestiary that goes with
-them; the campaign's foe list is the pack catalogue merged with the
-campaign's own, campaign winning on an id collision.
+rulings that come up mid-game AND the bestiary that goes with them; the
+campaign's foe list is the pack catalogue merged with the campaign's
+own, campaign winning on an id collision. **How complete a pack is, is
+its author's choice** — a personal pack is usually distilled to what
+gets looked up at the table, and a publisher's own could be the whole
+book (rule 4). The format doesn't care which.
 
 **A pack lives in `~/.teller/packs/` as a `.pack` file**, swept in on
 boot exactly like a book — drop one in and it's installed. It carries a
@@ -211,13 +264,13 @@ without coordinating and a reference resolves on any host that has it —
 no registry, no ids handed out by anyone.
 
 Authoring copies live in `packs/` in the repo and are **gitignored**:
-rulebook text is personal-use data, never repo content. See
+whatever a pack carries, it is never repo content (rule 4). See
 `packs/README.md` for the format.
 
 **teller hosts no content.** Not packs, not books. Listing anything is
-possible only with a rightsholder's sanction, and even then the
-publisher distributes it themselves. What people do with files they
-have is between them and the publisher.
+possible only with a rightsholder's sanction, and even then it's
+distributed by them or whoever they authorize — never by teller. What
+people do with files they have is between them and the publisher.
 
 ### 5. Turn order is an ordered list + a current index
 

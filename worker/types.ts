@@ -1322,6 +1322,30 @@ export type PackSection = {
  * be useful. A book, when you have one, attaches by hash and adds the
  * page and the art. Enrichment, never a prerequisite.
  */
+/**
+ * A pack's own claim about what it carries and where it may go.
+ *
+ * Deliberately three words and two strings rather than a licence
+ * model: teller is not a rights registry and the moment this grows a
+ * schema someone will expect it to be enforced. See `RulesPack.rights`.
+ */
+export type PackRights = {
+  /** The author's claim. Absent is read as `personal`. */
+  status: 'homebrew' | 'personal' | 'licensed';
+  /**
+   * Whose IP, in plain words — "Boylei Hobby Time". Attribution, and
+   * the thing a console shows when it says where a foe came from.
+   * Meaningless on `homebrew` unless the author wants a byline.
+   */
+  holder?: string;
+  /**
+   * On what basis it may travel, for `licensed` — a sentence, a licence
+   * name, a URL. Prose on purpose: the range of real answers here is
+   * wider than any enum would survive.
+   */
+  terms?: string;
+};
+
 export type RulesPack = {
   /**
    * Minted once, at authoring, and carried in the file forever.
@@ -1345,6 +1369,38 @@ export type RulesPack = {
    */
   version: number;
   sections: PackSection[];
+  /**
+   * Who this pack's contents belong to, and who may hand the file on.
+   *
+   * A pack MAY contain IP — that's rule 4 as rewritten 2026-08-14, and
+   * it's the whole point of the format: the only place publisher text
+   * may never live is this repo. What that leaves is a real question
+   * the file has to answer for itself, because it outlives the
+   * conversation in which someone knew: **is this mine to share?**
+   *
+   * Three answers, and no fourth:
+   * - `homebrew` — the author's own work. Theirs to hand out freely.
+   * - `personal` — holds someone else's IP, kept for the author's own
+   *   table. Never distributed. (Every pack built from a book you own
+   *   starts here, and most stay here forever.)
+   * - `licensed` — holds someone else's IP AND is sanctioned to travel,
+   *   by the rightsholder or someone they authorised. `holder` says
+   *   whose, `terms` says on what basis.
+   *
+   * Absent means UNKNOWN, and unknown is treated as `personal` —
+   * the safe reading for the thousands of packs that predate this
+   * field, and for anything a stranger hands you.
+   *
+   * **This is an assertion, never a verification.** teller cannot check
+   * whether a claim is true and must never render one as though it had.
+   * Say "the author says", or say nothing.
+   *
+   * It also gates NOTHING at the table. A pack with no rights at all
+   * still resolves, still deploys foes, still prints its pages — same
+   * bargain `books` makes: the reference identifies, it never
+   * authorises, and a host with one pack never makes anyone tick a box.
+   */
+  rights?: PackRights;
   /**
    * Panel heading → the line the printed sheet sets beneath it.
    *
