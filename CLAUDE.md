@@ -23,9 +23,10 @@ simulator.
 happens at the table stays physical — but building encounters, bestiaries
 and reference libraries beforehand is a fair thing for teller to grow
 into, and it feeds the table rather than competing with it. What stays
-out is the thing that actually matters: **no publisher TEXT in the repo
-or distributed to anyone** (rule 4). Reference and prep live
-per-instance, in the DM's own books.
+out is the thing that actually matters: **no publisher text in the
+REPO** (rule 4 — the one absolute line; what a pack may carry and who
+may distribute it is the author's affair). Reference and prep live
+per-instance, on the DM's own host.
 
 "The humans are the rules engine" is about AUTHORITY, not arithmetic
 (amended 2026-08-10). teller may roll dice and derive defaults; every
@@ -39,8 +40,13 @@ Standalone on purpose (the sidewalk precedent): own repo, own infra,
 own auth, no `@shed/*` imports ever. Patterns are COPIED from the shed
 (DO + SSE + role clients from gameday, worker-row serializers, D1
 habits) — never imported. Duplication between repos with different
-futures is insulation, not debt. Open-sourcing someday is plausible;
-keep the repo clean of personal-infra references.
+futures is insulation, not debt.
+
+That boundary now extends to ownership (2026-08-15): the repo is
+**public, AGPL-3.0, at `teller-ink/teller`** — its own org, not a
+personal namespace — with a Homebrew tap at `teller-ink/homebrew-tap`.
+"Open-sourcing someday" happened; keep the repo clean of personal-infra
+references because strangers can now read it.
 
 ## Stack
 
@@ -64,12 +70,19 @@ The local runtime is the one that matters (`bin/teller` → `host/cli.mjs`):
 - `teller key` / `teller where` / `teller version`.
 
 Data lives in `~/.teller/`: `teller.db`, `books/` (PDFs named by content
-hash), `packs/` (`.pack` files named by minted id), `map/`, `dm.key`.
+hash), `packs/` (pack archives and authoring folders, named by minted
+id or by their author), `art/` (installed pack art, keyed
+`art/<pak_id>/…`), `map/`, `dm.key`.
 
 - `pnpm dev` — Vite dev server (port 4525) with the worker + local D1/DO.
 - `pnpm db:migrate:local` / `db:migrate:remote` — D1 migrations. The host
   applies the same `migrations/` on boot.
-- `pnpm typecheck` / `pnpm build` / `pnpm pack` (installable tarball).
+- `pnpm typecheck` / `pnpm build` / `pnpm pack` (release tarball via
+  `scripts/pack.mjs` — prints the url + sha256 the tap's formula needs).
+- Releasing: bump `package.json` version → `pnpm pack` → `gh release
+  create vX.Y.Z build/teller-X.Y.Z.tar.gz` → paste the printed fields
+  into `Formula/teller.rb` in `teller-ink/homebrew-tap`. Users install
+  with `brew install teller-ink/tap/teller`.
 - Secrets: `DM_KEY` (`.dev.vars` locally; on a host, `~/.teller/dm.key`,
   minted on first run).
 
@@ -90,7 +103,9 @@ It is no longer where play happens.
   guesses in a week. Mechanics only (rule 4); the book's prose stays
   in the pack. It maps the domain; screens are still designed one at
   a time.
-- **`packs/README.md`** — the pack format. The JSON itself is gitignored.
+- **`packs/README.md`** — the pack format (archive/folder layout,
+  `rights`, art). The content itself never lives in the repo; the
+  authoring copies are the shelf folders in `~/.teller/packs/`.
 
 ## RULES
 
@@ -165,8 +180,10 @@ Three separate things, and only the first is absolute:
 
 - **The repo, and teller itself, carry nobody's book. Absolute.** No
   spell descriptions, no stat blocks, no prose lifted from a book, in
-  `src/`, `worker/`, `host/`, docs or templates. `packs/*.json` is
-  gitignored to enforce it. teller is presentation and bookkeeping
+  `src/`, `worker/`, `host/`, docs or templates. `packs/*` is
+  gitignored to enforce it (everything but the README — a pack is a
+  folder now, and a rule naming only `*.json` would have let one walk
+  in). teller is presentation and bookkeeping
   software; it ships empty and it stays empty. **teller hosts no
   content** — that half of 4a is unchanged and load-bearing.
 - **A pack may contain IP. Done.** (Brian, 2026-08-14.) Rules, prose,
@@ -245,7 +262,11 @@ book (rule 4). The format doesn't care which.
 
 **A pack lives in `~/.teller/packs/`**, swept in on boot exactly like a
 book — drop one in and it's installed. It carries a **minted `pak_` id,
-assigned once at authoring and baked into the file**.
+assigned once at authoring and baked into the file**. Not a content
+hash: a book can hash its own bytes because a book is immutable, but a
+pack is edited, and hashing would rename it on every correction.
+Identity is the id, never the name (the lesson blueprints already
+taught).
 
 **A pack is an ARCHIVE, and equally a FOLDER** (2026-08-15): `pack.json`
 (id, system, name, version, rights, books) beside `sections.json`,
@@ -266,10 +287,6 @@ Two consequences worth keeping:
   installs under any id on any host and still finds its own pictures.
 - **A book still doesn't ride along.** Referenced by hash, as ever — a
   book is a thing the recipient owns; a monster portrait isn't.
-Not a content hash: a book can hash its own bytes because a book is
-immutable, but a pack is edited, and hashing would rename it on every
-correction. Identity is the id, never the name (the lesson blueprints
-already taught).
 
 **A campaign declares which packs it runs on**, by id, **in precedence
 order** — and later wins on a collision, the way an import layers. That
@@ -283,9 +300,12 @@ bytes, so two people who own the same rulebook derive the same id
 without coordinating and a reference resolves on any host that has it —
 no registry, no ids handed out by anyone.
 
-Authoring copies live in `packs/` in the repo and are **gitignored**:
-whatever a pack carries, it is never repo content (rule 4). See
-`packs/README.md` for the format.
+**The shelf folder IS the authoring copy** (2026-08-15). Edit
+`~/.teller/packs/<name>/bestiary.json` in place, bump `version` in
+`pack.json`, and the ten-second sweep installs it — no copy, no upload.
+The repo's `packs/` holds only the format README; everything else under
+it is gitignored (`packs/*`), because whatever a pack carries, it is
+never repo content (rule 4).
 
 **teller hosts no content.** Not packs, not books. Listing anything is
 possible only with a rightsholder's sanction, and even then it's
@@ -519,6 +539,20 @@ wrote travels.** A bundle carries your campaign — characters, encounters,
 scenes — and **references books AND packs by id, never carries them**. A
 rulebook is downloaded once, by the person who owns it, onto the machine
 that serves the table.
+
+**Known crack, deliberately unpatched (TEL-87, 2026-08-15).** That
+sentence assumes the campaign's author and the publisher are different
+people, and a PUBLISHED campaign breaks it — there the publisher wrote
+the campaign. Brian's container model is settled (**system** = how the
+game works, **pack** = what exists in the world, **story** = one
+table's arrangement stitching packs to a system), and a one-shot is a
+campaign, not a pack. What's still open is whether a `.story` someone
+distributes and a `.story` you back up are one format or two, plus
+`rights` and identity on the manifest — decide it in TEL-87 before
+authoring the Kickstarter campaign's adventure layer, not here by
+accretion. Until then `BundleManifest.personal` (derived
+`npcs.length > 0`) is a stale heuristic from old rule 4; don't trust
+it, replace it as part of TEL-87.
 
 **This now holds for packs too** (TEL-62, closed 2026-08-10). A bundle
 used to carry pack bodies whole: a WiW export was ~124 KB of `pack.json`
