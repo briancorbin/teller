@@ -55,10 +55,16 @@ export function assistantInfo(env: AssistantEnv): { configured: boolean; model?:
 // Everything here is a READ of state other code already maintains, and
 // the two boundaries are enforced by what is simply never assembled:
 //
-//   * hidden tokens and unrevealed zones stay out, not because a player
-//     might see the suggestion (they can't; console-only) but because
-//     the FOE hasn't seen the ambush either — a suggestion that routes
-//     a bandit around a trap it doesn't know about spoils the trap.
+//   * hidden MARKERS and unrevealed zones stay out, not because a
+//     player might see the suggestion (they can't; console-only) but
+//     because the FOE hasn't seen them — a suggestion that routes a
+//     bandit around a trap it doesn't know about spoils the trap.
+//     Hidden FOE tokens are the opposite case (Brian, 2026-08-15: "the
+//     3 bark watchers start hidden in the trees"): monsters that set
+//     an ambush together know where each other lie, and above all a
+//     creature knows that IT is hidden — its stealth is usually its
+//     whole opening move. So the acting foe always sees itself and its
+//     fellow foes, hidden ones marked as unseen-by-the-posse.
 //   * PC numbers stay out. The foe sees what the table sees: who looks
 //     hurt (vitality — the same word /public uses), never a hit-point
 //     total. What a monster knows and what a badge shows turn out to be
@@ -99,20 +105,36 @@ function describeFoe(foe: Character): string {
   return lines.join('\n');
 }
 
-function describeBoard(scene: Scene | undefined, characters: Character[]): string {
+function describeBoard(
+  scene: Scene | undefined,
+  characters: Character[],
+  foeId: string,
+): string {
   if (!scene) return 'BOARD: no active scene — positions unknown.';
   const width = scene.widthInches;
   const unit = width ? 'inches from the map left/top edge' : 'map fraction 0..1';
   const byId = new Map(characters.map((c) => [c.id, c]));
   const rows = (scene.tokens ?? [])
-    // What the foe hasn't seen doesn't exist for it — see header.
-    .filter((t) => !t.hidden)
+    // What the foes haven't seen doesn't exist for them; what they SET
+    // UP together, they all know. A hidden foe token is the second
+    // kind — and the acting foe always sees itself. See header.
+    .filter((t) => {
+      if (!t.hidden) return true;
+      if (t.characterId === foeId) return true;
+      const who = t.characterId ? byId.get(t.characterId) : undefined;
+      return who?.kind === 'npc';
+    })
     .map((t) => {
       const who = t.characterId ? byId.get(t.characterId) : undefined;
       const x = width ? round2(t.u * width) : round2(t.u);
       const y = width ? round2(t.v * width) : round2(t.v);
       const tag = who ? (who.kind === 'pc' ? 'PC' : 'foe') : 'marker';
-      return `- ${t.label} (${tag}) at x=${x}, y=${y}${t.effect ? `, in ${t.effect}` : ''}`;
+      const cover = t.hidden
+        ? t.characterId === foeId
+          ? ' — HIDDEN: the posse cannot see it'
+          : ' — hidden, unseen by the posse'
+        : '';
+      return `- ${t.label} (${tag}) at x=${x}, y=${y}${t.effect ? `, in ${t.effect}` : ''}${cover}`;
     });
   const zones = (scene.zones ?? [])
     .filter((z) => !z.hidden)
@@ -254,13 +276,21 @@ export async function suggestTurn(
     campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
     campaign.data.maps?.[0];
 
+  // A creature knows its own state of concealment — stealth is usually
+  // the whole plan — so say it outright rather than hoping the model
+  // notices a flag in the token list.
+  const ownToken = scene?.tokens?.find((t) => t.characterId === foe.id);
+  const concealment = ownToken?.hidden
+    ? `\n\n${foe.name} is currently HIDDEN — the posse does not know it's there. Staying hidden, repositioning unseen, or striking from ambush are all on the table; revealing itself is a choice.`
+    : '';
+
   const profile = profileOf(foe);
   const user = [
-    describeFoe(foe),
+    describeFoe(foe) + concealment,
     profile
       ? `PROFILE (how it acts — follow this): ${profile}`
       : 'PROFILE: none written. Infer temperament from its name and stats, and say you did in premises.',
-    describeBoard(scene, characters),
+    describeBoard(scene, characters, foe.id),
     describeFight(session, characters, foe.id),
     `\nWhat would ${foe.name} do this turn?`,
   ].join('\n\n');
