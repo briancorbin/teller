@@ -73,6 +73,19 @@ export function DmView({
   onMissing?: () => void;
 }) {
   const showSession = pane === null || pane === 'session';
+
+  /**
+   * Whether this host has an assistant wired up (TEL-85). Checked once;
+   * an unconfigured host renders no trace of the feature — the button
+   * only exists where an answer can (rule 7: allowed, never required).
+   */
+  const [assistantOn, setAssistantOn] = useState(false);
+  useEffect(() => {
+    api
+      .assistant()
+      .then((a) => setAssistantOn(a.configured))
+      .catch(() => setAssistantOn(false));
+  }, []);
   const showCharacters = pane === null || pane === 'characters';
   const showLibrary = pane === null || pane === 'library';
   const [campaign, setCampaign] = useState<Campaign | null>(null);
@@ -518,6 +531,9 @@ export function DmView({
       }
       onPatchCharacter={patchCharacter}
       onDropToken={dropToken}
+      onSuggest={
+        assistantOn ? (characterId) => api.suggestTurn(campaignId, characterId) : undefined
+      }
     />
   );
 

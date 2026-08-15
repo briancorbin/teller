@@ -34,6 +34,7 @@ import {
   type IncomingPack,
 } from './packs';
 import { rollInitiative } from './dice';
+import { assistantInfo, assistantConfigured, suggestTurn } from './assistant';
 import { checkTicket, mintTicket, STREAM_MINUTES } from './tickets';
 import { apply as applyBundle, inspect as inspectBundle } from './import';
 import type {
@@ -217,6 +218,56 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (!dm()) return err('DM key required', 401);
     await env.DB.prepare('DELETE FROM packs WHERE id = ?').bind(m[1]).run();
     return json({ ok: true });
+  }
+
+  // The assistant (TEL-85/86). Whether one is configured is all the
+  // console may ask; the key never travels, and an unconfigured host
+  // simply has no button — never a nag (rule 7: allowed, not required).
+  if (pathname === '/api/assistant' && method === 'GET') {
+    if (!dm()) return err('DM key required', 401);
+    return json(assistantInfo(env));
+  }
+
+  // One foe's turn, proposed. Reads everything, writes NOTHING — not
+  // even an event, because no state changed (rule 3 logs mutations,
+  // and a suggestion the Warden may ignore isn't one).
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/assistant\/turn$/);
+  if (m && method === 'POST') {
+    if (!dm()) return err('DM key required', 401);
+    if (!assistantConfigured(env)) {
+      return err('no assistant configured — see ~/.teller/assistant.json', 503);
+    }
+    const campaignId = m[1];
+    const { characterId } = await request.json<{ characterId?: string }>();
+    if (!characterId) return err('characterId required', 400);
+
+    const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+      .bind(campaignId)
+      .first();
+    if (!campaignRow) return err('campaign not found', 404);
+    const characterRows = await env.DB.prepare(
+      'SELECT * FROM characters WHERE campaign_id = ? ORDER BY created_at',
+    )
+      .bind(campaignId)
+      .all();
+    const characters = characterRows.results.map((r) => toCharacter(r as never));
+    const foe = characters.find((c) => c.id === characterId);
+    if (!foe) return err('character not found', 404);
+    // The posse is not the assistant's business (TEL-86) — enforced
+    // here, not in the prompt, so no client can ask on a player's behalf.
+    if (foe.kind === 'pc') return err('teller does not play player characters', 400);
+
+    const session = await (
+      await sessionStub(env, campaignId).fetch('https://do/session')
+    ).json<SessionState>();
+
+    try {
+      return json(
+        await suggestTurn(env, toCampaign(campaignRow as never), characters, session, foe),
+      );
+    } catch (e) {
+      return err((e as Error).message, 502);
+    }
   }
 
   if (pathname === '/api/campaigns' && method === 'GET') {

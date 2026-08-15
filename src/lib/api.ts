@@ -17,6 +17,7 @@ import type {
   SessionOp,
   SessionState,
   SystemTemplate,
+  TurnSuggestion,
 } from '../../worker/types';
 import type { BundleSummary } from '../../worker/import';
 import type { SourcedNpc } from '../../worker/bestiary';
@@ -112,6 +113,16 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   templates: () => req<SystemTemplate[]>('/api/templates'),
+
+  /** Is an assistant wired up on this host? Decides whether the button exists. */
+  assistant: () => req<{ configured: boolean; model?: string }>('/api/assistant'),
+
+  /** One foe's turn, proposed. Reads the board; writes nothing (rule 1). */
+  suggestTurn: (campaignId: string, characterId: string) =>
+    req<TurnSuggestion>(`/api/campaigns/${campaignId}/assistant/turn`, {
+      method: 'POST',
+      body: JSON.stringify({ characterId }),
+    }),
 
   listCampaigns: () => req<Campaign[]>('/api/campaigns'),
 

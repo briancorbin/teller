@@ -1791,6 +1791,24 @@ export type InitiativeEntry = {
 export type CartLine = { ref: string; qty: number };
 
 /**
+ * What Teller proposes for one foe's turn (TEL-86). Words on the
+ * console, nothing else — the assistant returns this and writes
+ * nothing; playing any of it is the Warden's act, not teller's.
+ *
+ * `premises` is the honesty mechanism: virtual tokens are only as
+ * fresh as the last drag (minis are physical — the thesis), so every
+ * assumption the suggestion leans on is surfaced for the Warden to
+ * check at a glance rather than discovered mid-turn.
+ */
+export type TurnSuggestion = {
+  premises: string[];
+  action: string;
+  rationale: string;
+  /** Which model spoke — provenance on the card, not a warranty. */
+  model: string;
+};
+
+/**
  * The shop that's OPEN, and every cart in it. Live state that more than
  * one screen argues about (a seat fills the cart, the console rules on
  * it), so it lives here with initiative rather than in the campaign

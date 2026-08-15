@@ -123,12 +123,25 @@ export async function serve({ data = defaultData(), port = 4525 } = {}) {
     );
   }
 
+  // The assistant's provider, if this table has one (TEL-85). A plain
+  // JSON file beside the key — { url?, key?, model, style? } — because
+  // it's the same kind of thing DM_KEY is: host configuration, never
+  // client state. Absent file = no assistant = teller runs exactly as
+  // before; the console never even shows the button.
+  const assistant = await readFile(join(DATA, 'assistant.json'), 'utf8')
+    .then((raw) => JSON.parse(raw))
+    .catch(() => ({}));
+
   const env = {
     DB: db,
     MAPS: new R2(objectRoot(DATA)),
     ASSETS: new Assets(join(ROOT, 'dist', 'client')),
     CAMPAIGN: new DurableNamespace(db.raw, worker.CampaignDO),
     DM_KEY: await dmKey(DATA),
+    ASSISTANT_URL: assistant.url,
+    ASSISTANT_KEY: assistant.key,
+    ASSISTANT_MODEL: assistant.model,
+    ASSISTANT_STYLE: assistant.style,
   };
 
   const server = createServer(async (req, res) => {

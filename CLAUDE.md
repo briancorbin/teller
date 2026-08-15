@@ -84,7 +84,9 @@ id or by their author), `art/` (installed pack art, keyed
   into `Formula/teller.rb` in `teller-ink/homebrew-tap`. Users install
   with `brew install teller-ink/tap/teller`.
 - Secrets: `DM_KEY` (`.dev.vars` locally; on a host, `~/.teller/dm.key`,
-  minted on first run).
+  minted on first run). Optionally `~/.teller/assistant.json`
+  (`{ url?, key?, model, style? }`) wires up the assistant (TEL-85);
+  absent means no assistant and no button — never a nag.
 
 The Cloudflare deployment still exists (worker `teller`, D1 `teller`, R2
 `teller-maps`, custom domain) and is where the landing page will live.

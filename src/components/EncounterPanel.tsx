@@ -8,6 +8,7 @@ import type {
   InitiativeEntry,
   SessionOp,
   SessionState,
+  TurnSuggestion,
 } from '../../worker/types';
 import { newLocalId } from '../lib/api';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
@@ -62,6 +63,7 @@ export function EncounterPanel({
   onDropToken,
   onSpawn,
   onRollNpcs,
+  onSuggest,
 }: {
   session: SessionState | null;
   characters: Character[];
@@ -76,11 +78,43 @@ export function EncounterPanel({
   onSpawn: (npcId: string, count: number) => void;
   /** Open the rolling phase and roll for the monsters in one act. */
   onRollNpcs: () => void;
+  /**
+   * Ask Teller what a foe would do (TEL-86). Absent when no assistant
+   * is configured, and the button simply doesn't exist — an
+   * unconfigured host never nags (rule 7).
+   */
+  onSuggest?: (characterId: string) => Promise<TurnSuggestion>;
 }) {
   const [draft, setDraft] = useState('');
   /** Rows opened to show the whole sheet. Running a monster shouldn't
    *  mean leaving the fight to go and read it. */
   const [open, setOpen] = useState<Set<string>>(new Set());
+  /**
+   * Teller's proposals, per ROW — keyed by entry id, not character id,
+   * so two wolves stamped from one blueprint are advised apart. Local
+   * state on purpose: a suggestion is words on the Warden's screen,
+   * never session state, and dismissing one leaves no trace anywhere.
+   */
+  const [advice, setAdvice] = useState<
+    Record<string, { busy: boolean; suggestion?: TurnSuggestion; error?: string }>
+  >({});
+  const ask = (entryId: string, characterId: string) => {
+    if (!onSuggest) return;
+    setAdvice((prev) => ({
+      ...prev,
+      [entryId]: { busy: true, suggestion: prev[entryId]?.suggestion },
+    }));
+    onSuggest(characterId)
+      .then((s) =>
+        setAdvice((prev) => ({ ...prev, [entryId]: { busy: false, suggestion: s } })),
+      )
+      .catch((e) =>
+        setAdvice((prev) => ({
+          ...prev,
+          [entryId]: { busy: false, error: (e as Error).message },
+        })),
+      );
+  };
   const toggleOpen = (id: string) =>
     setOpen((prev) => {
       const next = new Set(prev);
@@ -309,6 +343,18 @@ export function EncounterPanel({
                   </span>
                 )}
 
+                {/* Ask Teller. Foes only — the posse plays itself. */}
+                {onSuggest && character && character.kind === 'npc' && (
+                  <button
+                    className={`${btnGhost} ${advice[entry.id]?.busy ? 'animate-pulse text-amber-300' : ''}`}
+                    title="what would they do? Teller proposes; you decide"
+                    disabled={advice[entry.id]?.busy}
+                    onClick={() => ask(entry.id, character.id)}
+                  >
+                    ✦
+                  </button>
+                )}
+
                 {character &&
                   (tokenLinks.has(character.id) ? (
                     <span
@@ -425,6 +471,74 @@ export function EncounterPanel({
                       {state.name}?
                     </button>
                   ))}
+                </div>
+              )}
+
+              {/*
+                Teller's proposal — words on a card, deliberately with
+                no apply button anywhere on it. The Warden speaks the
+                turn (or doesn't); the card can only be redrawn or
+                waved away. Premises come first because they're the
+                part that can be WRONG: virtual tokens are only as
+                fresh as the last drag, so the assumptions are shown
+                for checking before the action is worth reading.
+              */}
+              {character && (advice[entry.id]?.suggestion || advice[entry.id]?.error) && (
+                <div className="ml-6 space-y-1 rounded-md border border-amber-700/50 bg-amber-950/20 px-2.5 py-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono text-[10px] uppercase tracking-wide text-amber-400">
+                      ✦ teller suggests
+                    </span>
+                    {advice[entry.id]?.suggestion && (
+                      <span className="font-mono text-[10px] text-stone-600">
+                        {advice[entry.id].suggestion!.model}
+                      </span>
+                    )}
+                    <button
+                      className={`${btnGhost} ml-auto`}
+                      title="ask again"
+                      disabled={advice[entry.id]?.busy}
+                      onClick={() => ask(entry.id, character.id)}
+                    >
+                      ↻
+                    </button>
+                    <button
+                      className={btnGhost}
+                      title="wave it away"
+                      onClick={() =>
+                        setAdvice((prev) => {
+                          const next = { ...prev };
+                          delete next[entry.id];
+                          return next;
+                        })
+                      }
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {advice[entry.id]?.error ? (
+                    <p className="text-[11px] text-red-300">{advice[entry.id].error}</p>
+                  ) : (
+                    <>
+                      {advice[entry.id].suggestion!.premises.length > 0 && (
+                        <ul className="space-y-0.5">
+                          {advice[entry.id].suggestion!.premises.map((p, i) => (
+                            <li key={i} className="text-[11px] italic text-stone-400">
+                              assuming {p}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <p className="text-sm leading-snug text-amber-100">
+                        {advice[entry.id].suggestion!.action}
+                      </p>
+                      {advice[entry.id].suggestion!.rationale && (
+                        <p className="text-[11px] leading-snug text-stone-400">
+                          {advice[entry.id].suggestion!.rationale}
+                        </p>
+                      )}
+                    </>
+                  )}
                 </div>
               )}
             </li>

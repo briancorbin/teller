@@ -24,6 +24,16 @@ export type Env = {
   ASSETS: Fetcher;
   MAPS: R2Bucket;
   DM_KEY?: string;
+  /**
+   * The assistant's provider, as plain config (TEL-85: never captive).
+   * On a host these come from `~/.teller/assistant.json`; on Cloudflare
+   * they'd be vars/secrets. All optional — teller runs whole without
+   * them, and the console simply doesn't grow the button (rule 7).
+   */
+  ASSISTANT_URL?: string;
+  ASSISTANT_KEY?: string;
+  ASSISTANT_MODEL?: string;
+  ASSISTANT_STYLE?: string;
 };
 
 // Raw D1 rows never leave the worker — per-resource serializers coerce
