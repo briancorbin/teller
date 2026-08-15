@@ -1852,6 +1852,24 @@ export type TurnSuggestion = {
    * record what the plastic said. teller never rolls here.
    */
   roll?: { dice: string; for: string };
+  /**
+   * The ATTEMPT, in words the Warden says out loud before anyone
+   * touches a die (Brian, 2026-08-15). `action` is the brief — what
+   * the foe is doing, in teller's voice, for the Warden. This is the
+   * table's half: the lunge described up to the instant of contact
+   * and stopped there, carrying no outcome, because the outcome
+   * hasn't happened yet. It is the front bookend to `narration`'s
+   * back one, and the dice go in between.
+   */
+  preface?: string;
+  /**
+   * Who the action is aimed at, by the exact name the fight calls
+   * them. A GUESS at where the damage lands, so the resolve step can
+   * open on the likely target instead of an empty picker — the Warden
+   * changes it with one tap and nothing is applied until they do
+   * (rule 1). Absent when the action targets nobody.
+   */
+  target?: string;
   /** Which model spoke — provenance on the card, not a warranty. */
   model: string;
 };

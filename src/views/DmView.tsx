@@ -559,9 +559,15 @@ export function DmView({
   );
 
   // Turn order and everything you reach for mid-fight.
+  //
+  // This pane is WIDE on purpose (Brian, 2026-08-15: the encounter
+  // runner is desktop console glass and nothing else). It used to sit
+  // in the same max-w-2xl column as every other pane, which meant a
+  // fight was run in a phone's worth of width on a monitor; the panel
+  // splits into roster + stage once its container has the room.
   if (pane === 'encounter') {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-3 p-3">
+      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-3 p-3">
         <ConnectionHint connected={connected} />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>

@@ -82,6 +82,41 @@ function vitalityOf(character: Character): string {
   return ratio <= 0.25 ? 'critical' : ratio <= 0.5 ? 'bloodied' : 'healthy';
 }
 
+/**
+ * What this combatant is visibly protected by (Brian, 2026-08-15).
+ *
+ * Defense in this system is ROLLED, not owned: it's a bundle of Dodge,
+ * Cover and gear, and a person has no innate Defense at all. So the
+ * honest thing to hand the model is not a number — it's what a foe
+ * across the clearing could SEE. Plate is visible. A shield is visible.
+ * Bracing is visible, and rides in as a condition tag already.
+ *
+ * The rest stays out, and for the same reason PC hit points do: the
+ * /public boundary. How much Grit someone has left to buy Dodge dice
+ * with is the player's own resource, not something the creature about
+ * to bite them can read. That keeps the line in one place — a foe sees
+ * the armor, never the arithmetic.
+ *
+ * The PAYOFF is the narration: knowing Barrett is in steel is what
+ * lets a resolved 2-of-4 read as the shot ringing off his plate,
+ * instead of the flat "he defends".
+ */
+function defensesOf(character: Character): string[] {
+  const worn: string[] = [];
+  for (const item of character.data.items ?? []) {
+    const fields = item.fields ?? [];
+    const cover = fields.find((f) => /^cover$/i.test(f.key))?.value;
+    const armor = fields.find((f) => /^defen[cs]e$/i.test(f.key))?.value;
+    if (cover) worn.push(`${item.name} (${cover})`);
+    else if (armor) worn.push(item.name);
+  }
+  // A creature with a printed Defense pool of its own says so plainly;
+  // people usually have none, and an empty field means exactly that.
+  const printed = character.data.fields.find((f) => /^defen[cs]e$/i.test(f.key))?.value;
+  if (printed && character.kind !== 'pc') worn.push(`printed Defense ${printed}`);
+  return worn;
+}
+
 /** The profile, wherever the DM happened to write it (TEL-86: fields, zero schema). */
 function profileOf(character: Character): string | undefined {
   const field = character.data.fields.find((f) =>
@@ -225,7 +260,11 @@ function describeFight(
         // PC's numbers (the /public boundary, applied to a prompt).
         const state = who ? ` — ${who.kind === 'pc' ? 'PC' : 'foe'}, ${vitalityOf(who)}` : '';
         const tags = who?.data.tags.length ? `, ${who.data.tags.join('/')}` : '';
-        return `${i + 1}. ${e.label}${state}${tags} ${marks}`.trimEnd();
+        // Armor and shields are worn in plain sight, so they belong in
+        // the same sentence as the wound state — both are what the foe
+        // can see, and neither is a number off anyone's sheet.
+        const armor = who && defensesOf(who).length ? `, visibly ${defensesOf(who).join(' and ')}` : '';
+        return `${i + 1}. ${e.label}${state}${tags}${armor} ${marks}`.trimEnd();
       }),
     );
   } else {
@@ -244,9 +283,18 @@ Hard rules:
 - Base position reasoning only on the board given. When you assume something the board doesn't state, say so in premises.
 
 Respond with ONLY a JSON object, no other text:
-{"premises": ["assumption the Warden should check", ...], "action": "what the foe does this turn, 1-3 sentences, concrete", "rationale": "why, in one sentence, grounded in profile/condition", "roll": {"dice": "2G", "for": "Strangle damage"}}
+{"premises": ["assumption the Warden should check", ...], "action": "what the foe does this turn, 1-3 sentences, concrete", "rationale": "why, in one sentence, grounded in profile/condition", "preface": "read-aloud words for the attempt", "roll": {"dice": "2G", "for": "Strangle damage"}, "target": "Barrett Vargas"}
 
 "roll" names the dice the action calls for: use the EXACT pool printed on the foe's own attack or stat line (like "2G" or "3B3G"), and say what it's for. Omit "roll" entirely if the action needs no dice (moving, hiding, waiting).
+
+"target" is who the action is aimed at, spelled EXACTLY as that combatant is named in the fight. Omit it when the action targets nobody (moving, hiding, waiting) or hits an area rather than one named combatant.
+
+"preface" is 1–2 vivid present-tense sentences the Warden READS ALOUD to the players before any dice are rolled. It is the attempt, not the result. Rules for it:
+- Stop at the instant of contact. No hit, no miss, no damage, no target's reaction, no consequence of any kind — the dice haven't decided yet and you must not imply what they will.
+- End mid-motion, leaning forward. It should make the table want to see the roll.
+- Prose only: no dice, no Grit, no bracketed statuses, no stat names.
+- Never describe what a player character thinks or feels.
+- If this foe was hidden and the action breaks cover, the preface IS the reveal — describe what the posse suddenly sees.
 
 At most 4 premises, each under 15 words. Terse beats thorough — this is read mid-fight.`;
 
@@ -311,17 +359,35 @@ function parseSuggestion(reply: string, model: string): TurnSuggestion {
   if (start < 0 || end <= start) throw new Error(`assistant replied without JSON: ${reply.slice(0, 200)}`);
   const parsed = JSON.parse(reply.slice(start, end + 1)) as Partial<TurnSuggestion>;
   if (!parsed.action) throw new Error('assistant suggestion had no action');
-  // The roll is optional and only trusted when it's actually a pool —
-  // a malformed one degrades to the typed-results flow, never an error.
+  // The roll is optional, and SALVAGED rather than judged: a model
+  // that answers "2G damage" or "roll 2B1G" has named the pool
+  // perfectly well, and demanding the whole string be nothing but a
+  // pool threw those away silently — the card then had a suggestion
+  // and nothing to act on, which reads at the table as "it didn't
+  // work" (Brian, 2026-08-15, hitting exactly that).
+  const printed = String(parsed.roll?.dice ?? '').replace(/\s+/g, '');
+  const pool = /(?:\d+[A-Za-z])+/.exec(printed)?.[0];
   const roll =
-    parsed.roll && /^\d+[A-Za-z](\d+[A-Za-z])*$/.test(String(parsed.roll.dice ?? ''))
-      ? { dice: String(parsed.roll.dice), for: String(parsed.roll.for ?? 'the roll') }
+    parsed.roll && pool
+      ? { dice: pool, for: String(parsed.roll.for ?? 'the roll') }
+      : undefined;
+  // The target is a GUESS at where damage lands — carried through only
+  // when it's a plain name, and matched against the fight on the client
+  // (which knows who's actually in it; this file only knows what it was
+  // told). Nothing is ever applied from it without a tap.
+  const target =
+    typeof parsed.target === 'string' && parsed.target.trim()
+      ? parsed.target.trim()
       : undefined;
   return {
     premises: Array.isArray(parsed.premises) ? parsed.premises.map(String) : [],
     action: String(parsed.action),
     rationale: String(parsed.rationale ?? ''),
     ...(roll ? { roll } : {}),
+    ...(target ? { target } : {}),
+    ...(typeof parsed.preface === 'string' && parsed.preface.trim()
+      ? { preface: parsed.preface.trim() }
+      : {}),
     model,
   };
 }
@@ -389,6 +455,7 @@ Hard rules:
 - This will be read TO THE PLAYERS: never mention anything marked hidden or unseen-by-the-posse unless the resolved action itself reveals it.
 - Never describe what a player character thinks or feels; their bodies may react, their minds are their players'.
 - No rules language in the prose — no dice, Grit, or bracketed statuses; say what Trapped [4] LOOKS like, not what it's called.
+- When the results say a target defended, show HOW using only what they visibly wear, carry or did — plate, a shield, cover, bracing. Describing a defense the results already state is not adding an event; inventing protection they don't have is.
 
 Respond with ONLY a JSON object, no other text:
 {"narration": "the read-aloud text"}`;
