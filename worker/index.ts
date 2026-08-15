@@ -286,7 +286,18 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
 
     try {
-      return json(await suggestTurn(env, campaign, characters, session, foe, heightInches));
+      const template = await getSystem(env, campaign.system);
+      return json(
+        await suggestTurn(
+          env,
+          campaign,
+          characters,
+          session,
+          foe,
+          heightInches,
+          template?.space,
+        ),
+      );
     } catch (e) {
       return err((e as Error).message, 502);
     }

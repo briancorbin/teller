@@ -823,6 +823,19 @@ export type SystemTemplate = {
   /** Starting kit of encounter states — vocabulary + thresholds only. */
   states?: EncounterState[];
   /**
+   * How this system measures the TABLE — what an inch means in the
+   * world, what the range bands are, what moving costs, which band an
+   * attack needs. Mechanics as prose, for anything that reasons about
+   * the board (today: the assistant, which was otherwise guessing
+   * "an inch is probably a move" from minis convention).
+   *
+   * System-layer on purpose (the three-layer model, 2026-08-15): scale
+   * is how the game WORKS, not what exists in a world or how one table
+   * arranged it. Numbers and range names are mechanics, fair game for
+   * a template (rule 4); the book's own prose stays in the pack.
+   */
+  space?: string;
+  /**
    * How this system rolls, as DATA (rule 4, amended 2026-08-10).
    *
    * teller ships one small evaluator; a system arrives as a row rather

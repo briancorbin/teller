@@ -56,8 +56,25 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 13,
+  version: 14,
   name: 'Wild Imaginary West',
+  // The table's scale, as mechanics (numbers and band names — the
+  // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
+  // about 5 yards of world.
+  space:
+    'Scale: 1 inch on the table ≈ 5 yards in the world. Range bands: ' +
+    "Arm's Reach = within 1 inch · Short = within 6 inches (~30 yards) · " +
+    'Long = 6–18 inches (30–90 yards) · Distant = beyond 18 inches ' +
+    '(takes 6 Grit and at least two turns to cross). ' +
+    'Attacks are listed by band and only work there: Melee attacks ' +
+    "require Arm's Reach (within 1 inch; melee weapons can also be " +
+    'thrown to Short), SHORT RANGE attacks reach up to 6 inches, LONG ' +
+    'RANGE attacks reach 6–18 inches. ' +
+    'Moving costs Grit by speed: Normal = 1 Grit per Short Range ' +
+    'distance (6 inches) · Slow = 2 Grit per Short · Very Slow = 3 Grit ' +
+    'per Short · Fast = two Shorts per 1 Grit. Rough terrain (dense ' +
+    'forest, steep slopes, knee-deep water) doubles the Grit cost of ' +
+    'moving through it.',
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',

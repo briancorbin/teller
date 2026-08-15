@@ -265,7 +265,7 @@ async function complete(env: AssistantEnv, system: string, user: string): Promis
       },
       body: JSON.stringify({
         model,
-        max_tokens: 1024,
+        max_tokens: 2048,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -289,7 +289,7 @@ async function complete(env: AssistantEnv, system: string, user: string): Promis
     },
     body: JSON.stringify({
       model,
-      max_tokens: 1024,
+      max_tokens: 2048,
       system,
       messages: [{ role: 'user', content: user }],
     }),
@@ -328,6 +328,8 @@ export async function suggestTurn(
   foe: Character,
   /** True map height in inches, when the caller could measure the art. */
   heightInches?: number,
+  /** The system's own scale contract — `SystemTemplate.space`. */
+  space?: string,
 ): Promise<TurnSuggestion> {
   const scene =
     campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
@@ -348,9 +350,12 @@ export async function suggestTurn(
       ? `PROFILE (how it acts — follow this): ${profile}`
       : 'PROFILE: none written. Infer temperament from its name and stats, and say you did in premises.',
     describeBoard(scene, characters, foe.id, heightInches),
+    space ? `SPACE & MOVEMENT (this system's rules — use these, don't guess): ${space}` : '',
     describeFight(session, characters, foe.id),
     `\nWhat would ${foe.name} do this turn?`,
-  ].join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
 
   return parseSuggestion(await complete(env, SYSTEM, user), env.ASSISTANT_MODEL!);
 }
