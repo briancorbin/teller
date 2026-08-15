@@ -168,6 +168,19 @@ export function DmView({
   useEffect(loadPacks, [loadPacks]);
   const lookup = useRuleLookup(packs);
 
+  /**
+   * The book's die-face art, from whichever pack carries creation
+   * marks — the same images the character creator renders, so the
+   * encounter's dice and the builder's dice are one vocabulary.
+   */
+  const dieArt = useMemo(() => {
+    for (const p of packs) {
+      const marks = p.pack.creation?.marks;
+      if (marks) return { marks, version: p.pack.version ?? 0 };
+    }
+    return null;
+  }, [packs]);
+
   // The system's dice, so the picker can tell a die pool from a price.
   // `/api/templates` is open and the console already holds the key —
   // this is the same fetch the seat makes, for the same reason.
@@ -540,6 +553,8 @@ export function DmView({
               api.narrateTurn(campaignId, characterId, action, result)
           : undefined
       }
+      dice={template?.dice}
+      dieArt={dieArt ?? undefined}
     />
   );
 

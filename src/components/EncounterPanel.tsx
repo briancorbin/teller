@@ -8,10 +8,12 @@ import type {
   InitiativeEntry,
   SessionOp,
   SessionState,
+  SystemTemplate,
   TurnNarration,
   TurnSuggestion,
 } from '../../worker/types';
 import { newLocalId } from '../lib/api';
+import { packArtUrl } from '../lib/creation';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { QuickSpawn } from './BestiaryPanel';
 import { STATE_EFFECTS } from './token-visuals';
@@ -53,6 +55,30 @@ function suggestions(
   });
 }
 
+/** "3B2G" → ['B','B','B','G','G'] — a printed pool as individual dice. */
+function expandPool(pool: string): string[] {
+  const out: string[] = [];
+  for (const [, n, letter] of pool.matchAll(/(\d+)([A-Za-z])/g)) {
+    for (let i = 0; i < Number(n); i++) out.push(letter.toUpperCase());
+  }
+  return out;
+}
+
+/** What the tapped dice add up to, in the system's own unit. */
+function tallyFaces(
+  faces: (string | null)[],
+  dice: SystemTemplate['dice'],
+): { set: number; total: number } {
+  let set = 0;
+  let total = 0;
+  for (const face of faces) {
+    if (!face) continue;
+    set++;
+    total += dice?.values[face] ?? 0;
+  }
+  return { set, total };
+}
+
 export function EncounterPanel({
   session,
   characters,
@@ -66,6 +92,8 @@ export function EncounterPanel({
   onRollNpcs,
   onSuggest,
   onNarrate,
+  dice,
+  dieArt,
 }: {
   session: SessionState | null;
   characters: Character[];
@@ -96,6 +124,14 @@ export function EncounterPanel({
     action: string,
     result: string,
   ) => Promise<TurnNarration>;
+  /** The system's dice, so a suggested roll renders as tappable dice. */
+  dice?: SystemTemplate['dice'];
+  /**
+   * The book's own die-face art, exactly as the character creator
+   * shows it — `creation.marks` from whichever pack carries it, plus
+   * the pack version for cache-busting. Absent = text chips.
+   */
+  dieArt?: { marks: Record<string, string>; version: number };
 }) {
   const [draft, setDraft] = useState('');
   /** Rows opened to show the whole sheet. Running a monster shouldn't
@@ -116,6 +152,8 @@ export function EncounterPanel({
         error?: string;
         /** The Warden's own record of what the dice said. */
         result?: string;
+        /** Tapped-in faces for the suggested roll, per die. */
+        faces?: (string | null)[];
         narrating?: boolean;
         narration?: TurnNarration;
       }
@@ -142,12 +180,23 @@ export function EncounterPanel({
   };
   const tell = (entryId: string, characterId: string) => {
     const a = advice[entryId];
-    if (!onNarrate || !a?.suggestion || !a.result?.trim()) return;
+    if (!onNarrate || !a?.suggestion) return;
+    // The tapped dice speak first, the Warden's own words follow — the
+    // model receives one plain sentence of what the table decided.
+    let summary = '';
+    if (a.suggestion.roll && a.faces?.some(Boolean)) {
+      const rolled = a.faces.filter(Boolean) as string[];
+      const { total } = tallyFaces(a.faces, dice);
+      summary = `${a.suggestion.roll.for} — rolled ${a.suggestion.roll.dice}: ${rolled.join(', ')} = ${total} ${dice?.unit ?? 'total'}`;
+    }
+    const extra = a.result?.trim() ?? '';
+    const result = [summary, extra].filter(Boolean).join(' — ');
+    if (!result) return;
     setAdvice((prev) => ({
       ...prev,
       [entryId]: { ...prev[entryId], busy: false, narrating: true },
     }));
-    onNarrate(characterId, a.suggestion.action, a.result.trim())
+    onNarrate(characterId, a.suggestion.action, result)
       .then((n) =>
         setAdvice((prev) => ({
           ...prev,
@@ -585,9 +634,89 @@ export function EncounterPanel({
                       )}
 
                       {/*
+                        The roll the action calls for, as the book's
+                        own dice. The TABLE rolls the physical ones;
+                        tapping a die here cycles what the plastic
+                        showed — recording, never rolling. Same art
+                        the character creator uses.
+                      */}
+                      {advice[entry.id].suggestion!.roll && dice && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          <span className="font-mono text-[11px] text-amber-300">
+                            roll {advice[entry.id].suggestion!.roll!.dice}
+                          </span>
+                          <span className="font-mono text-[10px] text-stone-500">
+                            {advice[entry.id].suggestion!.roll!.for}
+                          </span>
+                          {expandPool(advice[entry.id].suggestion!.roll!.dice).map(
+                            (letter, i) => {
+                              const face = advice[entry.id].faces?.[i] ?? null;
+                              const order = [...new Set(dice.faces[letter] ?? [])];
+                              const art = face && dieArt?.marks[face];
+                              return (
+                                <button
+                                  key={i}
+                                  className={`relative flex h-8 w-8 items-center justify-center rounded-md ring-1 transition-colors ${
+                                    letter === 'G'
+                                      ? 'bg-amber-900/40 ring-amber-600'
+                                      : 'bg-stone-800 ring-stone-600'
+                                  } ${face ? '' : 'opacity-50'}`}
+                                  title={`${letter} die — tap to record what it showed`}
+                                  onClick={() =>
+                                    setAdvice((prev) => {
+                                      const a = prev[entry.id];
+                                      const pool = expandPool(a.suggestion!.roll!.dice);
+                                      const faces = [
+                                        ...(a.faces ?? pool.map(() => null)),
+                                      ];
+                                      const at = order.indexOf(faces[i] ?? '');
+                                      faces[i] =
+                                        at < 0
+                                          ? order[0]
+                                          : at + 1 < order.length
+                                            ? order[at + 1]
+                                            : null;
+                                      return { ...prev, [entry.id]: { ...a, faces } };
+                                    })
+                                  }
+                                >
+                                  {art ? (
+                                    <img
+                                      src={packArtUrl(art, dieArt.version)}
+                                      alt={face ?? letter}
+                                      className="h-6 w-6 object-contain"
+                                    />
+                                  ) : (
+                                    <span className="font-mono text-[10px] text-stone-300">
+                                      {face ?? letter}
+                                    </span>
+                                  )}
+                                  <span
+                                    className={`absolute -bottom-1 -right-1 rounded px-0.5 font-mono text-[8px] leading-tight ${
+                                      letter === 'G'
+                                        ? 'bg-amber-700 text-stone-950'
+                                        : 'bg-stone-600 text-stone-100'
+                                    }`}
+                                  >
+                                    {letter}
+                                  </span>
+                                </button>
+                              );
+                            },
+                          )}
+                          {advice[entry.id].faces?.some(Boolean) && (
+                            <span className="font-mono text-[11px] text-amber-200">
+                              = {tallyFaces(advice[entry.id].faces!, dice).total}{' '}
+                              {dice.unit ?? ''}
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/*
                         The second click. The Warden runs the action
-                        with the table's REAL dice, types what they
-                        said, and Teller hands back words to read
+                        with the table's REAL dice, taps/types what
+                        they said, and Teller hands back words to read
                         aloud — narration is downstream of dice, never
                         a substitute for them (the thesis, in prose).
                       */}
@@ -595,7 +724,7 @@ export function EncounterPanel({
                         <div className="flex items-center gap-1.5 pt-0.5">
                           <input
                             className="min-w-0 flex-1 rounded bg-stone-900 px-2 py-1 font-mono text-[11px] text-stone-200 placeholder:text-stone-600 focus:outline-none"
-                            placeholder="what the dice said — hits, damage dealt, statuses…"
+                            placeholder="anything else — damage applied, statuses, movement…"
                             value={advice[entry.id].result ?? ''}
                             onChange={(e) =>
                               setAdvice((prev) => ({
@@ -608,7 +737,11 @@ export function EncounterPanel({
                           <button
                             className={`${btnGhost} ${advice[entry.id].narrating ? 'animate-pulse text-amber-300' : ''}`}
                             title="turn the results into words for the table"
-                            disabled={advice[entry.id].narrating || !advice[entry.id].result?.trim()}
+                            disabled={
+                              advice[entry.id].narrating ||
+                              (!advice[entry.id].result?.trim() &&
+                                !advice[entry.id].faces?.some(Boolean))
+                            }
                             onClick={() => tell(entry.id, character.id)}
                           >
                             tell it ⟶

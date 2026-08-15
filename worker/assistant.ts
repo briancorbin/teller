@@ -244,7 +244,9 @@ Hard rules:
 - Base position reasoning only on the board given. When you assume something the board doesn't state, say so in premises.
 
 Respond with ONLY a JSON object, no other text:
-{"premises": ["assumption the Warden should check", ...], "action": "what the foe does this turn, 1-3 sentences, concrete", "rationale": "why, in one sentence, grounded in profile/condition"}
+{"premises": ["assumption the Warden should check", ...], "action": "what the foe does this turn, 1-3 sentences, concrete", "rationale": "why, in one sentence, grounded in profile/condition", "roll": {"dice": "2G", "for": "Strangle damage"}}
+
+"roll" names the dice the action calls for: use the EXACT pool printed on the foe's own attack or stat line (like "2G" or "3B3G"), and say what it's for. Omit "roll" entirely if the action needs no dice (moving, hiding, waiting).
 
 At most 4 premises, each under 15 words. Terse beats thorough — this is read mid-fight.`;
 
@@ -309,10 +311,17 @@ function parseSuggestion(reply: string, model: string): TurnSuggestion {
   if (start < 0 || end <= start) throw new Error(`assistant replied without JSON: ${reply.slice(0, 200)}`);
   const parsed = JSON.parse(reply.slice(start, end + 1)) as Partial<TurnSuggestion>;
   if (!parsed.action) throw new Error('assistant suggestion had no action');
+  // The roll is optional and only trusted when it's actually a pool —
+  // a malformed one degrades to the typed-results flow, never an error.
+  const roll =
+    parsed.roll && /^\d+[A-Za-z](\d+[A-Za-z])*$/.test(String(parsed.roll.dice ?? ''))
+      ? { dice: String(parsed.roll.dice), for: String(parsed.roll.for ?? 'the roll') }
+      : undefined;
   return {
     premises: Array.isArray(parsed.premises) ? parsed.premises.map(String) : [],
     action: String(parsed.action),
     rationale: String(parsed.rationale ?? ''),
+    ...(roll ? { roll } : {}),
     model,
   };
 }

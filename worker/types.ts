@@ -1844,6 +1844,14 @@ export type TurnSuggestion = {
   premises: string[];
   action: string;
   rationale: string;
+  /**
+   * The roll the suggested action calls for, when it calls for one —
+   * the exact pool printed on the foe ("2G", "3B3G") and what it's
+   * for. The card renders it as real tappable dice (the template's
+   * `dice` faces), the table rolls the PHYSICAL ones, and the taps
+   * record what the plastic said. teller never rolls here.
+   */
+  roll?: { dice: string; for: string };
   /** Which model spoke — provenance on the card, not a warranty. */
   model: string;
 };
