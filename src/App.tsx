@@ -106,6 +106,16 @@ function Assigned({
   handle: string;
   onAssign: () => void;
 }) {
+  // The full console's wandering eye — see the console branch below.
+  const [freePane, setFreePane] = useState<string | null>(
+    () => localStorage.getItem(PANE_STORAGE) || null,
+  );
+  const choosePane = (next: string | null) => {
+    if (next) localStorage.setItem(PANE_STORAGE, next);
+    else localStorage.removeItem(PANE_STORAGE);
+    setFreePane(next);
+  };
+
   const [flashing, setFlashing] = useState(false);
 
   useSession(display.campaignId, undefined, {
@@ -143,16 +153,28 @@ function Assigned({
         seatName={display.name}
       />
     );
-  else if (display.role === 'console')
+  else if (display.role === 'console') {
+    // Two kinds of console screen, told apart by the assignment itself.
+    // A pane in params is a PANEL — one slice, screwed to the rail, and
+    // what the DM said it is; the switcher does nothing because the
+    // Displays pane is where its job changes. No pane assigned is the
+    // FULL console — a phone in the Warden's hand — and it roams
+    // freely, remembering its place like the keyed console does.
+    const pinned = display.params.pane != null;
     body = (
       <DmView
         campaignId={campaignId}
-        pane={display.params.pane ?? null}
-        onPane={() => {
-          /* An assigned panel is what the DM said it is. */
-        }}
+        pane={pinned ? display.params.pane! : freePane}
+        onPane={
+          pinned
+            ? () => {
+                /* An assigned panel is what the DM said it is. */
+              }
+            : choosePane
+        }
       />
     );
+  }
 
   return (
     <>
