@@ -80,7 +80,10 @@ const wiw: SystemTemplate = {
     '= 1 Grit per Short Range distance (6 inches) · Slow = 2 Grit per ' +
     'Short · Very Slow = 3 Grit per Short · Fast = two Shorts per 1 ' +
     'Grit. Rough terrain (dense forest, steep slopes, knee-deep water) ' +
-    'doubles the Grit cost of moving through it.',
+    'doubles the Grit cost of moving through it. ' +
+    'Grit is the action budget and RELOADS at the start of each ' +
+    "creature's turn — spending it all this turn costs nothing next " +
+    'turn (an ability that borrows from next turn\'s Grit will say so).',
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',
