@@ -211,6 +211,48 @@ function describeBoard(
     return notes.length ? ` — ${notes.join(', ')}` : '';
   };
 
+  /**
+   * What you'd have to get THROUGH to reach someone (Brian,
+   * 2026-08-15: "if there's fire between an actor and a target").
+   *
+   * Standing-in is a fact about a tile; this is a fact about a path,
+   * and it's the one that changes a decision — a creature will happily
+   * cross open sand and will think twice about six inches of fire.
+   * The two cells everyone is standing on are excluded: what's under
+   * your own feet is not something you have to cross.
+   *
+   * Sampled in quarter-inch steps rather than rasterised properly,
+   * because this feeds a sentence and not a physics engine, and a
+   * quarter of a cell is finer than any ruling it could change.
+   */
+  const between = (
+    a: { u: number; v: number },
+    b: { u: number; v: number },
+  ): string[] => {
+    if (!width) return [];
+    const ax = a.u * width;
+    const ay = a.v * tall!;
+    const bx = b.u * width;
+    const by = b.v * tall!;
+    const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) * 4));
+    const ends = new Set([
+      `${Math.floor(ax)},${Math.floor(ay)}`,
+      `${Math.floor(bx)},${Math.floor(by)}`,
+    ]);
+    const seen = new Set<string>();
+    const hit = new Map<string, number>();
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const key = `${Math.floor(ax + (bx - ax) * t)},${Math.floor(ay + (by - ay) * t)}`;
+      if (ends.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      for (const [label, cells] of ground) {
+        if (cells.has(key)) hit.set(label, (hit.get(label) ?? 0) + 1);
+      }
+    }
+    return [...hit.entries()].map(([label, n]) => `${label} (${n} in.)`);
+  };
+
   const rows2 = rows.map((t) => {
       const who = t.characterId ? byId.get(t.characterId) : undefined;
       const x = width ? round2(t.u * width) : round2(t.u);
@@ -232,10 +274,23 @@ function describeBoard(
     }
     return `- ${effect}: ${cells.size} square inches, spanning x=${x0}..${x1 + 1}, y=${y0}..${y1 + 1}`;
   });
+  // Only from the acting foe, and only where something is actually in
+  // the way — a line per pair would be noise on a busy board.
+  const self = rows.find((t) => t.characterId === foeId);
+  const crossings = self
+    ? rows
+        .filter((t) => t.id !== self.id)
+        .map((t) => ({ label: t.label, what: between(self, t) }))
+        .filter((c) => c.what.length > 0)
+        .map((c) => `- to ${c.label}: ${c.what.join(', ')}`)
+    : [];
   return [
     `BOARD (positions in ${unit}; the map is ${width ? `${width} inches wide${heightInches ? ` and ${round2(heightInches)} inches tall` : ''}` : 'uncalibrated'}):`,
     rows2.length ? rows2.join('\n') : '- no tokens placed',
     ...(zones.length ? ['terrain / ground effects:', ...zones] : []),
+    ...(crossings.length
+      ? ['WHAT LIES BETWEEN YOU AND THEM (straight line, your own tile excluded):', ...crossings]
+      : []),
   ].join('\n');
 }
 
@@ -353,6 +408,7 @@ Hard rules:
 - Suggest the ACTION only. Never roll dice, never state damage dealt or outcomes — the table's dice decide outcomes.
 - Never decide for a player character.
 - Base position reasoning only on the board given. When you assume something the board doesn't state, say so in premises.
+- The GROUND is part of the decision, not scenery. What a creature stands in, what it would have to cross, and what lies between it and a target are all stated. A hazard in the way is a real reason to go around, wait, pick a different target, or accept the cost on purpose — and when the ground changes your choice, say which ground and why in the rationale.
 
 Respond with ONLY a JSON object, no other text:
 {"premises": ["assumption the Warden should check", ...], "action": "what the foe does this turn, 1-3 sentences, concrete", "rationale": "why, in one sentence, grounded in profile/condition", "preface": "read-aloud words for the attempt", "roll": {"dice": "2G", "for": "Strangle damage"}, "target": "Barrett Vargas"}
