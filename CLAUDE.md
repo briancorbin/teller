@@ -119,7 +119,11 @@ authority from being written down early.
 
 So: *assumed* means it was a starting guess and is fair game. *Learned*
 means something broke, or shipped, and taught us this. Re-audit when a
-rule starts feeling like an obstacle rather than a floor.
+rule starts feeling like an obstacle rather than a floor — and **audit
+the whole file after any day that rewrites a rule** (learned 2026-08-15:
+a rule's echoes — the summaries and asides that cite it elsewhere in the
+file — go stale the moment the rule moves, and the thesis section spent
+three days stating a version of rule 4 that no longer existed).
 
 ### 1. Override IS the architecture — never automate past a human
 
