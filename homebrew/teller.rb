@@ -1,6 +1,6 @@
 # teller — Homebrew formula.
 #
-# Copy this into a tap repo (teller-ink/homebrew-teller) as
+# Copy this into a tap repo (teller-ink/homebrew-tap) as
 # Formula/teller.rb, and update `url` and `sha256` from `pnpm pack` on
 # each release. See homebrew/README.md.
 #
@@ -11,7 +11,7 @@ class Teller < Formula
   desc "In-person TTRPG companion — the table plays, teller keeps the books"
   homepage "https://teller.ink"
   url "https://github.com/teller-ink/teller/releases/download/v0.1.0/teller-0.1.0.tar.gz"
-  sha256 "7d950db310080698127b5a0c9db7636dea6395e5a1182d9ca88680368fc197a2"
+  sha256 "ffa5b1fe0e1132cd4ec80a7f6d44050241838ca809cd0de7d637ebb9cf3e18a2"
   license "AGPL-3.0-only"
 
   # Node 22 is the floor: teller keeps its database in node's own SQLite

@@ -3,25 +3,25 @@
 The install anyone else gets:
 
 ```sh
-brew install teller-ink/teller/teller
+brew install teller-ink/tap/teller
 teller host
 ```
 
-That needs a **tap** — a second GitHub repo named `homebrew-teller` — and
+That needs a **tap** — a second GitHub repo named `homebrew-tap` — and
 a release tarball for the formula to point at. Neither exists yet; this
 is the recipe.
 
 ## One-time: create the tap
 
 A tap is just a repo with a `Formula/` directory. The name matters:
-Homebrew maps `teller-ink/teller` to `github.com/teller-ink/homebrew-teller`.
+Homebrew maps `teller-ink/tap` to `github.com/teller-ink/homebrew-tap`.
 
 ```sh
-gh repo create teller-ink/homebrew-teller --public \
+gh repo create teller-ink/homebrew-tap --public \
   --description "Homebrew formula for teller"
-git clone git@github.com:teller-ink/homebrew-teller.git
-mkdir -p homebrew-teller/Formula
-cp homebrew/teller.rb homebrew-teller/Formula/teller.rb
+git clone git@github.com:teller-ink/homebrew-tap.git
+mkdir -p homebrew-tap/Formula
+cp homebrew/teller.rb homebrew-tap/Formula/teller.rb
 ```
 
 It can live in this repo instead, but a separate tap keeps release churn
@@ -70,5 +70,5 @@ wrong. Run it before publishing, not after.
   shim pointing at something ancient.
 - **Homebrew core is not the goal yet.** Core requires notability, and a
   tap is the normal home for a project this age. `brew install
-  teller-ink/teller/teller` is one line either way.
+  teller-ink/tap/teller` is one line either way.
 - Linux works the same; nothing here is macOS-specific.
