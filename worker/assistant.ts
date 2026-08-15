@@ -166,7 +166,9 @@ Hard rules:
 - Base position reasoning only on the board given. When you assume something the board doesn't state, say so in premises.
 
 Respond with ONLY a JSON object, no other text:
-{"premises": ["assumption the Warden should check", ...], "action": "what the foe does this turn, 1-3 sentences, concrete", "rationale": "why, in one sentence, grounded in profile/condition"}`;
+{"premises": ["assumption the Warden should check", ...], "action": "what the foe does this turn, 1-3 sentences, concrete", "rationale": "why, in one sentence, grounded in profile/condition"}
+
+At most 4 premises, each under 15 words. Terse beats thorough — this is read mid-fight.`;
 
 // ---------------------------------------------------------------------------
 // The provider call — a fetch, which is why this file is runtime-agnostic
@@ -186,7 +188,7 @@ async function complete(env: AssistantEnv, system: string, user: string): Promis
       },
       body: JSON.stringify({
         model,
-        max_tokens: 700,
+        max_tokens: 1024,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -210,7 +212,7 @@ async function complete(env: AssistantEnv, system: string, user: string): Promis
     },
     body: JSON.stringify({
       model,
-      max_tokens: 700,
+      max_tokens: 1024,
       system,
       messages: [{ role: 'user', content: user }],
     }),
