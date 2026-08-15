@@ -173,6 +173,19 @@ export function DmView({
    * marks — the same images the character creator renders, so the
    * encounter's dice and the builder's dice are one vocabulary.
    */
+  /**
+   * Every pack item by id, so a carried weapon can be read for the
+   * dice it rolls. A character's item is a reference (`from`); the
+   * numbers live in the catalogue it came from.
+   */
+  const catalogById = useMemo(() => {
+    const map = new Map<string, { name: string; kind?: string; fields?: { key: string; value: string }[] }>();
+    for (const p of packs) {
+      for (const item of p.pack.catalog?.items ?? []) map.set(item.id, item);
+    }
+    return map;
+  }, [packs]);
+
   const dieArt = useMemo(() => {
     for (const p of packs) {
       const marks = p.pack.creation?.marks;
@@ -543,6 +556,12 @@ export function DmView({
           .catch(() => refetch())
       }
       onPatchCharacter={patchCharacter}
+      onResolve={(body) =>
+        api
+          .resolveTurn(campaignId, body)
+          .then(() => refetch())
+          .catch(() => refetch())
+      }
       onDropToken={dropToken}
       onSuggest={
         assistantOn ? (characterId) => api.suggestTurn(campaignId, characterId) : undefined
@@ -555,6 +574,7 @@ export function DmView({
       }
       dice={template?.dice}
       dieArt={dieArt ?? undefined}
+      catalog={catalogById}
     />
   );
 

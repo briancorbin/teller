@@ -83,6 +83,60 @@ export function parseAttacks(field: string): StatAttack[] {
 }
 
 /**
+ * The bands a weapon prints its dice under, in reach order.
+ *
+ * A foe's attacks are one text field; a person's are their GEAR, and
+ * the pool lives per band on the catalogue entry ("Arm's Reach 1B,
+ * Short Range 2B"). Same shape once read, which is what lets the
+ * posse use the exact resolve step the monsters do.
+ */
+const BANDS: [string, string][] = [
+  ['arms', "Arm's Reach"],
+  ['short', 'Short'],
+  ['long', 'Long'],
+  ['distant', 'Distant'],
+];
+
+type Fielded = { name: string; kind?: string; from?: string; fields?: { key: string; value: string }[] };
+
+/**
+ * What a person can swing, from what they're carrying.
+ *
+ * A character's copy of an item is a thin reference — `from` names the
+ * catalogue entry and the fields are usually empty — so the stats come
+ * from the pack. When the carried copy DOES have its own fields they
+ * win, because someone edited them and stored values are authoritative
+ * (rule 1).
+ */
+export function weaponAttacks(
+  items: Fielded[],
+  catalog: Map<string, Fielded>,
+): StatAttack[] {
+  const out: StatAttack[] = [];
+  for (const item of items) {
+    if (item.kind !== 'weapon') continue;
+    const source = item.fields?.length ? item : (item.from && catalog.get(item.from)) || item;
+    const fields = source.fields ?? [];
+    const at = (key: string) =>
+      fields.find((f) => f.key.toLowerCase() === key)?.value?.trim() ?? '';
+    const grit = Number(at('grit')) || 0;
+    for (const [key, label] of BANDS) {
+      const dice = at(key).replace(/\s+/g, '');
+      if (!dice || !isPool(dice)) continue;
+      out.push({
+        band: label,
+        name: item.name,
+        grit,
+        effect: `${label} ${dice}`,
+        dice,
+        statuses: [],
+      });
+    }
+  }
+  return out;
+}
+
+/**
  * The pool a creature rolls to defend, if it prints one.
  *
  * Defense is ROLLED in this system — the book calls it a bundle of

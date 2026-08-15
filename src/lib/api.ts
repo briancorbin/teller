@@ -13,6 +13,7 @@ import type {
   PackRecord,
   Scene,
   PublicCharacter,
+  ResolvedTurn,
   RulesPack,
   SessionOp,
   SessionState,
@@ -171,6 +172,30 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(patch),
     }),
+
+  /**
+   * Land one exchange: the damage and statuses go on the target, and
+   * the log gets a line saying WHO did it to whom. One call, so the
+   * record can't disagree with the state it describes — and so the
+   * assistant can later read why somebody is Trapped instead of
+   * inventing a reason for the tag.
+   */
+  resolveTurn: (
+    campaignId: string,
+    body: {
+      actorId: string;
+      targetId: string;
+      action: string;
+      hits: number;
+      blocked: number;
+      damage: number;
+      statuses: { name: string; severity: number }[];
+    },
+  ) =>
+    req<{ character: Character; resolved: ResolvedTurn }>(
+      `/api/campaigns/${campaignId}/resolve`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
 
   deleteCampaign: (id: string) =>
     req<{ ok: true }>(`/api/campaigns/${id}`, { method: 'DELETE' }),

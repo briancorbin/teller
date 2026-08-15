@@ -43,6 +43,7 @@ import type {
   Campaign,
   Character,
   CharacterData,
+  ResolvedTurn,
   Counter,
   RulesPack,
   SessionOp,
@@ -294,6 +295,48 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       }
     }
 
+    // What has already happened, attributed and oldest-first.
+    //
+    // SELECTION, not a bigger window (Brian, 2026-08-15: "I'd not want
+    // something important involving the current actor to get lost").
+    // A flat recency cap ages out in the worst possible order — eight
+    // combatants trading blows will bury this creature's own grapple
+    // from round one under eleven exchanges between strangers, and the
+    // grapple is the single most load-bearing fact for its turn.
+    //
+    // So two reads: everything involving THIS combatant, which can
+    // never fall off, plus the recent past for situational awareness.
+    // `entity_id` is the target, and the actor is in the payload.
+    const [own, latest] = await Promise.all([
+      env.DB.prepare(
+        `SELECT id, payload FROM events
+           WHERE campaign_id = ? AND kind = 'turn.resolved'
+             AND (entity_id = ? OR json_extract(payload, '$.by') = ?)
+           ORDER BY id DESC LIMIT 10`,
+      )
+        .bind(campaignId, characterId, characterId)
+        .all(),
+      env.DB.prepare(
+        `SELECT id, payload FROM events
+           WHERE campaign_id = ? AND kind = 'turn.resolved'
+           ORDER BY id DESC LIMIT 10`,
+      )
+        .bind(campaignId)
+        .all(),
+    ]);
+    const seen = new Map<number, ResolvedTurn>();
+    for (const row of [...own.results, ...latest.results]) {
+      const { id, payload } = row as { id: number; payload: string };
+      if (seen.has(id)) continue;
+      try {
+        const parsed = JSON.parse(String(payload)) as ResolvedTurn;
+        if (parsed?.byName && parsed?.targetName) seen.set(id, parsed);
+      } catch {
+        // A payload we can't read is one line of history, not an error.
+      }
+    }
+    const recent = [...seen.entries()].sort(([a], [b]) => a - b).map(([, r]) => r);
+
     try {
       const template = await getSystem(env, campaign.system);
       return json(
@@ -308,6 +351,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               result!,
               heightInches,
               template?.space,
+              recent,
             )
           : await suggestTurn(
               env,
@@ -317,6 +361,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               foe,
               heightInches,
               template?.space,
+              recent,
             ),
       );
     } catch (e) {
@@ -1246,6 +1291,103 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // Stamp a blueprint out into real characters. One request so a group
   // arrives together; what comes back is ordinary characters — editable,
   // deletable, and no longer linked to the blueprint.
+  /**
+   * One exchange, landed and RECORDED AS ONE ACT.
+   *
+   * The client could apply damage with an ordinary character PATCH —
+   * it used to — but then the state change and the story of it are two
+   * writes that can drift, and the log ends up saying "the dm changed
+   * some counters" about the moment a monster got someone by the legs.
+   * Applying here means the event cannot disagree with the state it
+   * describes, and the assistant gets a history worth reading.
+   *
+   * Still nothing automatic: this runs because a human pressed apply
+   * on arithmetic teller had already shown them (rule 1).
+   */
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/resolve$/);
+  if (m && method === 'POST') {
+    const campaignId = m[1];
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const body = await request.json<{
+      actorId?: string;
+      targetId?: string;
+      action?: string;
+      hits?: number;
+      blocked?: number;
+      damage?: number;
+      statuses?: { name: string; severity: number }[];
+    }>();
+    if (!body.actorId || !body.targetId) return err('actorId and targetId required', 400);
+
+    const rows = await env.DB.prepare(
+      'SELECT * FROM characters WHERE campaign_id = ? AND id IN (?, ?)',
+    )
+      .bind(campaignId, body.actorId, body.targetId)
+      .all();
+    const found = rows.results.map((r) => toCharacter(r as never));
+    const actor = found.find((c) => c.id === body.actorId);
+    const target = found.find((c) => c.id === body.targetId);
+    if (!actor || !target) return err('actor or target not in this campaign', 404);
+
+    const damage = Math.max(0, Math.round(body.damage ?? 0));
+    const statuses = (body.statuses ?? []).filter(
+      (s) => s && typeof s.name === 'string' && s.name.trim(),
+    );
+
+    // The vital counter is the first bounded one, exactly as every
+    // other surface decides it.
+    const vitalIndex = target.data.counters.findIndex((c) => c.max !== null && c.max > 0);
+    const vital = vitalIndex >= 0 ? target.data.counters[vitalIndex] : undefined;
+    const counters = target.data.counters.map((c, i) =>
+      i === vitalIndex ? { ...c, current: Math.max(0, c.current - damage) } : c,
+    );
+    const tags = [...target.data.tags];
+    for (const s of statuses) {
+      const tag = `${s.name} ${s.severity}`.trim();
+      if (!tags.includes(tag)) tags.push(tag);
+    }
+
+    const next: CharacterData = { ...target.data, counters, tags };
+    await env.DB.prepare(
+      "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
+    )
+      .bind(JSON.stringify(next), target.id)
+      .run();
+
+    const session = await (
+      await sessionStub(env, campaignId).fetch('https://do/session')
+    ).json<SessionState>();
+
+    const resolved: ResolvedTurn = {
+      by: actor.id,
+      byName: actor.name,
+      target: target.id,
+      targetName: target.name,
+      action: (body.action ?? '').trim() || 'an attack',
+      hits: Math.max(0, Math.round(body.hits ?? 0)),
+      blocked: Math.max(0, Math.round(body.blocked ?? 0)),
+      damage,
+      ...(vital
+        ? {
+            vital: {
+              name: vital.name,
+              from: vital.current,
+              to: Math.max(0, vital.current - damage),
+            },
+          }
+        : {}),
+      statuses,
+      round: session?.round ?? 1,
+    };
+    await logEvent(env, campaignId, target.id, actorOf(auth), 'turn.resolved', resolved);
+    await poke(env, campaignId, target.id);
+
+    const updated = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+      .bind(target.id)
+      .first();
+    return json({ character: toCharacter(updated as never), resolved });
+  }
+
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/spawn$/);
   if (m && method === 'POST') {
     const campaignId = m[1];

@@ -1887,6 +1887,38 @@ export type TurnNarration = {
 };
 
 /**
+ * One exchange, as the table ruled it (Brian, 2026-08-15).
+ *
+ * The event log already recorded that a character changed — rule 3 has
+ * always seen to that — but it recorded it as `dm` pressing a button
+ * with a counters array attached. Nothing in it knew that PONDWEED is
+ * why Barrett is Trapped, so the assistant, handed a lone status tag,
+ * invented a reason for it ("assuming Barrett's Trapped came from an
+ * earlier weed-snare") and played the turn off its own fiction.
+ *
+ * So a resolution says who did it to whom, which is the difference
+ * between a foe knowing it has someone in its coils and a foe guessing
+ * that somebody must have. `actor` in the events row stays what it has
+ * always been — the person who pressed it; this is the IN-FICTION
+ * actor, and the two are not the same question.
+ */
+export type ResolvedTurn = {
+  by: string;
+  byName: string;
+  target: string;
+  targetName: string;
+  /** What it was called — the attack's own name where there is one. */
+  action: string;
+  hits: number;
+  blocked: number;
+  damage: number;
+  /** The vital counter's transition, when the target had one. */
+  vital?: { name: string; from: number; to: number };
+  statuses: { name: string; severity: number }[];
+  round: number;
+};
+
+/**
  * The shop that's OPEN, and every cart in it. Live state that more than
  * one screen argues about (a seat fills the cart, the console rules on
  * it), so it lives here with initiative rather than in the campaign

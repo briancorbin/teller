@@ -8,7 +8,13 @@ import type {
   TurnSuggestion,
 } from '../../worker/types';
 import { combinePools, tallyFaces } from '../lib/dice';
-import { parseAttacks, parseDefense, statusTag, type StatStatus } from '../lib/statblock';
+import {
+  parseAttacks,
+  parseDefense,
+  statusTag,
+  weaponAttacks,
+  type StatStatus,
+} from '../lib/statblock';
 import { btn, btnPrimary } from '../lib/ui';
 import { DicePool, rollPool, type DieArt } from './DicePool';
 import { CounterStepper } from './Vitals';
@@ -134,6 +140,8 @@ export function TurnStage({
   onSuggest,
   onNarrate,
   onPatchCharacter,
+  onResolve,
+  catalog,
 }: {
   character: Character;
   entry: InitiativeEntry;
@@ -150,10 +158,31 @@ export function TurnStage({
   onSuggest?: () => void;
   onNarrate?: (action: string, result: string) => void;
   onPatchCharacter: (id: string, patch: { data?: Partial<Character['data']> }) => void;
+  /** Land the exchange and record who did it — see EncounterPanel. */
+  onResolve: (body: {
+    actorId: string;
+    targetId: string;
+    action: string;
+    hits: number;
+    blocked: number;
+    damage: number;
+    statuses: { name: string; severity: number }[];
+  }) => void;
+  /**
+   * The pack's item entries by id, so a carried weapon can be read for
+   * its dice — a person's attacks are their GEAR, and the character's
+   * copy only references the catalogue.
+   */
+  catalog: Map<string, { name: string; kind?: string; fields?: { key: string; value: string }[] }>;
 }) {
   const a = advice ?? {};
   const foe = character.kind === 'npc';
-  const attacks = parseAttacks(fieldOf(character, 'attacks'));
+  // A printed statblock for a creature, carried weapons for a person —
+  // and both, for anything that has both.
+  const attacks = [
+    ...parseAttacks(fieldOf(character, 'attacks')),
+    ...weaponAttacks(character.data.items ?? [], catalog),
+  ];
   const byId = new Map(characters.map((c) => [c.id, c]));
   const target = a.targetId ? byId.get(a.targetId) : undefined;
   const targetFoe = target?.kind === 'npc';
@@ -222,24 +251,16 @@ export function TurnStage({
   const apply = () => {
     if (!target) return;
     const vital = vitalOf(target);
-    const tags = [...target.data.tags];
-    for (const s of statuses) {
-      const sev = severityOf(s);
-      if (sev === null) continue;
-      const tag = statusTag(s, sev);
-      if (!tags.includes(tag)) tags.push(tag);
-    }
-    onPatchCharacter(target.id, {
-      data: {
-        ...(vital
-          ? {
-              counters: target.data.counters.map((c) =>
-                c.id === vital.id ? { ...c, current: Math.max(0, c.current - damage) } : c,
-              ),
-            }
-          : {}),
-        tags,
-      },
+    onResolve({
+      actorId: character.id,
+      targetId: target.id,
+      action: a.roll?.for ?? 'an attack',
+      hits,
+      blocked,
+      damage,
+      statuses: statuses
+        .map((s) => ({ name: s.name, severity: severityOf(s) }))
+        .filter((s): s is { name: string; severity: number } => s.severity !== null),
     });
     onAdvice({ ...a, applied: true, appliedFrom: vital?.current });
   };
@@ -315,6 +336,9 @@ export function TurnStage({
           }
         >
           {atk.name}
+          {/* The band, because one weapon prints a pool per reach and
+              two "Used Pistol" chips are otherwise indistinguishable. */}
+          {atk.band && <span className="ml-1.5 text-[10px] text-stone-500">{atk.band}</span>}
           {atk.dice && <span className="ml-1.5 text-amber-300">{atk.dice}</span>}
           {/* Spelled out, because "4G" beside a "2G" pool reads
               as four Gold dice and it is four GRIT. */}
@@ -417,15 +441,22 @@ export function TurnStage({
         thing on screen during their turn is their sheet, in case the
         Warden needs to reach into it, and nothing else.
       */}
-      {!foe && (
+      {!foe && !a.roll && (
         <p className="px-1 text-[12px] italic text-stone-600">
-          {entry.label} plays themselves — their seat has the rest.
+          {entry.label} plays themselves — pick what they swung to record it.
         </p>
       )}
 
-      {/* ---- ✦ the flow ---- */}
-      {onSuggest && foe && (
+      {/*
+        The exchange. The ✦ half is a foe's — teller never plays the
+        posse — but the DICE half belongs to everyone: a player's hit
+        on a monster is the same subtraction, and until it was recorded
+        here, half of every fight went unwritten and the assistant only
+        ever knew what the monsters had done (Brian, 2026-08-15).
+      */}
+      {((onSuggest && foe) || a.roll) && (
         <div className="rounded-xl border border-amber-800/60 bg-stone-900/70 p-3.5">
+          {onSuggest && foe && (
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] uppercase tracking-widest text-amber-400">
               ✦ teller
@@ -456,6 +487,7 @@ export function TurnStage({
               </button>
             )}
           </div>
+          )}
 
           {a.error && <p className="mt-2 text-[11px] text-red-300">{a.error}</p>}
 
@@ -523,7 +555,14 @@ export function TurnStage({
                   onFaces={(faces) => onAdvice({ ...a, faces })}
                   dice={dice}
                   dieArt={dieArt}
-                  onRoll={() => onAdvice({ ...a, faces: rollPool(a.roll!.dice, dice) })}
+                  // Rule 5: teller rolls the monsters' dice and nobody
+                  // else's. A player's attack is theirs to throw; this
+                  // records what the plastic said.
+                  onRoll={
+                    foe
+                      ? () => onAdvice({ ...a, faces: rollPool(a.roll!.dice, dice) })
+                      : undefined
+                  }
                 />
               </div>
             </div>
@@ -721,7 +760,7 @@ export function TurnStage({
           )}
 
           {/* 3 — anything teller couldn't know, then the words */}
-          {onNarrate && (a.roll || a.suggestion) && (
+          {onNarrate && foe && (a.roll || a.suggestion) && (
             <div className="mt-3 border-t border-stone-800 pt-2.5">
               {step(3, 'anything else, then read it out')}
               <div className="mt-2 flex gap-2">

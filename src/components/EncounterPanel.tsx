@@ -70,6 +70,7 @@ export function EncounterPanel({
   tokenLinks,
   onOp,
   onPatchCharacter,
+  onResolve,
   onDropToken,
   onSpawn,
   onRollNpcs,
@@ -77,6 +78,7 @@ export function EncounterPanel({
   onNarrate,
   dice,
   dieArt,
+  catalog,
 }: {
   session: SessionState | null;
   characters: Character[];
@@ -87,6 +89,21 @@ export function EncounterPanel({
   tokenLinks: Set<string>;
   onOp: (op: SessionOp) => void;
   onPatchCharacter: (id: string, patch: { data?: Partial<CharacterData> }) => void;
+  /**
+   * Land an exchange: damage and statuses onto the target, and one
+   * attributed line into the log. Separate from `onPatchCharacter`
+   * because the log has to know a FOE did this to a PERSON, not that
+   * the dm edited some counters (rule 3, finally saying who).
+   */
+  onResolve: (body: {
+    actorId: string;
+    targetId: string;
+    action: string;
+    hits: number;
+    blocked: number;
+    damage: number;
+    statuses: { name: string; severity: number }[];
+  }) => void;
   onDropToken: (characterId: string, label: string) => void;
   onSpawn: (npcId: string, count: number) => void;
   /** Open the rolling phase and roll for the monsters in one act. */
@@ -115,6 +132,8 @@ export function EncounterPanel({
    * the pack version for cache-busting. Absent = text chips.
    */
   dieArt?: DieArt;
+  /** The pack's items by id — a person's attacks are their gear. */
+  catalog: Map<string, { name: string; kind?: string; fields?: { key: string; value: string }[] }>;
 }) {
   const [draft, setDraft] = useState('');
   /** Rows opened to show the whole sheet, in the roster. */
@@ -701,6 +720,8 @@ export function EncounterPanel({
                     : undefined
                 }
                 onPatchCharacter={onPatchCharacter}
+                onResolve={onResolve}
+                catalog={catalog}
               />
               {turnControls}
             </>

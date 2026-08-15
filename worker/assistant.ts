@@ -23,6 +23,7 @@ import type {
   Character,
   Scene,
   SessionState,
+  ResolvedTurn,
   TurnNarration,
   TurnSuggestion,
 } from './types';
@@ -273,6 +274,36 @@ function describeFight(
   return lines.join('\n');
 }
 
+/**
+ * What has already happened, attributed.
+ *
+ * Handed a bare `Trapped 4` on a player and nothing else, the model
+ * did the reasonable thing and made up a cause for it, then played the
+ * turn off that invention. Conditions are not free-floating facts —
+ * something PUT them there, usually recently, sometimes this very
+ * creature — and a foe that has someone in its coils should know it's
+ * holding them rather than deduce that somebody must be.
+ *
+ * Oldest first, so the last line is the freshest thing that happened.
+ */
+function describeHistory(recent: ResolvedTurn[], foeId: string): string {
+  if (!recent.length) return 'WHAT HAS ALREADY HAPPENED: nothing recorded yet this fight.';
+  const lines = recent.map((r) => {
+    const mine = r.by === foeId ? ' (you did this)' : '';
+    const hit = r.damage > 0 ? `${r.damage} damage` : 'no damage';
+    const vital = r.vital ? ` (${r.vital.name} ${r.vital.from} → ${r.vital.to})` : '';
+    const blocked = r.blocked > 0 ? `, ${r.blocked} blocked` : '';
+    const left = r.statuses.length
+      ? `, leaving ${r.statuses.map((s) => `${s.name} ${s.severity}`).join(' and ')}`
+      : '';
+    return `round ${r.round}: ${r.byName} used ${r.action} on ${r.targetName} — ${hit}${blocked}${vital}${left}${mine}`;
+  });
+  return [
+    'WHAT HAS ALREADY HAPPENED (oldest first; this is where the conditions above came from):',
+    ...lines,
+  ].join('\n');
+}
+
 const SYSTEM = `You are Teller, the bookkeeping assistant at an in-person tabletop RPG session. The Warden (GM) is running a fight and asks: what would this foe do on its turn?
 
 You PROPOSE; the Warden decides. Suggest one turn's worth of action for the named foe, played true to its profile and current condition — not optimally. A cowardly creature flees at the wrong moment; a beast attacks the nearest threat, not the healer.
@@ -404,6 +435,7 @@ function assembleContext(
   foe: Character,
   heightInches?: number,
   space?: string,
+  recent: ResolvedTurn[] = [],
 ): string {
   const scene =
     campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
@@ -426,6 +458,7 @@ function assembleContext(
     describeBoard(scene, characters, foe.id, heightInches),
     space ? `SPACE & MOVEMENT (this system's rules — use these, don't guess): ${space}` : '',
     describeFight(session, characters, foe.id),
+    describeHistory(recent, foe.id),
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -441,8 +474,10 @@ export async function suggestTurn(
   heightInches?: number,
   /** The system's own scale contract — `SystemTemplate.space`. */
   space?: string,
+  /** Exchanges already resolved this fight, oldest first. */
+  recent: ResolvedTurn[] = [],
 ): Promise<TurnSuggestion> {
-  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space)}\n\n\nWhat would ${foe.name} do this turn?`;
+  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space, recent)}\n\n\nWhat would ${foe.name} do this turn?`;
   return parseSuggestion(await complete(env, SYSTEM, user), env.ASSISTANT_MODEL!);
 }
 
@@ -476,9 +511,10 @@ export async function narrateOutcome(
   result: string,
   heightInches?: number,
   space?: string,
+  recent: ResolvedTurn[] = [],
 ): Promise<TurnNarration> {
   const user = [
-    assembleContext(campaign, characters, session, foe, heightInches, space),
+    assembleContext(campaign, characters, session, foe, heightInches, space, recent),
     `THE ACTION THE WARDEN RAN: ${action}`,
     `WHAT THE DICE SAID (the table's results, already final): ${result}`,
     `\nNarrate what just happened.`,
