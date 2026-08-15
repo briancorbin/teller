@@ -84,6 +84,14 @@ export function assemble(files: Map<string, unknown>): RulesPack {
     throw new Error('a pack needs at least system and name');
   }
   if (typeof pack.version !== 'number') pack.version = 1;
+  // `parts()` omits empty files, so absence must assemble back to what
+  // emptiness meant. `sections` is the one key the type REQUIRES —
+  // skipping this line shipped a bestiary-only pack with no `sections`
+  // at all, and every screen that loads packs (consoles AND seats)
+  // crashed mid-render on `pack.sections is not iterable`. The flash
+  // of content before the fetch landed made it look like a display
+  // bug; it was a serializer breaking its own round-trip contract.
+  pack.sections ??= [];
 
   for (const [name, key] of Object.entries(PACK_PARTS)) {
     const part = files.get(name);
