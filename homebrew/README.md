@@ -3,7 +3,7 @@
 The install anyone else gets:
 
 ```sh
-brew install briancorbin/teller/teller
+brew install teller-ink/teller/teller
 teller host
 ```
 
@@ -14,12 +14,12 @@ is the recipe.
 ## One-time: create the tap
 
 A tap is just a repo with a `Formula/` directory. The name matters:
-Homebrew maps `briancorbin/teller` to `github.com/briancorbin/homebrew-teller`.
+Homebrew maps `teller-ink/teller` to `github.com/teller-ink/homebrew-teller`.
 
 ```sh
-gh repo create briancorbin/homebrew-teller --public \
+gh repo create teller-ink/homebrew-teller --public \
   --description "Homebrew formula for teller"
-git clone git@github.com:briancorbin/homebrew-teller.git
+git clone git@github.com:teller-ink/homebrew-teller.git
 mkdir -p homebrew-teller/Formula
 cp homebrew/teller.rb homebrew-teller/Formula/teller.rb
 ```
@@ -70,5 +70,5 @@ wrong. Run it before publishing, not after.
   shim pointing at something ancient.
 - **Homebrew core is not the goal yet.** Core requires notability, and a
   tap is the normal home for a project this age. `brew install
-  briancorbin/teller/teller` is one line either way.
+  teller-ink/teller/teller` is one line either way.
 - Linux works the same; nothing here is macOS-specific.

@@ -93,7 +93,7 @@ async function main() {
   console.log(`  sha256 ${sha}\n`);
   console.log('  formula fields:');
   console.log(
-    `    url "https://github.com/briancorbin/teller/releases/download/v${version}/${name}.tar.gz"`,
+    `    url "https://github.com/teller-ink/teller/releases/download/v${version}/${name}.tar.gz"`,
   );
   console.log(`    sha256 "${sha}"\n`);
 
