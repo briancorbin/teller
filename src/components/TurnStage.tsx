@@ -31,7 +31,7 @@ import { DicePool, rollPool, type DieArt } from './DicePool';
 import { PoolGrid, ProseSections } from './Statblock';
 import { Range } from './Range';
 import { CounterStepper } from './Vitals';
-import { STATE_EFFECTS } from './token-visuals';
+import { stateVisual } from './token-visuals';
 
 // THE STAGE — whoever's turn it is, at full size.
 //
@@ -573,7 +573,7 @@ export function TurnStage({
               // the only place a Severity is visible on the stage.
               const held = findTag(character.data.tags, state.name);
               const on = held !== undefined;
-              const visual = STATE_EFFECTS[state.effect ?? 'mark'];
+              const visual = stateVisual(state.effect);
               return (
                 <button
                   key={state.name}

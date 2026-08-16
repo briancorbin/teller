@@ -28,7 +28,7 @@ import { CreatureSheet } from './CreatureSheet';
 import { TurnStage, type Advice } from './TurnStage';
 import { VitalBar } from './Vitals';
 import type { DieArt } from './DicePool';
-import { STATE_EFFECTS } from './token-visuals';
+import { stateVisual } from './token-visuals';
 
 // The encounter, as two different tools wearing one panel.
 //
@@ -385,7 +385,7 @@ export function EncounterPanel({
               <span
                 key={s.name}
                 className="h-1.5 w-1.5 rounded-full"
-                style={{ background: STATE_EFFECTS[s.effect ?? 'mark'].chip }}
+                style={{ background: stateVisual(s.effect).chip }}
                 title={formatTag(findTag(character!.data.tags, s.name) ?? { name: s.name })}
               />
             ))}
