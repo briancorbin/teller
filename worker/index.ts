@@ -1750,10 +1750,66 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         }
       }
 
-      return sessionStub(env, campaignId).fetch('https://do/session', {
+      const res = await sessionStub(env, campaignId).fetch('https://do/session', {
         method: 'POST',
         body: JSON.stringify(op),
       });
+
+      // A turn STARTING is a thing that happens to a character, and in
+      // some systems it hands them their budget back. Nothing did this,
+      // so every reload was a human editing a counter by hand — and the
+      // assistant, which reads current values, was told a spent-out foe
+      // could barely act (found in play, 2026-08-15).
+      //
+      // Rule 1 holds three ways: the DM pressed next, the ceiling it
+      // refills to is itself a stored editable number, and the whole
+      // thing appends an event so /undo can walk it back (rule 3).
+      // Only on `next` — you cannot un-spend a turn, so stepping BACK
+      // must not hand anybody a full purse.
+      if (op.op === 'next' && res.ok) {
+        const state = (await res.clone().json()) as SessionState;
+        const up = state.turn !== null ? state.initiative[state.turn] : undefined;
+        if (up?.characterId) {
+          const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+            .bind(campaignId)
+            .first();
+          const campaign = campaignRow ? toCampaign(campaignRow as never) : null;
+          const template = campaign ? await getSystem(env, campaign.system) : null;
+          const rules = template?.reload ?? [];
+          if (rules.length) {
+            const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+              .bind(up.characterId)
+              .first();
+            if (row) {
+              const who = toCharacter(row as never);
+              const filled: { name: string; from: number; to: number }[] = [];
+              const counters = who.data.counters.map((c) => {
+                const rule = rules.find(
+                  (r) => r.counter.toLowerCase() === c.name.toLowerCase(),
+                );
+                // Only a BOUNDED counter can come back to anything;
+                // an open-ended one has no "full" to return to.
+                if (!rule || c.max === null || c.current >= c.max) return c;
+                filled.push({ name: c.name, from: c.current, to: c.max });
+                return { ...c, current: c.max };
+              });
+              if (filled.length) {
+                await env.DB.prepare(
+                  "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
+                )
+                  .bind(JSON.stringify({ ...who.data, counters }), who.id)
+                  .run();
+                await logEvent(env, campaignId, who.id, 'dm', 'turn.reloaded', {
+                  round: state.round,
+                  counters: filled,
+                });
+                await poke(env, campaignId, who.id);
+              }
+            }
+          }
+        }
+      }
+      return res;
     }
     // Listening requires a ticket.
     //

@@ -853,6 +853,29 @@ export type SystemTemplate = {
    */
   bands?: { name: string; from?: number; to?: number; world?: string }[];
   /**
+   * Counters that come back on their own, and when.
+   *
+   * An action budget that refills is a common shape and a system rule,
+   * not teller's: WiW's Grit "RELOADS at the start of each creature's
+   * turn", another game might refill on a short rest and a third might
+   * never refill anything. So the CADENCE is a row (rule 4) and teller
+   * only knows how to carry it out.
+   *
+   * Left undone this was a quiet correctness bug rather than a missing
+   * convenience: the assistant reads current values, so a foe that had
+   * spent itself dry last round was described to the model as a
+   * creature that could barely act, and it planned a smaller turn than
+   * the rules actually allow (found in play, 2026-08-15 — the Peril
+   * went into round 2 showing 1 of 6).
+   *
+   * `to: 'max'` is the only refill teller performs, because a counter's
+   * ceiling is the one target that's already stored and already
+   * editable — which is what keeps a debt working (TEL-97: an ability
+   * that drops your max next turn composes with this for free, instead
+   * of being erased by it).
+   */
+  reload?: { counter: string; at: 'turn'; to?: 'max' }[];
+  /**
    * How this system rolls, as DATA (rule 4, amended 2026-08-10).
    *
    * teller ships one small evaluator; a system arrives as a row rather

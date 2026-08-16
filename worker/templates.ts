@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 16,
+  version: 17,
   name: 'Wild Imaginary West',
   // The table's scale, as mechanics (numbers and band names — the
   // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
@@ -100,6 +100,10 @@ const wiw: SystemTemplate = {
     { name: 'Long', from: 6, to: 18, world: '30–90 yards' },
     { name: 'Distant', from: 18, world: 'past 90 yards' },
   ],
+  // "Grit is the action budget and RELOADS at the start of each
+  // creature's turn" — the same sentence `space` tells the model, said
+  // once more in a form teller can act on rather than only reason with.
+  reload: [{ counter: 'Grit', at: 'turn', to: 'max' }],
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',
