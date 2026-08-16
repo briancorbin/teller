@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import type { Character, Counter } from '../../worker/types';
 import type { SourcedNpc } from '../../worker/bestiary';
 import { useBooks } from '../lib/use-books';
-import { namedBlocks, parseAttacks, weaponAttacks } from '../lib/statblock';
+import { parseAttacks, weaponAttacks } from '../lib/statblock';
 import { btn, btnGhost, sectionLabel } from '../lib/ui';
 import { BookReader, type BookTarget } from './BookReader';
+import { PoolGrid, ProseSections } from './Statblock';
 import { VitalBar } from './Vitals';
 
 // EVERYTHING ABOUT ONE CREATURE, laid out like a page instead of a
@@ -21,11 +22,6 @@ import { VitalBar } from './Vitals';
 // whoever's turn it is and must never wander (that's the whole reason
 // there's no selection mode); looking something up is explicitly a
 // detour, and a detour should announce itself and end.
-
-/** Fields that are the printed statblock's numbers, in sheet order. */
-const POOLS = ['defense', 'speed', 'size', 'charm', 'finesse', 'intuition', 'nerve'];
-/** Fields rendered as their own prose sections, in this order. */
-const PROSE = ['description', 'behavior', 'features', 'trophies', 'tolerances', 'frenzy'];
 
 function fieldOf(character: Character, key: string): string {
   return character.data.fields.find((f) => f.key === key)?.value ?? '';
@@ -71,12 +67,6 @@ export function CreatureSheet({
     : blueprint?.page
       ? [{ packId: '', pack: blueprint.from ?? '', book: undefined, page: blueprint.page }]
       : [];
-
-  const pools = POOLS.map((key) => ({
-    key,
-    label: character.data.fields.find((f) => f.key === key)?.label ?? key,
-    value: fieldOf(character, key),
-  })).filter((p) => p.value);
 
   const attacks = [
     ...parseAttacks(fieldOf(character, 'attacks')),
@@ -155,21 +145,7 @@ export function CreatureSheet({
           </div>
 
           {/* ---- the printed pools ---- */}
-          {pools.length > 0 && (
-            <div>
-              <span className={sectionLabel}>Stats</span>
-              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {pools.map((p) => (
-                  <div key={p.key} className="rounded-lg bg-stone-950/60 px-3 py-2">
-                    <div className="font-mono text-sm text-amber-200">{p.value}</div>
-                    <div className="text-[10px] uppercase tracking-wide text-stone-600">
-                      {p.label}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <PoolGrid character={character} />
 
           {/* ---- conditions ---- */}
           {character.data.tags.length > 0 && (
@@ -235,26 +211,7 @@ export function CreatureSheet({
           )}
 
           {/* ---- the prose, each part given its own head ---- */}
-          {PROSE.map((key) => {
-            const value = fieldOf(character, key);
-            if (!value) return null;
-            const label =
-              character.data.fields.find((f) => f.key === key)?.label ?? key;
-            const blocks = namedBlocks(value);
-            return (
-              <div key={key}>
-                <span className={sectionLabel}>{label}</span>
-                <div className="mt-2 space-y-2">
-                  {blocks.map((b, i) => (
-                    <p key={i} className="text-[13px] leading-relaxed text-stone-300">
-                      {b.name && <span className="text-amber-200">{b.name}. </span>}
-                      {b.text}
-                    </p>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
+          <ProseSections character={character} />
 
           {character.data.notes && (
             <div>

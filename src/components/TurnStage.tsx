@@ -10,7 +10,6 @@ import type {
 import { combinePools, tallyFaces } from '../lib/dice';
 import {
   gateMet,
-  namedBlocks,
   parseAbilities,
   parseAttacks,
   parseDefense,
@@ -20,6 +19,7 @@ import {
 } from '../lib/statblock';
 import { btn, btnPrimary } from '../lib/ui';
 import { DicePool, rollPool, type DieArt } from './DicePool';
+import { PoolGrid, ProseSections } from './Statblock';
 import { Range } from './Range';
 import { CounterStepper } from './Vitals';
 import { STATE_EFFECTS } from './token-visuals';
@@ -234,14 +234,6 @@ export function TurnStage({
   const abilities = character.data.fields
     .filter((f) => f.value && f.key !== 'attacks' && f.value.includes('.'))
     .flatMap((f) => parseAbilities(f.value));
-  /** The short values — the printed stat line, read at a glance. */
-  const statLine = character.data.fields.filter(
-    (f) => f.value && f.key !== 'attacks' && !f.value.includes('\n') && f.value.length <= 40,
-  );
-  /** Everything long, split into the parts a book prints it in. */
-  const traitBlocks = character.data.fields
-    .filter((f) => f.value && f.key !== 'attacks' && !statLine.includes(f))
-    .flatMap((f) => namedBlocks(f.value));
   const byId = new Map(characters.map((c) => [c.id, c]));
   const target = a.targetId ? byId.get(a.targetId) : undefined;
   const targetFoe = target?.kind === 'npc';
@@ -516,7 +508,11 @@ export function TurnStage({
   );
 
   return (
-    <div className="space-y-2.5">
+    // Its own container, so the statblock's columns answer to the
+    // STAGE's width rather than the whole panel's — in the split layout
+    // those are very different numbers, and no device list exists to
+    // ask instead.
+    <div className="@container space-y-2.5">
       {/* ---- who's acting ---- */}
       <div className="rounded-xl border border-stone-800 bg-stone-900/70 p-3.5">
         <div className="flex flex-wrap items-baseline gap-2">
@@ -597,26 +593,20 @@ export function TurnStage({
               Nothing is filtered by name — which heading a book files
               its specials under is the book's affair (rule 2).
             */}
-            {(statLine.length > 0 || traitBlocks.length > 0) && (
-              <div className="mt-2.5 space-y-1.5">
-                {statLine.length > 0 && (
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-stone-500">
-                    {statLine.map((f) => (
-                      <span key={f.key}>
-                        {f.label}{' '}
-                        <span className="text-stone-300">{f.value}</span>
-                      </span>
-                    ))}
-                  </div>
-                )}
-                {traitBlocks.map((t, i) => (
-                  <p key={i} className="text-[11px] leading-snug text-stone-500">
-                    {t.name && <span className="text-stone-300">{t.name}. </span>}
-                    {t.text}
-                  </p>
-                ))}
-              </div>
-            )}
+            {/*
+              And what it IS, right here (Brian, 2026-08-15: "I don't
+              wanna have to click into the info popup every time I have
+              a question"). The sheet dialog is for reading a creature;
+              this is for deciding a turn, and a decision you have to
+              open a dialog to make is one you make worse.
+
+              Same renderer the dialog uses, at its tight density — one
+              statblock, two places, no chance of them drifting apart.
+            */}
+            <div className="mt-3 space-y-3">
+              <PoolGrid character={character} dense />
+              <ProseSections character={character} dense />
+            </div>
           </div>
         )}
       </div>
