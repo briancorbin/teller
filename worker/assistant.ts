@@ -30,6 +30,9 @@ import type {
   TurnNarration,
   TurnSuggestion,
 } from './types';
+// Pure parsing over the pack's own printed text — no runtime deps, so
+// it reads the same in a Worker as it does in the browser.
+import { namedBlocks, parseAttacks } from '../src/lib/statblock';
 
 export type AssistantEnv = {
   /** Endpoint. Absent = Anthropic's. An ollama or teller.ink URL works the same. */
@@ -148,16 +151,89 @@ function profileOf(character: Character): string | undefined {
   return field?.value || undefined;
 }
 
+/**
+ * A threshold printed into a block's own name — "Lake Sludge (18
+ * Health)" — read against the creature's counter.
+ *
+ * Not a rules engine: it reads the AUTHOR's notation and says whether
+ * the number is reached, which is a comparison teller can make and the
+ * model should not have to. What the ability then does is the block's
+ * own words and the Warden's call.
+ */
+function thresholdOf(
+  name: string,
+  counters: Character['data']['counters'],
+): string | undefined {
+  const m = /\((\d+)\s+([A-Za-z][A-Za-z ]*)\)/.exec(name);
+  if (!m) return undefined;
+  const at = Number(m[1]);
+  const counter = counters.find((c) => c.name.toLowerCase() === m[2].trim().toLowerCase());
+  if (!counter) return undefined;
+  return counter.current <= at
+    ? `THRESHOLD MET — ${counter.name} ${counter.current}, at or under ${at}`
+    : `not yet — ${counter.name} ${counter.current}, needs ${at} or less`;
+}
+
+/**
+ * The foe, in blocks a reader can find things in.
+ *
+ * This used to join every field with ` · ` into one run. Field values
+ * carry their own newlines, so the separator interleaved with them and
+ * produced genuine nonsense — an attack line welded onto the next
+ * field's label ("Long — Screech (AOE) (4 Grit): Dazed [2B] · Features:
+ * Perfect Camouflage"), and a creature's signature move buried at the
+ * tail of an 881-character line that opened with a paragraph about
+ * dehydration.
+ *
+ * It cost a real play (2026-08-15): the Pondweed Peril dropped below
+ * its Frenzy threshold for the first time, had the Grit for it, and
+ * would have caught four of the posse in mud — and instead proposed
+ * the same Strangle for the third round running. The text was in the
+ * prompt the whole time. Presence is not salience.
+ */
 function describeFoe(foe: Character): string {
   const lines = [`FOE: ${foe.name}`];
-  const fields = foe.data.fields.filter((f) => f.value);
-  if (fields.length) {
-    lines.push(`stats: ${fields.map((f) => `${f.label}: ${f.value}`).join(' · ')}`);
-  }
   for (const c of foe.data.counters) {
     lines.push(`${c.name}: ${c.current}${c.max !== null ? `/${c.max}` : ''}`);
   }
   if (foe.data.tags.length) lines.push(`conditions: ${foe.data.tags.join(', ')}`);
+
+  const fields = foe.data.fields.filter((f) => f.value);
+  const attacksField = fields.find((f) => /^attacks$/i.test(f.key))?.value;
+  // Short single-line values are the stat line and read fine together.
+  // Anything with its own newlines never did and never will.
+  const short = fields.filter(
+    (f) => !/^attacks$/i.test(f.key) && !f.value.includes('\n') && f.value.length <= 80,
+  );
+  if (short.length) {
+    lines.push(`stats: ${short.map((f) => `${f.label}: ${f.value}`).join(' · ')}`);
+  }
+
+  if (attacksField) {
+    const attacks = parseAttacks(attacksField);
+    lines.push(
+      'ATTACKS — each is usable ONLY at its own band:',
+      ...(attacks.length
+        ? attacks.map(
+            (a) =>
+              `- ${a.band} · ${a.name} · ${a.cost} ${a.costUnit} · ${a.effect}`,
+          )
+        : [attacksField]),
+    );
+  }
+
+  // Everything long gets its own heading and one line per named block,
+  // so a feature is a thing you can point at rather than a clause.
+  for (const f of fields) {
+    if (/^attacks$/i.test(f.key)) continue;
+    if (short.includes(f)) continue;
+    lines.push(`${f.label.toUpperCase()}:`);
+    for (const b of namedBlocks(f.value)) {
+      const gate = b.name ? thresholdOf(b.name, foe.data.counters) : undefined;
+      lines.push(`- ${b.name ? `${b.name}. ` : ''}${b.text}${gate ? `  [${gate}]` : ''}`);
+    }
+  }
+
   const items = foe.data.items ?? [];
   if (items.length) lines.push(`carrying: ${items.map((i) => i.name).join(', ')}`);
   if (foe.data.notes) lines.push(`the Warden's notes on it: ${foe.data.notes}`);
