@@ -54,8 +54,10 @@ export function CreatureSheet({
    *
    * A creature printed in a core bestiary AND in the adventure that
    * reprints it has two statblocks, and which one wins is the
-   * campaign's pack order. The bestiary let the Warden say; moving the
+   * campaign's pack order. The bestiary lets the Warden say; moving the
    * lookup into this dialog would have quietly taken that away.
+   *
+   * Offered on a BLUEPRINT only — see `live` below.
    */
   picks?: Record<string, string>;
   onPick?: (npcId: string, packId: string) => void;
@@ -72,6 +74,25 @@ export function CreatureSheet({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  /**
+   * Is this a creature ON THE TABLE, or a printing in a book?
+   *
+   * One question, two consequences, and `onBump` is the honest signal:
+   * only a thing in a fight has counters anybody spends down. A
+   * printing shows what the book says, and its source is fixed.
+   *
+   * Which printing a creature came from stops being a choice the
+   * moment it's stamped out (Brian, 2026-08-16: "disable the ability to
+   * swap which book it's from once it's instantiated as a thing on the
+   * table"). Swapping then would rewrite a creature mid-combat —
+   * different Health, different attacks, under a name somebody has
+   * already been fighting.
+   *
+   * Structural rather than incidental: the encounter panel doesn't pass
+   * `onPick` today, but this holds even if some later wiring does.
+   */
+  const live = Boolean(onBump);
 
   const blueprint = character.data.blueprintId
     ? npcs.find((n) => n.id === character.data.blueprintId)
@@ -121,7 +142,7 @@ export function CreatureSheet({
 
         <div className="space-y-5 px-5 py-4">
           {/* ---- vitals ---- */}
-          {onBump ? (
+          {live ? (
             <div className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
               {character.data.counters
                 .filter((c) => c.max !== null && c.max > 0)
@@ -136,14 +157,14 @@ export function CreatureSheet({
                       <span className="flex items-center gap-0.5">
                         <button
                           className="rounded px-1.5 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
-                          onClick={() => onBump(c, -1)}
+                          onClick={() => onBump?.(c, -1)}
                           aria-label={`${c.name} down`}
                         >
                           −
                         </button>
                         <button
                           className="rounded px-1.5 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
-                          onClick={() => onBump(c, 1)}
+                          onClick={() => onBump?.(c, 1)}
                           aria-label={`${c.name} up`}
                         >
                           +
@@ -221,7 +242,7 @@ export function CreatureSheet({
             const chosen = blueprint?.fromId
               ? blueprint.fromId === s.packId
               : picks?.[character.data.blueprintId ?? ''] === s.packId;
-            const pickable = onPick && printings.length > 1 && s.packId;
+            const pickable = !live && onPick && printings.length > 1 && s.packId;
             return (
               <span key={i} className="flex items-center gap-1">
                 {pickable && (
