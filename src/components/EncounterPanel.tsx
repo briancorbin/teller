@@ -100,6 +100,8 @@ export function EncounterPanel({
     actorId: string;
     /** Absent for a turn aimed at nobody — moving, hiding, waiting. */
     targetId?: string;
+    /** Everyone caught, for an area action. */
+    targets?: string[];
     action: string;
     hits: number;
     blocked: number;

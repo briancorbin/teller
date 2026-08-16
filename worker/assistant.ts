@@ -601,6 +601,19 @@ function describeHistory(recent: ResolvedTurn[], foeId: string): string {
     if (!r.targetName || r.target === r.by) {
       return `round ${r.round}: ${r.byName} — ${r.action}${eased}${paidOf(r)}${mine}`;
     }
+    // A crowd reads as ONE thing that happened, because it was one
+    // thing: an area attack rolls its severity once and lands it on
+    // everybody. Four separate lines describing four separate turns is
+    // what this looked like before the endpoint could take a list.
+    if (r.targets && r.targets.length > 1) {
+      const who = r.targets.map((t) => t.name);
+      const all = `${who.slice(0, -1).join(', ')} and ${who[who.length - 1]}`;
+      const hitAll = r.damage > 0 ? `${r.damage} damage each` : 'no damage';
+      const leftAll = r.statuses.length
+        ? `, leaving them ${r.statuses.map((s) => `${s.name} ${s.severity}`).join(' and ')}`
+        : '';
+      return `round ${r.round}: ${r.byName} used ${r.action} and caught ${all} — ${hitAll}${leftAll}${paidOf(r)}${mine}`;
+    }
     const hit = r.damage > 0 ? `${r.damage} damage` : 'no damage';
     const vital = r.vital ? ` (${r.vital.name} ${r.vital.from} → ${r.vital.to})` : '';
     const blocked = r.blocked > 0 ? `, ${r.blocked} blocked` : '';

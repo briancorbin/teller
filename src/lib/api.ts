@@ -193,6 +193,8 @@ export const api = {
       actorId: string;
       /** Absent for a turn aimed at nobody — moving, hiding, waiting. */
       targetId?: string;
+      /** Everyone caught, for an area action. */
+      targets?: string[];
       action: string;
       hits: number;
       blocked: number;
@@ -202,7 +204,7 @@ export const api = {
       spend?: { counter: string; amount: number; on?: string }[];
     },
   ) =>
-    req<{ character: Character; resolved: ResolvedTurn }>(
+    req<{ character: Character | null; characters: Character[]; resolved: ResolvedTurn }>(
       `/api/campaigns/${campaignId}/resolve`,
       { method: 'POST', body: JSON.stringify(body) },
     ),

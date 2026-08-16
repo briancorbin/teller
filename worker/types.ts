@@ -1993,6 +1993,17 @@ export type ResolvedTurn = {
   by: string;
   byName: string;
   /**
+   * Everyone it landed on, when that's more than one.
+   *
+   * An AREA action has targets and not a target — the Peril's Lake
+   * Sludge catches every body on the bank — and applying it meant one
+   * call per person, which wrote one event each and left the log
+   * describing four unrelated turns instead of one flood of mud.
+   * `target`/`targetName` stay filled for the ordinary single case, so
+   * everything that reads a one-on-one exchange still does.
+   */
+  targets?: { id: string; name: string; vital?: { name: string; from: number; to: number } }[];
+  /**
    * Who it landed on — ABSENT for a turn aimed at nobody (TEL-98).
    * Moving, hiding, readying, throwing a decoy sound: the assistant is
    * told outright it may propose these, and they cost their actor

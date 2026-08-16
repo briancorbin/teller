@@ -1372,6 +1372,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const body = await request.json<{
       actorId?: string;
       targetId?: string;
+      /** Everyone caught, for an area action. `targetId` is the one-target case. */
+      targets?: string[];
       action?: string;
       hits?: number;
       blocked?: number;
@@ -1390,7 +1392,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     // clever half missing. The ACTOR is what an exchange requires.
     if (!body.actorId) return err('actorId required', 400);
 
-    const wanted = [body.actorId, ...(body.targetId ? [body.targetId] : [])];
+    // One target or many. An AREA action has targets and not a target,
+    // and doing it as N separate calls wrote N events — the log then
+    // described four unrelated turns instead of one flood of mud.
+    const aimed = [
+      ...new Set([...(body.targets ?? []), ...(body.targetId ? [body.targetId] : [])]),
+    ].filter(Boolean);
+    const wanted = [...new Set([body.actorId, ...aimed])];
     const rows = await env.DB.prepare(
       `SELECT * FROM characters WHERE campaign_id = ? AND id IN (${wanted
         .map(() => '?')
@@ -1400,11 +1408,15 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .all();
     const found = rows.results.map((r) => toCharacter(r as never));
     const actor = found.find((c) => c.id === body.actorId);
-    const target = body.targetId ? found.find((c) => c.id === body.targetId) : undefined;
+    const targets = aimed
+      .map((id) => found.find((c) => c.id === id))
+      .filter(Boolean) as typeof found;
+    // The FIRST is the one every single-target reading still sees.
+    const target = targets[0];
     if (!actor) return err('actor not in this campaign', 404);
     // Naming a target teller can't find is a mistake worth reporting;
     // naming none is a turn.
-    if (body.targetId && !target) return err('target not in this campaign', 404);
+    if (aimed.length !== targets.length) return err('target not in this campaign', 404);
 
     const damage = Math.max(0, Math.round(body.damage ?? 0));
     const statuses = (body.statuses ?? []).filter(
@@ -1432,15 +1444,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           })()
         : undefined;
 
-    // The vital counter is the first bounded one, exactly as every
-    // other surface decides it. With nobody on the other end there is
-    // nothing to subtract from and nothing to hang a condition on — the
-    // whole target-side write simply doesn't happen.
-    const vitalIndex = target
-      ? target.data.counters.findIndex((c) => c.max !== null && c.max > 0)
-      : -1;
-    const vital = target && vitalIndex >= 0 ? target.data.counters[vitalIndex] : undefined;
-
     const named = /^(.*?)\s+(\d+)$/;
     const nameOf = (tag: string) => {
       const m = named.exec(tag);
@@ -1449,24 +1452,26 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const eased: { name: string; from: number; to: number | null }[] = [];
 
     /**
-     * Both writes are computed BEFORE either lands, and a character who
-     * is their own target is written once.
+     * What this turn does to ONE body — run for each one caught.
      *
-     * Relieving is self-targeted, which walked straight into this: the
-     * target write set the tags, then the actor write paid the Grit out
-     * of the data as it was READ, putting the condition back. Two
-     * updates to one row, the second built on a stale copy.
+     * Damage and conditions are the same for everybody an area action
+     * catches: the book rolls Severity once for the attack, not once
+     * per victim, so the same numbers land on each.
+     *
+     * The vital counter is the first bounded one, exactly as every
+     * other surface decides it.
      */
-    let targetData: CharacterData | undefined;
-    if (target) {
-      const counters = target.data.counters.map((c, i) =>
+    const landOn = (who: Character) => {
+      const vitalIndex = who.data.counters.findIndex((c) => c.max !== null && c.max > 0);
+      const vital = vitalIndex >= 0 ? who.data.counters[vitalIndex] : undefined;
+      const counters = who.data.counters.map((c, i) =>
         i === vitalIndex ? { ...c, current: Math.max(0, c.current - damage) } : c,
       );
-      const tags = [...target.data.tags];
-      for (const s of statuses) {
-        const at = tags.findIndex((t) => nameOf(t) === s.name.toLowerCase());
+      const tags = [...who.data.tags];
+      for (const st of statuses) {
+        const at = tags.findIndex((t) => nameOf(t) === st.name.toLowerCase());
         if (at < 0) {
-          const tag = `${s.name} ${s.severity}`.trim();
+          const tag = `${st.name} ${st.severity}`.trim();
           if (!tags.includes(tag)) tags.push(tag);
           continue;
         }
@@ -1474,15 +1479,15 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         const mode = stacking?.stack ?? 'higher';
         let next =
           mode === 'sum'
-            ? had + s.severity
+            ? had + st.severity
             : mode === 'replace'
-              ? s.severity
-              : Math.max(had, s.severity);
+              ? st.severity
+              : Math.max(had, st.severity);
         const exempt = (stacking?.uncapped ?? []).some(
-          (n) => n.toLowerCase() === s.name.toLowerCase(),
+          (n) => n.toLowerCase() === st.name.toLowerCase(),
         );
         if (stacking?.cap !== undefined && !exempt) next = Math.min(stacking.cap, next);
-        tags[at] = `${s.name} ${next}`.trim();
+        tags[at] = `${st.name} ${next}`.trim();
       }
       // Off, after on — so a turn that both lands and eases something
       // reads in the order it happened.
@@ -1497,8 +1502,31 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         if (next > 0) tags[at] = `${r.name} ${next}`.trim();
         else tags.splice(at, 1);
       }
-      targetData = { ...target.data, counters, tags };
-    }
+      return {
+        data: { ...who.data, counters, tags } as CharacterData,
+        ...(vital
+          ? {
+              vital: {
+                name: vital.name,
+                from: vital.current,
+                to: Math.max(0, vital.current - damage),
+              },
+            }
+          : {}),
+      };
+    };
+
+    /**
+     * Every write is computed BEFORE any of them lands, and a character
+     * who is their own target is written once.
+     *
+     * Relieving is self-targeted, which walked straight into this: the
+     * target write set the tags, then the actor write paid the Grit out
+     * of the data as it was READ, putting the condition back. Two
+     * updates to one row, the second built on a stale copy.
+     */
+    const landed = targets.map((who) => ({ who, ...landOn(who) }));
+    const vital = landed[0]?.vital;
 
     // The ACTOR pays for the turn (Brian, 2026-08-15: "it didn't deduct
     // grit from the npc"). An exchange was only ever half-written down:
@@ -1523,8 +1551,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         ...(s.on ? { on: String(s.on) } : {}),
       }));
 
-    const sameBody = Boolean(target && target.id === actor.id);
-    let actorData: CharacterData | undefined = sameBody ? targetData : undefined;
+    // The actor may be among the bodies it just acted on — relieving is
+    // always that, and an area action can catch its own caster.
+    const selfHit = landed.find((l) => l.who.id === actor.id);
+    let actorData: CharacterData | undefined = selfHit?.data;
     if (spends.length) {
       // Two lines out of the same counter come off it once.
       const owed = new Map<string, number>();
@@ -1543,7 +1573,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
 
     const writes: [string, CharacterData][] = [];
-    if (targetData && !sameBody) writes.push([target!.id, targetData]);
+    for (const l of landed) if (l.who.id !== actor.id) writes.push([l.who.id, l.data]);
     if (actorData) writes.push([actor.id, actorData]);
     for (const [id, data] of writes) {
       await env.DB.prepare(
@@ -1562,20 +1592,24 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       by: actor.id,
       byName: actor.name,
       ...(target ? { target: target.id, targetName: target.name } : {}),
+      // Only when it's genuinely a crowd — a single target already reads
+      // in full above, and repeating it would be noise in every log line.
+      ...(landed.length > 1
+        ? {
+            targets: landed.map((l) => ({
+              id: l.who.id,
+              name: l.who.name,
+              ...(l.vital ? { vital: l.vital } : {}),
+            })),
+          }
+        : {}),
       // "an attack" is the right guess only when something was hit.
       action: (body.action ?? '').trim() || (target ? 'an attack' : 'a turn'),
       hits: Math.max(0, Math.round(body.hits ?? 0)),
       blocked: Math.max(0, Math.round(body.blocked ?? 0)),
       damage,
-      ...(vital
-        ? {
-            vital: {
-              name: vital.name,
-              from: vital.current,
-              to: Math.max(0, vital.current - damage),
-            },
-          }
-        : {}),
+      // Already the transition, worked out per body by `landOn`.
+      ...(vital ? { vital } : {}),
       statuses,
       ...(eased.length ? { relieved: eased } : {}),
       ...(spends.length ? { spend: spends } : {}),
@@ -1589,10 +1623,23 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     await logEvent(env, campaignId, subject, actorOf(auth), 'turn.resolved', resolved);
     await poke(env, campaignId, subject);
 
-    const updated = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
-      .bind(subject)
-      .first();
-    return json({ character: toCharacter(updated as never), resolved });
+    // Everyone the turn touched comes back, so a caller doesn't have to
+    // refetch to learn what an area attack did. `character` stays the
+    // first of them for every reader that only ever expected one.
+    const touched = [...new Set([...landed.map((l) => l.who.id), ...(actorData ? [actor.id] : [])])];
+    const after = touched.length
+      ? await env.DB.prepare(
+          `SELECT * FROM characters WHERE id IN (${touched.map(() => '?').join(', ')})`,
+        )
+          .bind(...touched)
+          .all()
+      : { results: [] as unknown[] };
+    const characters = after.results.map((r) => toCharacter(r as never));
+    return json({
+      character: characters.find((c) => c.id === subject) ?? characters[0] ?? null,
+      characters,
+      resolved,
+    });
   }
 
   /**
