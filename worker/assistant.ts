@@ -388,6 +388,39 @@ function describeUnplaced(
   ].join('\n');
 }
 
+/**
+ * What happens when a condition lands on somebody who already has it.
+ *
+ * teller has known this since `SystemTemplate.statuses` existed and
+ * was keeping it to itself — so the model guessed, and guessed wrong:
+ * asked to renew a grapple it had itself stacked from 1 to 5 the round
+ * before, it stated "Strangle renews Trapped rather than stacking it"
+ * as a premise (2026-08-15). Exactly the bands lesson again — a fact
+ * teller holds and doesn't pass on is a fact the model invents.
+ *
+ * Said as rules rather than as arithmetic: the number is teller's to
+ * work out at resolve time, but whether a second helping is worth
+ * anything changes what a creature chooses to do.
+ */
+function describeStacking(rules: SystemTemplate['statuses']): string {
+  if (!rules) return '';
+  const how =
+    rules.stack === 'sum'
+      ? 'A condition applied to someone who already has it ADDS to its severity.'
+      : rules.stack === 'replace'
+        ? 'A condition applied again REPLACES the severity it had.'
+        : 'A condition applied again keeps whichever severity is HIGHER.';
+  const cap =
+    rules.cap === undefined
+      ? ''
+      : ` Severity cannot pass ${rules.cap}${
+          rules.uncapped?.length
+            ? ` — except ${rules.uncapped.join(' and ')}, which has no ceiling`
+            : ''
+        }.`;
+  return `CONDITIONS, WHEN THEY LAND TWICE: ${how}${cap}`;
+}
+
 function describeFight(
   session: SessionState | null,
   characters: Character[],
@@ -475,11 +508,21 @@ function describeHistory(recent: ResolvedTurn[], foeId: string): string {
           .map((e) =>
             e.to === null
               ? `shaking off ${e.name} entirely`
-              : `easing ${e.name} ${e.from} down to ${e.to}`,
+              : // A relief that moved NOTHING is the interesting one:
+                // somebody spent their turn on it and is still held.
+                // "easing Trapped 5 down to 5" reads as a typo.
+                e.to === e.from
+                ? `trying and failing to shake off ${e.name} ${e.from}`
+                : `easing ${e.name} ${e.from} down to ${e.to}`,
           )
           .join(' and ')}`
       : '';
-    if (!r.targetName) {
+    // Acting on YOURSELF is not an exchange, and reading it as one is
+    // noise the model has to see past: "used Tears at the weed on
+    // Barrett Vargas — no damage (Health 5 → 5)" says nothing except
+    // that a name appears twice. Relieving is the common case and it is
+    // always self-targeted.
+    if (!r.targetName || r.target === r.by) {
       return `round ${r.round}: ${r.byName} — ${r.action}${eased}${paidOf(r)}${mine}`;
     }
     const hit = r.damage > 0 ? `${r.damage} damage` : 'no damage';
@@ -762,6 +805,7 @@ function assembleContext(
   recent: ResolvedTurn[] = [],
   moves: TokenMove[] = [],
   bands?: SystemTemplate['bands'],
+  statusRules?: SystemTemplate['statuses'],
 ): string {
   const scene =
     campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
@@ -784,6 +828,7 @@ function assembleContext(
     describeBoard(scene, characters, foe.id, heightInches, bands),
     describeUnplaced(session, scene, characters),
     space ? `SPACE & MOVEMENT (this system's rules — use these, don't guess): ${space}` : '',
+    describeStacking(statusRules),
     describeFight(session, characters, foe.id),
     describeHistory(recent, foe.id),
     describeMoves(
@@ -816,8 +861,9 @@ export async function suggestTurn(
   recent: ResolvedTurn[] = [],
   moves: TokenMove[] = [],
   bands?: SystemTemplate['bands'],
+  statusRules?: SystemTemplate['statuses'],
 ): Promise<TurnSuggestion> {
-  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves, bands)}\n\n\nWhat would ${foe.name} do this turn?`;
+  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves, bands, statusRules)}\n\n\nWhat would ${foe.name} do this turn?`;
   return parseSuggestion(await complete(env, SYSTEM, user), env.ASSISTANT_MODEL!);
 }
 
@@ -858,9 +904,10 @@ export async function narrateOutcome(
   /** The setup already spoken at the table, to continue from. */
   preface?: string,
   bands?: SystemTemplate['bands'],
+  statusRules?: SystemTemplate['statuses'],
 ): Promise<TurnNarration> {
   const user = [
-    assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves, bands),
+    assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves, bands, statusRules),
     ...(preface
       ? [
           `WHAT THE WARDEN ALREADY READ ALOUD (spoken; continue from where it stops, never retell it): ${preface}`,

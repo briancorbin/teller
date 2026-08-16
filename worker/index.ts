@@ -409,6 +409,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               moves,
               preface,
               template?.bands,
+              template?.statuses,
             )
           : await suggestTurn(
               env,
@@ -421,6 +422,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               recent,
               moves,
               template?.bands,
+              template?.statuses,
             ),
       );
     } catch (e) {
