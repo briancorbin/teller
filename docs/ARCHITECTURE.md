@@ -15,6 +15,22 @@ once so it stops being answered ad hoc.
 It describes the shape teller is being built toward. Where something is
 not built, it says so. Nothing here is a plan to build it.
 
+**How this file relates to the RULES** (Brian, 2026-08-16): the rules in
+`CLAUDE.md` were written before there was an architecture — seven of the
+original nine in a single sitting, as that file admits. They are not
+gospel and shouldn't be treated as such until the architecture they're
+supposed to protect actually exists. This file is that architecture
+being written down; the rules harden as it stabilises, not before.
+
+Two caveats that keep this from being a licence. The rules file already
+separates *assumed* from *learned*, and a **learned** rule is a scar —
+something broke, and the sentence is the stitches. Bending one means
+re-deriving the failure, not shrugging. And a rule that a new design
+merely *appears* to collide with usually doesn't: the panel section
+below looked like it needed rule 6 relaxed, and the resolution turned
+out to satisfy rule 6 exactly. Check whether the latitude is needed
+before spending it.
+
 ---
 
 ## The stack
@@ -334,6 +350,131 @@ all type-checked as "fits" right up until something had to read them
 back. Treat "the survey says it's declarative" as strong evidence, not
 proof. The likeliest place it's wrong is §18/§19, which the doc itself
 refuses to decide.
+
+---
+
+## Panels — how declared data gets presented
+
+*Direction, not settled (Brian, 2026-08-16). Nothing here is built
+beyond the embryo noted below.*
+
+**The gap this fills.** Declaring a kind gets you a generic list of
+name/value pairs. That is the correct FLOOR — it's the degradation
+target, and it has to stay ugly-but-operable. It is a terrible CEILING.
+The seat looks the way it does today because ~20 hand-written components
+in `src/components/sheet/` know what a Cylinder, a Track, a Reticle and
+a Ladder are. Without a way to express layout, every new kind is a
+generic list forever, and "declare a kind" stops being a real answer to
+anyone who cares how their game looks.
+
+**The seam already exists in embryo.** `SystemTemplate.screens` declares
+named screens with an icon, which kinds they show, which counters ride
+along, and flags for the arms/rest screens; `SeatView` consumes it. So a
+system already authors part of its own seat, and the idea is proven at
+small scale. But it only splits **what a character carries** — which is
+the same tell as `marks.prefix` and `ladders[].prefix`: it grew for one
+need and was never generalised.
+
+### The one rule: a panel proposes, the ROLE decides
+
+"Assign any panel to any screen" collides with three separate
+commitments, and all three resolve the same way — which is rule 1's
+shape, applied to surfaces:
+
+- **Passive surfaces never grow buttons** (rule 6). The table is the
+  GROUND; `board`, `art` and `badge` are passive. → Whether a panel's
+  controls are LIVE is a property of the screen's role, not of the
+  panel. The same panel renders interactive on a seat and inert on a
+  badge.
+- **Player-safe means player-safe.** Passive surfaces consume `/public`
+  — notes stripped, NPC numbers never shown. → The DATA a panel receives
+  is whatever the role's snapshot contains. A panel asks; the role
+  serves; what's missing degrades, which is already the contract.
+- **The console's pane list is authoritative** (`src/lib/panes.ts`) — a
+  pane nobody can be assigned to is a pane that doesn't exist. → Panels
+  don't get to invent roles. They fill one.
+
+> **A panel declares layout and intent. The screen's role decides what
+> it may show and whether its controls are live.**
+
+A panel cannot make a table TV interactive or a badge leak NPC health by
+being assigned there, which is what makes "any panel on any screen"
+safe to actually mean.
+
+### Two arrangements, not one responsive layout
+
+Rule 6 is unusually specific here because it cost a day: **content
+renders at designed size, always.** `FitBox` was removed. A layout that
+overflows mounted glass is **clipped, and the clip is the diagnostic** —
+the fix is design (fewer blocks, a shelf, a split), never a transform
+shrinking type until nobody can read it. So "the panel figures out how
+to render on whatever screen it's on" is precisely the thing that rule
+forbids.
+
+It doesn't need to. The codebase asks exactly ONE device question —
+`wide` in `SeatView`: is this glass **mounted** or **held**? Mounted has
+plentiful width and fixed height, never scrolls, clips. Held has scarce
+width and elastic height, runs at natural size, may scroll down.
+
+So a panel carries **two authored arrangements**. Plural, not adaptive.
+One decision point instead of a device matrix, it's already the line the
+client draws, and the clip stays a diagnostic instead of something the
+format papers over. **This satisfies rule 6 rather than bending it** —
+checked before assuming otherwise.
+
+### A panel is layout + components. A plugin is new components.
+
+The revolver that rotates when you click to reload is *behaviour*, not
+layout. This is where declarative layout formats die: they grow
+conditionals, then expressions, then they're a bad programming language.
+
+The escape route is already built. **`dials` maps a counter to a
+`cylinder` face** — the revolver is *already declarable*. So:
+
+> A panel picks from a vocabulary of components. When someone wants a
+> behaviour Core doesn't ship, that's a **plugin contributing a
+> component** — the same escape hatch, one layer up.
+
+Which is why the panel format never needs to be complete, and must never
+grow control flow. Assets ride along exactly as pack art already does:
+relative inside the bundle, resolved to a key at install (TEL-88).
+
+### Degradation is what lets this start tiny
+
+A panel teller can't render falls back to the generic kind rendering. So
+**panels are enhancement over a default, never the only way to see the
+data** — the format doesn't have to be right on day one, or complete
+ever. That's the biggest de-risking factor available here and it costs
+nothing, because the contract already exists.
+
+### Which layer, and when
+
+**A facet of System**, not a new layer: declarative presentation, above
+Plugin, below Pack. Declared by a system, pack or plugin; **assigned by
+the Campaign**, since Displays-assignment is a table's act. Same merge,
+campaign wins.
+
+The `.panel` extension question is deliberately deferred — `CLAUDE.md`'s
+own rule is that *a new extension tracks a different kind of thing, not
+a different degree of completeness*, and whether a panel is a different
+KIND from a system is real but downstream. Packaging follows the format;
+it doesn't lead it.
+
+**Sequencing, and this is the corner-avoidance:** door 3 says don't
+serialise `.system` until Core's kinds exist. The same logic applies
+harder here — **don't design a layout language before you know what data
+shapes it lays out.** Kinds first, panels second.
+
+The empirical route is unusually good, because this isn't greenfield:
+there are ~20 hand-written components in `src/components/sheet/`. The
+way to find this format is to ask *"what would express THESE?"* — not to
+invent vocabulary and hope. Extend `screens` incrementally as kinds
+land and let the format fall out of the third or fourth thing that
+doesn't fit.
+
+**The failure mode, named so it's recognisable:** treating this as
+"design the layout language" and stalling for a month. The tractable
+version is that `screens` already exists and grows.
 
 ---
 
