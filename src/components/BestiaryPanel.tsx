@@ -3,6 +3,7 @@ import type { SourcedNpc } from '../../worker/bestiary';
 import { useBooks } from '../lib/use-books';
 import { btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { BookReader, type BookTarget } from './BookReader';
+import { AttackLines, PoolGrid, ProseSections } from './Statblock';
 
 // The bestiary: everything you could put in front of the party.
 //
@@ -85,7 +86,7 @@ export function BestiaryPanel({
   );
 
   return (
-    <section className={`${card} space-y-3`}>
+    <section className={`${card} @container space-y-3`}>
       <div className="flex items-center justify-between">
         <span className={sectionLabel}>Bestiary</span>
         <span className="font-mono text-[11px] text-stone-600">
@@ -156,8 +157,6 @@ export function BestiaryPanel({
       <ul className="space-y-1">
         {found.map((npc) => {
           const health = npc.counters.find((c) => /health|hp/i.test(c.name));
-          const description = npc.fields.find((f) => f.key === 'description');
-          const stats = npc.fields.filter((f) => f.key !== 'description');
           const isOpen = open === npc.id;
           // The page it's printed on — the art and the flavour a stat
           // block can't carry. Only when the book is actually here.
@@ -183,29 +182,30 @@ export function BestiaryPanel({
               </button>
 
               {isOpen && (
-                <div className="space-y-2 border-t border-stone-800 px-2 py-2">
-                  {stats.length > 0 && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      {stats.map((f) => (
-                        <span key={f.key} className="font-mono text-xs text-stone-400">
-                          <span className="text-stone-600">{f.label}</span> {f.value}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                <div className="space-y-3 border-t border-stone-800 px-3 py-3">
+                  {/*
+                    The same statblock the sheet and the stage render.
+                    This used to be every field as `label value` in one
+                    monospace run — an eight-line paragraph with the
+                    attacks, the features and the frenzy all at the same
+                    weight (Brian, 2026-08-15: "it's a mess also").
+                  */}
+                  <PoolGrid fields={npc.fields} dense />
+                  <div className="flex flex-wrap gap-1.5">
                     {npc.counters.map((c) => (
-                      <span key={c.id} className="font-mono text-xs text-amber-400/80">
-                        <span className="text-stone-600">{c.name}</span>{' '}
+                      <span
+                        key={c.id}
+                        className="rounded-lg bg-stone-950/60 px-2 py-1 font-mono text-[11px] text-amber-200"
+                      >
                         {c.max ?? c.current}
+                        <span className="ml-1 text-[10px] uppercase tracking-wide text-stone-600">
+                          {c.name}
+                        </span>
                       </span>
                     ))}
                   </div>
-                  {description && (
-                    <p className="text-xs leading-relaxed text-stone-400">
-                      {description.value}
-                    </p>
-                  )}
+                  <AttackLines fields={npc.fields} dense />
+                  <ProseSections fields={npc.fields} dense />
                   <div className="flex items-center gap-2">
                     <button className={btnPrimary} onClick={() => onSpawn(npc.id, count)}>
                       add {count > 1 ? `${count} ` : ''}to the fight

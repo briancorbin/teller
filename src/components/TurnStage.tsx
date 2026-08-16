@@ -604,8 +604,8 @@ export function TurnStage({
               statblock, two places, no chance of them drifting apart.
             */}
             <div className="mt-3 space-y-3">
-              <PoolGrid character={character} dense />
-              <ProseSections character={character} dense />
+              <PoolGrid fields={character.data.fields} dense />
+              <ProseSections fields={character.data.fields} dense />
             </div>
           </div>
         )}

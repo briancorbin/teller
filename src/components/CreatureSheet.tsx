@@ -2,10 +2,9 @@ import { useEffect, useState } from 'react';
 import type { Character, Counter } from '../../worker/types';
 import type { SourcedNpc } from '../../worker/bestiary';
 import { useBooks } from '../lib/use-books';
-import { parseAttacks, weaponAttacks } from '../lib/statblock';
 import { btn, btnGhost, sectionLabel } from '../lib/ui';
 import { BookReader, type BookTarget } from './BookReader';
-import { PoolGrid, ProseSections } from './Statblock';
+import { AttackLines, PoolGrid, ProseSections } from './Statblock';
 import { VitalBar } from './Vitals';
 
 // EVERYTHING ABOUT ONE CREATURE, laid out like a page instead of a
@@ -67,12 +66,6 @@ export function CreatureSheet({
     : blueprint?.page
       ? [{ packId: '', pack: blueprint.from ?? '', book: undefined, page: blueprint.page }]
       : [];
-
-  const attacks = [
-    ...parseAttacks(fieldOf(character, 'attacks')),
-    ...weaponAttacks(character.data.items ?? [], new Map()),
-  ];
-  const bands = [...new Set(attacks.map((a) => a.band))];
 
   const kz = fieldOf(character, 'kz');
   const foe = character.kind === 'npc';
@@ -145,7 +138,7 @@ export function CreatureSheet({
           </div>
 
           {/* ---- the printed pools ---- */}
-          <PoolGrid character={character} />
+          <PoolGrid fields={character.data.fields} />
 
           {/* ---- conditions ---- */}
           {character.data.tags.length > 0 && (
@@ -167,51 +160,14 @@ export function CreatureSheet({
           )}
 
           {/* ---- what it can do, by band ---- */}
-          {attacks.length > 0 && (
-            <div>
-              <span className={sectionLabel}>Attacks</span>
-              <div className="mt-2 space-y-2">
-                {bands.map((band) => (
-                  <div key={band}>
-                    {band && (
-                      <div className="font-mono text-[10px] uppercase tracking-wide text-stone-600">
-                        {band}
-                      </div>
-                    )}
-                    <div className="mt-1 space-y-1">
-                      {attacks
-                        .filter((a) => a.band === band)
-                        .map((a, i) => (
-                          <div
-                            key={i}
-                            className="flex flex-wrap items-baseline gap-x-2 rounded-md bg-stone-950/60 px-3 py-1.5"
-                          >
-                            <span className="text-sm text-stone-100">{a.name}</span>
-                            {a.dice && (
-                              <span className="font-mono text-sm text-amber-300">{a.dice}</span>
-                            )}
-                            <span className="font-mono text-[10px] text-stone-500">
-                              {a.cost} {a.costUnit.toLowerCase()}
-                            </span>
-                            {a.statuses.map((s) => (
-                              <span
-                                key={s.name}
-                                className="rounded bg-sky-950 px-1.5 font-mono text-[10px] text-sky-300"
-                              >
-                                {s.name} {s.dice ?? s.severity}
-                              </span>
-                            ))}
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <AttackLines
+            fields={character.data.fields}
+            items={character.data.items ?? []}
+            catalog={new Map()}
+          />
 
           {/* ---- the prose, each part given its own head ---- */}
-          <ProseSections character={character} />
+          <ProseSections fields={character.data.fields} />
 
           {character.data.notes && (
             <div>
