@@ -21,7 +21,7 @@ import {
 } from './displays';
 import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
-import { bundleFilename, exportCampaign } from './bundle';
+import { bundleFilename, exportCampaign, type BundleSections } from './bundle';
 import { bestiaryFor, findBlueprint, stamp } from './bestiary';
 import {
   installPack,
@@ -619,23 +619,27 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const all = chars.results.map((r) => toCharacter(r as never));
     const template = await getSystem(env, campaign.system);
 
-    // Sections are opt-out, so you can take the structure without the
-    // hundred megabytes of art when all you want is the shape.
+    // Sections are opt-out and default to EVERYTHING (Brian,
+    // 2026-08-16: "the export should just be everything… you get to
+    // decide WHAT gets included"). A full backup and an author's
+    // starting snapshot are the same file; which one you're making is
+    // a thing you say, not a thing teller guesses.
     const want = (name: string) => url.searchParams.get(name) !== '0';
 
-    // A bundle's job is to START a table, not to preserve one — the
-    // host's database is where a campaign continues to live. So by
-    // default this exports the module shape: the cast, the prepared
-    // fights, the maps. NPCs currently on the table are a fight in
-    // progress and belong to this table only; `?live=1` takes them
-    // anyway, for handing your actual game to someone else.
-    const live = url.searchParams.get('live') === '1';
-    const characters = live ? all : all.filter((c) => c.kind === 'pc');
-
-    const body = exportCampaign(env, campaign, characters, template, {
-      books: want('books'),
+    // The creatures on the table travel unless you say otherwise. This
+    // used to be the reverse — the default dropped them, so the only
+    // export the console could make was a backup with the fight
+    // missing from it, which is the one thing a backup must not do.
+    const sections: BundleSections = {
       assets: want('assets'),
-    });
+      books: want('books'),
+      live: want('live'),
+      events: want('events'),
+      undo: want('undo'),
+    };
+    const characters = sections.live ? all : all.filter((c) => c.kind === 'pc');
+
+    const body = exportCampaign(env, campaign, characters, template, sections);
     return new Response(body, {
       headers: {
         'content-type': 'application/zip',

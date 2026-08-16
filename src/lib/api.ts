@@ -490,8 +490,21 @@ export const api = {
    * The cost is that the bundle is assembled in memory before it's
    * saved. Same known limit as import, and the same follow-up.
    */
-  downloadBundle: async (campaignId: string, name: string) => {
-    const res = await fetch(`/api/campaigns/${campaignId}/export`, {
+  downloadBundle: async (
+    campaignId: string,
+    name: string,
+    /**
+     * What to leave OUT. Everything travels unless you say otherwise —
+     * a .story is a backup of a game and an author's starting snapshot
+     * with the same shape, and which one you're making is a decision
+     * you state rather than one teller guesses (Brian, 2026-08-16).
+     */
+    without: string[] = [],
+  ) => {
+    const query = without.length
+      ? `?${without.map((s) => `${encodeURIComponent(s)}=0`).join('&')}`
+      : '';
+    const res = await fetch(`/api/campaigns/${campaignId}/export${query}`, {
       headers: authHeaders(new Headers()),
     });
     if (!res.ok) throw new Error(`export failed (${res.status})`);

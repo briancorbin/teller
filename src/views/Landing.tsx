@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Campaign, SystemTemplate } from '../../worker/types';
 import { api, getDmKey, setDmKey } from '../lib/api';
 import { BundleImport } from '../components/BundleImport';
+import { ExportDialog } from '../components/ExportDialog';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui';
 
 // The console's front door — the one place the key is entered, and the
@@ -17,6 +18,8 @@ export function Landing({
   const [key, setKey] = useState(getDmKey());
   const [templates, setTemplates] = useState<SystemTemplate[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null);
+  /** The campaign whose export is being composed, if any. */
+  const [exporting, setExporting] = useState<{ id: string; name: string } | null>(null);
   const [name, setName] = useState('');
   const [system, setSystem] = useState('');
   const [error, setError] = useState('');
@@ -92,19 +95,14 @@ export function Landing({
                   <span className="truncate text-stone-100">{c.name}</span>
                   <span className="ml-3 font-mono text-xs text-stone-500">{c.system}</span>
                 </button>
-                {/* A .story STARTS a table; it isn't a save file. Your
-                    campaign continues to live in the host's database —
-                    back that up by copying the folder. So this exports
-                    the module shape: the cast, the prepared fights, the
-                    maps, and not the fight currently in progress. */}
+                {/* A .story is a backup of a game AND a starting point
+                    someone else can run — the same file, and which one
+                    you're making is a thing you say rather than a thing
+                    teller decides for you. So this asks. */}
                 <button
                   className="rounded-md px-2 py-1 text-sm text-stone-600 transition-colors hover:bg-stone-800 hover:text-amber-400"
-                  title="save as a .story — a starting point someone else can run"
-                  onClick={() =>
-                    api
-                      .downloadBundle(c.id, c.name)
-                      .catch((e) => setError(String(e instanceof Error ? e.message : e)))
-                  }
+                  title="save as a .story"
+                  onClick={() => setExporting({ id: c.id, name: c.name })}
                 >
                   ↓
                 </button>
@@ -154,6 +152,15 @@ export function Landing({
           </button>
         </div>
       </section>
+
+      {exporting && (
+        <ExportDialog
+          campaignId={exporting.id}
+          name={exporting.name}
+          onClose={() => setExporting(null)}
+          onError={setError}
+        />
+      )}
     </main>
   );
 }

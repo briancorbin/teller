@@ -80,6 +80,56 @@ export type BundleManifest = {
  * "an adventure you can run tonight". The importer never branches on it:
  * import is one operation regardless.
  */
+/**
+ * What goes in the file — every part of it, and all of it optional.
+ *
+ * teller used to decide this: the default export dropped the creatures
+ * currently on the table because "a bundle's job is to START a table,
+ * not to preserve one". That was a guess at intent dressed as a
+ * format rule, and it made the only export the console could produce a
+ * backup with the fight quietly missing from it.
+ *
+ * Brian, 2026-08-16: "the export should just... it should just be
+ * everything. Live state is fine. History and logs is fine. …a .story
+ * is a legitimate backup of a game state, but ALSO a legitimate
+ * snapshot of the start of a campaign that authors can put together."
+ *
+ * So the format stops having an opinion and the person gets switches.
+ * An author's starting snapshot needs no filter at all — their
+ * campaign simply has no live state in it yet. Everything defaults ON;
+ * what you leave out is a decision you made, not one teller made for
+ * you.
+ */
+export type BundleSections = {
+  /** Scene art and handout images. The heavy ones. */
+  assets: boolean;
+  /** The rulebooks this campaign claims, by content hash. */
+  books: boolean;
+  /** Creatures currently on the table — a fight in progress. */
+  live: boolean;
+  /** What happened: turns resolved, foes deployed, tables cleared. */
+  events: boolean;
+  /**
+   * The `before` snapshot every edit carries so /undo can walk back.
+   *
+   * Its own switch because it is a different KIND of thing at a
+   * different scale: on a real campaign it was 6.5 MB against 15 KB of
+   * actual play history — 99% of the log by weight — and it is the
+   * least portable part, since undoing past an import would restore a
+   * state from a table that doesn't exist on this host. Keep it for a
+   * backup of your own game; drop it for anything you hand somebody.
+   */
+  undo: boolean;
+};
+
+export const ALL_SECTIONS: BundleSections = {
+  assets: true,
+  books: true,
+  live: true,
+  events: true,
+  undo: true,
+};
+
 export function bundleKind(contains: string[]): string {
   const has = (s: string) => contains.includes(s);
   if (has('encounters') || has('scenes')) return 'an adventure';
@@ -106,7 +156,7 @@ async function* campaignEntries(
   campaign: Campaign,
   characters: Character[],
   template: SystemTemplate | undefined,
-  opts: { books: boolean; assets: boolean },
+  opts: BundleSections,
 ): AsyncGenerator<ZipEntry> {
   const data = campaign.data ?? {};
   const contains: string[] = ['campaign'];
@@ -136,6 +186,19 @@ async function* campaignEntries(
           .all()
       : { results: [] as unknown[] };
 
+  // Counted, not read, so the manifest can DECLARE this before the
+  // rows are streamed — `contains` ships in teller.json, which is the
+  // first entry in the file.
+  const eventCount = opts.events
+    ? (
+        (await env.DB.prepare(
+          'SELECT count(*) AS n FROM events WHERE campaign_id = ?',
+        )
+          .bind(campaign.id)
+          .first<{ n: number }>()) ?? { n: 0 }
+      ).n
+    : 0;
+
   if (template) contains.push('system');
   if (npcs.length) contains.push('bestiary');
   if (encounters.length) contains.push('encounters');
@@ -143,6 +206,7 @@ async function* campaignEntries(
   if (scenes.length) contains.push('scenes');
   if (handouts.length) contains.push('handouts');
   if (books.results.length) contains.push('books');
+  if (eventCount) contains.push('events');
 
   const manifest: BundleManifest = {
     teller: BUNDLE_VERSION,
@@ -222,6 +286,61 @@ async function* campaignEntries(
     );
   }
   if (scenes.length) yield jsonEntry('scenes.json', scenes);
+
+  /**
+   * What happened at this table, in order.
+   *
+   * Rule 3 says every mutation appends here, so this IS the campaign's
+   * memory — it's what `/undo` walks and what the assistant reads to
+   * know why somebody is Trapped. A backup without it restores the
+   * board and forgets the game.
+   *
+   * Ids are deliberately NOT carried: they're an autoincrement in this
+   * host's table and mean nothing in another. Order is what matters and
+   * order is the array.
+   */
+  if (eventCount) {
+    const rows = await env.DB.prepare(
+      'SELECT entity_id, actor, kind, payload, created_at FROM events WHERE campaign_id = ? ORDER BY id',
+    )
+      .bind(campaign.id)
+      .all();
+    if (rows.results.length) {
+      yield jsonEntry(
+        'events.json',
+        rows.results.map((r) => {
+          const row = r as {
+            entity_id: string | null;
+            actor: string;
+            kind: string;
+            payload: string;
+            created_at: string;
+          };
+          let payload = row.payload;
+          if (!opts.undo) {
+            // Drop the rollback snapshot, keep the event. What HAPPENED
+            // survives; only the machinery for reversing it goes.
+            try {
+              const parsed = JSON.parse(payload) as Record<string, unknown>;
+              if ('before' in parsed) {
+                delete parsed.before;
+                payload = JSON.stringify(parsed);
+              }
+            } catch {
+              // Unreadable payloads travel as they are.
+            }
+          }
+          return {
+            entityId: row.entity_id,
+            actor: row.actor,
+            kind: row.kind,
+            payload,
+            at: row.created_at,
+          };
+        }),
+      );
+    }
+  }
   if (handouts.length) yield jsonEntry('handouts.json', handouts);
 
   // Scene art and handout images. These have to travel: the table TV is
@@ -269,7 +388,7 @@ export function exportCampaign(
   campaign: Campaign,
   characters: Character[],
   template: SystemTemplate | undefined,
-  opts: { books: boolean; assets: boolean },
+  opts: BundleSections,
 ): ReadableStream<Uint8Array> {
   return zipStream(campaignEntries(env, campaign, characters, template, opts));
 }
