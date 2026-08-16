@@ -227,6 +227,41 @@ the plugin API surface.** It's what every plugin author codes against
 and what every `.system` file declares in terms of, and it cannot be
 quietly changed later.
 
+Who may add what, in one table — and note that only the bottom row can
+add storage:
+
+| | may add | may not add |
+|---|---|---|
+| **System** | vocabulary, meaning, presentation config | behaviour, storage |
+| **Plugin** | behaviour, relationships, organisation, rendering | **storage** |
+| **Core** | storage | — |
+
+The useful consequence: **"just write a plugin" does not dodge the Core
+gate for storage requests.** A plugin can't store either, so the escape
+hatch only relieves pressure for BEHAVIOUR requests — which are the ones
+that should be relieved. The gate holds by construction rather than by
+policing.
+
+### Uninstall it and look — the compliance test
+
+The storage rule is not enforceable by the type system. A plugin can
+always fake new storage by encoding structure into an existing
+primitive: a graph as JSON in a `notes` field, a relationship as
+`{ name: 'barrett→bess', value: 1 }`. That is the
+mechanic-hiding-in-a-text-field bug, committed deliberately, by someone
+whose code we don't control.
+
+It is, however, self-auditing — because of the contract that's already
+here:
+
+> **Uninstall the plugin and look at what's left.** If the data reads as
+> something a human can operate, the plugin played fair. If it reads as
+> a blob nobody can act on, it cheated.
+
+So the degradation contract isn't only a resilience property; it's the
+compliance test for the storage rule, it takes ten seconds, and anyone
+can run it on a plugin they didn't write.
+
 ### What "modifying Core" has to mean
 
 Taken literally it kills the floor — if plugins can rewrite Core, Core
@@ -491,6 +526,70 @@ That also predicts the pressure the gate exists to resist. Nobody will
 ask for a Core addition because something is impossible; they'll ask
 because a real property would be *nicer* than a kind. That's
 ergonomics — and ergonomics is what the System declaration layer is for.
+
+### What a Core addition would actually look like
+
+Worth working the strongest candidate, because the answer is
+instructive. §18/§19 — horses and mechs — is the one the survey
+explicitly refuses to decide, and it needs **ownership**: this horse
+belongs to that character.
+
+1. Holds state a human needs recorded? **Yes** → a storage question,
+   not a plugin.
+2. Honestly `{ name, value? }`? `{ name: 'Owner', value: 'Barrett' }` —
+   apparently **yes**.
+
+→ declare a kind, not a Core addition. The strongest candidate on the
+board resolves one rung down, which is decent evidence the closed set is
+genuinely sufficient.
+
+Except that's a **label, not a reference**. Rename Barrett and it
+silently breaks. Store `chr_a91f…` instead and it resolves correctly but
+degrades terribly — an opaque id fails "the most a human can operate
+with no help." A thing that must **resolve AND degrade** has to carry
+both: a stable id for machines, and a human-readable name allowed to go
+stale without breaking the link. `{ name, value? }` cannot hold that
+without putting a second fact in one of its two slots — which is exactly
+the tell.
+
+**So a resolvable reference is the one credible Core addition currently
+visible**, and it arrives the day a horse becomes an entity rather than
+an item. Not hypothetical: it's queued behind a question
+`docs/SYSTEMS.md` deliberately left open.
+
+### The two "anything goes" buckets — and only one is new
+
+Brian, 2026-08-16: a generic fallback store is reasonable. It is, but
+the instinct covers two different needs with two different answers, and
+conflating them is how the closed set would get undermined.
+
+**For RECORD that doesn't fit a kind — it already exists: `notes`.**
+Free text, human-readable, human-editable, degrades perfectly because
+prose is the one format that needs no interpreter. That is the sanctioned
+anything-goes bucket for game facts, and nothing new is required.
+
+**For plugin SCRATCH — that's the genuine gap.** A widget's
+in-progress state is not a record and shouldn't be forced to pretend it's
+a kind: Scan's guesses-so-far this session, a pane's collapsed sections,
+a cached layout. The rule that keeps this from becoming a hole:
+
+> The scratch store holds state that is **not the table's record**, it
+> is namespaced per plugin, and it carries **no durability guarantee** —
+> teller may drop it, and it never travels in a `.story`.
+
+That last clause is the enforcement, and it makes misuse self-punishing
+rather than policed: if throwing it away loses something the table wants
+back, it was record and belonged in a kind. Scratch that doesn't travel
+also falls straight out of rule 9 — a bundle carries what you wrote, and
+nobody wrote a cache.
+
+Scan demonstrates both halves at once: the Kurtz Frequency is **record**
+(a hidden bestiary field, and it must outlive the plugin); the guess grid
+is **scratch** (losing it costs nothing — you re-enter three digits).
+
+Name it for the contract — `scratch`, not `data` or `state` — so the
+durability promise is legible at the call site. Not built; nothing needs
+it until the first plugin exists.
 
 **What's left of this door is the build**, not the decision: introduce
 the kind store, move statuses/Talents/standings into it, and retire
