@@ -24,6 +24,7 @@ import type {
   Scene,
   SessionState,
   ResolvedTurn,
+  SystemTemplate,
   TokenMove,
   TurnNarration,
   TurnSuggestion,
@@ -74,6 +75,25 @@ export function assistantInfo(env: AssistantEnv): { configured: boolean; model?:
 //     the same boundary.
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * What a measurement IS, in the system's own words.
+ *
+ * Table inches are teller's unit and nobody's world — a Warden reading
+ * "glides 2+ inches" is being told about the tabletop, not the lake.
+ * The band table is data on the system (rule 4), so this names a gap
+ * without knowing a thing about any particular game, and says nothing
+ * at all for a system that declares no bands.
+ */
+function bandOf(
+  inches: number,
+  bands: SystemTemplate['bands'],
+): { name: string; world?: string } | undefined {
+  for (const b of bands ?? []) {
+    if (inches >= (b.from ?? 0) && (b.to === undefined || inches < b.to)) return b;
+  }
+  return undefined;
+}
 
 /** Qualitative wound state — the /public derivation, reused on purpose. */
 function vitalityOf(character: Character): string {
@@ -156,11 +176,17 @@ function describeBoard(
    * Watchers off the bottom of their own map.
    */
   heightInches?: number,
+  bands?: SystemTemplate['bands'],
 ): string {
   if (!scene) return 'BOARD: no active scene — positions unknown.';
   const width = scene.widthInches;
   const tall = heightInches ?? width;
-  const unit = width ? 'inches from the map left/top edge' : 'map fraction 0..1';
+  // Coordinates stay, because flanking and clustering can't be read
+  // off pairwise bands — but they are TELLER'S grid, said so plainly,
+  // and never a thing to repeat at a table.
+  const unit = width
+    ? "teller's own map grid, for working out who is near whom — never say these numbers aloud"
+    : 'map fraction 0..1';
   const byId = new Map(characters.map((c) => [c.id, c]));
   const rows = (scene.tokens ?? [])
     // What the foes haven't seen doesn't exist for them; what they SET
@@ -250,7 +276,11 @@ function describeBoard(
         if (cells.has(key)) hit.set(label, (hit.get(label) ?? 0) + 1);
       }
     }
-    return [...hit.entries()].map(([label, n]) => `${label} (${n} in.)`);
+    // Squares of ground, because "2 in. of fire" is a tabletop fact and
+    // what the creature sees is a patch of burning ground.
+    return [...hit.entries()].map(
+      ([label, n]) => `${label} (${n} square${n === 1 ? '' : 's'} of it)`,
+    );
   };
 
   const self2 = rows.find((t) => t.characterId === foeId);
@@ -274,12 +304,19 @@ function describeBoard(
       // teller's to do. Which band the number falls in stays the
       // system's business (its own `space` prose says), so nothing
       // here learns what "Short" means — no game concepts in code.
-      const gap =
-        self2 && t.id !== self2.id && width
-          ? ` — ${round2(
-              Math.hypot((t.u - self2.u) * width, (t.v - self2.v) * tall!),
-            )}in from you`
+      let gap = '';
+      if (self2 && t.id !== self2.id && width) {
+        const inches = Math.hypot((t.u - self2.u) * width, (t.v - self2.v) * tall!);
+        const band = bandOf(inches, bands);
+        // The BAND, and nothing else. Handing over the measurement is
+        // how "the Peril glides 2+ inches" got said out loud at a
+        // table where nothing is measured in inches (Brian): a number
+        // in the context is a number in the prose. teller keeps its
+        // ruler; the model gets the world.
+        gap = band
+          ? ` — ${band.name} away${band.world ? ` (${band.world})` : ''}`
           : '';
+      }
       return `- ${t.label} (${tag}) at x=${x}, y=${y}${gap}${t.effect ? `, in ${t.effect}` : ''}${standing(t.u, t.v)}${cover}`;
     });
   const zones = [...ground.entries()].map(([effect, cells]) => {
@@ -393,6 +430,7 @@ function describeMoves(
   moves: TokenMove[],
   actor: { x: number; y: number } | null,
   actorId: string,
+  bands?: SystemTemplate['bands'],
 ): string {
   if (!moves.length) return '';
   const gap = (p: { x: number; y: number }) =>
@@ -404,10 +442,18 @@ function describeMoves(
     let sense = '';
     if (!mine && before !== null && after !== null) {
       const delta = before - after;
-      const verb = Math.abs(delta) < 0.5 ? 'staying about as far off' : delta > 0 ? 'toward you' : 'away from you';
-      sense = ` — ${verb}, now ${round2(after)}in from you (was ${round2(before)}in)`;
+      const verb =
+        Math.abs(delta) < 0.5 ? 'staying about as far off' : delta > 0 ? 'toward you' : 'away from you';
+      const now = bandOf(after, bands)?.name;
+      const was = bandOf(before, bands)?.name;
+      sense =
+        now && was
+          ? ` — ${verb}, now ${now} (was ${was})`
+          : ` — ${verb}`;
     }
-    return `round ${mv.round}: ${mine ? 'YOU' : mv.label} moved ${round2(mv.distance)}in${sense}`;
+    // How FAR they went is a band too — "a short move", not a number.
+    const far = bandOf(mv.distance, bands)?.name;
+    return `round ${mv.round}: ${mine ? 'YOU' : mv.label} moved${far ? ` about ${far}` : ''}${sense}`;
   });
   const stillness =
     actor && !moves.some((mv) => mv.characterId === actorId)
@@ -424,6 +470,7 @@ Hard rules:
 - Suggest the ACTION only. Never roll dice, never state damage dealt or outcomes — the table's dice decide outcomes.
 - Never decide for a player character.
 - Base position reasoning only on the board given. When you assume something the board doesn't state, say so in premises.
+- SPEAK IN THE WORLD, NOT ON THE TABLE. Table inches are how teller measures; they do not exist in the fiction and must never appear in "action", "rationale" or "preface". Say the band by name ("closes to arm's reach", "at short range") or the world distance it stands for ("a dozen yards"). Premises may cite a measurement when the whole point is that a number is being checked.
 - An attack's printed BAND is strict. An attack listed under one band cannot be used from another — if the distance given puts every attack out of reach, the honest turn is to close, reposition, wait, or use something that does reach. Never widen an attack's band to make a plan work, and never do it to avoid a hazard: picking a different attack or a different route is the answer, not reinterpreting the book.
 - The GROUND is part of the decision, not scenery. What a creature stands in, what it would have to cross, and what lies between it and a target are all stated. A hazard in the way is a real reason to go around, wait, pick a different target, or accept the cost on purpose — and when the ground changes your choice, say which ground and why in the rationale.
 
@@ -594,6 +641,7 @@ function assembleContext(
   space?: string,
   recent: ResolvedTurn[] = [],
   moves: TokenMove[] = [],
+  bands?: SystemTemplate['bands'],
 ): string {
   const scene =
     campaign.data.maps?.find((s) => s.id === campaign.data.activeMapId) ??
@@ -613,7 +661,7 @@ function assembleContext(
     profile
       ? `PROFILE (how it acts — follow this): ${profile}`
       : 'PROFILE: none written. Infer temperament from its name and stats, and say you did in premises.',
-    describeBoard(scene, characters, foe.id, heightInches),
+    describeBoard(scene, characters, foe.id, heightInches, bands),
     space ? `SPACE & MOVEMENT (this system's rules — use these, don't guess): ${space}` : '',
     describeFight(session, characters, foe.id),
     describeHistory(recent, foe.id),
@@ -626,6 +674,7 @@ function assembleContext(
           }
         : null,
       foe.id,
+      bands,
     ),
   ]
     .filter(Boolean)
@@ -645,8 +694,9 @@ export async function suggestTurn(
   /** Exchanges already resolved this fight, oldest first. */
   recent: ResolvedTurn[] = [],
   moves: TokenMove[] = [],
+  bands?: SystemTemplate['bands'],
 ): Promise<TurnSuggestion> {
-  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves)}\n\n\nWhat would ${foe.name} do this turn?`;
+  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves, bands)}\n\n\nWhat would ${foe.name} do this turn?`;
   return parseSuggestion(await complete(env, SYSTEM, user), env.ASSISTANT_MODEL!);
 }
 
@@ -686,9 +736,10 @@ export async function narrateOutcome(
   moves: TokenMove[] = [],
   /** The setup already spoken at the table, to continue from. */
   preface?: string,
+  bands?: SystemTemplate['bands'],
 ): Promise<TurnNarration> {
   const user = [
-    assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves),
+    assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves, bands),
     ...(preface
       ? [
           `WHAT THE WARDEN ALREADY READ ALOUD (spoken; continue from where it stops, never retell it): ${preface}`,

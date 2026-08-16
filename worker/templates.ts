@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 15,
+  version: 16,
   name: 'Wild Imaginary West',
   // The table's scale, as mechanics (numbers and band names — the
   // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
@@ -90,6 +90,16 @@ const wiw: SystemTemplate = {
     'Grit is the action budget and RELOADS at the start of each ' +
     "creature's turn — spending it all this turn costs nothing next " +
     'turn (an ability that borrows from next turn\'s Grit will say so).',
+  // The same bands the prose describes, as a table teller can read.
+  // Pairs, not a per-inch scale: Arm's Reach is about a yard and Short
+  // is thirty, so no single ratio spans them (which is why `world` is
+  // stated per band rather than computed).
+  bands: [
+    { name: "Arm's Reach", to: 1, world: "within arm's reach" },
+    { name: 'Short', from: 1, to: 6, world: 'up to 30 yards' },
+    { name: 'Long', from: 6, to: 18, world: '30–90 yards' },
+    { name: 'Distant', from: 18, world: 'past 90 yards' },
+  ],
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',

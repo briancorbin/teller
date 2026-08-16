@@ -836,6 +836,23 @@ export type SystemTemplate = {
    */
   space?: string;
   /**
+   * The same bands as DATA, so code can name a measurement.
+   *
+   * `space` is prose for the model to reason with; this is the table
+   * teller reads itself. Without it, nothing but a language model
+   * could turn 2.24 inches into "Short", which left the console
+   * talking to a Warden in TABLE units — "the Peril glides 2+ inches"
+   * — about a world where nothing is measured in inches (Brian,
+   * 2026-08-15: "it's kinda weird to see inches lol").
+   *
+   * Bounds are in table inches and half-open (`from` inclusive, `to`
+   * exclusive); `world` is what that distance IS out there, in the
+   * book's own words. Absent means teller says nothing about range and
+   * the prose stands alone — no band is invented here (rule 4: the
+   * numbers belong to the system, and this is a row).
+   */
+  bands?: { name: string; from?: number; to?: number; world?: string }[];
+  /**
    * How this system rolls, as DATA (rule 4, amended 2026-08-10).
    *
    * teller ships one small evaluator; a system arrives as a row rather

@@ -17,6 +17,7 @@ import {
 } from '../lib/statblock';
 import { btn, btnPrimary } from '../lib/ui';
 import { DicePool, rollPool, type DieArt } from './DicePool';
+import { Range } from './Range';
 import { CounterStepper } from './Vitals';
 import { STATE_EFFECTS } from './token-visuals';
 
@@ -149,6 +150,8 @@ export function TurnStage({
   onPatchCharacter,
   onResolve,
   catalog,
+  scene,
+  bands,
 }: {
   character: Character;
   entry: InitiativeEntry;
@@ -182,6 +185,10 @@ export function TurnStage({
    * copy only references the catalogue.
    */
   catalog: Map<string, { name: string; kind?: string; fields?: { key: string; value: string }[] }>;
+  /** The live scene, to measure the gap to a target. */
+  scene?: { widthInches?: number; heightInches?: number; tokens?: { characterId?: string | null; u: number; v: number }[] };
+  /** The system's range bands — absent means teller says nothing. */
+  bands?: SystemTemplate['bands'];
 }) {
   const a = advice ?? {};
   const foe = character.kind === 'npc';
@@ -205,6 +212,17 @@ export function TurnStage({
     ...(dodge > 0 ? [`${dodge}B`] : []),
   ]);
   const statuses = a.roll?.statuses ?? statusesFor(a.roll, attacks);
+
+  /** The gap between the acting creature and someone, in table inches. */
+  const gapTo = (who: Character | undefined): number | null => {
+    const w = scene?.widthInches;
+    if (!who || !w || !scene?.tokens) return null;
+    const mine = scene.tokens.find((t) => t.characterId === character.id);
+    const theirs = scene.tokens.find((t) => t.characterId === who.id);
+    if (!mine || !theirs) return null;
+    const tall = scene.heightInches ?? w;
+    return Math.hypot((theirs.u - mine.u) * w, (theirs.v - mine.v) * tall);
+  };
 
   const hits = tallyFaces(a.faces ?? [], dice).total;
   const blocked = tallyFaces(a.defFaces ?? [], dice).total;
@@ -611,6 +629,14 @@ export function TurnStage({
 
               {target && (
                 <div className="mt-2.5 space-y-2">
+                  {gapTo(target) !== null && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-stone-500">
+                        {target.name} is
+                      </span>
+                      <Range inches={gapTo(target)!} bands={bands} />
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-1">
                     {options.map((o) => {
                       const on = (a.defenses ?? []).includes(o.label);
