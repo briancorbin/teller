@@ -1947,8 +1947,15 @@ export type TokenMove = {
 export type ResolvedTurn = {
   by: string;
   byName: string;
-  target: string;
-  targetName: string;
+  /**
+   * Who it landed on — ABSENT for a turn aimed at nobody (TEL-98).
+   * Moving, hiding, readying, throwing a decoy sound: the assistant is
+   * told outright it may propose these, and they cost their actor
+   * something whether or not anyone was on the other end. The actor is
+   * the required half of an exchange; the target never was.
+   */
+  target?: string;
+  targetName?: string;
   /** What it was called — the attack's own name where there is one. */
   action: string;
   hits: number;

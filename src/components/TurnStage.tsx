@@ -171,7 +171,8 @@ export function TurnStage({
   /** Land the exchange and record who did it — see EncounterPanel. */
   onResolve: (body: {
     actorId: string;
-    targetId: string;
+    /** Absent for a turn aimed at nobody — moving, hiding, waiting. */
+    targetId?: string;
     action: string;
     hits: number;
     blocked: number;
@@ -275,18 +276,22 @@ export function TurnStage({
    * a human has read the arithmetic and chosen to press.
    */
   const apply = () => {
-    if (!target) return;
-    const vital = vitalOf(target);
+    const vital = target ? vitalOf(target) : undefined;
     onResolve({
       actorId: character.id,
-      targetId: target.id,
-      action: a.roll?.for ?? 'an attack',
-      hits,
-      blocked,
-      damage,
-      statuses: statuses
-        .map((s) => ({ name: s.name, severity: severityOf(s) }))
-        .filter((s): s is { name: string; severity: number } => s.severity !== null),
+      // Nobody on the other end is a turn, not a missing field (TEL-98):
+      // slipping into the brush costs Grit and belongs in the log, and
+      // the assistant reads that log to know what a creature just did.
+      ...(target ? { targetId: target.id } : {}),
+      action: a.roll?.for ?? a.suggestion?.action ?? (target ? 'an attack' : 'a turn'),
+      hits: target ? hits : 0,
+      blocked: target ? blocked : 0,
+      damage: target ? damage : 0,
+      statuses: target
+        ? statuses
+            .map((s) => ({ name: s.name, severity: severityOf(s) }))
+            .filter((s): s is { name: string; severity: number } => s.severity !== null)
+        : [],
       ...(a.spend && a.spend.amount > 0 ? { spend: a.spend } : {}),
     });
     onAdvice({ ...a, applied: true, appliedFrom: vital?.current });
@@ -776,62 +781,76 @@ export function TurnStage({
                     );
                   })}
 
-                  {/* The arithmetic the book asks for, shown before it
-                      is done to anybody. Rule 1: teller proposes the
-                      subtraction; pressing it is the Warden's. */}
-                  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-stone-950/60 px-3 py-2">
-                    <span className="font-mono text-[11px] text-stone-400">
-                      {hits} − {blocked} ={' '}
-                      <span className="text-base text-amber-200">{damage}</span> damage
-                    </span>
-                    {/* What the ACTOR pays. The printed cost is the
-                        floor; a turn usually also bought movement, and
-                        how much is a ruling about distance, speed and
-                        ground — so teller fills in what the book says
-                        and leaves the rest to the person who watched
-                        it happen. */}
-                    {a.spend && (
-                      <span className="flex items-center gap-1 font-mono text-[11px] text-stone-400">
-                        <span className="text-stone-600">spends</span>
-                        <button
-                          className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
-                          onClick={() =>
-                            onAdvice({
-                              ...a,
-                              spend: { ...a.spend!, amount: Math.max(0, a.spend!.amount - 1) },
-                              applied: false,
-                            })
-                          }
-                          aria-label="spend less"
-                        >
-                          −
-                        </button>
-                        <span className="text-amber-200">{a.spend.amount}</span>
-                        <button
-                          className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
-                          onClick={() =>
-                            onAdvice({
-                              ...a,
-                              spend: { ...a.spend!, amount: a.spend!.amount + 1 },
-                              applied: false,
-                            })
-                          }
-                          aria-label="spend more"
-                        >
-                          +
-                        </button>
-                        <span className="text-stone-600">{a.spend.counter}</span>
-                      </span>
-                    )}
-                    <button
-                      className={`ml-auto ${a.applied ? btn : btnPrimary} text-xs`}
-                      onClick={apply}
-                    >
-                      {a.applied ? 'applied ✓' : `apply to ${target.name}`}
-                    </button>
-                  </div>
                 </div>
               )}
+
+              {/* The ledger — and it hangs outside the target block on
+                  purpose (TEL-98). A turn aimed at nobody still costs
+                  its actor and still belongs in the log; gating this
+                  row on a target is what left hiding, repositioning and
+                  readying unrecorded, and the assistant reads the log.
+
+                  The arithmetic the book asks for is shown before it is
+                  done to anybody. Rule 1: teller proposes the
+                  subtraction; pressing it is the Warden's. */}
+              <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg bg-stone-950/60 px-3 py-2">
+                {target ? (
+                  <span className="font-mono text-[11px] text-stone-400">
+                    {hits} − {blocked} ={' '}
+                    <span className="text-base text-amber-200">{damage}</span> damage
+                  </span>
+                ) : (
+                  <span className="font-mono text-[11px] text-stone-500">nobody is hit</span>
+                )}
+                {/* What the ACTOR pays. The printed cost is the floor;
+                    a turn usually also bought movement, and how much is
+                    a ruling about distance, speed and ground — so
+                    teller fills in what the book says and leaves the
+                    rest to the person who watched it happen. */}
+                {a.spend && (
+                  <span className="flex items-center gap-1 font-mono text-[11px] text-stone-400">
+                    <span className="text-stone-600">spends</span>
+                    <button
+                      className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
+                      onClick={() =>
+                        onAdvice({
+                          ...a,
+                          spend: { ...a.spend!, amount: Math.max(0, a.spend!.amount - 1) },
+                          applied: false,
+                        })
+                      }
+                      aria-label="spend less"
+                    >
+                      −
+                    </button>
+                    <span className="text-amber-200">{a.spend.amount}</span>
+                    <button
+                      className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
+                      onClick={() =>
+                        onAdvice({
+                          ...a,
+                          spend: { ...a.spend!, amount: a.spend!.amount + 1 },
+                          applied: false,
+                        })
+                      }
+                      aria-label="spend more"
+                    >
+                      +
+                    </button>
+                    <span className="text-stone-600">{a.spend.counter}</span>
+                  </span>
+                )}
+                <button
+                  className={`ml-auto ${a.applied ? btn : btnPrimary} text-xs`}
+                  onClick={apply}
+                >
+                  {a.applied
+                    ? 'recorded ✓'
+                    : target
+                      ? `apply to ${target.name}`
+                      : 'record this turn'}
+                </button>
+              </div>
             </div>
           )}
 

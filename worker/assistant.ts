@@ -399,6 +399,14 @@ function describeHistory(recent: ResolvedTurn[], foeId: string): string {
   if (!recent.length) return 'WHAT HAS ALREADY HAPPENED: nothing recorded yet this fight.';
   const lines = recent.map((r) => {
     const mine = r.by === foeId ? ' (you did this)' : '';
+    // A turn aimed at nobody has no damage to report and reads wrong
+    // as "used X on undefined" — it's the ACT that's the fact, plus
+    // what it cost. Hiding, repositioning and readying are exactly the
+    // turns a later decision most wants to know about.
+    if (!r.targetName) {
+      const paid = r.spend ? ` (spent ${r.spend.amount} ${r.spend.counter})` : '';
+      return `round ${r.round}: ${r.byName} — ${r.action}${paid}${mine}`;
+    }
     const hit = r.damage > 0 ? `${r.damage} damage` : 'no damage';
     const vital = r.vital ? ` (${r.vital.name} ${r.vital.from} → ${r.vital.to})` : '';
     const blocked = r.blocked > 0 ? `, ${r.blocked} blocked` : '';

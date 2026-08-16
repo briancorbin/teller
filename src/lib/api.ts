@@ -191,7 +191,8 @@ export const api = {
     campaignId: string,
     body: {
       actorId: string;
-      targetId: string;
+      /** Absent for a turn aimed at nobody — moving, hiding, waiting. */
+      targetId?: string;
       action: string;
       hits: number;
       blocked: number;

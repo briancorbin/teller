@@ -332,7 +332,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       if (seen.has(id)) continue;
       try {
         const parsed = JSON.parse(String(payload)) as ResolvedTurn;
-        if (parsed?.byName && parsed?.targetName) seen.set(id, parsed);
+        // The actor is what makes a line readable; a target is not.
+        if (parsed?.byName) seen.set(id, parsed);
       } catch {
         // A payload we can't read is one line of history, not an error.
       }
@@ -350,7 +351,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const recent = [...seen.entries()]
       .sort(([a], [b]) => a - b)
       .map(([, r]) => r)
-      .filter((r) => alive.has(r.by) && alive.has(r.target));
+      .filter((r) => alive.has(r.by) && (!r.target || alive.has(r.target)));
 
     // Movement, same selection rule: this creature's own crossings
     // never age out, and the rest is whoever moved lately.
@@ -1375,17 +1376,29 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       statuses?: { name: string; severity: number }[];
       spend?: { counter: string; amount: number };
     }>();
-    if (!body.actorId || !body.targetId) return err('actorId and targetId required', 400);
+    // A turn that hits nobody is still a turn (TEL-98, found in play).
+    // The assistant is instructed in as many words to omit `target`
+    // for moving, hiding and waiting — and this route then refused the
+    // result, so a creature that slipped into the brush paid no Grit,
+    // wrote no event, and left a history the model reads with the
+    // clever half missing. The ACTOR is what an exchange requires.
+    if (!body.actorId) return err('actorId required', 400);
 
+    const wanted = [body.actorId, ...(body.targetId ? [body.targetId] : [])];
     const rows = await env.DB.prepare(
-      'SELECT * FROM characters WHERE campaign_id = ? AND id IN (?, ?)',
+      `SELECT * FROM characters WHERE campaign_id = ? AND id IN (${wanted
+        .map(() => '?')
+        .join(', ')})`,
     )
-      .bind(campaignId, body.actorId, body.targetId)
+      .bind(campaignId, ...wanted)
       .all();
     const found = rows.results.map((r) => toCharacter(r as never));
     const actor = found.find((c) => c.id === body.actorId);
-    const target = found.find((c) => c.id === body.targetId);
-    if (!actor || !target) return err('actor or target not in this campaign', 404);
+    const target = body.targetId ? found.find((c) => c.id === body.targetId) : undefined;
+    if (!actor) return err('actor not in this campaign', 404);
+    // Naming a target teller can't find is a mistake worth reporting;
+    // naming none is a turn.
+    if (body.targetId && !target) return err('target not in this campaign', 404);
 
     const damage = Math.max(0, Math.round(body.damage ?? 0));
     const statuses = (body.statuses ?? []).filter(
@@ -1393,24 +1406,30 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     );
 
     // The vital counter is the first bounded one, exactly as every
-    // other surface decides it.
-    const vitalIndex = target.data.counters.findIndex((c) => c.max !== null && c.max > 0);
-    const vital = vitalIndex >= 0 ? target.data.counters[vitalIndex] : undefined;
-    const counters = target.data.counters.map((c, i) =>
-      i === vitalIndex ? { ...c, current: Math.max(0, c.current - damage) } : c,
-    );
-    const tags = [...target.data.tags];
-    for (const s of statuses) {
-      const tag = `${s.name} ${s.severity}`.trim();
-      if (!tags.includes(tag)) tags.push(tag);
-    }
+    // other surface decides it. With nobody on the other end there is
+    // nothing to subtract from and nothing to hang a status on — the
+    // whole target-side write simply doesn't happen.
+    const vitalIndex = target
+      ? target.data.counters.findIndex((c) => c.max !== null && c.max > 0)
+      : -1;
+    const vital = target && vitalIndex >= 0 ? target.data.counters[vitalIndex] : undefined;
+    if (target) {
+      const counters = target.data.counters.map((c, i) =>
+        i === vitalIndex ? { ...c, current: Math.max(0, c.current - damage) } : c,
+      );
+      const tags = [...target.data.tags];
+      for (const s of statuses) {
+        const tag = `${s.name} ${s.severity}`.trim();
+        if (!tags.includes(tag)) tags.push(tag);
+      }
 
-    const next: CharacterData = { ...target.data, counters, tags };
-    await env.DB.prepare(
-      "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
-    )
-      .bind(JSON.stringify(next), target.id)
-      .run();
+      const next: CharacterData = { ...target.data, counters, tags };
+      await env.DB.prepare(
+        "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
+      )
+        .bind(JSON.stringify(next), target.id)
+        .run();
+    }
 
     // The ACTOR pays for the turn (Brian, 2026-08-15: "it didn't deduct
     // grit from the npc"). An exchange was only ever half-written down:
@@ -1440,9 +1459,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const resolved: ResolvedTurn = {
       by: actor.id,
       byName: actor.name,
-      target: target.id,
-      targetName: target.name,
-      action: (body.action ?? '').trim() || 'an attack',
+      ...(target ? { target: target.id, targetName: target.name } : {}),
+      // "an attack" is the right guess only when something was hit.
+      action: (body.action ?? '').trim() || (target ? 'an attack' : 'a turn'),
       hits: Math.max(0, Math.round(body.hits ?? 0)),
       blocked: Math.max(0, Math.round(body.blocked ?? 0)),
       damage,
@@ -1461,11 +1480,16 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         : {}),
       round: session?.round ?? 1,
     };
-    await logEvent(env, campaignId, target.id, actorOf(auth), 'turn.resolved', resolved);
-    await poke(env, campaignId, target.id);
+    // `entity_id` is the one it happened TO, which for a turn aimed at
+    // nobody is the one who took it — the history read matches on
+    // entity_id OR payload.by, so either way this creature's own turns
+    // can never age out from under it.
+    const subject = target?.id ?? actor.id;
+    await logEvent(env, campaignId, subject, actorOf(auth), 'turn.resolved', resolved);
+    await poke(env, campaignId, subject);
 
     const updated = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
-      .bind(target.id)
+      .bind(subject)
       .first();
     return json({ character: toCharacter(updated as never), resolved });
   }
