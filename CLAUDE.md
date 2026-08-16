@@ -247,6 +247,27 @@ new system arrives as a row, not a code change. Templates are starting
 kits — after creation everything is editable. Every template carries
 `system` + `version` from day one.
 
+**Statuses are part of that, and learning so cost a day** (Brian,
+2026-08-16). Trapped, Afraid and Poisoned are not optional content a
+pack brings — they are how Wild Imaginary West WORKS, and without them
+you are not playing it. They had ended up in the Guidebook pack because
+they arrived attached to their prose, so a host with the system and no
+pack had no conditions at all, while the system knew Trapped was
+uncapped without knowing Trapped existed. The line is this rule's own:
+**the system carries the mechanic** (it exists, it's called Trapped,
+Finesse or Nerve relieves it); **the pack carries the book's words about
+it**. A pack may still ADD one — a supplement introducing a condition is
+making a mechanical claim, which is the author's affair — and the
+campaign may add its own and wins, the same merge the bestiary uses.
+
+The general shape, which is worth having a name for: **a mechanic
+hiding in a text field is the recurring bug in this codebase.** Severity
+lived on the end of a tag string, a Talent's category lived behind a
+`"Talent: "` prefix, and which skill relieves a status lived in a pack
+entry's free-text `meta`. All three were found in one day, all three
+type-checked, and all three were invisible until something needed to
+read them back. When a value is doing two jobs, split it.
+
 Templates live in the **`systems` table** (migration 0007), not in code.
 `worker/templates.ts` is a *seed* — `seedSystems` inserts with `INSERT
 OR IGNORE`, so a counter someone renamed survives the next reboot
@@ -276,9 +297,9 @@ taught).
 
 **A pack is an ARCHIVE, and equally a FOLDER** (2026-08-15): `pack.json`
 (id, system, name, version, rights, books) beside `sections.json`,
-`bestiary.json`, `catalog.json`, `trades.json`, `creation.json`,
-`notes.json` and `art/`. Zipped it's a `.pack` you hand someone;
-unzipped it's a directory on the shelf you edit in place — same format,
+`statuses.json`, `bestiary.json`, `catalog.json`, `trades.json`,
+`creation.json`, `notes.json` and `art/`. Zipped it's a `.pack` you hand
+someone; unzipped it's a directory on the shelf you edit in place — same format,
 same sweep, no build step. **The file split is a serialization, not a
 data model**: everything assembles back into one `RulesPack`, so the
 bestiary, creation and merge code never learned this happened.

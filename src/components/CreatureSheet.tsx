@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Character, Counter } from '../../worker/types';
 import type { SourcedNpc } from '../../worker/bestiary';
+import { formatTag } from '../../worker/tags';
 import { useBooks } from '../lib/use-books';
 import { btn, btnGhost, sectionLabel } from '../lib/ui';
 import { BookReader, type BookTarget } from './BookReader';
@@ -199,12 +200,12 @@ export function CreatureSheet({
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {character.data.tags.map((t) => (
                   <button
-                    key={t}
+                    key={t.name}
                     className="rounded-full bg-sky-950 px-2.5 py-0.5 font-mono text-[11px] text-sky-300 transition-colors hover:bg-red-950 hover:text-red-300"
                     title="remove"
-                    onClick={() => onToggleTag?.(t)}
+                    onClick={() => onToggleTag?.(t.name)}
                   >
-                    {t} ✕
+                    {formatTag(t)} ✕
                   </button>
                 ))}
               </div>

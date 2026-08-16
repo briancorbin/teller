@@ -8,6 +8,7 @@ import type {
   SystemTemplate,
 } from '../../../worker/types';
 import { amendPool, catalogOf } from '../../../worker/items';
+import { setTag, type Tag } from '../../../worker/tags';
 import { newLocalId } from '../../lib/api';
 import { bumped, Step } from '../counters/shared';
 import { SheetPanel } from './SheetPanel';
@@ -45,7 +46,7 @@ export function PrestigePanel({
   counters: Counter[];
   fields: Field[];
   groups?: SystemTemplate['groups'];
-  tags: string[];
+  tags: Tag[];
   marks?: SystemTemplate['marks'];
   items: Item[];
   packs?: RulesPack[];
@@ -58,7 +59,7 @@ export function PrestigePanel({
     counters?: Counter[];
     items?: Item[];
     fields?: Field[];
-    tags?: string[];
+    tags?: Tag[];
   }) => void;
   note?: string;
   fill?: boolean;
@@ -85,7 +86,7 @@ export function PrestigePanel({
   /** Debit the spend counter, then apply the purchase's other writes. */
   const buy = (
     spend: NonNullable<SystemTemplate['spends']>['menu'][number],
-    extra: { items?: Item[]; fields?: Field[]; tags?: string[] } = {},
+    extra: { items?: Item[]; fields?: Field[]; tags?: Tag[] } = {},
     amendCounters?: (debited: Counter[]) => Counter[],
   ) => {
     if (!onSpend) return;
@@ -141,14 +142,14 @@ export function PrestigePanel({
       const owned = (category: string) =>
         tags.some(
           (t) =>
-            t.trim().toLowerCase() === `${prefix}${category}`.trim().toLowerCase(),
+            t.name.trim().toLowerCase() === `${prefix}${category}`.trim().toLowerCase(),
         );
       return (marks?.categories ?? [])
         .filter((c) => !owned(c))
         .map((category) => ({
           key: category,
           label: category,
-          act: () => buy(spend, { tags: [...tags, `${prefix}${category}`] }),
+          act: () => buy(spend, { tags: setTag(tags, `${prefix}${category}`) }),
         }));
     }
     if (effect.kind === 'item') {

@@ -1,7 +1,7 @@
 import type {
   Character,
   Counter,
-  EncounterState,
+  StatusDef,
   InitiativeEntry,
   SystemTemplate,
   TurnNarration,
@@ -17,12 +17,21 @@ import {
   weaponAttacks,
   type StatStatus,
 } from '../lib/statblock';
+import {
+  findTag,
+  formatTag,
+  hasTag,
+  sameTag,
+  setTag,
+  withoutTag,
+  type Tag,
+} from '../../worker/tags';
 import { btn, btnPrimary } from '../lib/ui';
 import { DicePool, rollPool, type DieArt } from './DicePool';
 import { PoolGrid, ProseSections } from './Statblock';
 import { Range } from './Range';
 import { CounterStepper } from './Vitals';
-import { STATE_EFFECTS } from './token-visuals';
+import { stateVisual } from './token-visuals';
 
 // THE STAGE — whoever's turn it is, at full size.
 //
@@ -178,7 +187,7 @@ export function TurnStage({
   round: number;
   initiative: InitiativeEntry[];
   characters: Character[];
-  states: EncounterState[];
+  states: StatusDef[];
   dice: SystemTemplate['dice'];
   dieArt?: DieArt;
   advice: Advice | undefined;
@@ -296,14 +305,19 @@ export function TurnStage({
       },
     });
 
-  const toggleTag = (who: Character, tag: string) =>
+  // By NAME, so a pill knows the character is Trapped whatever number
+  // the Trapped is wearing — and taking it off takes off that one,
+  // rather than adding a bare second beside it.
+  const toggleTag = (who: Character, tag: Tag | string) => {
+    const { name, value } = typeof tag === 'string' ? { name: tag, value: undefined } : tag;
     onPatchCharacter(who.id, {
       data: {
-        tags: who.data.tags.includes(tag)
-          ? who.data.tags.filter((t) => t !== tag)
-          : [...who.data.tags, tag],
+        tags: hasTag(who.data.tags, name)
+          ? withoutTag(who.data.tags, name)
+          : setTag(who.data.tags, name, value),
       },
     });
+  };
 
   /**
    * Land it. One press writes the damage and every status that has a
@@ -504,7 +518,7 @@ export function TurnStage({
   );
 
   const extraTags = character.data.tags.filter(
-    (t) => !states.some((s) => s.name === t),
+    (t) => !states.some((s) => sameTag(s.name, t)),
   );
 
   return (
@@ -526,12 +540,12 @@ export function TurnStage({
           </span>
           {extraTags.map((t) => (
             <button
-              key={t}
+              key={t.name}
               className="rounded bg-sky-950 px-1.5 py-0.5 font-mono text-[10px] text-sky-300 transition-colors hover:bg-red-950 hover:text-red-300"
               title="remove"
               onClick={() => toggleTag(character, t)}
             >
-              {t} ✕
+              {formatTag(t)} ✕
             </button>
           ))}
           <span className="ml-auto font-mono text-[10px] text-stone-600">
@@ -553,8 +567,13 @@ export function TurnStage({
         {states.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1">
             {states.map((state) => {
-              const on = character.data.tags.includes(state.name);
-              const visual = STATE_EFFECTS[state.effect ?? 'mark'];
+              // The number rides on the lit pill. It used to arrive as
+              // an "unrecognised" chip beside it purely because the
+              // match was broken; now that the state owns it, this is
+              // the only place a Severity is visible on the stage.
+              const held = findTag(character.data.tags, state.name);
+              const on = held !== undefined;
+              const visual = stateVisual(state.effect);
               return (
                 <button
                   key={state.name}
@@ -566,7 +585,7 @@ export function TurnStage({
                   }
                   onClick={() => toggleTag(character, state.name)}
                 >
-                  {state.name}
+                  {held ? formatTag(held) : state.name}
                 </button>
               );
             })}

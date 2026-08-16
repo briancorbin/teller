@@ -115,3 +115,20 @@ export const STATE_EFFECTS: Record<
   mark: { chip: '#fbbf24', ring: 'rgba(251,191,36,0.85)' },
   fade: { chip: '#a8a29e', ring: 'rgba(120,113,108,0.9)', fade: true },
 };
+
+/**
+ * The visual for an effect, whatever the effect turns out to be.
+ *
+ * A name teller doesn't recognise falls back to `mark` rather than
+ * throwing, and the reason is the whole point of the layering: a system
+ * newer than this build, a pack that invented a look, or a typo in a
+ * hand-edited file must never take a screen down. Indexing the record
+ * directly returned `undefined` and the next `.chip` white-screened the
+ * console — found by running a campaign with no system at all, which is
+ * the case this has to survive.
+ *
+ * Losing the colour is a fine degradation; losing the console is not.
+ */
+export function stateVisual(effect?: string) {
+  return STATE_EFFECTS[effect ?? 'mark'] ?? STATE_EFFECTS.mark;
+}

@@ -36,13 +36,10 @@ const dnd5e: SystemTemplate = {
   campaign: {
     counters: [],
   },
-  // Vocabulary + thresholds only — never rules text. teller OFFERS
-  // these when a counter crosses; the DM decides (rule 1).
-  states: [
-    { name: 'Bloodied', effect: 'wound', suggest: { counter: 'HP', atOrBelow: 0.5 } },
-    { name: 'Down', effect: 'fade', suggest: { counter: 'HP', atOrBelow: 0 } },
-    { name: 'Concentrating', effect: 'mark' },
-  ],
+  // Names only, never rules text. The full condition list is SRD
+  // import, which stays deferred — this is the one that isn't a
+  // condition anybody publishes, just a thing tables track.
+  statuses: { list: [{ name: 'Concentrating', effect: 'mark' }] },
 };
 
 // Wild Imaginary West (Boylei Hobby Time / Rune Foundry).
@@ -56,7 +53,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 18,
+  version: 19,
   name: 'Wild Imaginary West',
   // The table's scale, as mechanics (numbers and band names — the
   // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
@@ -107,7 +104,24 @@ const wiw: SystemTemplate = {
   // "Severity stacks per Status but cannot exceed 6 on any target
   // (except Trapped)" — and Trapped says so itself: "Severity is NOT
   // capped at 6 for Trapped ('Bagged 'n' Tagged')".
-  statuses: { stack: 'sum', cap: 6, uncapped: ['Trapped'] },
+  // The book's seven, with what relieves each — mechanics, so they
+  // belong to the system and not to a pack (see `StatusDef`). The
+  // Guidebook pack still carries what each one MEANS; this is only
+  // that they exist. `relief` is the skill the book names, verbatim.
+  statuses: {
+    list: [
+      { name: 'Afraid', relief: 'Charm', effect: 'daze' },
+      { name: 'Burned', relief: 'Finesse', effect: 'burn' },
+      { name: 'Dazed', relief: 'Intuition', effect: 'daze' },
+      { name: 'Electrocuted', relief: 'Nerve', effect: 'chill' },
+      { name: 'Poisoned', relief: 'Nerve', effect: 'wound' },
+      { name: 'Trapped', relief: 'Finesse or Nerve', effect: 'mark' },
+      { name: 'Unconscious', relief: 'Intuition', effect: 'fade' },
+    ],
+    stack: 'sum',
+    cap: 6,
+    uncapped: ['Trapped'],
+  },
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',
@@ -498,11 +512,6 @@ const wiw: SystemTemplate = {
   // Finesse to determine turn order. The player with the highest number
   // of Hits will go first."
   initiative: { field: 'finesse', highWins: true },
-  states: [
-    { name: 'Bloodied', effect: 'wound', suggest: { counter: 'Health', atOrBelow: 0.5 } },
-    { name: 'Out of Grit', effect: 'daze', suggest: { counter: 'Grit', atOrBelow: 0 } },
-    { name: 'Down', effect: 'fade', suggest: { counter: 'Health', atOrBelow: 0 } },
-  ],
 };
 
 export const templates: SystemTemplate[] = [dnd5e, wiw];

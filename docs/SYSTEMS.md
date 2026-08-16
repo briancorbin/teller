@@ -105,10 +105,24 @@ attempt per status per turn. `[2B]` = roll for severity; `[2]` = flat.
 **Lasting effects** (Burned: −2 Max Health; Poisoned: −1 die) persist
 after relief until proper care; they don't stack with themselves.
 
-- **Built:** StatusPanel with severity boxes ✅; state suggestions
-  (Bloodied etc.) ✅.
-- **Not built:** nothing pressing. Lasting effects are pack prose;
-  Captured thresholds belong in bestiary/pack data if ever needed.
+- **Built:** StatusPanel with severity boxes ✅. **The seven live in the
+  SYSTEM** (2026-08-16), each with its relief skill — `statuses.list` on
+  the template, merged with anything a pack or the campaign adds
+  (`worker/statuses.ts`). They were in the Guidebook pack, which meant a
+  host without it had no conditions at all; the pack still carries what
+  each one MEANS. A condition on a character is a `Tag` —
+  `{name, value?}`, never a string with the number on the end
+  (`worker/tags.ts`).
+- **Gone:** the "state suggestions" (Bloodied, Down, Out of Grit). They
+  were never statuses — each was a threshold over a counter, stored as a
+  fact, so a healed character stayed Bloodied until somebody noticed.
+  Deriving them instead is open and unbuilt; the Frenzy case suggests
+  the answer is derivation at the point of USE, which is what
+  `thresholdOf` in `worker/assistant.ts` already does for the prompt.
+- **Not built:** lasting effects are pack prose; Captured thresholds
+  belong in bestiary/pack data if ever needed. The `effect` palette is
+  SHORT — six visuals for seven statuses, so Afraid and Dazed currently
+  share one.
 - **Watch:** severity values can be POOLS (`Trapped [1B1G]` from a
   trap). Anything that stores "what this inflicts" needs to accept
   dice notation, not just integers.

@@ -5,12 +5,13 @@ import type {
   Campaign,
   PublicCharacter,
 } from '../../worker/types';
+import { hasTag } from '../../worker/tags';
 import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import { ConnectionHint } from '../components/ConnectionHint';
 import { GridOverlay } from '../components/GridOverlay';
-import { STATE_EFFECTS, tokenShapeStyle, zoneStyle } from '../components/token-visuals';
+import { stateVisual, tokenShapeStyle, zoneStyle } from '../components/token-visuals';
 import { TileZones } from '../components/TileZones';
 import { FogLayer } from '../components/FogLayer';
 import { CalibrationOverlay } from '../components/CalibrationOverlay';
@@ -269,10 +270,10 @@ export function TableView({
             // the numbers behind them never do.
             const state = linked
               ? (campaign?.data.states ?? []).find((s) =>
-                  linked.data.tags.includes(s.name),
+                  hasTag(linked.data.tags, s.name),
                 )
               : null;
-            const stateVisual = state ? STATE_EFFECTS[state.effect ?? 'mark'] : null;
+            const visual = state ? stateVisual(state.effect) : null;
             const vitality = linked?.data.vitality;
             const isTurn =
               token.characterId != null && token.characterId === turnCharacterId;
@@ -308,10 +309,10 @@ export function TableView({
                   width: size,
                   height: sizeY,
                   backgroundColor: token.color,
-                  boxShadow: stateVisual
-                    ? `0 0 0 ${Math.max(2, size * 0.06)}px ${stateVisual.ring}${glow ? `, ${glow}` : ''}`
+                  boxShadow: visual
+                    ? `0 0 0 ${Math.max(2, size * 0.06)}px ${visual.ring}${glow ? `, ${glow}` : ''}`
                     : glow,
-                  opacity: stateVisual?.fade ? 0.45 : undefined,
+                  opacity: visual?.fade ? 0.45 : undefined,
                   fontSize: Math.max(9, size * 0.28),
                   transition: 'left 300ms, top 300ms',
                 }}

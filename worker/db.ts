@@ -12,6 +12,7 @@ import type {
   RulesPack,
   Scene,
 } from './types';
+import { toTags } from './tags';
 
 /** Ids are opaque and unguessable; the prefix is for humans reading rows. */
 export function newId(prefix: string): string {
@@ -122,6 +123,15 @@ export function toCampaign(row: CampaignRow): Campaign {
   // Rows calibrated before the vertical axis existed carry one number;
   // square pixels are the sane reading of it.
   if (data.grid?.ppi && !data.grid.ppiY) data.grid.ppiY = data.grid.ppi;
+  // Conditions written before they had a shape are bare strings; the
+  // blueprint a foe is stamped from and the conditions a placement
+  // starts with both carry them, and both are edited by hand.
+  for (const npc of data.npcs ?? []) npc.tags = toTags(npc.tags);
+  for (const encounter of data.encounters ?? []) {
+    for (const foe of encounter.foes ?? []) {
+      if (foe.tags) foe.tags = toTags(foe.tags);
+    }
+  }
   return {
     id: row.id,
     name: row.name,
@@ -132,12 +142,21 @@ export function toCampaign(row: CampaignRow): Campaign {
 }
 
 export function toCharacter(row: CharacterRow): Character {
+  const data = JSON.parse(row.data) as CharacterData;
+  // The one place a stored condition becomes a Tag. A row written
+  // before conditions had a shape holds `["Trapped 4"]`, and so does
+  // any `.story` or pack authored against that — reading is forgiving
+  // so that a file older than the change still opens (worker/tags.ts).
+  data.tags = toTags(data.tags);
+  for (const item of data.items ?? []) {
+    if (item.tags) item.tags = toTags(item.tags);
+  }
   return {
     id: row.id,
     campaignId: row.campaign_id,
     name: row.name,
     kind: row.kind === 'npc' ? 'npc' : 'pc',
-    data: JSON.parse(row.data) as CharacterData,
+    data,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -152,11 +171,15 @@ type PackRow = {
 };
 
 export function toPackRecord(row: PackRow): PackRecord {
+  const pack = JSON.parse(row.data) as RulesPack;
+  // A pack's bestiary is hand-authored JSON on someone's shelf, so it
+  // is exactly the case tolerance exists for.
+  for (const foe of pack.npcs ?? []) foe.tags = toTags(foe.tags);
   return {
     id: row.id,
     system: row.system,
     name: row.name,
-    pack: JSON.parse(row.data) as RulesPack,
+    pack,
     updatedAt: row.updated_at,
   };
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Counter, Field, Item } from '../../../worker/types';
+import type { Tag } from '../../../worker/tags';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
@@ -238,9 +239,9 @@ export function Sheet({
    * ride back on every write or the first status tap silently deletes
    * every talent the character owns.
    */
-  const isMark = (t: string) =>
+  const isMark = (t: Tag) =>
     Boolean(marks) &&
-    t.trim().toLowerCase().startsWith(marks!.prefix.trim().toLowerCase());
+    t.name.trim().toLowerCase().startsWith(marks!.prefix.trim().toLowerCase());
   const markTags = tags.filter(isMark);
   const plainTags = tags.filter((t) => !isMark(t));
 

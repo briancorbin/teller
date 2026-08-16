@@ -7,6 +7,7 @@
 //
 //   pack.json       who this pack is: id, system, name, version, rights, books
 //   sections.json   the rulings
+//   statuses.json   conditions this pack adds
 //   bestiary.json   the foes
 //   catalog.json    items and upgrades
 //   trades.json     the playable trades
@@ -37,6 +38,7 @@ const MANIFEST_KEYS = ['id', 'system', 'name', 'version', 'rights', 'books'] as 
  */
 export const PACK_PARTS: Record<string, keyof RulesPack> = {
   'sections.json': 'sections',
+  'statuses.json': 'statuses',
   'bestiary.json': 'npcs',
   'catalog.json': 'catalog',
   'trades.json': 'trades',
