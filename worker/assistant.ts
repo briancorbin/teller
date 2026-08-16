@@ -467,8 +467,20 @@ function describeHistory(recent: ResolvedTurn[], foeId: string): string {
     // as "used X on undefined" — it's the ACT that's the fact, plus
     // what it cost. Hiding, repositioning and readying are exactly the
     // turns a later decision most wants to know about.
+    // What a turn shook OFF, said wherever it happened. A creature
+    // holding someone wants to know the grip is slipping, and a turn
+    // spent tearing free is otherwise invisible in the record.
+    const eased = r.relieved?.length
+      ? `, ${r.relieved
+          .map((e) =>
+            e.to === null
+              ? `shaking off ${e.name} entirely`
+              : `easing ${e.name} ${e.from} down to ${e.to}`,
+          )
+          .join(' and ')}`
+      : '';
     if (!r.targetName) {
-      return `round ${r.round}: ${r.byName} — ${r.action}${paidOf(r)}${mine}`;
+      return `round ${r.round}: ${r.byName} — ${r.action}${eased}${paidOf(r)}${mine}`;
     }
     const hit = r.damage > 0 ? `${r.damage} damage` : 'no damage';
     const vital = r.vital ? ` (${r.vital.name} ${r.vital.from} → ${r.vital.to})` : '';
@@ -478,7 +490,7 @@ function describeHistory(recent: ResolvedTurn[], foeId: string): string {
       : '';
     // An attack's cost belongs here too: what a turn could afford last
     // round is how a creature judges what it can afford this one.
-    return `round ${r.round}: ${r.byName} used ${r.action} on ${r.targetName} — ${hit}${blocked}${vital}${left}${paidOf(r)}${mine}`;
+    return `round ${r.round}: ${r.byName} used ${r.action} on ${r.targetName} — ${hit}${blocked}${vital}${left}${eased}${paidOf(r)}${mine}`;
   });
   return [
     'WHAT HAS ALREADY HAPPENED (oldest first; this is where the conditions above came from):',

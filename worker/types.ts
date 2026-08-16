@@ -2009,6 +2009,15 @@ export type ResolvedTurn = {
   /** The vital counter's transition, when the target had one. */
   vital?: { name: string; from: number; to: number };
   statuses: { name: string; severity: number }[];
+  /**
+   * Conditions this turn eased or shook off — `to: null` means gone.
+   *
+   * Relieving is an action a player takes most turns they're afflicted,
+   * and the resolve step could only ever ADD, so every relief was a
+   * hand-edit the log never saw. A creature deciding its turn wants to
+   * know its grapple is slipping.
+   */
+  relieved?: { name: string; from: number; to: number | null }[];
   /** What the turn cost its actor, line by line. */
   spend?: Spend[];
   round: number;

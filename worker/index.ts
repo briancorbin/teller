@@ -1377,6 +1377,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       statuses?: { name: string; severity: number }[];
       /** One line or many — a turn that moved AND swung says both. */
       spend?: Spend | Spend[];
+      /** Conditions eased or shaken off. No `by` means all the way off. */
+      relieve?: { name: string; by?: number }[];
     }>();
     // A turn that hits nobody is still a turn (TEL-98, found in play).
     // The assistant is instructed in as many words to omit `target`
@@ -1406,39 +1408,61 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const statuses = (body.statuses ?? []).filter(
       (s) => s && typeof s.name === 'string' && s.name.trim(),
     );
+    // Conditions come OFF as well as on. Relieving is an action a
+    // player takes most turns they're afflicted — "roll up to your full
+    // dice from the Skill associated with the Status, each die costs 1
+    // Grit, reduce Severity by 1 per Hit" — and the resolve step could
+    // only ever ADD, so every relief in play was a hand-edit that the
+    // log never saw and the assistant never learned about.
+    const relieved = (body.relieve ?? []).filter(
+      (r) => r && typeof r.name === 'string' && r.name.trim(),
+    );
+
+    // How conditions combine is the SYSTEM's (rule 2); teller only
+    // insists there be ONE tag per condition. See `SystemTemplate.statuses`.
+    const stacking =
+      statuses.length || relieved.length
+        ? await (async () => {
+            const row = await env.DB.prepare('SELECT system FROM campaigns WHERE id = ?')
+              .bind(campaignId)
+              .first<{ system: string }>();
+            return row ? (await getSystem(env, row.system))?.statuses : undefined;
+          })()
+        : undefined;
 
     // The vital counter is the first bounded one, exactly as every
     // other surface decides it. With nobody on the other end there is
-    // nothing to subtract from and nothing to hang a status on — the
+    // nothing to subtract from and nothing to hang a condition on — the
     // whole target-side write simply doesn't happen.
     const vitalIndex = target
       ? target.data.counters.findIndex((c) => c.max !== null && c.max > 0)
       : -1;
     const vital = target && vitalIndex >= 0 ? target.data.counters[vitalIndex] : undefined;
+
+    const named = /^(.*?)\s+(\d+)$/;
+    const nameOf = (tag: string) => {
+      const m = named.exec(tag);
+      return (m ? m[1] : tag).toLowerCase();
+    };
+    const eased: { name: string; from: number; to: number | null }[] = [];
+
+    /**
+     * Both writes are computed BEFORE either lands, and a character who
+     * is their own target is written once.
+     *
+     * Relieving is self-targeted, which walked straight into this: the
+     * target write set the tags, then the actor write paid the Grit out
+     * of the data as it was READ, putting the condition back. Two
+     * updates to one row, the second built on a stale copy.
+     */
+    let targetData: CharacterData | undefined;
     if (target) {
       const counters = target.data.counters.map((c, i) =>
         i === vitalIndex ? { ...c, current: Math.max(0, c.current - damage) } : c,
       );
-      // One condition is ONE tag. Matching on the exact string meant a
-      // second helping at a different severity simply appended, and a
-      // target ended up carrying "Trapped 1" and "Trapped 4" at once —
-      // a state nothing means and the assistant reads both halves of.
-      //
-      // How they combine is the SYSTEM's (rule 2); teller only insists
-      // there be one of them. See `SystemTemplate.statuses`.
-      const stacking = await (async () => {
-        const row = await env.DB.prepare('SELECT system FROM campaigns WHERE id = ?')
-          .bind(campaignId)
-          .first<{ system: string }>();
-        return row ? (await getSystem(env, row.system))?.statuses : undefined;
-      })();
-      const named = /^(.*?)\s+(\d+)$/;
       const tags = [...target.data.tags];
       for (const s of statuses) {
-        const at = tags.findIndex((t) => {
-          const m = named.exec(t);
-          return (m ? m[1] : t).toLowerCase() === s.name.toLowerCase();
-        });
+        const at = tags.findIndex((t) => nameOf(t) === s.name.toLowerCase());
         if (at < 0) {
           const tag = `${s.name} ${s.severity}`.trim();
           if (!tags.includes(tag)) tags.push(tag);
@@ -1458,13 +1482,20 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         if (stacking?.cap !== undefined && !exempt) next = Math.min(stacking.cap, next);
         tags[at] = `${s.name} ${next}`.trim();
       }
-
-      const next: CharacterData = { ...target.data, counters, tags };
-      await env.DB.prepare(
-        "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
-      )
-        .bind(JSON.stringify(next), target.id)
-        .run();
+      // Off, after on — so a turn that both lands and eases something
+      // reads in the order it happened.
+      for (const r of relieved) {
+        const at = tags.findIndex((t) => nameOf(t) === r.name.toLowerCase());
+        if (at < 0) continue;
+        const had = Number(named.exec(tags[at])?.[2] ?? 0);
+        // No `by` means all the way off — clearing is the common case
+        // and shouldn't need a number nobody has to hand.
+        const next = r.by === undefined ? 0 : Math.max(0, had - Math.round(r.by));
+        eased.push({ name: r.name, from: had, to: next > 0 ? next : null });
+        if (next > 0) tags[at] = `${r.name} ${next}`.trim();
+        else tags.splice(at, 1);
+      }
+      targetData = { ...target.data, counters, tags };
     }
 
     // The ACTOR pays for the turn (Brian, 2026-08-15: "it didn't deduct
@@ -1489,6 +1520,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         amount: Math.round(Number(s.amount)),
         ...(s.on ? { on: String(s.on) } : {}),
       }));
+
+    const sameBody = Boolean(target && target.id === actor.id);
+    let actorData: CharacterData | undefined = sameBody ? targetData : undefined;
     if (spends.length) {
       // Two lines out of the same counter come off it once.
       const owed = new Map<string, number>();
@@ -1496,16 +1530,26 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         const key = s.counter.toLowerCase();
         owed.set(key, (owed.get(key) ?? 0) + s.amount);
       }
-      const paid = actor.data.counters.map((c) => {
-        const due = owed.get(c.name.toLowerCase());
-        return due ? { ...c, current: Math.max(0, c.current - due) } : c;
-      });
+      const base = actorData ?? actor.data;
+      actorData = {
+        ...base,
+        counters: base.counters.map((c) => {
+          const due = owed.get(c.name.toLowerCase());
+          return due ? { ...c, current: Math.max(0, c.current - due) } : c;
+        }),
+      };
+    }
+
+    const writes: [string, CharacterData][] = [];
+    if (targetData && !sameBody) writes.push([target!.id, targetData]);
+    if (actorData) writes.push([actor.id, actorData]);
+    for (const [id, data] of writes) {
       await env.DB.prepare(
         "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
       )
-        .bind(JSON.stringify({ ...actor.data, counters: paid }), actor.id)
+        .bind(JSON.stringify(data), id)
         .run();
-      await poke(env, campaignId, actor.id);
+      await poke(env, campaignId, id);
     }
 
     const session = await (
@@ -1531,6 +1575,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           }
         : {}),
       statuses,
+      ...(eased.length ? { relieved: eased } : {}),
       ...(spends.length ? { spend: spends } : {}),
       round: session?.round ?? 1,
     };
