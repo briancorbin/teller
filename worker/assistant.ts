@@ -348,6 +348,46 @@ function describeBoard(
   ].join('\n');
 }
 
+/**
+ * Combatants in the fight that aren't on the board.
+ *
+ * `describeBoard` builds the foe's whole picture of the world out of
+ * `scene.tokens`, so anyone in the turn order without a token does not
+ * exist to it — not as a threat, not as a target, not as a body taking
+ * up ground. In play that meant three Bark Watchers spent a round
+ * reasoning about a clearing holding two people while five of the
+ * posse stood in it, and every suggestion they produced was correctly
+ * derived from half a battlefield (2026-08-15).
+ *
+ * The failure is invisible in the output — nothing about a confident,
+ * well-reasoned turn says the board was short. So say the absence out
+ * loud: an unknown a human can see beats an unknown that reads as
+ * fact, and it stops the model asserting "all are far off" about
+ * people it was simply never shown.
+ */
+function describeUnplaced(
+  session: SessionState | null,
+  scene: Scene | undefined,
+  characters: Character[],
+): string {
+  const placed = new Set(
+    (scene?.tokens ?? []).map((t) => t.characterId).filter(Boolean) as string[],
+  );
+  const byId = new Map(characters.map((c) => [c.id, c]));
+  const missing = (session?.initiative ?? [])
+    .filter((e) => e.characterId && !placed.has(e.characterId))
+    .map((e) => {
+      const who = byId.get(e.characterId!);
+      return `${e.label}${who ? ` (${who.kind === 'pc' ? 'PC' : 'foe'})` : ''}`;
+    });
+  if (!missing.length) return '';
+  return [
+    'IN THIS FIGHT BUT NOT ON THE MAP — position unknown, not absent:',
+    ...missing.map((m) => `- ${m}`),
+    'Do not assume these are far off, or that they cannot reach you. If where they stand would change your turn, say so in premises.',
+  ].join('\n');
+}
+
 function describeFight(
   session: SessionState | null,
   characters: Character[],
@@ -590,7 +630,8 @@ async function complete(env: AssistantEnv, system: string, user: string): Promis
  * three, and returning null for an unterminated object is what lets
  * the caller say "cut off" instead of "malformed".
  */
-function firstObject(text: string): string | null {
+function objects(text: string): string[] {
+  const found: string[] = [];
   let depth = 0;
   let start = -1;
   let inString = false;
@@ -609,15 +650,44 @@ function firstObject(text: string): string | null {
       depth++;
     } else if (c === '}') {
       depth--;
-      if (depth === 0 && start >= 0) return text.slice(start, i + 1);
+      if (depth === 0 && start >= 0) found.push(text.slice(start, i + 1));
     }
   }
-  return null;
+  return found;
+}
+
+/**
+ * The first complete object that is actually the ANSWER.
+ *
+ * Taking the first object full stop assumes the model never says
+ * anything before it — and "assistant suggestion had no action" turned
+ * up twice in play, which is the error thrown when an object parsed
+ * fine and simply wasn't the one wanted. Anything ahead of the answer
+ * (a scratch object, an example it talked itself into, a stray `{}`)
+ * would take the slot and the real reply behind it was discarded.
+ *
+ * So: walk the balanced objects and take the first that carries the
+ * key that makes it an answer, falling back to the first object at all
+ * so a genuinely keyless reply still reports the old, useful error.
+ */
+function firstObject(text: string, key?: string): string | null {
+  const found = objects(text);
+  if (!found.length) return null;
+  if (!key) return found[0];
+  for (const candidate of found) {
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      if (parsed && typeof parsed === 'object' && parsed[key]) return candidate;
+    } catch {
+      // Not parseable is not a candidate; keep looking.
+    }
+  }
+  return found[0];
 }
 
 /** The model was ASKED for bare JSON; a chatty one gets its braces found anyway. */
 function parseSuggestion(reply: string, model: string): TurnSuggestion {
-  const found = firstObject(reply);
+  const found = firstObject(reply, 'action');
   if (!found) {
     throw new Error(
       reply.includes('{')
@@ -626,7 +696,12 @@ function parseSuggestion(reply: string, model: string): TurnSuggestion {
     );
   }
   const parsed = JSON.parse(found) as Partial<TurnSuggestion>;
-  if (!parsed.action) throw new Error('assistant suggestion had no action');
+  // Carry the reply into the error. A failure used to discard the one
+  // piece of evidence needed to diagnose it, which is why this was
+  // seen twice in play and still couldn't be named.
+  if (!parsed.action) {
+    throw new Error(`assistant suggestion had no action: ${reply.slice(0, 300)}`);
+  }
   // The roll is optional, and SALVAGED rather than judged: a model
   // that answers "2G damage" or "roll 2B1G" has named the pool
   // perfectly well, and demanding the whole string be nothing but a
@@ -695,6 +770,7 @@ function assembleContext(
       ? `PROFILE (how it acts — follow this): ${profile}`
       : 'PROFILE: none written. Infer temperament from its name and stats, and say you did in premises.',
     describeBoard(scene, characters, foe.id, heightInches, bands),
+    describeUnplaced(session, scene, characters),
     space ? `SPACE & MOVEMENT (this system's rules — use these, don't guess): ${space}` : '',
     describeFight(session, characters, foe.id),
     describeHistory(recent, foe.id),
@@ -783,7 +859,7 @@ export async function narrateOutcome(
     `\nNarrate what just happened.`,
   ].join('\n\n');
   const reply = await complete(env, NARRATE_SYSTEM, user);
-  const found = firstObject(reply);
+  const found = firstObject(reply, 'narration');
   if (!found) {
     throw new Error(
       reply.includes('{')
@@ -792,6 +868,8 @@ export async function narrateOutcome(
     );
   }
   const parsed = JSON.parse(found) as { narration?: string };
-  if (!parsed.narration) throw new Error('assistant narration was empty');
+  if (!parsed.narration) {
+    throw new Error(`assistant narration was empty: ${reply.slice(0, 300)}`);
+  }
   return { narration: String(parsed.narration), model: env.ASSISTANT_MODEL! };
 }

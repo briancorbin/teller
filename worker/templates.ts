@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 17,
+  version: 18,
   name: 'Wild Imaginary West',
   // The table's scale, as mechanics (numbers and band names — the
   // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
@@ -104,6 +104,10 @@ const wiw: SystemTemplate = {
   // creature's turn" — the same sentence `space` tells the model, said
   // once more in a form teller can act on rather than only reason with.
   reload: [{ counter: 'Grit', at: 'turn', to: 'max' }],
+  // "Severity stacks per Status but cannot exceed 6 on any target
+  // (except Trapped)" — and Trapped says so itself: "Severity is NOT
+  // capped at 6 for Trapped ('Bagged 'n' Tagged')".
+  statuses: { stack: 'sum', cap: 6, uncapped: ['Trapped'] },
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',

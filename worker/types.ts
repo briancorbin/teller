@@ -876,6 +876,28 @@ export type SystemTemplate = {
    */
   reload?: { counter: string; at: 'turn'; to?: 'max' }[];
   /**
+   * What happens when a condition lands on someone who already has it.
+   *
+   * teller's own rule is only that ONE condition is one tag: a target
+   * carrying `Trapped 1` and `Trapped 4` at the same time is a state no
+   * ruleset means and no surface can render, and the assistant reads
+   * both and is told its target is at once barely held and firmly held
+   * (found in play, 2026-08-15).
+   *
+   * HOW they combine is the system's, not teller's (rule 2). WiW sums
+   * severities and caps at 6 — except Trapped, which the book exempts
+   * by name ("Bagged 'n' Tagged"), and a teller that hardcoded 6 would
+   * be wrong about the very first grapple it saw. Absent a declaration
+   * the higher of the two wins, which is the least surprising thing
+   * that is never a silent double-count.
+   */
+  statuses?: {
+    stack?: 'sum' | 'higher' | 'replace';
+    cap?: number;
+    /** Names the cap doesn't apply to, in the book's own spelling. */
+    uncapped?: string[];
+  };
+  /**
    * How this system rolls, as DATA (rule 4, amended 2026-08-10).
    *
    * teller ships one small evaluator; a system arrives as a row rather

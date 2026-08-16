@@ -1419,10 +1419,44 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       const counters = target.data.counters.map((c, i) =>
         i === vitalIndex ? { ...c, current: Math.max(0, c.current - damage) } : c,
       );
+      // One condition is ONE tag. Matching on the exact string meant a
+      // second helping at a different severity simply appended, and a
+      // target ended up carrying "Trapped 1" and "Trapped 4" at once —
+      // a state nothing means and the assistant reads both halves of.
+      //
+      // How they combine is the SYSTEM's (rule 2); teller only insists
+      // there be one of them. See `SystemTemplate.statuses`.
+      const stacking = await (async () => {
+        const row = await env.DB.prepare('SELECT system FROM campaigns WHERE id = ?')
+          .bind(campaignId)
+          .first<{ system: string }>();
+        return row ? (await getSystem(env, row.system))?.statuses : undefined;
+      })();
+      const named = /^(.*?)\s+(\d+)$/;
       const tags = [...target.data.tags];
       for (const s of statuses) {
-        const tag = `${s.name} ${s.severity}`.trim();
-        if (!tags.includes(tag)) tags.push(tag);
+        const at = tags.findIndex((t) => {
+          const m = named.exec(t);
+          return (m ? m[1] : t).toLowerCase() === s.name.toLowerCase();
+        });
+        if (at < 0) {
+          const tag = `${s.name} ${s.severity}`.trim();
+          if (!tags.includes(tag)) tags.push(tag);
+          continue;
+        }
+        const had = Number(named.exec(tags[at])?.[2] ?? 0);
+        const mode = stacking?.stack ?? 'higher';
+        let next =
+          mode === 'sum'
+            ? had + s.severity
+            : mode === 'replace'
+              ? s.severity
+              : Math.max(had, s.severity);
+        const exempt = (stacking?.uncapped ?? []).some(
+          (n) => n.toLowerCase() === s.name.toLowerCase(),
+        );
+        if (stacking?.cap !== undefined && !exempt) next = Math.min(stacking.cap, next);
+        tags[at] = `${s.name} ${next}`.trim();
       }
 
       const next: CharacterData = { ...target.data, counters, tags };
