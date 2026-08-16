@@ -23,6 +23,7 @@ The two forms are the same format for different jobs:
 wiw-guidebook/            ← or wiw-guidebook.pack, zipped
   pack.json               id, system, name, version, rights, books
   sections.json           the rulings
+  statuses.json           conditions this pack adds
   bestiary.json           the foes
   catalog.json            items and upgrades
   trades.json             the playable trades
@@ -110,6 +111,30 @@ anyone, and it's the same deal books have always had.
 Each part file holds a bare array or object — no wrapper key, because
 the file name already said what it is. `catalog.json`, `trades.json`,
 `creation.json` and `notes.json` follow the same rule.
+
+### `statuses.json` — conditions this pack adds
+
+Usually absent, and that's correct. **Statuses belong to the SYSTEM**,
+not to a pack: Trapped and Poisoned are how Wild Imaginary West works,
+and a host with the system and no pack still has them. What a pack
+carries is the book's WORDS about them, in `sections.json`.
+
+This file is for a pack that genuinely introduces one — a supplement
+adding a condition the base game doesn't have. Restating one the
+system already declares is also fine; that's how a pack corrects a
+spelling or supplies a visual the system left off.
+
+```json
+[
+  { "name": "Cursed", "relief": "Nerve", "effect": "fade" }
+]
+```
+
+`relief` is free text in the book's own words ("Finesse or Nerve") —
+teller shows it and never evaluates it. `effect` is the visual, one of
+`wound` `burn` `chill` `daze` `mark` `fade`. The system's list, then
+packs in the campaign's declared order, then the campaign's own — later
+wins on a name collision.
 
 ### `art/` — the pictures
 

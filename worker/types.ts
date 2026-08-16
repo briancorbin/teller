@@ -1503,6 +1503,16 @@ export type RulesPack = {
   version: number;
   sections: PackSection[];
   /**
+   * Conditions this pack ADDS to the system's.
+   *
+   * A supplement that introduces one is making a mechanical claim, and
+   * that's the author's affair (rule 4). Restating one the system
+   * already has is also fine — that's how a pack supplies a visual the
+   * system left off. The system still owns the base list: statuses are
+   * how a game works, not content a pack brings (see `StatusDef`).
+   */
+  statuses?: StatusDef[];
+  /**
    * Who this pack's contents belong to, and who may hand the file on.
    *
    * A pack MAY contain IP — that's rule 4 as rewritten 2026-08-14, and

@@ -495,7 +495,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       // Same merge for conditions: the system's real list plus whatever
       // this table invented. Assembled here so every surface asks one
       // question instead of four of them agreeing by accident.
-      statuses: statusesFor(await getSystem(env, campaign.system), campaign),
+      statuses: await statusesFor(env, campaign),
       // Packs this campaign claims but this host doesn't hold. Named
       // here rather than discovered when a deploy comes up short.
       missingPacks: await missingPacks(env, campaign),
@@ -895,7 +895,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           // tags themselves are already table-safe; numbers are not and
           // never come with them. Merged here rather than on the table:
           // a passive surface should not have to assemble anything.
-          states: statusesFor(await getSystem(env, campaign.system), campaign),
+          states: await statusesFor(env, campaign),
           grid: campaign.data.grid,
           // Active scene (with view/scale metadata); legacy single-map
           // pointer keeps old campaigns rendering.
