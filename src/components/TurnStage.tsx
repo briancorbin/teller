@@ -57,6 +57,13 @@ export type Advice = {
    * reading and lets the table's ruling win, as it must.
    */
   sevSet?: Record<string, number | null>;
+  /**
+   * What the actor pays, and out of which counter. Taken from the
+   * printed line and then the Warden's — a turn usually also costs
+   * MOVEMENT, which is a judgment about distance, speed and ground
+   * that only they can make, so the number is theirs to raise.
+   */
+  spend?: { counter: string; amount: number };
   applied?: boolean;
   /** The vital's value BEFORE applying — the transition, not a re-derivation. */
   appliedFrom?: number;
@@ -156,7 +163,7 @@ export function TurnStage({
   advice: Advice | undefined;
   onAdvice: (patch: Advice | null) => void;
   onSuggest?: () => void;
-  onNarrate?: (action: string, result: string) => void;
+  onNarrate?: (action: string, result: string, preface?: string) => void;
   onPatchCharacter: (id: string, patch: { data?: Partial<Character['data']> }) => void;
   /** Land the exchange and record who did it — see EncounterPanel. */
   onResolve: (body: {
@@ -167,6 +174,7 @@ export function TurnStage({
     blocked: number;
     damage: number;
     statuses: { name: string; severity: number }[];
+    spend?: { counter: string; amount: number };
   }) => void;
   /**
    * The pack's item entries by id, so a carried weapon can be read for
@@ -261,6 +269,7 @@ export function TurnStage({
       statuses: statuses
         .map((s) => ({ name: s.name, severity: severityOf(s) }))
         .filter((s): s is { name: string; severity: number } => s.severity !== null),
+      ...(a.spend && a.spend.amount > 0 ? { spend: a.spend } : {}),
     });
     onAdvice({ ...a, applied: true, appliedFrom: vital?.current });
   };
@@ -320,7 +329,7 @@ export function TurnStage({
               ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
               : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
           }`}
-          title={`${atk.band} · ${atk.grit} Grit · ${atk.effect}`}
+          title={`${atk.band} · ${atk.cost} ${atk.costUnit} · ${atk.effect}`}
           onClick={() =>
             onAdvice({
               ...a,
@@ -342,7 +351,9 @@ export function TurnStage({
           {atk.dice && <span className="ml-1.5 text-amber-300">{atk.dice}</span>}
           {/* Spelled out, because "4G" beside a "2G" pool reads
               as four Gold dice and it is four GRIT. */}
-          <span className="ml-1.5 text-[10px] text-stone-500">{atk.grit} grit</span>
+          <span className="ml-1.5 text-[10px] text-stone-500">
+            {atk.cost} {atk.costUnit.toLowerCase()}
+          </span>
         </button>
       ))}
     </div>
@@ -747,6 +758,45 @@ export function TurnStage({
                       {hits} − {blocked} ={' '}
                       <span className="text-base text-amber-200">{damage}</span> damage
                     </span>
+                    {/* What the ACTOR pays. The printed cost is the
+                        floor; a turn usually also bought movement, and
+                        how much is a ruling about distance, speed and
+                        ground — so teller fills in what the book says
+                        and leaves the rest to the person who watched
+                        it happen. */}
+                    {a.spend && (
+                      <span className="flex items-center gap-1 font-mono text-[11px] text-stone-400">
+                        <span className="text-stone-600">spends</span>
+                        <button
+                          className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
+                          onClick={() =>
+                            onAdvice({
+                              ...a,
+                              spend: { ...a.spend!, amount: Math.max(0, a.spend!.amount - 1) },
+                              applied: false,
+                            })
+                          }
+                          aria-label="spend less"
+                        >
+                          −
+                        </button>
+                        <span className="text-amber-200">{a.spend.amount}</span>
+                        <button
+                          className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
+                          onClick={() =>
+                            onAdvice({
+                              ...a,
+                              spend: { ...a.spend!, amount: a.spend!.amount + 1 },
+                              applied: false,
+                            })
+                          }
+                          aria-label="spend more"
+                        >
+                          +
+                        </button>
+                        <span className="text-stone-600">{a.spend.counter}</span>
+                      </span>
+                    )}
                     <button
                       className={`ml-auto ${a.applied ? btn : btnPrimary} text-xs`}
                       onClick={apply}
@@ -771,14 +821,22 @@ export function TurnStage({
                   onChange={(e) => onAdvice({ ...a, result: e.target.value })}
                   onKeyDown={(e) =>
                     e.key === 'Enter' &&
-                    onNarrate(a.suggestion?.action ?? a.roll?.for ?? '', exchange())
+                    onNarrate(
+                      a.suggestion?.action ?? a.roll?.for ?? '',
+                      exchange(),
+                      a.suggestion?.preface,
+                    )
                   }
                 />
                 <button
                   className={`${btnPrimary} shrink-0 text-xs ${a.narrating ? 'animate-pulse' : ''}`}
                   disabled={a.narrating || (!rolled && !a.result?.trim())}
                   onClick={() =>
-                    onNarrate(a.suggestion?.action ?? a.roll?.for ?? '', exchange())
+                    onNarrate(
+                      a.suggestion?.action ?? a.roll?.for ?? '',
+                      exchange(),
+                      a.suggestion?.preface,
+                    )
                   }
                 >
                   tell it ⟶

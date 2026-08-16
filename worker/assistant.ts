@@ -654,6 +654,8 @@ const NARRATE_SYSTEM = `You are Teller, the bookkeeping assistant at an in-perso
 
 Write 2–4 vivid sentences the Warden can read aloud to the players, present tense, concrete and sensory — the kind of beat that makes a table lean in.
 
+YOU ARE CONTINUING, NOT STARTING. The Warden has ALREADY read the setup aloud, and when it is given below you must treat it as spoken and behind you: it stopped at the instant of contact, mid-motion. Open where those words broke off and carry straight on into what the dice decided. Do not re-approach, do not re-describe the lunge or the grab, do not restate the setup in fresh words — the table has heard it, and hearing it twice makes the dice feel undone and rolled again.
+
 Hard rules:
 - The dice already decided everything. Narrate ONLY what the given action and results state — never add damage, statuses, movement or events they don't contain, and never soften or improve an outcome.
 - This will be read TO THE PLAYERS: never mention anything marked hidden or unseen-by-the-posse unless the resolved action itself reveals it.
@@ -682,9 +684,16 @@ export async function narrateOutcome(
   space?: string,
   recent: ResolvedTurn[] = [],
   moves: TokenMove[] = [],
+  /** The setup already spoken at the table, to continue from. */
+  preface?: string,
 ): Promise<TurnNarration> {
   const user = [
     assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves),
+    ...(preface
+      ? [
+          `WHAT THE WARDEN ALREADY READ ALOUD (spoken; continue from where it stops, never retell it): ${preface}`,
+        ]
+      : []),
     `THE ACTION THE WARDEN RAN: ${action}`,
     `WHAT THE DICE SAID (the table's results, already final): ${result}`,
     `\nNarrate what just happened.`,

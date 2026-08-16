@@ -568,8 +568,8 @@ export function DmView({
       }
       onNarrate={
         assistantOn
-          ? (characterId, action, result) =>
-              api.narrateTurn(campaignId, characterId, action, result)
+          ? (characterId, action, result, preface) =>
+              api.narrateTurn(campaignId, characterId, action, result, preface)
           : undefined
       }
       dice={template?.dice}

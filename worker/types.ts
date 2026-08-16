@@ -1940,6 +1940,8 @@ export type ResolvedTurn = {
   /** The vital counter's transition, when the target had one. */
   vital?: { name: string; from: number; to: number };
   statuses: { name: string; severity: number }[];
+  /** What the turn cost its actor, out of which counter. */
+  spend?: { counter: string; amount: number };
   round: number;
 };
 

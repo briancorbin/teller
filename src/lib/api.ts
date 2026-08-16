@@ -127,10 +127,17 @@ export const api = {
     }),
 
   /** The second click: the table's real results in, read-aloud story out. */
-  narrateTurn: (campaignId: string, characterId: string, action: string, result: string) =>
+  narrateTurn: (
+    campaignId: string,
+    characterId: string,
+    action: string,
+    result: string,
+    /** What was read aloud before the dice, so the story continues. */
+    preface?: string,
+  ) =>
     req<TurnNarration>(`/api/campaigns/${campaignId}/assistant/narrate`, {
       method: 'POST',
-      body: JSON.stringify({ characterId, action, result }),
+      body: JSON.stringify({ characterId, action, result, preface }),
     }),
 
   listCampaigns: () => req<Campaign[]>('/api/campaigns'),
@@ -190,6 +197,7 @@ export const api = {
       blocked: number;
       damage: number;
       statuses: { name: string; severity: number }[];
+      spend?: { counter: string; amount: number };
     },
   ) =>
     req<{ character: Character; resolved: ResolvedTurn }>(

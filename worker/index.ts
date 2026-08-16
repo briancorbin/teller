@@ -242,10 +242,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     const campaignId = m[1];
     const ask = m[2];
-    const { characterId, action, result } = await request.json<{
+    const { characterId, action, result, preface } = await request.json<{
       characterId?: string;
       action?: string;
       result?: string;
+      preface?: string;
     }>();
     if (!characterId) return err('characterId required', 400);
     if (ask === 'narrate' && (!action || !result)) {
@@ -404,6 +405,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               template?.space,
               recent,
               moves,
+              preface,
             )
           : await suggestTurn(
               env,
@@ -1369,6 +1371,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       blocked?: number;
       damage?: number;
       statuses?: { name: string; severity: number }[];
+      spend?: { counter: string; amount: number };
     }>();
     if (!body.actorId || !body.targetId) return err('actorId and targetId required', 400);
 
@@ -1407,6 +1410,27 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       .bind(JSON.stringify(next), target.id)
       .run();
 
+    // The ACTOR pays for the turn (Brian, 2026-08-15: "it didn't deduct
+    // grit from the npc"). An exchange was only ever half-written down:
+    // the target lost health and the thing that swung paid nothing, so
+    // a creature could attack every round forever. The counter is NAMED
+    // by the caller — read off the attack's own printed cost — because
+    // what a turn spends is the system's business, not teller's.
+    const spend = body.spend;
+    if (spend?.counter && spend.amount > 0) {
+      const paid = actor.data.counters.map((c) =>
+        c.name.toLowerCase() === spend.counter.toLowerCase()
+          ? { ...c, current: Math.max(0, c.current - Math.round(spend.amount)) }
+          : c,
+      );
+      await env.DB.prepare(
+        "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
+      )
+        .bind(JSON.stringify({ ...actor.data, counters: paid }), actor.id)
+        .run();
+      await poke(env, campaignId, actor.id);
+    }
+
     const session = await (
       await sessionStub(env, campaignId).fetch('https://do/session')
     ).json<SessionState>();
@@ -1430,6 +1454,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           }
         : {}),
       statuses,
+      ...(body.spend && body.spend.amount > 0
+        ? { spend: { counter: body.spend.counter, amount: Math.round(body.spend.amount) } }
+        : {}),
       round: session?.round ?? 1,
     };
     await logEvent(env, campaignId, target.id, actorOf(auth), 'turn.resolved', resolved);

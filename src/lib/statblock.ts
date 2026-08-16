@@ -28,7 +28,11 @@ export type StatAttack = {
   /** Melee, Short, Long, Distant — the band it's usable at. */
   band: string;
   name: string;
-  grit: number;
+  /** What it costs to use, and the COUNTER that pays — read off the
+   *  printed line ("(4 Grit)"), never assumed, so a system that spends
+   *  something else spends it (rule 2). */
+  cost: number;
+  costUnit: string;
   /** The printed remainder, verbatim, for anything parsing missed. */
   effect: string;
   /** The damage pool, when the line names one. */
@@ -37,7 +41,7 @@ export type StatAttack = {
 };
 
 const BAND = /^(.+?)\s+—\s+(.+)$/;
-const ENTRY = /^(.+?)\s+\((\d+)\s+Grit\):\s*(.+)$/;
+const ENTRY = /^(.+?)\s+\((\d+)\s+([A-Za-z]+)\):\s*(.+)$/;
 const STATUS = /\b([A-Z][A-Za-z'’-]*(?: [A-Z][A-Za-z'’-]*)*)\s*\[(\d+)([BG])?\]/g;
 const POOL = /(?:\d+[BG])+/;
 
@@ -67,17 +71,42 @@ export function parseAttacks(field: string): StatAttack[] {
     for (const part of body.split(' · ')) {
       const entry = ENTRY.exec(part.trim());
       if (!entry) continue;
-      const effect = entry[3].trim();
+      const effect = entry[4].trim();
       const { statuses, rest } = pullStatuses(effect);
       out.push({
         band: label,
         name: entry[1].trim(),
-        grit: Number(entry[2]),
+        cost: Number(entry[2]),
+        costUnit: entry[3].trim(),
         effect,
         dice: POOL.exec(rest)?.[0] ?? null,
         statuses,
       });
     }
+  }
+  return out;
+}
+
+/**
+ * A printed field that is really a LIST of named things — features,
+ * trophies, a frenzy — split back into its parts.
+ *
+ * The pack stores each on its own line and names it with a leading
+ * "Perfect Camouflage. …", which reads fine in a book and terribly in
+ * a column, where it collapses into one grey wall. A block that
+ * doesn't announce a name keeps its text and loses nothing.
+ */
+export type NamedBlock = { name?: string; text: string };
+
+const NAMED = /^([A-Z][^.]{0,60})\.\s+(\S.*)$/s;
+
+export function namedBlocks(field: string): NamedBlock[] {
+  const out: NamedBlock[] = [];
+  for (const line of (field ?? '').split('\n')) {
+    const text = line.trim();
+    if (!text) continue;
+    const m = NAMED.exec(text);
+    out.push(m ? { name: m[1].trim(), text: m[2].trim() } : { text });
   }
   return out;
 }
@@ -97,7 +126,12 @@ const BANDS: [string, string][] = [
   ['distant', 'Distant'],
 ];
 
-type Fielded = { name: string; kind?: string; from?: string; fields?: { key: string; value: string }[] };
+type Fielded = {
+  name: string;
+  kind?: string;
+  from?: string;
+  fields?: { key: string; label?: string; value: string }[];
+};
 
 /**
  * What a person can swing, from what they're carrying.
@@ -119,14 +153,17 @@ export function weaponAttacks(
     const fields = source.fields ?? [];
     const at = (key: string) =>
       fields.find((f) => f.key.toLowerCase() === key)?.value?.trim() ?? '';
-    const grit = Number(at('grit')) || 0;
+    const costField = fields.find((f) => /^grit$|^cost$/i.test(f.key) && !/\$/.test(f.value));
+    const cost = Number(costField?.value) || 0;
+    const costUnit = (costField as { label?: string } | undefined)?.label ?? 'Grit';
     for (const [key, label] of BANDS) {
       const dice = at(key).replace(/\s+/g, '');
       if (!dice || !isPool(dice)) continue;
       out.push({
         band: label,
         name: item.name,
-        grit,
+        cost,
+        costUnit,
         effect: `${label} ${dice}`,
         dice,
         statuses: [],

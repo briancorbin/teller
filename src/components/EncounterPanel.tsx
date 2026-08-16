@@ -15,6 +15,7 @@ import type {
 import { newLocalId } from '../lib/api';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { QuickSpawn } from './BestiaryPanel';
+import { CreatureSheet } from './CreatureSheet';
 import { TurnStage, type Advice } from './TurnStage';
 import { VitalBar } from './Vitals';
 import type { DieArt } from './DicePool';
@@ -103,6 +104,8 @@ export function EncounterPanel({
     blocked: number;
     damage: number;
     statuses: { name: string; severity: number }[];
+    /** What the ACTOR pays for the turn, out of which counter. */
+    spend?: { counter: string; amount: number };
   }) => void;
   onDropToken: (characterId: string, label: string) => void;
   onSpawn: (npcId: string, count: number) => void;
@@ -123,6 +126,7 @@ export function EncounterPanel({
     characterId: string,
     action: string,
     result: string,
+    preface?: string,
   ) => Promise<TurnNarration>;
   /** The system's dice, so a suggested roll renders as tappable dice. */
   dice?: SystemTemplate['dice'];
@@ -136,8 +140,12 @@ export function EncounterPanel({
   catalog: Map<string, { name: string; kind?: string; fields?: { key: string; value: string }[] }>;
 }) {
   const [draft, setDraft] = useState('');
-  /** Rows opened to show the whole sheet, in the roster. */
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  /**
+   * The row whose full sheet is open, if any. A DIALOG now rather than
+   * an in-place expansion: a printed statblock unrolled inside a 15rem
+   * column was every fact and no shape (Brian, 2026-08-15).
+   */
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
   /** Setup, while a fight is running — closed by default, on purpose. */
   const [setupOpen, setSetupOpen] = useState(false);
   /**
@@ -203,10 +211,16 @@ export function EncounterPanel({
       );
   };
 
-  const tell = (entryId: string, characterId: string, action: string, result: string) => {
+  const tell = (
+    entryId: string,
+    characterId: string,
+    action: string,
+    result: string,
+    preface?: string,
+  ) => {
     if (!onNarrate || !result.trim()) return;
     setAdvice((prev) => ({ ...prev, [entryId]: { ...prev[entryId], narrating: true } }));
-    onNarrate(characterId, action, result)
+    onNarrate(characterId, action, result, preface)
       .then((n) =>
         setAdvice((prev) => ({
           ...prev,
@@ -220,14 +234,6 @@ export function EncounterPanel({
         })),
       );
   };
-
-  const toggleOpen = (id: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
 
   const set = (entries: InitiativeEntry[]) => onOp({ op: 'set', initiative: entries });
 
@@ -298,7 +304,6 @@ export function EncounterPanel({
     // Mid-roll, the LIST is the status board: a row still owed a
     // number says so on the row, not in a sentence above it.
     const owed = rolling && typeof entry.score !== 'number';
-    const expanded = open.has(entry.id);
     const dots = states.filter((s) => character?.data.tags.includes(s.name));
     const extra = character
       ? character.data.tags.filter((t) => !states.some((s) => s.name === t))
@@ -364,8 +369,8 @@ export function EncounterPanel({
               className={`min-w-0 flex-1 truncate text-left text-[13px] ${
                 isTurn ? 'text-amber-100' : 'text-stone-300 hover:text-stone-100'
               }`}
-              onClick={() => toggleOpen(entry.id)}
-              title="show the whole sheet"
+              onClick={() => setSheetFor(entry.id)}
+              title="everything about them"
             >
               {entry.label}
             </button>
@@ -407,7 +412,7 @@ export function EncounterPanel({
           {counter && character && (
             <span
               className={`flex shrink-0 items-center gap-0.5 transition-opacity ${
-                isTurn || isTarget || expanded
+                isTurn || isTarget
                   ? ''
                   : 'opacity-0 focus-within:opacity-100 group-hover:opacity-100'
               }`}
@@ -447,94 +452,6 @@ export function EncounterPanel({
 
         {counter && <VitalBar counter={counter} className="mt-1.5" />}
 
-        {character && expanded && (
-          <div className="mt-2 space-y-1.5 pl-5">
-            {/* Rearranging and removing are RARE — a few times a fight
-                against the constant −/+ — so they wait behind the same
-                click that opens the sheet, and the closed row keeps
-                its width for the name. */}
-            <div className="flex items-center gap-1">
-              <button className={btnGhost} onClick={() => move(index, -1)} aria-label="move up">
-                ↑
-              </button>
-              <button className={btnGhost} onClick={() => move(index, 1)} aria-label="move down">
-                ↓
-              </button>
-              {!tokenLinks.has(character.id) && (
-                <button
-                  className={btnGhost}
-                  title="drop a token on the live scene"
-                  onClick={() => onDropToken(character.id, entry.label)}
-                >
-                  ◌ token
-                </button>
-              )}
-              <button
-                className={`${btnGhost} ml-auto hover:text-red-300`}
-                onClick={() => set(initiative.filter((e) => e.id !== entry.id))}
-                aria-label="remove"
-              >
-                ✕ remove
-              </button>
-            </div>
-            {character.data.fields.filter((f) => f.value).length > 0 && (
-              <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                {character.data.fields
-                  .filter((f) => f.value)
-                  .map((f) => (
-                    <span key={f.key} className="font-mono text-[10px]">
-                      <span className="text-stone-600">{f.label} </span>
-                      <span className="text-stone-300">{f.value}</span>
-                    </span>
-                  ))}
-              </div>
-            )}
-            {character.data.counters
-              .filter((c) => c.id !== counter?.id)
-              .map((c) => (
-                <div key={c.id} className="flex items-center gap-1">
-                  <span className="min-w-20 font-mono text-[10px] text-stone-600">
-                    {c.name}
-                  </span>
-                  <button className={btnGhost} onClick={() => bump(character, c, -1)}>
-                    −
-                  </button>
-                  <span className="min-w-10 text-center font-mono text-[10px]">
-                    {c.current}
-                    {c.max !== null && <span className="text-stone-600">/{c.max}</span>}
-                  </span>
-                  <button className={btnGhost} onClick={() => bump(character, c, 1)}>
-                    +
-                  </button>
-                </div>
-              ))}
-            <div className="flex flex-wrap gap-1">
-              {states.map((state) => {
-                const on = character.data.tags.includes(state.name);
-                const visual = STATE_EFFECTS[state.effect ?? 'mark'];
-                return (
-                  <button
-                    key={state.name}
-                    className="rounded-full px-2 py-0.5 font-mono text-[10px] transition-colors"
-                    style={
-                      on
-                        ? { background: visual.chip, color: '#0c0a09' }
-                        : { background: '#1c1917', color: '#78716c' }
-                    }
-                    onClick={() => toggleTag(character, state.name)}
-                  >
-                    {state.name}
-                  </button>
-                );
-              })}
-            </div>
-            {character.data.notes && (
-              <p className="whitespace-pre-wrap text-[10px] leading-snug text-stone-500">
-                {character.data.notes}
-              </p>
-            )}
-          </div>
-        )}
       </li>
     );
   };
@@ -722,7 +639,8 @@ export function EncounterPanel({
                 onSuggest={onSuggest ? () => ask(active.id, actor.id) : undefined}
                 onNarrate={
                   onNarrate
-                    ? (action, result) => tell(active.id, actor.id, action, result)
+                    ? (action, result, preface) =>
+                        tell(active.id, actor.id, action, result, preface)
                     : undefined
                 }
                 onPatchCharacter={onPatchCharacter}
@@ -750,6 +668,55 @@ export function EncounterPanel({
           the order and the setup together. Running, it lives under the
           stage instead — beside the turn it advances. */}
       {!running && turnControls}
+
+      {/* Look somebody up. The rare row actions — reorder, remove, put a
+          token down — ride along here rather than crowding a row you
+          read eight of at a glance. */}
+      {(() => {
+        const index = initiative.findIndex((e) => e.id === sheetFor);
+        const entry = index >= 0 ? initiative[index] : undefined;
+        const who = entry?.characterId
+          ? characters.find((c) => c.id === entry.characterId)
+          : undefined;
+        if (!entry || !who) return null;
+        return (
+          <CreatureSheet
+            character={who}
+            npcs={npcs}
+            onClose={() => setSheetFor(null)}
+            onBump={(counter, delta) => bump(who, counter, delta)}
+            onToggleTag={(tag) => toggleTag(who, tag)}
+            actions={
+              <>
+                <button className={btnGhost} onClick={() => move(index, -1)} title="earlier in the order">
+                  ↑
+                </button>
+                <button className={btnGhost} onClick={() => move(index, 1)} title="later in the order">
+                  ↓
+                </button>
+                {!tokenLinks.has(who.id) && (
+                  <button
+                    className={btnGhost}
+                    title="drop a token on the live scene"
+                    onClick={() => onDropToken(who.id, entry.label)}
+                  >
+                    ◌ token
+                  </button>
+                )}
+                <button
+                  className={`${btnGhost} hover:text-red-300`}
+                  onClick={() => {
+                    set(initiative.filter((e) => e.id !== entry.id));
+                    setSheetFor(null);
+                  }}
+                >
+                  ✕ remove
+                </button>
+              </>
+            }
+          />
+        );
+      })()}
     </section>
   );
 }
