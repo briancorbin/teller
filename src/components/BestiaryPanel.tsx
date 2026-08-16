@@ -1,8 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { SourcedNpc } from '../../worker/bestiary';
-import { useBooks } from '../lib/use-books';
 import { btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
-import { BookReader, type BookTarget } from './BookReader';
+import { CreatureSheet } from './CreatureSheet';
 
 // The bestiary: everything you could put in front of the party.
 //
@@ -56,11 +55,9 @@ export function BestiaryPanel({
   /** Absent on a surface that may look but not decide. */
   onPick?: (npcId: string, packId: string) => void;
 }) {
-  const { books } = useBooks();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [count, setCount] = useState(1);
-  const [reading, setReading] = useState<BookTarget | null>(null);
   const [source, setSource] = useState<string | null>(null);
 
   // Every shelf represented here, biggest first. Derived from the foes
@@ -84,8 +81,10 @@ export function BestiaryPanel({
     [npcs, query, source],
   );
 
+  const shown = open ? npcs.find((n) => n.id === open) : undefined;
+
   return (
-    <section className={`${card} space-y-3`}>
+    <section className={`${card} @container space-y-3`}>
       <div className="flex items-center justify-between">
         <span className={sectionLabel}>Bestiary</span>
         <span className="font-mono text-[11px] text-stone-600">
@@ -156,18 +155,12 @@ export function BestiaryPanel({
       <ul className="space-y-1">
         {found.map((npc) => {
           const health = npc.counters.find((c) => /health|hp/i.test(c.name));
-          const description = npc.fields.find((f) => f.key === 'description');
-          const stats = npc.fields.filter((f) => f.key !== 'description');
-          const isOpen = open === npc.id;
-          // The page it's printed on — the art and the flavour a stat
-          // block can't carry. Only when the book is actually here.
-          const book =
-            npc.page && npc.book ? books.find((b) => b.id === npc.book) : undefined;
           return (
             <li key={npc.id} className="rounded-md bg-stone-900">
               <button
                 className="flex w-full items-baseline gap-2 px-2 py-1.5 text-left"
-                onClick={() => setOpen(isOpen ? null : npc.id)}
+                onClick={() => setOpen(npc.id)}
+                title="see the whole printing"
               >
                 <span className="min-w-0 flex-1 truncate text-sm text-stone-100">
                   {npc.name}
@@ -181,113 +174,6 @@ export function BestiaryPanel({
                   {npc.from ?? 'yours'}
                 </span>
               </button>
-
-              {isOpen && (
-                <div className="space-y-2 border-t border-stone-800 px-2 py-2">
-                  {stats.length > 0 && (
-                    <div className="flex flex-wrap gap-x-4 gap-y-1">
-                      {stats.map((f) => (
-                        <span key={f.key} className="font-mono text-xs text-stone-400">
-                          <span className="text-stone-600">{f.label}</span> {f.value}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap gap-x-4 gap-y-1">
-                    {npc.counters.map((c) => (
-                      <span key={c.id} className="font-mono text-xs text-amber-400/80">
-                        <span className="text-stone-600">{c.name}</span>{' '}
-                        {c.max ?? c.current}
-                      </span>
-                    ))}
-                  </div>
-                  {description && (
-                    <p className="text-xs leading-relaxed text-stone-400">
-                      {description.value}
-                    </p>
-                  )}
-                  <div className="flex items-center gap-2">
-                    <button className={btnPrimary} onClick={() => onSpawn(npc.id, count)}>
-                      add {count > 1 ? `${count} ` : ''}to the fight
-                    </button>
-                    {/* One printing: the page is just a link. */}
-                    {book && (npc.sources?.length ?? 0) < 2 && (
-                      <button
-                        className={`${btnGhost} text-[11px] text-amber-400/90`}
-                        onClick={() =>
-                          setReading({ bookId: book.id, page: npc.page!, name: book.name })
-                        }
-                      >
-                        {book.name} · p.{npc.page} →
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Printed more than once — a core bestiary and the
-                      adventure that reprints it. Show every printing and
-                      let the Warden say which one this table uses; the
-                      others stay one tap away. */}
-                  {(npc.sources?.length ?? 0) > 1 && (
-                    <div className="space-y-1 border-t border-stone-800 pt-2">
-                      <div className="font-mono text-[10px] uppercase tracking-wide text-stone-600">
-                        printed in {npc.sources!.length} books
-                      </div>
-                      {npc.sources!.map((s) => {
-                        const src = books.find((b) => b.id === s.book);
-                        // The server says which printing won — it depends
-                        // on the campaign's pack ORDER, and a client that
-                        // guessed "the first one" was right by accident
-                        // until precedence became explicit.
-                        const chosen = npc.fromId
-                          ? npc.fromId === s.packId
-                          : picks?.[npc.id] === s.packId;
-                        return (
-                          <div key={s.packId} className="flex items-center gap-2">
-                            {onPick ? (
-                              <button
-                                className={`${btnGhost} font-mono text-[11px] ${
-                                  chosen ? 'text-amber-400' : 'text-stone-600'
-                                }`}
-                                onClick={() => onPick(npc.id, s.packId)}
-                                title={
-                                  chosen
-                                    ? 'this printing is the one this table uses'
-                                    : 'use this printing instead'
-                                }
-                                aria-pressed={chosen}
-                              >
-                                {chosen ? '●' : '○'} {s.pack}
-                              </button>
-                            ) : (
-                              <span className="font-mono text-[11px] text-stone-500">
-                                {s.pack}
-                              </span>
-                            )}
-                            {src && s.page ? (
-                              <button
-                                className={`${btnGhost} ml-auto text-[11px] text-amber-400/90`}
-                                onClick={() =>
-                                  setReading({
-                                    bookId: src.id,
-                                    page: s.page!,
-                                    name: src.name,
-                                  })
-                                }
-                              >
-                                {src.name} · p.{s.page} →
-                              </button>
-                            ) : (
-                              <span className="ml-auto font-mono text-[11px] text-stone-700">
-                                {s.book ? 'book not on this host' : 'no page'}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
             </li>
           );
         })}
@@ -302,7 +188,57 @@ export function BestiaryPanel({
         )}
       </ul>
 
-      {reading && <BookReader target={reading} onClose={() => setReading(null)} />}
+      {/*
+        A printing you looked up is a DETOUR, and a detour should
+        announce itself and end (Brian, 2026-08-15: "can it be a popup
+        modal like the encounter … instead of it opening up on the
+        page"). Expanding in place pushed sixty rows down the screen and
+        left you scrolling to find where you were.
+
+        The sheet takes a character, and a blueprint is not one — no
+        campaign, no tags, nothing anybody is spending down. So it wears
+        a character's shape for the length of one read-only view, and
+        the sheet renders its counters as what the BOOK prints rather
+        than as bars with steppers.
+      */}
+      {shown && (
+        <CreatureSheet
+          character={{
+            id: shown.id,
+            campaignId: '',
+            name: shown.name,
+            kind: 'npc',
+            data: {
+              fields: shown.fields,
+              counters: shown.counters,
+              tags: [],
+              items: [],
+              blueprintId: shown.id,
+              notes: '',
+            },
+            createdAt: '',
+            updatedAt: '',
+          }}
+          npcs={[shown]}
+          picks={picks}
+          onPick={onPick}
+          onClose={() => setOpen(null)}
+          actions={
+            <button
+              className={btnPrimary}
+              onClick={() => {
+                onSpawn(shown.id, count);
+                setOpen(null);
+              }}
+            >
+              add {count > 1 ? `${count} ` : ''}to the fight
+            </button>
+          }
+        />
+      )}
+
+      {/* The book itself opens from inside the sheet now — the row that
+          used to own a reader is just a row again. */}
     </section>
   );
 }

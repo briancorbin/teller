@@ -21,7 +21,7 @@ import {
 } from './displays';
 import { bookRoutes } from './books';
 import { getSystem, listSystems } from './systems';
-import { bundleFilename, exportCampaign } from './bundle';
+import { bundleFilename, exportCampaign, type BundleSections } from './bundle';
 import { bestiaryFor, findBlueprint, stamp } from './bestiary';
 import {
   installPack,
@@ -43,9 +43,12 @@ import type {
   Campaign,
   Character,
   CharacterData,
+  ResolvedTurn,
+  TokenMove,
   Counter,
   RulesPack,
   SessionOp,
+  Spend,
   SessionState,
   Token,
 } from './types';
@@ -240,10 +243,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     const campaignId = m[1];
     const ask = m[2];
-    const { characterId, action, result } = await request.json<{
+    const { characterId, action, result, preface, intent } = await request.json<{
       characterId?: string;
       action?: string;
       result?: string;
+      preface?: string;
+      /** The Warden decided the turn themselves; dress it, don't choose it. */
+      intent?: string;
     }>();
     if (!characterId) return err('characterId required', 400);
     if (ask === 'narrate' && (!action || !result)) {
@@ -294,6 +300,99 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       }
     }
 
+    // What has already happened, attributed and oldest-first.
+    //
+    // SELECTION, not a bigger window (Brian, 2026-08-15: "I'd not want
+    // something important involving the current actor to get lost").
+    // A flat recency cap ages out in the worst possible order — eight
+    // combatants trading blows will bury this creature's own grapple
+    // from round one under eleven exchanges between strangers, and the
+    // grapple is the single most load-bearing fact for its turn.
+    //
+    // So two reads: everything involving THIS combatant, which can
+    // never fall off, plus the recent past for situational awareness.
+    // `entity_id` is the target, and the actor is in the payload.
+    const [own, latest] = await Promise.all([
+      env.DB.prepare(
+        `SELECT id, payload FROM events
+           WHERE campaign_id = ? AND kind = 'turn.resolved'
+             AND (entity_id = ? OR json_extract(payload, '$.by') = ?)
+           ORDER BY id DESC LIMIT 10`,
+      )
+        .bind(campaignId, characterId, characterId)
+        .all(),
+      env.DB.prepare(
+        `SELECT id, payload FROM events
+           WHERE campaign_id = ? AND kind = 'turn.resolved'
+           ORDER BY id DESC LIMIT 10`,
+      )
+        .bind(campaignId)
+        .all(),
+    ]);
+    const seen = new Map<number, ResolvedTurn>();
+    for (const row of [...own.results, ...latest.results]) {
+      const { id, payload } = row as { id: number; payload: string };
+      if (seen.has(id)) continue;
+      try {
+        const parsed = JSON.parse(String(payload)) as ResolvedTurn;
+        // The actor is what makes a line readable; a target is not.
+        if (parsed?.byName) seen.set(id, parsed);
+      } catch {
+        // A payload we can't read is one line of history, not an error.
+      }
+    }
+    // History outlives the creatures in it, and shouldn't.
+    //
+    // Clear the table and redeploy and you get NEW characters wearing
+    // the old names, while the log still describes the dead ones — so
+    // the board says a foe is at full health and the history says it
+    // took two, which is exactly the contradiction the model caught
+    // and flagged ("Board lists 34/34; log shows 32 — check tracker").
+    // A line about somebody who no longer exists isn't context, it's a
+    // ghost; drop it and let the board speak.
+    const alive = new Set(characters.map((c) => c.id));
+    const recent = [...seen.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, r]) => r)
+      .filter((r) => alive.has(r.by) && (!r.target || alive.has(r.target)));
+
+    // Movement, same selection rule: this creature's own crossings
+    // never age out, and the rest is whoever moved lately.
+    const [ownMoves, lateMoves] = await Promise.all([
+      env.DB.prepare(
+        `SELECT id, payload FROM events
+           WHERE campaign_id = ? AND kind = 'token.moved' AND entity_id = ?
+           ORDER BY id DESC LIMIT 6`,
+      )
+        .bind(campaignId, characterId)
+        .all(),
+      env.DB.prepare(
+        `SELECT id, payload FROM events
+           WHERE campaign_id = ? AND kind = 'token.moved'
+           ORDER BY id DESC LIMIT 10`,
+      )
+        .bind(campaignId)
+        .all(),
+    ]);
+    const movesById = new Map<number, TokenMove>();
+    for (const row of [...ownMoves.results, ...lateMoves.results]) {
+      const { id, payload } = row as { id: number; payload: string };
+      if (movesById.has(id)) continue;
+      try {
+        const parsed = JSON.parse(String(payload)) as TokenMove;
+        if (parsed?.tokenId && parsed.to) movesById.set(id, parsed);
+      } catch {
+        // One unreadable line of history, not an error.
+      }
+    }
+    // Same for movement: a token that belonged to a cleared creature
+    // is a ghost walking. A move with no character at all (a marker,
+    // a prop) is kept — nobody's health contradicts it.
+    const moves = [...movesById.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, m]) => m)
+      .filter((m) => !m.characterId || alive.has(m.characterId));
+
     try {
       const template = await getSystem(env, campaign.system);
       return json(
@@ -308,6 +407,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               result!,
               heightInches,
               template?.space,
+              recent,
+              moves,
+              preface,
+              template?.bands,
+              template?.statuses,
             )
           : await suggestTurn(
               env,
@@ -317,6 +421,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               foe,
               heightInches,
               template?.space,
+              recent,
+              moves,
+              template?.bands,
+              template?.statuses,
+              intent,
             ),
       );
     } catch (e) {
@@ -510,23 +619,27 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     const all = chars.results.map((r) => toCharacter(r as never));
     const template = await getSystem(env, campaign.system);
 
-    // Sections are opt-out, so you can take the structure without the
-    // hundred megabytes of art when all you want is the shape.
+    // Sections are opt-out and default to EVERYTHING (Brian,
+    // 2026-08-16: "the export should just be everything… you get to
+    // decide WHAT gets included"). A full backup and an author's
+    // starting snapshot are the same file; which one you're making is
+    // a thing you say, not a thing teller guesses.
     const want = (name: string) => url.searchParams.get(name) !== '0';
 
-    // A bundle's job is to START a table, not to preserve one — the
-    // host's database is where a campaign continues to live. So by
-    // default this exports the module shape: the cast, the prepared
-    // fights, the maps. NPCs currently on the table are a fight in
-    // progress and belong to this table only; `?live=1` takes them
-    // anyway, for handing your actual game to someone else.
-    const live = url.searchParams.get('live') === '1';
-    const characters = live ? all : all.filter((c) => c.kind === 'pc');
-
-    const body = exportCampaign(env, campaign, characters, template, {
-      books: want('books'),
+    // The creatures on the table travel unless you say otherwise. This
+    // used to be the reverse — the default dropped them, so the only
+    // export the console could make was a backup with the fight
+    // missing from it, which is the one thing a backup must not do.
+    const sections: BundleSections = {
       assets: want('assets'),
-    });
+      books: want('books'),
+      live: want('live'),
+      events: want('events'),
+      undo: want('undo'),
+    };
+    const characters = sections.live ? all : all.filter((c) => c.kind === 'pc');
+
+    const body = exportCampaign(env, campaign, characters, template, sections);
     return new Response(body, {
       headers: {
         'content-type': 'application/zip',
@@ -1246,6 +1359,332 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
   // Stamp a blueprint out into real characters. One request so a group
   // arrives together; what comes back is ordinary characters — editable,
   // deletable, and no longer linked to the blueprint.
+  /**
+   * One exchange, landed and RECORDED AS ONE ACT.
+   *
+   * The client could apply damage with an ordinary character PATCH —
+   * it used to — but then the state change and the story of it are two
+   * writes that can drift, and the log ends up saying "the dm changed
+   * some counters" about the moment a monster got someone by the legs.
+   * Applying here means the event cannot disagree with the state it
+   * describes, and the assistant gets a history worth reading.
+   *
+   * Still nothing automatic: this runs because a human pressed apply
+   * on arithmetic teller had already shown them (rule 1).
+   */
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/resolve$/);
+  if (m && method === 'POST') {
+    const campaignId = m[1];
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const body = await request.json<{
+      actorId?: string;
+      targetId?: string;
+      /** Everyone caught, for an area action. `targetId` is the one-target case. */
+      targets?: string[];
+      action?: string;
+      hits?: number;
+      blocked?: number;
+      damage?: number;
+      statuses?: { name: string; severity: number }[];
+      /** One line or many — a turn that moved AND swung says both. */
+      spend?: Spend | Spend[];
+      /** Conditions eased or shaken off. No `by` means all the way off. */
+      relieve?: { name: string; by?: number }[];
+    }>();
+    // A turn that hits nobody is still a turn (TEL-98, found in play).
+    // The assistant is instructed in as many words to omit `target`
+    // for moving, hiding and waiting — and this route then refused the
+    // result, so a creature that slipped into the brush paid no Grit,
+    // wrote no event, and left a history the model reads with the
+    // clever half missing. The ACTOR is what an exchange requires.
+    if (!body.actorId) return err('actorId required', 400);
+
+    // One target or many. An AREA action has targets and not a target,
+    // and doing it as N separate calls wrote N events — the log then
+    // described four unrelated turns instead of one flood of mud.
+    const aimed = [
+      ...new Set([...(body.targets ?? []), ...(body.targetId ? [body.targetId] : [])]),
+    ].filter(Boolean);
+    const wanted = [...new Set([body.actorId, ...aimed])];
+    const rows = await env.DB.prepare(
+      `SELECT * FROM characters WHERE campaign_id = ? AND id IN (${wanted
+        .map(() => '?')
+        .join(', ')})`,
+    )
+      .bind(campaignId, ...wanted)
+      .all();
+    const found = rows.results.map((r) => toCharacter(r as never));
+    const actor = found.find((c) => c.id === body.actorId);
+    const targets = aimed
+      .map((id) => found.find((c) => c.id === id))
+      .filter(Boolean) as typeof found;
+    // The FIRST is the one every single-target reading still sees.
+    const target = targets[0];
+    if (!actor) return err('actor not in this campaign', 404);
+    // Naming a target teller can't find is a mistake worth reporting;
+    // naming none is a turn.
+    if (aimed.length !== targets.length) return err('target not in this campaign', 404);
+
+    const damage = Math.max(0, Math.round(body.damage ?? 0));
+    const statuses = (body.statuses ?? []).filter(
+      (s) => s && typeof s.name === 'string' && s.name.trim(),
+    );
+    // Conditions come OFF as well as on. Relieving is an action a
+    // player takes most turns they're afflicted — "roll up to your full
+    // dice from the Skill associated with the Status, each die costs 1
+    // Grit, reduce Severity by 1 per Hit" — and the resolve step could
+    // only ever ADD, so every relief in play was a hand-edit that the
+    // log never saw and the assistant never learned about.
+    const relieved = (body.relieve ?? []).filter(
+      (r) => r && typeof r.name === 'string' && r.name.trim(),
+    );
+
+    // How conditions combine is the SYSTEM's (rule 2); teller only
+    // insists there be ONE tag per condition. See `SystemTemplate.statuses`.
+    const stacking =
+      statuses.length || relieved.length
+        ? await (async () => {
+            const row = await env.DB.prepare('SELECT system FROM campaigns WHERE id = ?')
+              .bind(campaignId)
+              .first<{ system: string }>();
+            return row ? (await getSystem(env, row.system))?.statuses : undefined;
+          })()
+        : undefined;
+
+    const named = /^(.*?)\s+(\d+)$/;
+    const nameOf = (tag: string) => {
+      const m = named.exec(tag);
+      return (m ? m[1] : tag).toLowerCase();
+    };
+    const eased: { name: string; from: number; to: number | null }[] = [];
+
+    /**
+     * What this turn does to ONE body — run for each one caught.
+     *
+     * Damage and conditions are the same for everybody an area action
+     * catches: the book rolls Severity once for the attack, not once
+     * per victim, so the same numbers land on each.
+     *
+     * The vital counter is the first bounded one, exactly as every
+     * other surface decides it.
+     */
+    const landOn = (who: Character) => {
+      const vitalIndex = who.data.counters.findIndex((c) => c.max !== null && c.max > 0);
+      const vital = vitalIndex >= 0 ? who.data.counters[vitalIndex] : undefined;
+      const counters = who.data.counters.map((c, i) =>
+        i === vitalIndex ? { ...c, current: Math.max(0, c.current - damage) } : c,
+      );
+      const tags = [...who.data.tags];
+      for (const st of statuses) {
+        const at = tags.findIndex((t) => nameOf(t) === st.name.toLowerCase());
+        if (at < 0) {
+          const tag = `${st.name} ${st.severity}`.trim();
+          if (!tags.includes(tag)) tags.push(tag);
+          continue;
+        }
+        const had = Number(named.exec(tags[at])?.[2] ?? 0);
+        const mode = stacking?.stack ?? 'higher';
+        let next =
+          mode === 'sum'
+            ? had + st.severity
+            : mode === 'replace'
+              ? st.severity
+              : Math.max(had, st.severity);
+        const exempt = (stacking?.uncapped ?? []).some(
+          (n) => n.toLowerCase() === st.name.toLowerCase(),
+        );
+        if (stacking?.cap !== undefined && !exempt) next = Math.min(stacking.cap, next);
+        tags[at] = `${st.name} ${next}`.trim();
+      }
+      // Off, after on — so a turn that both lands and eases something
+      // reads in the order it happened.
+      for (const r of relieved) {
+        const at = tags.findIndex((t) => nameOf(t) === r.name.toLowerCase());
+        if (at < 0) continue;
+        const had = Number(named.exec(tags[at])?.[2] ?? 0);
+        // No `by` means all the way off — clearing is the common case
+        // and shouldn't need a number nobody has to hand.
+        const next = r.by === undefined ? 0 : Math.max(0, had - Math.round(r.by));
+        eased.push({ name: r.name, from: had, to: next > 0 ? next : null });
+        if (next > 0) tags[at] = `${r.name} ${next}`.trim();
+        else tags.splice(at, 1);
+      }
+      return {
+        data: { ...who.data, counters, tags } as CharacterData,
+        ...(vital
+          ? {
+              vital: {
+                name: vital.name,
+                from: vital.current,
+                to: Math.max(0, vital.current - damage),
+              },
+            }
+          : {}),
+      };
+    };
+
+    /**
+     * Every write is computed BEFORE any of them lands, and a character
+     * who is their own target is written once.
+     *
+     * Relieving is self-targeted, which walked straight into this: the
+     * target write set the tags, then the actor write paid the Grit out
+     * of the data as it was READ, putting the condition back. Two
+     * updates to one row, the second built on a stale copy.
+     */
+    const landed = targets.map((who) => ({ who, ...landOn(who) }));
+    const vital = landed[0]?.vital;
+
+    // The ACTOR pays for the turn (Brian, 2026-08-15: "it didn't deduct
+    // grit from the npc"). An exchange was only ever half-written down:
+    // the target lost health and the thing that swung paid nothing, so
+    // a creature could attack every round forever. The counter is NAMED
+    // by the caller — read off the attack's own printed cost — because
+    // what a turn spends is the system's business, not teller's.
+    // Line items, not a lump. One line still arrives as one object from
+    // older callers and normalises to a list of one.
+    const spends: Spend[] = (
+      Array.isArray(body.spend) ? body.spend : body.spend ? [body.spend] : []
+    )
+      // A line worth ZERO is kept when it says what it bought, and it
+      // is the most useful line in the log: "Echoes of Nature — 0 Grit"
+      // is precisely the fact whose absence made the next creature
+      // price a free ability at a Grit. A bare zero with no `on`
+      // carries nothing and is dropped.
+      .filter((s) => s?.counter && Number(s.amount) >= 0 && (Number(s.amount) > 0 || s.on))
+      .map((s) => ({
+        counter: String(s.counter),
+        amount: Math.round(Number(s.amount)),
+        ...(s.on ? { on: String(s.on) } : {}),
+      }));
+
+    // The actor may be among the bodies it just acted on — relieving is
+    // always that, and an area action can catch its own caster.
+    const selfHit = landed.find((l) => l.who.id === actor.id);
+    let actorData: CharacterData | undefined = selfHit?.data;
+    if (spends.length) {
+      // Two lines out of the same counter come off it once.
+      const owed = new Map<string, number>();
+      for (const s of spends) {
+        const key = s.counter.toLowerCase();
+        owed.set(key, (owed.get(key) ?? 0) + s.amount);
+      }
+      const base = actorData ?? actor.data;
+      actorData = {
+        ...base,
+        counters: base.counters.map((c) => {
+          const due = owed.get(c.name.toLowerCase());
+          return due ? { ...c, current: Math.max(0, c.current - due) } : c;
+        }),
+      };
+    }
+
+    const writes: [string, CharacterData][] = [];
+    for (const l of landed) if (l.who.id !== actor.id) writes.push([l.who.id, l.data]);
+    if (actorData) writes.push([actor.id, actorData]);
+    for (const [id, data] of writes) {
+      await env.DB.prepare(
+        "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
+      )
+        .bind(JSON.stringify(data), id)
+        .run();
+      await poke(env, campaignId, id);
+    }
+
+    const session = await (
+      await sessionStub(env, campaignId).fetch('https://do/session')
+    ).json<SessionState>();
+
+    const resolved: ResolvedTurn = {
+      by: actor.id,
+      byName: actor.name,
+      ...(target ? { target: target.id, targetName: target.name } : {}),
+      // Only when it's genuinely a crowd — a single target already reads
+      // in full above, and repeating it would be noise in every log line.
+      ...(landed.length > 1
+        ? {
+            targets: landed.map((l) => ({
+              id: l.who.id,
+              name: l.who.name,
+              ...(l.vital ? { vital: l.vital } : {}),
+            })),
+          }
+        : {}),
+      // "an attack" is the right guess only when something was hit.
+      action: (body.action ?? '').trim() || (target ? 'an attack' : 'a turn'),
+      hits: Math.max(0, Math.round(body.hits ?? 0)),
+      blocked: Math.max(0, Math.round(body.blocked ?? 0)),
+      damage,
+      // Already the transition, worked out per body by `landOn`.
+      ...(vital ? { vital } : {}),
+      statuses,
+      ...(eased.length ? { relieved: eased } : {}),
+      ...(spends.length ? { spend: spends } : {}),
+      round: session?.round ?? 1,
+    };
+    // `entity_id` is the one it happened TO, which for a turn aimed at
+    // nobody is the one who took it — the history read matches on
+    // entity_id OR payload.by, so either way this creature's own turns
+    // can never age out from under it.
+    const subject = target?.id ?? actor.id;
+    await logEvent(env, campaignId, subject, actorOf(auth), 'turn.resolved', resolved);
+    await poke(env, campaignId, subject);
+
+    // Everyone the turn touched comes back, so a caller doesn't have to
+    // refetch to learn what an area attack did. `character` stays the
+    // first of them for every reader that only ever expected one.
+    const touched = [...new Set([...landed.map((l) => l.who.id), ...(actorData ? [actor.id] : [])])];
+    const after = touched.length
+      ? await env.DB.prepare(
+          `SELECT * FROM characters WHERE id IN (${touched.map(() => '?').join(', ')})`,
+        )
+          .bind(...touched)
+          .all()
+      : { results: [] as unknown[] };
+    const characters = after.results.map((r) => toCharacter(r as never));
+    return json({
+      character: characters.find((c) => c.id === subject) ?? characters[0] ?? null,
+      characters,
+      resolved,
+    });
+  }
+
+  /**
+   * A token finished crossing ground. Records only — the scene write
+   * that moved it already happened, and re-applying it here would make
+   * two authorities for one position. If this call is lost, the token
+   * is still where the Warden put it and only the history is thinner.
+   */
+  m = pathname.match(/^\/api\/campaigns\/([^/]+)\/moved$/);
+  if (m && method === 'POST') {
+    const campaignId = m[1];
+    if (!dm(campaignId)) return err('DM key required', 401);
+    const body = await request.json<Omit<TokenMove, 'round'>>();
+    if (!body?.tokenId || !body.from || !body.to) return err('a move needs its ends', 400);
+
+    const session = await (
+      await sessionStub(env, campaignId).fetch('https://do/session')
+    ).json<SessionState>();
+    const move: TokenMove = {
+      tokenId: body.tokenId,
+      ...(body.characterId ? { characterId: body.characterId } : {}),
+      label: String(body.label ?? 'something'),
+      from: { x: Number(body.from.x) || 0, y: Number(body.from.y) || 0 },
+      to: { x: Number(body.to.x) || 0, y: Number(body.to.y) || 0 },
+      distance: Math.round((Number(body.distance) || 0) * 10) / 10,
+      round: session?.round ?? 1,
+    };
+    await logEvent(
+      env,
+      campaignId,
+      move.characterId ?? null,
+      actorOf(auth),
+      'token.moved',
+      move,
+    );
+    return json({ ok: true });
+  }
+
   m = pathname.match(/^\/api\/campaigns\/([^/]+)\/spawn$/);
   if (m && method === 'POST') {
     const campaignId = m[1];
@@ -1466,10 +1905,66 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         }
       }
 
-      return sessionStub(env, campaignId).fetch('https://do/session', {
+      const res = await sessionStub(env, campaignId).fetch('https://do/session', {
         method: 'POST',
         body: JSON.stringify(op),
       });
+
+      // A turn STARTING is a thing that happens to a character, and in
+      // some systems it hands them their budget back. Nothing did this,
+      // so every reload was a human editing a counter by hand — and the
+      // assistant, which reads current values, was told a spent-out foe
+      // could barely act (found in play, 2026-08-15).
+      //
+      // Rule 1 holds three ways: the DM pressed next, the ceiling it
+      // refills to is itself a stored editable number, and the whole
+      // thing appends an event so /undo can walk it back (rule 3).
+      // Only on `next` — you cannot un-spend a turn, so stepping BACK
+      // must not hand anybody a full purse.
+      if (op.op === 'next' && res.ok) {
+        const state = (await res.clone().json()) as SessionState;
+        const up = state.turn !== null ? state.initiative[state.turn] : undefined;
+        if (up?.characterId) {
+          const campaignRow = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
+            .bind(campaignId)
+            .first();
+          const campaign = campaignRow ? toCampaign(campaignRow as never) : null;
+          const template = campaign ? await getSystem(env, campaign.system) : null;
+          const rules = template?.reload ?? [];
+          if (rules.length) {
+            const row = await env.DB.prepare('SELECT * FROM characters WHERE id = ?')
+              .bind(up.characterId)
+              .first();
+            if (row) {
+              const who = toCharacter(row as never);
+              const filled: { name: string; from: number; to: number }[] = [];
+              const counters = who.data.counters.map((c) => {
+                const rule = rules.find(
+                  (r) => r.counter.toLowerCase() === c.name.toLowerCase(),
+                );
+                // Only a BOUNDED counter can come back to anything;
+                // an open-ended one has no "full" to return to.
+                if (!rule || c.max === null || c.current >= c.max) return c;
+                filled.push({ name: c.name, from: c.current, to: c.max });
+                return { ...c, current: c.max };
+              });
+              if (filled.length) {
+                await env.DB.prepare(
+                  "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
+                )
+                  .bind(JSON.stringify({ ...who.data, counters }), who.id)
+                  .run();
+                await logEvent(env, campaignId, who.id, 'dm', 'turn.reloaded', {
+                  round: state.round,
+                  counters: filled,
+                });
+                await poke(env, campaignId, who.id);
+              }
+            }
+          }
+        }
+      }
+      return res;
     }
     // Listening requires a ticket.
     //

@@ -836,6 +836,68 @@ export type SystemTemplate = {
    */
   space?: string;
   /**
+   * The same bands as DATA, so code can name a measurement.
+   *
+   * `space` is prose for the model to reason with; this is the table
+   * teller reads itself. Without it, nothing but a language model
+   * could turn 2.24 inches into "Short", which left the console
+   * talking to a Warden in TABLE units — "the Peril glides 2+ inches"
+   * — about a world where nothing is measured in inches (Brian,
+   * 2026-08-15: "it's kinda weird to see inches lol").
+   *
+   * Bounds are in table inches and half-open (`from` inclusive, `to`
+   * exclusive); `world` is what that distance IS out there, in the
+   * book's own words. Absent means teller says nothing about range and
+   * the prose stands alone — no band is invented here (rule 4: the
+   * numbers belong to the system, and this is a row).
+   */
+  bands?: { name: string; from?: number; to?: number; world?: string }[];
+  /**
+   * Counters that come back on their own, and when.
+   *
+   * An action budget that refills is a common shape and a system rule,
+   * not teller's: WiW's Grit "RELOADS at the start of each creature's
+   * turn", another game might refill on a short rest and a third might
+   * never refill anything. So the CADENCE is a row (rule 4) and teller
+   * only knows how to carry it out.
+   *
+   * Left undone this was a quiet correctness bug rather than a missing
+   * convenience: the assistant reads current values, so a foe that had
+   * spent itself dry last round was described to the model as a
+   * creature that could barely act, and it planned a smaller turn than
+   * the rules actually allow (found in play, 2026-08-15 — the Peril
+   * went into round 2 showing 1 of 6).
+   *
+   * `to: 'max'` is the only refill teller performs, because a counter's
+   * ceiling is the one target that's already stored and already
+   * editable — which is what keeps a debt working (TEL-97: an ability
+   * that drops your max next turn composes with this for free, instead
+   * of being erased by it).
+   */
+  reload?: { counter: string; at: 'turn'; to?: 'max' }[];
+  /**
+   * What happens when a condition lands on someone who already has it.
+   *
+   * teller's own rule is only that ONE condition is one tag: a target
+   * carrying `Trapped 1` and `Trapped 4` at the same time is a state no
+   * ruleset means and no surface can render, and the assistant reads
+   * both and is told its target is at once barely held and firmly held
+   * (found in play, 2026-08-15).
+   *
+   * HOW they combine is the system's, not teller's (rule 2). WiW sums
+   * severities and caps at 6 — except Trapped, which the book exempts
+   * by name ("Bagged 'n' Tagged"), and a teller that hardcoded 6 would
+   * be wrong about the very first grapple it saw. Absent a declaration
+   * the higher of the two wins, which is the least surprising thing
+   * that is never a silent double-count.
+   */
+  statuses?: {
+    stack?: 'sum' | 'higher' | 'replace';
+    cap?: number;
+    /** Names the cap doesn't apply to, in the book's own spelling. */
+    uncapped?: string[];
+  };
+  /**
    * How this system rolls, as DATA (rule 4, amended 2026-08-10).
    *
    * teller ships one small evaluator; a system arrives as a row rather
@@ -1852,6 +1914,24 @@ export type TurnSuggestion = {
    * record what the plastic said. teller never rolls here.
    */
   roll?: { dice: string; for: string };
+  /**
+   * The ATTEMPT, in words the Warden says out loud before anyone
+   * touches a die (Brian, 2026-08-15). `action` is the brief — what
+   * the foe is doing, in teller's voice, for the Warden. This is the
+   * table's half: the lunge described up to the instant of contact
+   * and stopped there, carrying no outcome, because the outcome
+   * hasn't happened yet. It is the front bookend to `narration`'s
+   * back one, and the dice go in between.
+   */
+  preface?: string;
+  /**
+   * Who the action is aimed at, by the exact name the fight calls
+   * them. A GUESS at where the damage lands, so the resolve step can
+   * open on the likely target instead of an empty picker — the Warden
+   * changes it with one tap and nothing is applied until they do
+   * (rule 1). Absent when the action targets nobody.
+   */
+  target?: string;
   /** Which model spoke — provenance on the card, not a warranty. */
   model: string;
 };
@@ -1867,6 +1947,107 @@ export type TurnNarration = {
   narration: string;
   model: string;
 };
+
+/**
+ * A token crossing ground (Brian, 2026-08-15: "movement and
+ * positioning should absolutely be included").
+ *
+ * The scene records where everything IS, which is a photograph. It has
+ * never recorded that anything MOVED, so a creature could watch someone
+ * walk out of its reach and know only that they are now far away — not
+ * that they backed off, nor that it has itself been sitting in the same
+ * water for three rounds. Positions are state; crossing ground is an
+ * event, and only one of those was being written down.
+ *
+ * Distances are in the map's own inches, which is the unit the system's
+ * range bands are written in.
+ */
+export type TokenMove = {
+  tokenId: string;
+  /** Absent for a token that isn't anybody — a marker, a prop. */
+  characterId?: string;
+  label: string;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  distance: number;
+  round: number;
+};
+
+/**
+ * One exchange, as the table ruled it (Brian, 2026-08-15).
+ *
+ * The event log already recorded that a character changed — rule 3 has
+ * always seen to that — but it recorded it as `dm` pressing a button
+ * with a counters array attached. Nothing in it knew that PONDWEED is
+ * why Barrett is Trapped, so the assistant, handed a lone status tag,
+ * invented a reason for it ("assuming Barrett's Trapped came from an
+ * earlier weed-snare") and played the turn off its own fiction.
+ *
+ * So a resolution says who did it to whom, which is the difference
+ * between a foe knowing it has someone in its coils and a foe guessing
+ * that somebody must have. `actor` in the events row stays what it has
+ * always been — the person who pressed it; this is the IN-FICTION
+ * actor, and the two are not the same question.
+ */
+export type ResolvedTurn = {
+  by: string;
+  byName: string;
+  /**
+   * Everyone it landed on, when that's more than one.
+   *
+   * An AREA action has targets and not a target — the Peril's Lake
+   * Sludge catches every body on the bank — and applying it meant one
+   * call per person, which wrote one event each and left the log
+   * describing four unrelated turns instead of one flood of mud.
+   * `target`/`targetName` stay filled for the ordinary single case, so
+   * everything that reads a one-on-one exchange still does.
+   */
+  targets?: { id: string; name: string; vital?: { name: string; from: number; to: number } }[];
+  /**
+   * Who it landed on — ABSENT for a turn aimed at nobody (TEL-98).
+   * Moving, hiding, readying, throwing a decoy sound: the assistant is
+   * told outright it may propose these, and they cost their actor
+   * something whether or not anyone was on the other end. The actor is
+   * the required half of an exchange; the target never was.
+   */
+  target?: string;
+  targetName?: string;
+  /** What it was called — the attack's own name where there is one. */
+  action: string;
+  hits: number;
+  blocked: number;
+  damage: number;
+  /** The vital counter's transition, when the target had one. */
+  vital?: { name: string; from: number; to: number };
+  statuses: { name: string; severity: number }[];
+  /**
+   * Conditions this turn eased or shook off — `to: null` means gone.
+   *
+   * Relieving is an action a player takes most turns they're afflicted,
+   * and the resolve step could only ever ADD, so every relief was a
+   * hand-edit the log never saw. A creature deciding its turn wants to
+   * know its grapple is slipping.
+   */
+  relieved?: { name: string; from: number; to: number | null }[];
+  /** What the turn cost its actor, line by line. */
+  spend?: Spend[];
+  round: number;
+};
+
+/**
+ * One line of what a turn cost, and what it BOUGHT.
+ *
+ * `on` is the whole point of this shape. A lump total is ambiguous the
+ * moment a turn does two things, and the history is read by a model:
+ * a Bark Watcher moved and used a free ability, the log said "spent 1
+ * Grit", and the next creature concluded the ABILITY costs a Grit and
+ * stated it as fact in its premises (found in play, 2026-08-15). The
+ * cost was the movement; nothing about the log let it tell.
+ *
+ * A total anyone has to reverse-engineer is a total that gets
+ * reverse-engineered wrong. Say what each part paid for.
+ */
+export type Spend = { counter: string; amount: number; on?: string };
 
 /**
  * The shop that's OPEN, and every cart in it. Live state that more than

@@ -13,19 +13,27 @@ import type {
   TurnSuggestion,
 } from '../../worker/types';
 import { newLocalId } from '../lib/api';
-import { packArtUrl } from '../lib/creation';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { QuickSpawn } from './BestiaryPanel';
+import { CreatureSheet } from './CreatureSheet';
+import { TurnStage, type Advice } from './TurnStage';
+import { VitalBar } from './Vitals';
+import type { DieArt } from './DicePool';
 import { STATE_EFFECTS } from './token-visuals';
 
-// The encounter: turn order, plus everything you reach for while it's
-// running. Order is still a manually arranged list — teller models no
-// system's initiative mechanics; the table decides and the DM matches.
+// The encounter, as two different tools wearing one panel.
 //
-// What's new here is reach: the vital counter is one tap away, states
-// are one tap away, and a combatant's token is one tap from existing.
-// Nothing computes: teller may OFFER a state when a counter crosses a
-// line, but only the DM applies it (rules 1 and 2).
+// STAGING and RUNNING are not the same job, and the panel used to look
+// identical doing both — eleven controls on every row of eight, with
+// the bestiary and the whole unseated posse holding permanent ground
+// underneath a fight in progress. Now the roster is a thing you SCAN
+// (one line, a bar, a dot) and the stage is the one combatant you're
+// actually operating. Setup folds away the moment a fight starts.
+//
+// The split is driven by a CONTAINER query, not a breakpoint: this
+// panel is the whole pane on a desktop console and a 22rem sidebar in
+// the full console, and it should answer to its own width rather than
+// to a list of devices that the client deliberately doesn't keep.
 
 /** The counter a state watches, else the first bounded one. */
 function vitalCounter(
@@ -55,49 +63,6 @@ function suggestions(
   });
 }
 
-/** "3B2G" → ['B','B','B','G','G'] — a printed pool as individual dice. */
-function expandPool(pool: string): string[] {
-  const out: string[] = [];
-  for (const [, n, letter] of pool.matchAll(/(\d+)([A-Za-z])/g)) {
-    for (let i = 0; i < Number(n); i++) out.push(letter.toUpperCase());
-  }
-  return out;
-}
-
-/**
- * Roll a pool digitally — for FOES only, and the result lands in the
- * same tappable chips, so any die is one tap from overruled (rule 1).
- * Rolling for monsters is settled ground (rule 5, as amended): the
- * players' dice stay physical; a handful of monster dice is exactly
- * the bookkeeping teller may take. Uniform pick over the faces array
- * IS the die — B lists hit twice and blank twice, so the weights ride
- * in for free.
- */
-function rollPool(pool: string, dice: SystemTemplate['dice']): string[] {
-  const letters = expandPool(pool);
-  const picks = new Uint32Array(letters.length);
-  crypto.getRandomValues(picks);
-  return letters.map((letter, i) => {
-    const faces = dice?.faces[letter] ?? [];
-    return faces.length ? faces[picks[i] % faces.length] : 'blank';
-  });
-}
-
-/** What the tapped dice add up to, in the system's own unit. */
-function tallyFaces(
-  faces: (string | null)[],
-  dice: SystemTemplate['dice'],
-): { set: number; total: number } {
-  let set = 0;
-  let total = 0;
-  for (const face of faces) {
-    if (!face) continue;
-    set++;
-    total += dice?.values[face] ?? 0;
-  }
-  return { set, total };
-}
-
 export function EncounterPanel({
   session,
   characters,
@@ -106,6 +71,7 @@ export function EncounterPanel({
   tokenLinks,
   onOp,
   onPatchCharacter,
+  onResolve,
   onDropToken,
   onSpawn,
   onRollNpcs,
@@ -113,6 +79,7 @@ export function EncounterPanel({
   onNarrate,
   dice,
   dieArt,
+  catalog,
 }: {
   session: SessionState | null;
   characters: Character[];
@@ -123,6 +90,26 @@ export function EncounterPanel({
   tokenLinks: Set<string>;
   onOp: (op: SessionOp) => void;
   onPatchCharacter: (id: string, patch: { data?: Partial<CharacterData> }) => void;
+  /**
+   * Land an exchange: damage and statuses onto the target, and one
+   * attributed line into the log. Separate from `onPatchCharacter`
+   * because the log has to know a FOE did this to a PERSON, not that
+   * the dm edited some counters (rule 3, finally saying who).
+   */
+  onResolve: (body: {
+    actorId: string;
+    /** Absent for a turn aimed at nobody — moving, hiding, waiting. */
+    targetId?: string;
+    /** Everyone caught, for an area action. */
+    targets?: string[];
+    action: string;
+    hits: number;
+    blocked: number;
+    damage: number;
+    statuses: { name: string; severity: number }[];
+    /** Line items — what each part of the turn paid for. */
+    spend?: { counter: string; amount: number; on?: string }[];
+  }) => void;
   onDropToken: (characterId: string, label: string) => void;
   onSpawn: (npcId: string, count: number) => void;
   /** Open the rolling phase and roll for the monsters in one act. */
@@ -132,16 +119,17 @@ export function EncounterPanel({
    * is configured, and the button simply doesn't exist — an
    * unconfigured host never nags (rule 7).
    */
-  onSuggest?: (characterId: string) => Promise<TurnSuggestion>;
+  onSuggest?: (characterId: string, intent?: string) => Promise<TurnSuggestion>;
   /**
    * The second click (Brian's two-step): the Warden runs the action
-   * with REAL dice, types what the table rolled, and Teller hands back
-   * words to read aloud. Absent alongside onSuggest.
+   * with REAL dice, records what the table rolled, and Teller hands
+   * back words to read aloud. Absent alongside onSuggest.
    */
   onNarrate?: (
     characterId: string,
     action: string,
     result: string,
+    preface?: string,
   ) => Promise<TurnNarration>;
   /** The system's dice, so a suggested roll renders as tappable dice. */
   dice?: SystemTemplate['dice'];
@@ -150,72 +138,92 @@ export function EncounterPanel({
    * shows it — `creation.marks` from whichever pack carries it, plus
    * the pack version for cache-busting. Absent = text chips.
    */
-  dieArt?: { marks: Record<string, string>; version: number };
+  dieArt?: DieArt;
+  /** The pack's items by id — a person's attacks are their gear. */
+  catalog: Map<string, { name: string; kind?: string; fields?: { key: string; value: string }[] }>;
 }) {
   const [draft, setDraft] = useState('');
-  /** Rows opened to show the whole sheet. Running a monster shouldn't
-   *  mean leaving the fight to go and read it. */
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  /**
+   * The row whose full sheet is open, if any. A DIALOG now rather than
+   * an in-place expansion: a printed statblock unrolled inside a 15rem
+   * column was every fact and no shape (Brian, 2026-08-15).
+   */
+  const [sheetFor, setSheetFor] = useState<string | null>(null);
+  /** Setup, while a fight is running — closed by default, on purpose. */
+  const [setupOpen, setSetupOpen] = useState(false);
   /**
    * Teller's proposals, per ROW — keyed by entry id, not character id,
    * so two wolves stamped from one blueprint are advised apart. Local
    * state on purpose: a suggestion is words on the Warden's screen,
    * never session state, and dismissing one leaves no trace anywhere.
    */
-  const [advice, setAdvice] = useState<
-    Record<
-      string,
-      {
-        busy: boolean;
-        suggestion?: TurnSuggestion;
-        error?: string;
-        /** The Warden's own record of what the dice said. */
-        result?: string;
-        /** Tapped-in faces for the suggested roll, per die. */
-        faces?: (string | null)[];
-        narrating?: boolean;
-        narration?: TurnNarration;
+  const [advice, setAdvice] = useState<Record<string, Advice>>({});
+
+  const initiative = session?.initiative ?? [];
+  const turn = session?.turn ?? null;
+  const running = turn !== null;
+  const rolling = session?.rolling ?? false;
+  /** Who hasn't reported a roll yet — null is "hasn't", not a real 0. */
+  const waiting = initiative.filter((e) => typeof e.score !== 'number');
+
+  const patchAdvice = (entryId: string, patch: Advice | null) =>
+    setAdvice((prev) => {
+      if (patch === null) {
+        const next = { ...prev };
+        delete next[entryId];
+        return next;
       }
-    >
-  >({});
-  const ask = (entryId: string, characterId: string) => {
+      return { ...prev, [entryId]: patch };
+    });
+
+  const ask = (entryId: string, characterId: string, intent?: string) => {
     if (!onSuggest) return;
-    setAdvice((prev) => ({
-      ...prev,
-      [entryId]: { busy: true, suggestion: prev[entryId]?.suggestion },
-    }));
-    onSuggest(characterId)
+    setAdvice((prev) => ({ ...prev, [entryId]: { ...prev[entryId], busy: true } }));
+    onSuggest(characterId, intent)
       // A fresh suggestion starts a fresh turn: whatever results or
-      // narration the LAST turn earned would be stale under it.
+      // narration the LAST one earned would be stale under it. The
+      // model's named target is taken as the OPENING guess only.
       .then((s) =>
-        setAdvice((prev) => ({ ...prev, [entryId]: { busy: false, suggestion: s } })),
+        setAdvice((prev) => ({
+          ...prev,
+          [entryId]: {
+            busy: false,
+            suggestion: s,
+            ...(s.roll ? { roll: { dice: s.roll.dice, for: s.roll.for } } : {}),
+            ...(s.target
+              ? {
+                  targetId: characters.find(
+                    (c) =>
+                      c.name.toLowerCase() === s.target!.toLowerCase() ||
+                      initiative.some(
+                        (e) =>
+                          e.characterId === c.id &&
+                          e.label.toLowerCase() === s.target!.toLowerCase(),
+                      ),
+                  )?.id,
+                }
+              : {}),
+          },
+        })),
       )
       .catch((e) =>
         setAdvice((prev) => ({
           ...prev,
-          [entryId]: { busy: false, error: (e as Error).message },
+          [entryId]: { ...prev[entryId], busy: false, error: (e as Error).message },
         })),
       );
   };
-  const tell = (entryId: string, characterId: string) => {
-    const a = advice[entryId];
-    if (!onNarrate || !a?.suggestion) return;
-    // The tapped dice speak first, the Warden's own words follow — the
-    // model receives one plain sentence of what the table decided.
-    let summary = '';
-    if (a.suggestion.roll && a.faces?.some(Boolean)) {
-      const rolled = a.faces.filter(Boolean) as string[];
-      const { total } = tallyFaces(a.faces, dice);
-      summary = `${a.suggestion.roll.for} — rolled ${a.suggestion.roll.dice}: ${rolled.join(', ')} = ${total} ${dice?.unit ?? 'total'}`;
-    }
-    const extra = a.result?.trim() ?? '';
-    const result = [summary, extra].filter(Boolean).join(' — ');
-    if (!result) return;
-    setAdvice((prev) => ({
-      ...prev,
-      [entryId]: { ...prev[entryId], busy: false, narrating: true },
-    }));
-    onNarrate(characterId, a.suggestion.action, result)
+
+  const tell = (
+    entryId: string,
+    characterId: string,
+    action: string,
+    result: string,
+    preface?: string,
+  ) => {
+    if (!onNarrate || !result.trim()) return;
+    setAdvice((prev) => ({ ...prev, [entryId]: { ...prev[entryId], narrating: true } }));
+    onNarrate(characterId, action, result, preface)
       .then((n) =>
         setAdvice((prev) => ({
           ...prev,
@@ -229,16 +237,6 @@ export function EncounterPanel({
         })),
       );
   };
-  const toggleOpen = (id: string) =>
-    setOpen((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  const initiative = session?.initiative ?? [];
-  const turn = session?.turn ?? null;
-  const running = turn !== null;
 
   const set = (entries: InitiativeEntry[]) => onOp({ op: 'set', initiative: entries });
 
@@ -284,16 +282,256 @@ export function EncounterPanel({
     });
   };
 
-  const rolling = session?.rolling ?? false;
-  /** Who hasn't reported a roll yet — null is "hasn't", not a real 0. */
-  const waiting = initiative.filter((e) => typeof e.score !== 'number');
-
   const unlistedPcs = characters.filter(
     (c) => c.kind === 'pc' && !initiative.some((e) => e.characterId === c.id),
   );
 
+  const active = turn !== null ? initiative[turn] : undefined;
+  const actor = active?.characterId
+    ? characters.find((c) => c.id === active.characterId)
+    : undefined;
+  /** Whoever the acting turn is currently aimed at — lit in the roster. */
+  const aimedAt = active ? advice[active.id]?.targetId : undefined;
+
+  // -------------------------------------------------------------- roster
+
+  const rosterRow = (entry: InitiativeEntry, index: number) => {
+    const character = entry.characterId
+      ? characters.find((c) => c.id === entry.characterId)
+      : null;
+    const counter = character ? vitalCounter(character.data.counters, states) : undefined;
+    const offers = character ? suggestions(character, states) : [];
+    const isTurn = index === turn;
+    const isTarget = character?.id === aimedAt;
+    const foe = character?.kind === 'npc';
+    // Mid-roll, the LIST is the status board: a row still owed a
+    // number says so on the row, not in a sentence above it.
+    const owed = rolling && typeof entry.score !== 'number';
+    const dots = states.filter((s) => character?.data.tags.includes(s.name));
+    const extra = character
+      ? character.data.tags.filter((t) => !states.some((s) => s.name === t))
+      : [];
+
+    return (
+      <li
+        key={entry.id}
+        className={`group border-l-2 py-1.5 pl-2 pr-1.5 transition-colors ${
+          owed
+            ? 'border-l-amber-500 bg-stone-900'
+            : isTurn
+              ? 'border-l-amber-600 bg-amber-950/40'
+              : isTarget
+                ? 'border-l-sky-700 bg-sky-950/20'
+                : foe
+                  ? 'border-l-red-900/70 bg-stone-900/40 hover:bg-stone-900'
+                  : 'border-l-stone-700 bg-stone-900/40 hover:bg-stone-900'
+        }`}
+      >
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`w-4 shrink-0 text-right font-mono text-[10px] ${
+              isTurn ? 'text-amber-300' : 'text-stone-600'
+            }`}
+          >
+            {index + 1}
+          </span>
+
+          {/* During rolls the score sits where the position number is:
+              it's the thing you're scanning for. */}
+          {rolling &&
+            (owed ? (
+              <>
+                <span
+                  className="animate-pulse rounded bg-amber-700 px-1 py-0.5 font-mono text-[9px] font-semibold text-stone-950"
+                  title="hasn't rolled yet"
+                >
+                  ROLL
+                </span>
+                <input
+                  className="w-10 rounded bg-stone-800 px-1 py-0.5 text-center font-mono text-[11px] text-stone-100 focus:outline-none"
+                  inputMode="numeric"
+                  placeholder="—"
+                  aria-label={`${entry.label} rolled`}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    const n = Number(e.currentTarget.value.trim());
+                    if (!Number.isFinite(n)) return;
+                    onOp({ op: 'score', entryId: entry.id, score: n });
+                    e.currentTarget.value = '';
+                  }}
+                />
+              </>
+            ) : (
+              <span className="rounded bg-stone-800 px-1 py-0.5 font-mono text-[10px] text-amber-300">
+                {entry.score}
+              </span>
+            ))}
+
+          {character ? (
+            <button
+              className={`min-w-0 flex-1 truncate text-left text-[13px] ${
+                isTurn ? 'text-amber-100' : 'text-stone-300 hover:text-stone-100'
+              }`}
+              onClick={() => setSheetFor(entry.id)}
+              title="everything about them"
+            >
+              {entry.label}
+            </button>
+          ) : (
+            <span className="min-w-0 flex-1 truncate text-[13px] text-stone-300">
+              {entry.label}
+            </span>
+          )}
+
+          {/* Conditions, as colour. The chips live on the stage. */}
+          <span className="flex shrink-0 items-center gap-0.5">
+            {dots.map((s) => (
+              <span
+                key={s.name}
+                className="h-1.5 w-1.5 rounded-full"
+                style={{ background: STATE_EFFECTS[s.effect ?? 'mark'].chip }}
+                title={s.name}
+              />
+            ))}
+            {extra.length > 0 && (
+              <span
+                className="h-1.5 w-1.5 rounded-full bg-sky-400"
+                title={extra.join(', ')}
+              />
+            )}
+            {offers.length > 0 && (
+              <span
+                className="font-mono text-[10px] text-amber-500"
+                title={`${offers.map((o) => o.name).join(', ')} — teller noticed the line`}
+              >
+                ?
+              </span>
+            )}
+          </span>
+
+          {/* The edit you make most often is to somebody ELSE'S health,
+              on the turn of the thing that just hit them. So it lives
+              here, on the row, and never costs you the stage. */}
+          {counter && character && (
+            <span
+              className={`flex shrink-0 items-center gap-0.5 transition-opacity ${
+                isTurn || isTarget
+                  ? ''
+                  : 'opacity-0 focus-within:opacity-100 group-hover:opacity-100'
+              }`}
+            >
+              <button
+                className="rounded px-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-100"
+                onClick={() => bump(character, counter, -1)}
+                aria-label={`${counter.name} down`}
+              >
+                −
+              </button>
+              <span className="min-w-9 text-center font-mono text-[11px] text-stone-300">
+                {counter.current}
+                {counter.max !== null && (
+                  <span className="text-stone-600">/{counter.max}</span>
+                )}
+              </span>
+              <button
+                className="rounded px-1 text-xs text-stone-400 hover:bg-stone-800 hover:text-stone-100"
+                onClick={() => bump(character, counter, 1)}
+                aria-label={`${counter.name} up`}
+              >
+                +
+              </button>
+            </span>
+          )}
+
+          {/* Whether they're on the map is worth a glyph; putting one
+              there is not something you do twice a fight, so the
+              button for it lives in the open row with the rest. */}
+          {character && tokenLinks.has(character.id) && (
+            <span className="shrink-0 px-0.5 text-[10px] text-stone-700" title="on the live scene">
+              ◉
+            </span>
+          )}
+        </div>
+
+        {counter && <VitalBar counter={counter} className="mt-1.5" />}
+
+      </li>
+    );
+  };
+
+  // --------------------------------------------------------------- setup
+
+  const setupTools = (
+    <div className="space-y-2">
+      <QuickSpawn npcs={npcs} onSpawn={onSpawn} />
+      {/*
+        Only people. Foes arrive in the order already — deploy seats
+        what it stamps, and a bestiary spawn does the same. These are
+        NOT the bestiary search above: that STAMPS OUT a new creature,
+        this seats one that already exists. They used to be identical
+        chips side by side, and hitting the wrong one mid-fight spawned
+        a monster.
+      */}
+      {unlistedPcs.length > 0 && (
+        <div className="space-y-1.5 rounded-lg bg-stone-900/60 px-2 py-2">
+          <span className={sectionLabel}>Not in the order yet</span>
+          <div className="flex flex-wrap gap-1.5">
+            {unlistedPcs.map((c) => (
+              <button
+                key={c.id}
+                className={btnGhost}
+                onClick={() => addEntry(c.name, c.id)}
+                title={`put ${c.name} in the turn order`}
+              >
+                + {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <input
+          className={`${input} min-w-0 flex-1`}
+          placeholder="ad-hoc: 3 prairie wolves…"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && addEntry(draft, null)}
+        />
+        <button className={btn} onClick={() => addEntry(draft, null)}>
+          add
+        </button>
+      </div>
+    </div>
+  );
+
+  const turnControls = (
+    <div className="flex items-center gap-2">
+      <button
+        className={btn}
+        disabled={!running}
+        onClick={() => onOp({ op: 'prev' })}
+      >
+        ◂ back
+      </button>
+      <button
+        className={`${btnPrimary} px-6`}
+        disabled={initiative.length === 0}
+        onClick={() => onOp({ op: 'next' })}
+      >
+        {running ? 'next turn ▸' : 'start combat'}
+      </button>
+      <button
+        className={`${btn} ml-auto hover:bg-red-950`}
+        disabled={!running}
+        onClick={() => onOp({ op: 'end' })}
+      >
+        end
+      </button>
+    </div>
+  );
+
   return (
-    <section className={`${card} space-y-3`}>
+    <section className={`${card} @container space-y-3`}>
       <div className="flex items-center justify-between">
         <span className={sectionLabel}>Encounter</span>
         {running && (
@@ -309,26 +547,19 @@ export function EncounterPanel({
         </p>
       )}
 
-      {/*
-        Taking rolls. Players roll real dice and type what they got on
-        their own seat — the dice stay physical, only the arithmetic
-        goes virtual. teller has already rolled for anything it deployed.
-      */}
+      {/* Taking rolls. Players roll real dice and report on their own
+          seat; teller has already rolled for anything it deployed. */}
       {initiative.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md bg-stone-900 px-2 py-1.5">
           {rolling ? (
             <>
               <span className="font-mono text-xs text-amber-300">taking rolls</span>
-              {/* The names live on the rows now; this only has to say
-                  how many are left, and go quiet when none are. */}
               <span
                 className={`font-mono text-[11px] ${
                   waiting.length ? 'text-stone-400' : 'text-emerald-400'
                 }`}
               >
-                {waiting.length
-                  ? `${waiting.length} still to roll`
-                  : 'everyone is in'}
+                {waiting.length ? `${waiting.length} still to roll` : 'everyone is in'}
               </span>
               <button
                 className={`${btn} ml-auto text-xs`}
@@ -354,513 +585,143 @@ export function EncounterPanel({
         </div>
       )}
 
-      <ol className="space-y-1.5">
-        {initiative.map((entry, index) => {
-          const character = entry.characterId
-            ? characters.find((c) => c.id === entry.characterId)
-            : null;
-          const counter = character
-            ? vitalCounter(character.data.counters, states)
-            : undefined;
-          const offers = character ? suggestions(character, states) : [];
-          const isTurn = index === turn;
-          // Mid-roll, the LIST is the status board: a row still owed a
-          // number says so on the row, not in a sentence above it.
-          const owed = rolling && typeof entry.score !== 'number';
-          return (
-            <li
-              key={entry.id}
-              className={`space-y-1.5 rounded-md px-2 py-1.5 ${
-                owed
-                  ? 'bg-stone-900 text-stone-300 ring-1 ring-amber-600/70'
-                  : isTurn
-                    ? 'bg-amber-900/40 text-amber-100 ring-1 ring-amber-700'
-                    : 'bg-stone-900 text-stone-300'
-              }`}
-            >
-              <div className="flex items-center gap-1.5">
-                <span className="w-5 text-right font-mono text-xs text-stone-500">
-                  {index + 1}
-                </span>
+      <div
+        className={
+          running
+            ? 'grid items-start gap-4 @2xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]'
+            : 'grid items-start gap-4 @2xl:grid-cols-2'
+        }
+      >
+        <div className="space-y-2">
+          {initiative.length > 0 ? (
+            <ol className="divide-y divide-stone-800/60 overflow-hidden rounded-lg">
+              {initiative.map(rosterRow)}
+            </ol>
+          ) : (
+            // Staging with nobody seated: the column that will hold the
+            // order says so, rather than leaving a hole beside a full
+            // one and reading as broken.
+            <p className="rounded-lg border border-dashed border-stone-800 px-3 py-6 text-center text-[11px] text-stone-600">
+              the turn order builds here
+            </p>
+          )}
 
-                {/* The score sits where the position number would go
-                    once a fight is running: during rolls it's the thing
-                    you're scanning for. */}
-                {rolling &&
-                  (owed ? (
-                    <>
-                      <span
-                        className="animate-pulse rounded bg-amber-700 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-stone-950"
-                        title="hasn't rolled yet"
-                      >
-                        ROLL
-                      </span>
-                      {/* Not everyone has a panel in front of them. The
-                          Warden can take a number called across the
-                          table without leaving the order. */}
-                      <input
-                        className="w-12 rounded bg-stone-800 px-1 py-0.5 text-center font-mono text-xs text-stone-100 focus:outline-none"
-                        inputMode="numeric"
-                        placeholder="—"
-                        aria-label={`${entry.label} rolled`}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'Enter') return;
-                          const n = Number(e.currentTarget.value.trim());
-                          if (!Number.isFinite(n)) return;
-                          onOp({ op: 'score', entryId: entry.id, score: n });
-                          e.currentTarget.value = '';
-                        }}
-                      />
-                    </>
-                  ) : (
-                    <span className="rounded bg-stone-800 px-1.5 py-0.5 font-mono text-[11px] text-amber-300">
-                      {entry.score}
-                    </span>
-                  ))}
-                {character ? (
-                  <button
-                    className="min-w-0 flex-1 truncate text-left text-sm hover:text-stone-100"
-                    onClick={() => toggleOpen(entry.id)}
-                    title="show the whole sheet"
-                  >
-                    {entry.label}
-                    <span className="ml-1.5 font-mono text-[10px] text-stone-600">
-                      {open.has(entry.id) ? '▾' : '▸'}
-                    </span>
-                  </button>
-                ) : (
-                  <span className="min-w-0 flex-1 truncate text-sm">{entry.label}</span>
-                )}
+          {/* While a fight runs, setup is one line until asked for. */}
+          {running ? (
+            <div>
+              <button
+                className="w-full rounded-md px-2 py-1.5 text-left text-[11px] text-stone-600 transition-colors hover:bg-stone-900 hover:text-stone-300"
+                onClick={() => setSetupOpen((v) => !v)}
+              >
+                {setupOpen ? '▾' : '▸'} add to the fight
+              </button>
+              {setupOpen && <div className="mt-2">{setupTools}</div>}
+            </div>
+          ) : (
+            <div className="@2xl:hidden">{setupTools}</div>
+          )}
 
-                {counter && character && (
-                  <span className="flex items-center gap-1">
-                    <button
-                      className={btnGhost}
-                      onClick={() => bump(character, counter, -1)}
-                      aria-label={`${counter.name} down`}
-                    >
-                      −
-                    </button>
-                    <span className="min-w-14 text-center font-mono text-xs">
-                      {counter.current}
-                      {counter.max !== null && (
-                        <span className="text-stone-500">/{counter.max}</span>
-                      )}
-                    </span>
-                    <button
-                      className={btnGhost}
-                      onClick={() => bump(character, counter, 1)}
-                      aria-label={`${counter.name} up`}
-                    >
-                      +
-                    </button>
-                  </span>
-                )}
+        </div>
 
-                {/* Ask Teller. Foes only — the posse plays itself. */}
-                {onSuggest && character && character.kind === 'npc' && (
-                  <button
-                    className={`${btnGhost} ${advice[entry.id]?.busy ? 'animate-pulse text-amber-300' : ''}`}
-                    title="what would they do? Teller proposes; you decide"
-                    disabled={advice[entry.id]?.busy}
-                    onClick={() => ask(entry.id, character.id)}
-                  >
-                    ✦
-                  </button>
-                )}
+        <div className="space-y-3">
+          {running && actor && active ? (
+            <>
+              <TurnStage
+                character={actor}
+                entry={active}
+                index={turn!}
+                total={initiative.length}
+                round={session?.round ?? 1}
+                initiative={initiative}
+                characters={characters}
+                states={states}
+                dice={dice}
+                dieArt={dieArt}
+                advice={advice[active.id]}
+                onAdvice={(patch) => patchAdvice(active.id, patch)}
+                onSuggest={
+                  onSuggest ? (intent?: string) => ask(active.id, actor.id, intent) : undefined
+                }
+                onNarrate={
+                  onNarrate
+                    ? (action, result, preface) =>
+                        tell(active.id, actor.id, action, result, preface)
+                    : undefined
+                }
+                onPatchCharacter={onPatchCharacter}
+                onResolve={onResolve}
+                catalog={catalog}
+              />
+              {turnControls}
+            </>
+          ) : running ? (
+            <>
+              <p className="text-sm text-stone-600">
+                {active
+                  ? `${active.label} is up — an ad-hoc entry, so there's no sheet to show.`
+                  : 'no one is up'}
+              </p>
+              {turnControls}
+            </>
+          ) : (
+            <div className="hidden @2xl:block">{setupTools}</div>
+          )}
+        </div>
+      </div>
 
-                {character &&
-                  (tokenLinks.has(character.id) ? (
-                    <span
-                      className="px-1 text-xs text-stone-500"
-                      title="has a token on the live scene"
-                    >
-                      ◉
-                    </span>
-                  ) : (
-                    <button
-                      className={btnGhost}
-                      title="drop a token for this combatant on the live scene"
-                      onClick={() => onDropToken(character.id, entry.label)}
-                    >
-                      ◌
-                    </button>
-                  ))}
+      {/* Staging: the way in sits under BOTH columns, because it acts on
+          the order and the setup together. Running, it lives under the
+          stage instead — beside the turn it advances. */}
+      {!running && turnControls}
 
-                <button className={btnGhost} onClick={() => move(index, -1)} aria-label="move up">
+      {/* Look somebody up. The rare row actions — reorder, remove, put a
+          token down — ride along here rather than crowding a row you
+          read eight of at a glance. */}
+      {(() => {
+        const index = initiative.findIndex((e) => e.id === sheetFor);
+        const entry = index >= 0 ? initiative[index] : undefined;
+        const who = entry?.characterId
+          ? characters.find((c) => c.id === entry.characterId)
+          : undefined;
+        if (!entry || !who) return null;
+        return (
+          <CreatureSheet
+            character={who}
+            npcs={npcs}
+            onClose={() => setSheetFor(null)}
+            onBump={(counter, delta) => bump(who, counter, delta)}
+            onToggleTag={(tag) => toggleTag(who, tag)}
+            actions={
+              <>
+                <button className={btnGhost} onClick={() => move(index, -1)} title="earlier in the order">
                   ↑
                 </button>
-                <button className={btnGhost} onClick={() => move(index, 1)} aria-label="move down">
+                <button className={btnGhost} onClick={() => move(index, 1)} title="later in the order">
                   ↓
                 </button>
+                {!tokenLinks.has(who.id) && (
+                  <button
+                    className={btnGhost}
+                    title="drop a token on the live scene"
+                    onClick={() => onDropToken(who.id, entry.label)}
+                  >
+                    ◌ token
+                  </button>
+                )}
                 <button
                   className={`${btnGhost} hover:text-red-300`}
-                  onClick={() => set(initiative.filter((e) => e.id !== entry.id))}
-                  aria-label="remove"
+                  onClick={() => {
+                    set(initiative.filter((e) => e.id !== entry.id));
+                    setSheetFor(null);
+                  }}
                 >
-                  ✕
+                  ✕ remove
                 </button>
-              </div>
-
-              {character && open.has(entry.id) && (
-                <div className="space-y-1.5 pl-6 pr-1">
-                  {character.data.fields.filter((f) => f.value).length > 0 && (
-                    <div className="flex flex-wrap gap-x-3 gap-y-0.5">
-                      {character.data.fields
-                        .filter((f) => f.value)
-                        .map((f) => (
-                          <span key={f.key} className="font-mono text-[11px]">
-                            <span className="text-stone-500">{f.label} </span>
-                            <span className="text-stone-200">{f.value}</span>
-                          </span>
-                        ))}
-                    </div>
-                  )}
-                  {/* Every other counter, not just the vital one. */}
-                  {character.data.counters
-                    .filter((c) => c.id !== counter?.id)
-                    .map((c) => (
-                      <div key={c.id} className="flex items-center gap-1">
-                        <span className="min-w-20 font-mono text-[11px] text-stone-500">
-                          {c.name}
-                        </span>
-                        <button
-                          className={btnGhost}
-                          onClick={() => bump(character, c, -1)}
-                          aria-label={`${c.name} down`}
-                        >
-                          −
-                        </button>
-                        <span className="min-w-10 text-center font-mono text-[11px]">
-                          {c.current}
-                          {c.max !== null && (
-                            <span className="text-stone-500">/{c.max}</span>
-                          )}
-                        </span>
-                        <button
-                          className={btnGhost}
-                          onClick={() => bump(character, c, 1)}
-                          aria-label={`${c.name} up`}
-                        >
-                          +
-                        </button>
-                      </div>
-                    ))}
-                  {character.data.notes && (
-                    <p className="whitespace-pre-wrap text-[11px] leading-snug text-stone-400">
-                      {character.data.notes}
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {character && (states.length > 0 || offers.length > 0) && (
-                <div className="flex flex-wrap items-center gap-1 pl-6">
-                  {states.map((state) => {
-                    const on = character.data.tags.includes(state.name);
-                    const visual = STATE_EFFECTS[state.effect ?? 'mark'];
-                    return (
-                      <button
-                        key={state.name}
-                        className="rounded-full px-2 py-0.5 font-mono text-[11px] transition-colors"
-                        style={
-                          on
-                            ? { background: visual.chip, color: '#0c0a09' }
-                            : { background: '#1c1917', color: '#78716c' }
-                        }
-                        onClick={() => toggleTag(character, state.name)}
-                      >
-                        {state.name}
-                      </button>
-                    );
-                  })}
-                  {/* teller asks; the DM decides. It never applies itself. */}
-                  {offers.map((state) => (
-                    <button
-                      key={`offer-${state.name}`}
-                      className="rounded-full border border-amber-600 px-2 py-0.5 font-mono text-[11px] text-amber-300 transition-colors hover:bg-amber-900/40"
-                      onClick={() => toggleTag(character, state.name)}
-                      title="teller noticed the threshold — applying it is your call"
-                    >
-                      {state.name}?
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/*
-                Teller's proposal — words on a card, deliberately with
-                no apply button anywhere on it. The Warden speaks the
-                turn (or doesn't); the card can only be redrawn or
-                waved away. Premises come first because they're the
-                part that can be WRONG: virtual tokens are only as
-                fresh as the last drag, so the assumptions are shown
-                for checking before the action is worth reading.
-              */}
-              {character && (advice[entry.id]?.suggestion || advice[entry.id]?.error) && (
-                <div className="ml-6 space-y-1 rounded-md border border-amber-700/50 bg-amber-950/20 px-2.5 py-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-mono text-[10px] uppercase tracking-wide text-amber-400">
-                      ✦ teller suggests
-                    </span>
-                    {advice[entry.id]?.suggestion && (
-                      <span className="font-mono text-[10px] text-stone-600">
-                        {advice[entry.id].suggestion!.model}
-                      </span>
-                    )}
-                    <button
-                      className={`${btnGhost} ml-auto`}
-                      title="ask again"
-                      disabled={advice[entry.id]?.busy}
-                      onClick={() => ask(entry.id, character.id)}
-                    >
-                      ↻
-                    </button>
-                    <button
-                      className={btnGhost}
-                      title="wave it away"
-                      onClick={() =>
-                        setAdvice((prev) => {
-                          const next = { ...prev };
-                          delete next[entry.id];
-                          return next;
-                        })
-                      }
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  {advice[entry.id]?.error ? (
-                    <p className="text-[11px] text-red-300">{advice[entry.id].error}</p>
-                  ) : (
-                    <>
-                      {advice[entry.id].suggestion!.premises.length > 0 && (
-                        <ul className="space-y-0.5">
-                          {advice[entry.id].suggestion!.premises.map((p, i) => (
-                            <li key={i} className="text-[11px] italic text-stone-400">
-                              assuming {p}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      <p className="text-sm leading-snug text-amber-100">
-                        {advice[entry.id].suggestion!.action}
-                      </p>
-                      {advice[entry.id].suggestion!.rationale && (
-                        <p className="text-[11px] leading-snug text-stone-400">
-                          {advice[entry.id].suggestion!.rationale}
-                        </p>
-                      )}
-
-                      {/*
-                        The roll the action calls for, as the book's
-                        own dice. The TABLE rolls the physical ones;
-                        tapping a die here cycles what the plastic
-                        showed — recording, never rolling. Same art
-                        the character creator uses.
-                      */}
-                      {advice[entry.id].suggestion!.roll && dice && (
-                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                          <span className="font-mono text-[11px] text-amber-300">
-                            roll {advice[entry.id].suggestion!.roll!.dice}
-                          </span>
-                          <span className="font-mono text-[10px] text-stone-500">
-                            {advice[entry.id].suggestion!.roll!.for}
-                          </span>
-                          {expandPool(advice[entry.id].suggestion!.roll!.dice).map(
-                            (letter, i) => {
-                              const face = advice[entry.id].faces?.[i] ?? null;
-                              const order = [...new Set(dice.faces[letter] ?? [])];
-                              const art = face && dieArt?.marks[face];
-                              return (
-                                <button
-                                  key={i}
-                                  className={`relative flex h-8 w-8 items-center justify-center rounded-md ring-1 transition-colors ${
-                                    letter === 'G'
-                                      ? 'bg-amber-900/40 ring-amber-600'
-                                      : 'bg-stone-800 ring-stone-600'
-                                  } ${face ? '' : 'opacity-50'}`}
-                                  title={`${letter} die — tap to record what it showed`}
-                                  onClick={() =>
-                                    setAdvice((prev) => {
-                                      const a = prev[entry.id];
-                                      const pool = expandPool(a.suggestion!.roll!.dice);
-                                      const faces = [
-                                        ...(a.faces ?? pool.map(() => null)),
-                                      ];
-                                      const at = order.indexOf(faces[i] ?? '');
-                                      faces[i] =
-                                        at < 0
-                                          ? order[0]
-                                          : at + 1 < order.length
-                                            ? order[at + 1]
-                                            : null;
-                                      return { ...prev, [entry.id]: { ...a, faces } };
-                                    })
-                                  }
-                                >
-                                  {art ? (
-                                    <img
-                                      src={packArtUrl(art, dieArt.version)}
-                                      alt={face ?? letter}
-                                      className="h-6 w-6 object-contain"
-                                    />
-                                  ) : (
-                                    <span className="font-mono text-[10px] text-stone-300">
-                                      {face ?? letter}
-                                    </span>
-                                  )}
-                                  <span
-                                    className={`absolute -bottom-1 -right-1 rounded px-0.5 font-mono text-[8px] leading-tight ${
-                                      letter === 'G'
-                                        ? 'bg-amber-700 text-stone-950'
-                                        : 'bg-stone-600 text-stone-100'
-                                    }`}
-                                  >
-                                    {letter}
-                                  </span>
-                                </button>
-                              );
-                            },
-                          )}
-                          {advice[entry.id].faces?.some(Boolean) && (
-                            <span className="font-mono text-[11px] text-amber-200">
-                              = {tallyFaces(advice[entry.id].faces!, dice).total}{' '}
-                              {dice.unit ?? ''}
-                            </span>
-                          )}
-                          <button
-                            className={`${btnGhost} ml-auto text-[11px]`}
-                            title="teller rolls the foe's dice — tap any die to correct it"
-                            onClick={() =>
-                              setAdvice((prev) => ({
-                                ...prev,
-                                [entry.id]: {
-                                  ...prev[entry.id],
-                                  faces: rollPool(
-                                    prev[entry.id].suggestion!.roll!.dice,
-                                    dice,
-                                  ),
-                                },
-                              }))
-                            }
-                          >
-                            roll for me
-                          </button>
-                        </div>
-                      )}
-
-                      {/*
-                        The second click. The Warden runs the action
-                        with the table's REAL dice, taps/types what
-                        they said, and Teller hands back words to read
-                        aloud — narration is downstream of dice, never
-                        a substitute for them (the thesis, in prose).
-                      */}
-                      {onNarrate && (
-                        <div className="flex items-center gap-1.5 pt-0.5">
-                          <input
-                            className="min-w-0 flex-1 rounded bg-stone-900 px-2 py-1 font-mono text-[11px] text-stone-200 placeholder:text-stone-600 focus:outline-none"
-                            placeholder="anything else — damage applied, statuses, movement…"
-                            value={advice[entry.id].result ?? ''}
-                            onChange={(e) =>
-                              setAdvice((prev) => ({
-                                ...prev,
-                                [entry.id]: { ...prev[entry.id], result: e.target.value },
-                              }))
-                            }
-                            onKeyDown={(e) => e.key === 'Enter' && tell(entry.id, character.id)}
-                          />
-                          <button
-                            className={`${btnGhost} ${advice[entry.id].narrating ? 'animate-pulse text-amber-300' : ''}`}
-                            title="turn the results into words for the table"
-                            disabled={
-                              advice[entry.id].narrating ||
-                              (!advice[entry.id].result?.trim() &&
-                                !advice[entry.id].faces?.some(Boolean))
-                            }
-                            onClick={() => tell(entry.id, character.id)}
-                          >
-                            tell it ⟶
-                          </button>
-                        </div>
-                      )}
-                      {advice[entry.id].narration && (
-                        <blockquote className="border-l-2 border-amber-600 pl-2.5 text-[13px] italic leading-snug text-stone-100">
-                          {advice[entry.id].narration!.narration}
-                        </blockquote>
-                      )}
-                    </>
-                  )}
-                </div>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-
-      <QuickSpawn npcs={npcs} onSpawn={onSpawn} />
-
-      {/*
-        Only people. Foes arrive in the order already — deploy seats what
-        it stamps, and a bestiary spawn does the same — so a foe down
-        here would mean something went wrong, not something to tidy up.
-
-        These are NOT the bestiary search above: that STAMPS OUT a new
-        creature, this seats one that already exists. They used to be
-        identical chips side by side, and hitting the wrong one mid-fight
-        spawned a monster.
-      */}
-      {unlistedPcs.length > 0 && (
-        <div className="space-y-1.5 rounded-md bg-stone-900/60 px-2 py-2">
-          <span className={sectionLabel}>Not in the order yet</span>
-          <div className="flex flex-wrap gap-1.5">
-            {unlistedPcs.map((c) => (
-              <button
-                key={c.id}
-                className={btnGhost}
-                onClick={() => addEntry(c.name, c.id)}
-                title={`put ${c.name} in the turn order`}
-              >
-                + {c.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="flex gap-2">
-        <input
-          className={`${input} min-w-0 flex-1`}
-          placeholder="ad-hoc: 3 prairie wolves…"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && addEntry(draft, null)}
-        />
-        <button className={btn} onClick={() => addEntry(draft, null)}>
-          add
-        </button>
-      </div>
-
-      <div className="flex gap-2 pt-1">
-        <button
-          className={btnPrimary}
-          disabled={initiative.length === 0}
-          onClick={() => onOp({ op: 'next' })}
-        >
-          {running ? 'next turn ▸' : 'start combat'}
-        </button>
-        <button className={btn} disabled={!running} onClick={() => onOp({ op: 'prev' })}>
-          ◂ back
-        </button>
-        <button
-          className={`${btn} ml-auto hover:bg-red-950`}
-          disabled={!running}
-          onClick={() => onOp({ op: 'end' })}
-        >
-          end
-        </button>
-      </div>
+              </>
+            }
+          />
+        );
+      })()}
     </section>
   );
 }

@@ -64,6 +64,7 @@ export function SceneEditor({
   live = true,
   onCalibrate,
   onChange,
+  onMoved,
   onClose,
 }: {
   campaignId: string;
@@ -101,6 +102,20 @@ export function SceneEditor({
   onCalibrate?: (ppi: number, ppiY: number) => void;
   /** Live — called on every committed edit (debounced upstream). */
   onChange: (next: Scene) => void;
+  /**
+   * A token finished moving. Separate from `onChange` because the
+   * scene is STATE and this is an EVENT — the difference between
+   * knowing where the Peril sits and knowing it hasn't left the water
+   * since round one.
+   */
+  onMoved?: (move: {
+    tokenId: string;
+    characterId?: string;
+    label: string;
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+    distance: number;
+  }) => void;
   /** Omitted when the editor IS the surface (the map pane). */
   onClose?: () => void;
 }) {
@@ -148,7 +163,7 @@ export function SceneEditor({
   const zoneStrokeRef = useRef<string | null>(null);
   const dragRef = useRef<
     | { kind: 'pan'; x: number; y: number }
-    | { kind: 'token'; id: string }
+    | { kind: 'token'; id: string; fromU: number; fromV: number }
     | { kind: 'placement'; id: string }
     | { kind: 'frame' }
     | { kind: 'paint'; op: 'add' | 'remove'; last: string | null }
@@ -630,6 +645,32 @@ export function SceneEditor({
     // one write for the whole drag, not one per pointer sample
     if (d?.kind === 'token' || d?.kind === 'frame') onChange(draftRef.current);
     if (d?.kind === 'placement') onPlacements?.(placementsRef.current ?? []);
+
+    // A drag is the only thing on this screen that is an EVENT rather
+    // than a state: the scene records where a token IS, and nothing
+    // anywhere recorded that it crossed six inches of open ground to
+    // get there. Reported once, on release, in the map's own inches.
+    if (d?.kind === 'token' && onMoved) {
+      const token = (draftRef.current.tokens ?? []).find((t) => t.id === d.id);
+      const across = draftRef.current.widthInches ?? 0;
+      const down = across && nat ? (across * nat.h) / nat.w : across;
+      if (token && across) {
+        const from = { x: d.fromU * across, y: d.fromV * down };
+        const to = { x: token.u * across, y: token.v * down };
+        const distance = Math.hypot(to.x - from.x, to.y - from.y);
+        // A click that selects isn't a move; don't write one.
+        if (distance >= 0.25) {
+          onMoved({
+            tokenId: token.id,
+            characterId: token.characterId ?? undefined,
+            label: token.label,
+            from,
+            to,
+            distance,
+          });
+        }
+      }
+    }
   };
 
   // --- derived table frame --------------------------------------------------
@@ -798,7 +839,14 @@ export function SceneEditor({
                     capture(e);
                     mark();
                     setSelectedId(token.id);
-                    dragRef.current = { kind: 'token', id: token.id };
+                    // Where it started, so the drag can be reported as
+                    // a MOVE rather than just a new position.
+                    dragRef.current = {
+                      kind: 'token',
+                      id: token.id,
+                      fromU: token.u,
+                      fromV: token.v,
+                    };
                   }}
                   aria-label={`token ${token.label}`}
                   title={token.label}

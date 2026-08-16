@@ -56,7 +56,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 14,
+  version: 18,
   name: 'Wild Imaginary West',
   // The table's scale, as mechanics (numbers and band names — the
   // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
@@ -79,11 +79,35 @@ const wiw: SystemTemplate = {
     "speed): moving within Arm's Reach (1 inch) costs 1 Grit · Normal " +
     '= 1 Grit per Short Range distance (6 inches) · Slow = 2 Grit per ' +
     'Short · Very Slow = 3 Grit per Short · Fast = two Shorts per 1 ' +
-    'Grit. Rough terrain (dense forest, steep slopes, knee-deep water) ' +
-    'doubles the Grit cost of moving through it. ' +
+    'Grit. ROUGH TERRAIN is a RULING, not a property of ground: the ' +
+    'book says the cost doubles "if the Warden determines" something ' +
+    'is moving through it, and offers dense forest, a steep ' +
+    'mountainside and knee-deep water only as examples — not a list. ' +
+    'Whether ground is rough depends on what is crossing it: a ' +
+    'creature at home in a terrain is not hindered by it (the book ' +
+    'prints creatures that tunnel through sand and scouts who cross ' +
+    'mountains unhindered), and may instead be hampered outside it. ' +
     'Grit is the action budget and RELOADS at the start of each ' +
     "creature's turn — spending it all this turn costs nothing next " +
     'turn (an ability that borrows from next turn\'s Grit will say so).',
+  // The same bands the prose describes, as a table teller can read.
+  // Pairs, not a per-inch scale: Arm's Reach is about a yard and Short
+  // is thirty, so no single ratio spans them (which is why `world` is
+  // stated per band rather than computed).
+  bands: [
+    { name: "Arm's Reach", to: 1, world: "within arm's reach" },
+    { name: 'Short', from: 1, to: 6, world: 'up to 30 yards' },
+    { name: 'Long', from: 6, to: 18, world: '30–90 yards' },
+    { name: 'Distant', from: 18, world: 'past 90 yards' },
+  ],
+  // "Grit is the action budget and RELOADS at the start of each
+  // creature's turn" — the same sentence `space` tells the model, said
+  // once more in a form teller can act on rather than only reason with.
+  reload: [{ counter: 'Grit', at: 'turn', to: 'max' }],
+  // "Severity stacks per Status but cannot exceed 6 on any target
+  // (except Trapped)" — and Trapped says so itself: "Severity is NOT
+  // capped at 6 for Trapped ('Bagged 'n' Tagged')".
+  statuses: { stack: 'sum', cap: 6, uncapped: ['Trapped'] },
   vocabulary: {
     gm: 'Warden',
     conditions: 'Statuses',

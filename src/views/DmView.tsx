@@ -173,6 +173,19 @@ export function DmView({
    * marks — the same images the character creator renders, so the
    * encounter's dice and the builder's dice are one vocabulary.
    */
+  /**
+   * Every pack item by id, so a carried weapon can be read for the
+   * dice it rolls. A character's item is a reference (`from`); the
+   * numbers live in the catalogue it came from.
+   */
+  const catalogById = useMemo(() => {
+    const map = new Map<string, { name: string; kind?: string; fields?: { key: string; value: string }[] }>();
+    for (const p of packs) {
+      for (const item of p.pack.catalog?.items ?? []) map.set(item.id, item);
+    }
+    return map;
+  }, [packs]);
+
   const dieArt = useMemo(() => {
     for (const p of packs) {
       const marks = p.pack.creation?.marks;
@@ -543,25 +556,40 @@ export function DmView({
           .catch(() => refetch())
       }
       onPatchCharacter={patchCharacter}
+      onResolve={(body) =>
+        api
+          .resolveTurn(campaignId, body)
+          .then(() => refetch())
+          .catch(() => refetch())
+      }
       onDropToken={dropToken}
       onSuggest={
-        assistantOn ? (characterId) => api.suggestTurn(campaignId, characterId) : undefined
+        assistantOn
+          ? (characterId, intent) => api.suggestTurn(campaignId, characterId, intent)
+          : undefined
       }
       onNarrate={
         assistantOn
-          ? (characterId, action, result) =>
-              api.narrateTurn(campaignId, characterId, action, result)
+          ? (characterId, action, result, preface) =>
+              api.narrateTurn(campaignId, characterId, action, result, preface)
           : undefined
       }
       dice={template?.dice}
       dieArt={dieArt ?? undefined}
+      catalog={catalogById}
     />
   );
 
   // Turn order and everything you reach for mid-fight.
+  //
+  // This pane is WIDE on purpose (Brian, 2026-08-15: the encounter
+  // runner is desktop console glass and nothing else). It used to sit
+  // in the same max-w-2xl column as every other pane, which meant a
+  // fight was run in a phone's worth of width on a monitor; the panel
+  // splits into roster + stage once its container has the room.
   if (pane === 'encounter') {
     return (
-      <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-3 p-3">
+      <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-3 p-3">
         <ConnectionHint connected={connected} />
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <h1 className="font-serif text-xl text-stone-300">{campaign.name}</h1>
@@ -726,6 +754,7 @@ export function DmView({
                 kind: c.kind,
               }))}
               onChange={onSceneChange}
+              onMoved={(move) => api.logMove(campaignId, move).catch(() => {})}
               fights={arrangeable.map((e) => ({ id: e.id, name: e.name }))}
               arrangingId={arrangingId}
               onArrange={setArrangingId}

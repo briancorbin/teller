@@ -13,6 +13,7 @@ import type {
   PackRecord,
   Scene,
   PublicCharacter,
+  ResolvedTurn,
   RulesPack,
   SessionOp,
   SessionState,
@@ -119,17 +120,33 @@ export const api = {
   assistant: () => req<{ configured: boolean; model?: string }>('/api/assistant'),
 
   /** One foe's turn, proposed. Reads the board; writes nothing (rule 1). */
-  suggestTurn: (campaignId: string, characterId: string) =>
+  suggestTurn: (
+    campaignId: string,
+    characterId: string,
+    /**
+     * The Warden's own call, when they've made it — "use the Frenzy".
+     * teller then does the rest of the turn around that decision
+     * instead of making it: premises, dice, target, preface.
+     */
+    intent?: string,
+  ) =>
     req<TurnSuggestion>(`/api/campaigns/${campaignId}/assistant/turn`, {
       method: 'POST',
-      body: JSON.stringify({ characterId }),
+      body: JSON.stringify({ characterId, ...(intent ? { intent } : {}) }),
     }),
 
   /** The second click: the table's real results in, read-aloud story out. */
-  narrateTurn: (campaignId: string, characterId: string, action: string, result: string) =>
+  narrateTurn: (
+    campaignId: string,
+    characterId: string,
+    action: string,
+    result: string,
+    /** What was read aloud before the dice, so the story continues. */
+    preface?: string,
+  ) =>
     req<TurnNarration>(`/api/campaigns/${campaignId}/assistant/narrate`, {
       method: 'POST',
-      body: JSON.stringify({ characterId, action, result }),
+      body: JSON.stringify({ characterId, action, result, preface }),
     }),
 
   listCampaigns: () => req<Campaign[]>('/api/campaigns'),
@@ -170,6 +187,55 @@ export const api = {
     req<Character>(`/api/characters/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(patch),
+    }),
+
+  /**
+   * Land one exchange: the damage and statuses go on the target, and
+   * the log gets a line saying WHO did it to whom. One call, so the
+   * record can't disagree with the state it describes — and so the
+   * assistant can later read why somebody is Trapped instead of
+   * inventing a reason for the tag.
+   */
+  resolveTurn: (
+    campaignId: string,
+    body: {
+      actorId: string;
+      /** Absent for a turn aimed at nobody — moving, hiding, waiting. */
+      targetId?: string;
+      /** Everyone caught, for an area action. */
+      targets?: string[];
+      action: string;
+      hits: number;
+      blocked: number;
+      damage: number;
+      statuses: { name: string; severity: number }[];
+      /** Line items — what each part of the turn paid for. */
+      spend?: { counter: string; amount: number; on?: string }[];
+    },
+  ) =>
+    req<{ character: Character | null; characters: Character[]; resolved: ResolvedTurn }>(
+      `/api/campaigns/${campaignId}/resolve`,
+      { method: 'POST', body: JSON.stringify(body) },
+    ),
+
+  /**
+   * A token crossed ground. Records the move; the scene write that
+   * actually moved it is separate and already done.
+   */
+  logMove: (
+    campaignId: string,
+    move: {
+      tokenId: string;
+      characterId?: string;
+      label: string;
+      from: { x: number; y: number };
+      to: { x: number; y: number };
+      distance: number;
+    },
+  ) =>
+    req<{ ok: true }>(`/api/campaigns/${campaignId}/moved`, {
+      method: 'POST',
+      body: JSON.stringify(move),
     }),
 
   deleteCampaign: (id: string) =>
@@ -424,8 +490,21 @@ export const api = {
    * The cost is that the bundle is assembled in memory before it's
    * saved. Same known limit as import, and the same follow-up.
    */
-  downloadBundle: async (campaignId: string, name: string) => {
-    const res = await fetch(`/api/campaigns/${campaignId}/export`, {
+  downloadBundle: async (
+    campaignId: string,
+    name: string,
+    /**
+     * What to leave OUT. Everything travels unless you say otherwise —
+     * a .story is a backup of a game and an author's starting snapshot
+     * with the same shape, and which one you're making is a decision
+     * you state rather than one teller guesses (Brian, 2026-08-16).
+     */
+    without: string[] = [],
+  ) => {
+    const query = without.length
+      ? `?${without.map((s) => `${encodeURIComponent(s)}=0`).join('&')}`
+      : '';
+    const res = await fetch(`/api/campaigns/${campaignId}/export${query}`, {
       headers: authHeaders(new Headers()),
     });
     if (!res.ok) throw new Error(`export failed (${res.status})`);

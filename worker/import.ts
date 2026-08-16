@@ -180,7 +180,9 @@ export async function apply(
     Partial<CampaignData> & { name?: string; id?: string }
   >(files, 'campaign.json');
 
-  // Find or make the campaign.
+  // Find or make the campaign. Whether this import CREATED it decides
+  // what may be restored wholesale rather than layered — see events.
+  const created = !opts.campaignId;
   let campaign: Campaign;
   if (opts.campaignId) {
     const row = await env.DB.prepare('SELECT * FROM campaigns WHERE id = ?')
@@ -453,6 +455,36 @@ export async function apply(
     applied.push(`${added} character${added === 1 ? '' : 's'}`);
     if (characters.length - added) {
       skipped.push(`${characters.length - added} already at this table`);
+    }
+  }
+
+  /**
+   * What happened at this table, restored.
+   *
+   * Only on a campaign this import CREATED. Layering another table's
+   * history into a running one would interleave two games' logs and
+   * hand /undo a chain that steps sideways into somebody else's turn —
+   * an import is a proposal (rule 9), and a proposal cannot rewrite
+   * what already happened here.
+   *
+   * Ids are new: the archive carries order, not keys, because an
+   * autoincrement means nothing outside the host that issued it.
+   */
+  const events = await readJson<
+    { entityId: string | null; actor: string; kind: string; payload: string; at?: string }[]
+  >(files, 'events.json');
+  if (events?.length && wants('events')) {
+    if (created) {
+      for (const e of events) {
+        await env.DB.prepare(
+          'INSERT INTO events (campaign_id, entity_id, actor, kind, payload) VALUES (?, ?, ?, ?, ?)',
+        )
+          .bind(campaign.id, e.entityId ?? null, e.actor ?? 'dm', e.kind ?? 'unknown', e.payload ?? '{}')
+          .run();
+      }
+      applied.push(`${events.length} events of history`);
+    } else {
+      skipped.push(`${events.length} events — history stays with the table that lived it`);
     }
   }
 
