@@ -8,6 +8,7 @@ import type {
   PackRecord,
   RulesPack,
   Scene,
+  StatusDef,
   SystemTemplate,
 } from '../../worker/types';
 import { api, ApiError, getDmKey, newLocalId, setDmKey } from '../lib/api';
@@ -93,6 +94,8 @@ export function DmView({
   const [error, setError] = useState('');
   // Pack foes plus this campaign's own, already merged by the server.
   const [bestiary, setBestiary] = useState<SourcedNpc[]>([]);
+  /** The system's conditions plus this table's own — merged server-side. */
+  const [statuses, setStatuses] = useState<StatusDef[]>([]);
   const [newName, setNewName] = useState('');
   const [newKind, setNewKind] = useState<'pc' | 'npc'>('pc');
   const [creating, setCreating] = useState(false);
@@ -116,10 +119,11 @@ export function DmView({
   const refetch = useCallback(() => {
     api
       .getCampaign(campaignId)
-      .then(({ campaign, characters, bestiary, missingPacks }) => {
+      .then(({ campaign, characters, bestiary, statuses, missingPacks }) => {
         setCampaign(campaign);
         setCharacters(characters);
         setBestiary(bestiary ?? []);
+        setStatuses(statuses ?? []);
         setMissingPacks(missingPacks ?? []);
         setError('');
       })
@@ -541,7 +545,7 @@ export function DmView({
     <EncounterPanel
       session={session}
       characters={characters}
-      states={campaign.data.states ?? []}
+      states={statuses}
       npcs={bestiary}
       onSpawn={spawnGroup}
       tokenLinks={tokenLinks}

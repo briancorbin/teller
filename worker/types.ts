@@ -36,24 +36,44 @@ export type Counter = {
 export type StateEffect = 'wound' | 'burn' | 'chill' | 'daze' | 'mark' | 'fade';
 
 /**
- * A condition a combatant can be IN, as the encounter panel offers it.
+ * A condition this game HAS — the vocabulary, not an instance of one.
  *
- * A state IS a tag (rule 2) — this only adds presentation and, at most,
- * a proposal. `suggest` makes teller ASK when a counter crosses the
- * line ("Bloodied?"); it never applies anything itself. That's rule 1:
- * a rules engine may propose into a slot, never own it. The name is
- * vocabulary, not rules text, so templates may carry it.
+ * A condition ON a character is a `Tag`; this is the declaration that
+ * such a condition exists, what relieves it, and how it looks. Both are
+ * needed: the tag is the fact, this is the word.
+ *
+ * **It belongs to the SYSTEM** (Brian, 2026-08-16). Trapped, Afraid and
+ * Poisoned are not optional content a pack brings — they are how Wild
+ * Imaginary West works, and without them you are not playing it. The
+ * system already declares skills, talents, dice, ranges and Grit
+ * reload; statuses were the one mechanic whose vocabulary got left in a
+ * pack, and only their STACKING rules ever made it in.
+ *
+ * The line is rule 4's: the system carries the MECHANIC (this exists,
+ * it's called Trapped, Finesse or Nerve relieves it); the pack carries
+ * the book's WORDS about it. So a host with the system and no pack
+ * still plays correctly — it just doesn't get the prose on tap, which
+ * is the bargain a pack already strikes with its PDF.
+ *
+ * What used to live here was three DERIVED readings — Bloodied, Down,
+ * Out of Grit — each with a `suggest` threshold teller watched. They
+ * were never conditions; they were a view of a counter, stored as a
+ * fact, which is how a healed character stayed Bloodied until somebody
+ * noticed. Removed 2026-08-16; deriving them is its own question.
  */
-export type EncounterState = {
-  /** The tag applied when the DM accepts it. */
+export type StatusDef = {
+  /** Matched against a tag BY NAME — never exactly (worker/tags.ts). */
   name: string;
+  /**
+   * What relieves it, in the book's own words ("Finesse or Nerve").
+   *
+   * Free text on purpose: teller SHOWS this and never evaluates it, and
+   * every system words it differently. It used to ride in a pack
+   * entry's `meta`, which is how a mechanic came to live in a prose
+   * section.
+   */
+  relief?: string;
   effect?: StateEffect;
-  suggest?: {
-    /** Counter name to watch, matched case-insensitively. */
-    counter: string;
-    /** Offer the state at or below this fraction of max (0..1). */
-    atOrBelow: number;
-  };
 };
 
 export type Field = {
@@ -667,10 +687,15 @@ export type CampaignData = {
   /** Party-level resources (supplies, group Prestige, doom clocks…). */
   counters: Counter[];
   /**
-   * States the encounter panel offers, seeded from the template and
-   * editable afterwards like everything else.
+   * Conditions THIS TABLE added, on top of the system's.
+   *
+   * The system declares what the game has; this is the Warden's own —
+   * a homebrew condition, a one-off a ruling invented mid-session.
+   * Merged over the system's by name, campaign winning, exactly as the
+   * bestiary merges (rule 4a). No longer seeded: a campaign starts with
+   * nothing here because the system already has the real list.
    */
-  states?: EncounterState[];
+  states?: StatusDef[];
   /** The bestiary: NPCs to stamp out. Per-instance content, never shipped. */
   npcs?: NpcBlueprint[];
   /**
@@ -823,8 +848,6 @@ export type SystemTemplate = {
   campaign: {
     counters: TemplateCounter[];
   };
-  /** Starting kit of encounter states — vocabulary + thresholds only. */
-  states?: EncounterState[];
   /**
    * How this system measures the TABLE — what an inch means in the
    * world, what the range bands are, what moving costs, which band an
@@ -895,6 +918,11 @@ export type SystemTemplate = {
    * that is never a silent double-count.
    */
   statuses?: {
+    /**
+     * The conditions this system HAS. Without these a system has no
+     * conditions at all — see `StatusDef`.
+     */
+    list?: StatusDef[];
     stack?: 'sum' | 'higher' | 'replace';
     cap?: number;
     /** Names the cap doesn't apply to, in the book's own spelling. */

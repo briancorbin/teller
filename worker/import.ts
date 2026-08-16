@@ -9,7 +9,7 @@ import type {
   CampaignData,
   CharacterData,
   Encounter,
-  EncounterState,
+  StatusDef,
   Handout,
   NpcBlueprint,
   RulesPack,
@@ -199,7 +199,7 @@ export async function apply(
     const data: CampaignData = {
       vocabulary: incoming?.vocabulary ?? {},
       counters: incoming?.counters ?? [],
-      states: (incoming?.states as EncounterState[]) ?? [],
+      states: (incoming?.states as StatusDef[]) ?? [],
       // Which printing this table uses where a foe is in two packs. A
       // decision a person made about THIS campaign, so it travels with
       // it — losing it would silently re-default every one of them.
@@ -377,7 +377,7 @@ export async function apply(
     // counters it doesn't have; it never rewrites what's there.
     data.vocabulary = { ...(incoming.vocabulary ?? {}), ...data.vocabulary };
     if (!data.states?.length && incoming.states) {
-      data.states = incoming.states as EncounterState[];
+      data.states = incoming.states as StatusDef[];
     }
     // Homebrew gear and shops layer by id, and the table's copy wins on
     // a collision — an import is a proposal, not an authority (rule 1).

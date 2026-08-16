@@ -11,6 +11,7 @@ import {
   type Env,
 } from './db';
 import { findTag, setTag } from './tags';
+import { statusesFor } from './statuses';
 import {
   actorOf,
   canDm,
@@ -450,10 +451,11 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     if (!template) return err(`unknown system: ${body.system}`, 400);
 
     const id = newId('cmp');
+    // No `states` seed: the system already declares the real
+    // conditions, and a campaign's own list is for what IT adds.
     const data = {
       vocabulary: template.vocabulary,
       counters: countersFrom(template.campaign.counters),
-      states: template.states ?? [],
     };
     await env.DB.prepare(
       'INSERT INTO campaigns (id, name, system, data) VALUES (?, ?, ?, ?)',
@@ -490,6 +492,10 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       // The whole shelf: what your packs bring plus what this campaign
       // wrote itself, with the campaign's own version winning.
       bestiary: await bestiaryFor(env, campaign),
+      // Same merge for conditions: the system's real list plus whatever
+      // this table invented. Assembled here so every surface asks one
+      // question instead of four of them agreeing by accident.
+      statuses: statusesFor(await getSystem(env, campaign.system), campaign),
       // Packs this campaign claims but this host doesn't hold. Named
       // here rather than discovered when a deploy comes up short.
       missingPacks: await missingPacks(env, campaign),
@@ -887,8 +893,9 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           counters: publicCounters(campaign.data.counters),
           // Vocabulary, so the table can turn a tag into a visual. The
           // tags themselves are already table-safe; numbers are not and
-          // never come with them.
-          states: campaign.data.states ?? [],
+          // never come with them. Merged here rather than on the table:
+          // a passive surface should not have to assemble anything.
+          states: statusesFor(await getSystem(env, campaign.system), campaign),
           grid: campaign.data.grid,
           // Active scene (with view/scale metadata); legacy single-map
           // pointer keeps old campaigns rendering.

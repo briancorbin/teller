@@ -20,6 +20,7 @@ import type {
   SystemTemplate,
   TurnNarration,
   TurnSuggestion,
+  StatusDef,
 } from '../../worker/types';
 import type { BundleSummary } from '../../worker/import';
 import type { SourcedNpc } from '../../worker/bestiary';
@@ -167,6 +168,8 @@ export const api = {
       campaign: Campaign;
       characters: Character[];
       bestiary: SourcedNpc[];
+      /** The system's conditions plus this table's own, already merged. */
+      statuses: StatusDef[];
       /** Packs it claims that this host doesn't hold — named, not hidden. */
       missingPacks: string[];
     }>(`/api/campaigns/${id}`),

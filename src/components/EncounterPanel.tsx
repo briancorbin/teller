@@ -4,7 +4,7 @@ import type {
   Character,
   CharacterData,
   Counter,
-  EncounterState,
+  StatusDef,
   InitiativeEntry,
   SessionOp,
   SessionState,
@@ -44,32 +44,17 @@ import { STATE_EFFECTS } from './token-visuals';
 // the full console, and it should answer to its own width rather than
 // to a list of devices that the client deliberately doesn't keep.
 
-/** The counter a state watches, else the first bounded one. */
-function vitalCounter(
-  counters: Counter[],
-  states: EncounterState[],
-): Counter | undefined {
-  const watched = states
-    .map((s) => s.suggest?.counter?.toLowerCase())
-    .filter(Boolean) as string[];
-  const named = counters.find((c) => watched.includes(c.name.toLowerCase()));
-  return named ?? counters.find((c) => c.max !== null && c.max > 0);
-}
-
-/** States whose line this character has crossed but hasn't been given. */
-function suggestions(
-  character: Character,
-  states: EncounterState[],
-): EncounterState[] {
-  return states.filter((state) => {
-    if (!state.suggest) return false;
-    if (hasTag(character.data.tags, state.name)) return false;
-    const counter = character.data.counters.find(
-      (c) => c.name.toLowerCase() === state.suggest!.counter.toLowerCase(),
-    );
-    if (!counter || counter.max === null || counter.max <= 0) return false;
-    return counter.current / counter.max <= state.suggest.atOrBelow;
-  });
+/**
+ * The counter a hit comes off — the first bounded one, as everywhere.
+ *
+ * It used to prefer a counter that some state was WATCHING, back when
+ * three derived readings (Bloodied, Down, Out of Grit) were stored as
+ * conditions with a threshold. Those are gone: they were a view of a
+ * counter kept as a fact, which is how a healed character stayed
+ * Bloodied until somebody noticed.
+ */
+function vitalCounter(counters: Counter[]): Counter | undefined {
+  return counters.find((c) => c.max !== null && c.max > 0);
 }
 
 export function EncounterPanel({
@@ -92,7 +77,7 @@ export function EncounterPanel({
 }: {
   session: SessionState | null;
   characters: Character[];
-  states: EncounterState[];
+  states: StatusDef[];
   /** The bestiary — stamp these out into the fight. */
   npcs: SourcedNpc[];
   /** Character ids that already have a token on the active scene. */
@@ -311,8 +296,7 @@ export function EncounterPanel({
     const character = entry.characterId
       ? characters.find((c) => c.id === entry.characterId)
       : null;
-    const counter = character ? vitalCounter(character.data.counters, states) : undefined;
-    const offers = character ? suggestions(character, states) : [];
+    const counter = character ? vitalCounter(character.data.counters) : undefined;
     const isTurn = index === turn;
     const isTarget = character?.id === aimedAt;
     const foe = character?.kind === 'npc';
@@ -410,14 +394,6 @@ export function EncounterPanel({
                 className="h-1.5 w-1.5 rounded-full bg-sky-400"
                 title={extra.map(formatTag).join(', ')}
               />
-            )}
-            {offers.length > 0 && (
-              <span
-                className="font-mono text-[10px] text-amber-500"
-                title={`${offers.map((o) => o.name).join(', ')} — teller noticed the line`}
-              >
-                ?
-              </span>
             )}
           </span>
 

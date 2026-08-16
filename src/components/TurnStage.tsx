@@ -1,7 +1,7 @@
 import type {
   Character,
   Counter,
-  EncounterState,
+  StatusDef,
   InitiativeEntry,
   SystemTemplate,
   TurnNarration,
@@ -187,7 +187,7 @@ export function TurnStage({
   round: number;
   initiative: InitiativeEntry[];
   characters: Character[];
-  states: EncounterState[];
+  states: StatusDef[];
   dice: SystemTemplate['dice'];
   dieArt?: DieArt;
   advice: Advice | undefined;
