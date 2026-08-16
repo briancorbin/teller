@@ -401,9 +401,11 @@ executables.
 
 ## The one-way doors
 
-Almost everything here is a two-way door and can wait. Three are not.
+Almost everything here is a two-way door and can wait. Three are not —
+door 1 has since been walked through and is recorded as decided; doors 2
+and 3 are still open.
 
-### Door 1 — is Core's primitive list CLOSED? *(open, and the only urgent one)*
+### Door 1 — Core's primitive list is CLOSED *(decided 2026-08-16, Brian)*
 
 Not "what is the complete list" — that's the big version of the
 question and it isn't the one that has to be answered. The one that does
@@ -430,8 +432,72 @@ always. Statuses, Talents, standings — the system declares a population
 and the character holds some of it. Standings already behave this way:
 nothing is stored until a party moves off `defaultStep`.
 
-Deciding "closed" is cheap, is a decision rather than a build, and is
-what unblocks door 3.
+**Closed means the list of places to put bytes is fixed, and nothing
+above Core may add to it.** Systems get unlimited expressiveness in what
+they DECLARE; they don't get to invent storage. The nearest analogy is
+`data-*` attributes and CSS custom properties — one closed mechanism,
+unlimited author vocabulary, and the browser never grows a new attribute
+type per author.
+
+It does not mean the primitives are frozen forever. It means an addition
+is a deliberate Core-version change rather than a side effect of
+somebody authoring a system. **The question is who can cause one.**
+
+The honest cost: `Record<string, Tag[]>` knows less at compile time than
+`marks: Mark[]`. But it isn't safety being lost — consumers already do
+dynamic lookups (`system.marks.prefix`, `ladders[].prefix`); this makes
+the existing dynamism explicit and gives it one code path instead of
+three bespoke ones.
+
+### The escalation ladder
+
+Three outcomes, in the order to try them (Brian, 2026-08-16):
+
+1. **Declare a kind.** Free, ungated, no approval — the overwhelming
+   majority. The system decides what goes in the store and how it's
+   presented and used.
+2. **A Core addition.** Strict, rare, gated on Brian doing it or
+   approving it.
+3. **A plugin.** For anything bespoke that doesn't belong in Core.
+
+The triage between them reuses tests already in this file:
+
+- **Does it hold state a human needs recorded?** No — it acts or renders
+  → **plugin** (the three-question test above).
+- Yes → **can it honestly be a list of `{ name, value? }`?** Yes →
+  **declare a kind**.
+- No — it genuinely has structure (ordering that matters, a
+  relationship, a shape) → **Core addition**.
+
+**The tell for that last case is this codebase's own recurring bug: if
+you find yourself putting a second fact into the name or the value,
+it isn't a kind.** Four instances so far, every one of which appeared to
+fit — severity on the end of a tag string, a Talent's category behind a
+`"Talent: "` prefix, the relieving skill in a free-text `meta`,
+reputation behind a `rep_` field-key prefix. The pattern that caused the
+bugs is the test for when a Core addition is actually warranted.
+
+### Why Core specifically is the gated layer
+
+Not maintainer's privilege — **Core is the only layer with no version
+negotiation.** Every other layer is referenced by id and degrades when
+absent: a missing pack, system or plugin costs something and the table
+plays on. Core is referenced by nothing; it is simply whatever build is
+running. So a Core addition is the only change in this architecture that
+cannot be degraded around, opted into per-table, or rolled back for one
+campaign.
+
+That also predicts the pressure the gate exists to resist. Nobody will
+ask for a Core addition because something is impossible; they'll ask
+because a real property would be *nicer* than a kind. That's
+ergonomics — and ergonomics is what the System declaration layer is for.
+
+**What's left of this door is the build**, not the decision: introduce
+the kind store, move statuses/Talents/standings into it, and retire
+`marks.prefix` and `ladders[].prefix`. `wip/marks` (`496d6e9`) is
+premised on the open answer and should be reworked rather than
+cherry-picked — its one durable catch is the PATCH allowlist entry,
+without which every write returns 200 and stores nothing.
 
 ### Door 2 — System identity is a hand-chosen slug *(open, cheap now)*
 
@@ -476,7 +542,9 @@ on nothing in this file.
 
 ## Open questions
 
-- **Door 1**, above. Everything else in this list is smaller.
+- **Doors 2 and 3**, above — system identity, and the ordering that
+  keeps `.system` from freezing two hacks. Door 1 is decided; what
+  remains of it is a build.
 - **Can a kind declare its value domain?** Numeric with a cap, versus an
   ordered step list — the difference between `statuses.stack/cap` living
   *on* the kind or beside it. It's the first place the declarative format
