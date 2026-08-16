@@ -1987,10 +1987,25 @@ export type ResolvedTurn = {
   /** The vital counter's transition, when the target had one. */
   vital?: { name: string; from: number; to: number };
   statuses: { name: string; severity: number }[];
-  /** What the turn cost its actor, out of which counter. */
-  spend?: { counter: string; amount: number };
+  /** What the turn cost its actor, line by line. */
+  spend?: Spend[];
   round: number;
 };
+
+/**
+ * One line of what a turn cost, and what it BOUGHT.
+ *
+ * `on` is the whole point of this shape. A lump total is ambiguous the
+ * moment a turn does two things, and the history is read by a model:
+ * a Bark Watcher moved and used a free ability, the log said "spent 1
+ * Grit", and the next creature concluded the ABILITY costs a Grit and
+ * stated it as fact in its premises (found in play, 2026-08-15). The
+ * cost was the movement; nothing about the log let it tell.
+ *
+ * A total anyone has to reverse-engineer is a total that gets
+ * reverse-engineered wrong. Say what each part paid for.
+ */
+export type Spend = { counter: string; amount: number; on?: string };
 
 /**
  * The shop that's OPEN, and every cart in it. Live state that more than

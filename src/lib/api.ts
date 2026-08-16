@@ -198,7 +198,8 @@ export const api = {
       blocked: number;
       damage: number;
       statuses: { name: string; severity: number }[];
-      spend?: { counter: string; amount: number };
+      /** Line items — what each part of the turn paid for. */
+      spend?: { counter: string; amount: number; on?: string }[];
     },
   ) =>
     req<{ character: Character; resolved: ResolvedTurn }>(

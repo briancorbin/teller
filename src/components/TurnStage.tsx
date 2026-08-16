@@ -59,12 +59,22 @@ export type Advice = {
    */
   sevSet?: Record<string, number | null>;
   /**
-   * What the actor pays, and out of which counter. Taken from the
-   * printed line and then the Warden's — a turn usually also costs
-   * MOVEMENT, which is a judgment about distance, speed and ground
-   * that only they can make, so the number is theirs to raise.
+   * What the ACTION itself costs, off the printed line, and out of
+   * which counter.
    */
   spend?: { counter: string; amount: number };
+  /**
+   * What the turn spent getting there, counted separately.
+   *
+   * A turn usually also buys MOVEMENT, which is a judgment about
+   * distance, speed and ground that only the Warden can make — but
+   * folding it into one total made the log ambiguous, and the log is
+   * read by a model: a creature moved and used a free ability, the
+   * history said "spent 1 Grit", and the next creature concluded the
+   * ABILITY costs a Grit (found in play, 2026-08-15). Two numbers, so
+   * the record says which was which.
+   */
+  moved?: number;
   applied?: boolean;
   /** The vital's value BEFORE applying — the transition, not a re-derivation. */
   appliedFrom?: number;
@@ -178,7 +188,8 @@ export function TurnStage({
     blocked: number;
     damage: number;
     statuses: { name: string; severity: number }[];
-    spend?: { counter: string; amount: number };
+    /** Line items — what each part of the turn paid for. */
+    spend?: { counter: string; amount: number; on?: string }[];
   }) => void;
   /**
    * The pack's item entries by id, so a carried weapon can be read for
@@ -275,6 +286,19 @@ export function TurnStage({
    * Severity — which is the only automation here, and it happens after
    * a human has read the arithmetic and chosen to press.
    */
+  /**
+   * The counter a turn is PAID out of.
+   *
+   * Usually the printed cost names it. When an action has no printed
+   * cost at all — slipping into cover, a free feature — there's still
+   * movement to pay for, so fall back to the first bounded counter
+   * that isn't what damage comes off. That's the action budget in
+   * every system that has one, and teller never learns its name.
+   */
+  const costCounter =
+    a.spend?.counter ??
+    character.data.counters.find((c) => c.max !== null && c !== vitalOf(character))?.name;
+
   const apply = () => {
     const vital = target ? vitalOf(target) : undefined;
     onResolve({
@@ -292,7 +316,15 @@ export function TurnStage({
             .map((s) => ({ name: s.name, severity: severityOf(s) }))
             .filter((s): s is { name: string; severity: number } => s.severity !== null)
         : [],
-      ...(a.spend && a.spend.amount > 0 ? { spend: a.spend } : {}),
+      // Line items, so the history says what each part paid for.
+      spend: [
+        ...(a.spend && a.spend.amount > 0
+          ? [{ ...a.spend, on: a.roll?.for ?? a.spend.counter }]
+          : []),
+        ...(costCounter && (a.moved ?? 0) > 0
+          ? [{ counter: costCounter, amount: a.moved!, on: 'moving' }]
+          : []),
+      ],
     });
     onAdvice({ ...a, applied: true, appliedFrom: vital?.current });
   };
@@ -802,14 +834,16 @@ export function TurnStage({
                 ) : (
                   <span className="font-mono text-[11px] text-stone-500">nobody is hit</span>
                 )}
-                {/* What the ACTOR pays. The printed cost is the floor;
-                    a turn usually also bought movement, and how much is
-                    a ruling about distance, speed and ground — so
-                    teller fills in what the book says and leaves the
-                    rest to the person who watched it happen. */}
+                {/* What the ACTOR pays, in TWO numbers rather than one.
+                    The printed cost is teller's to fill in; what the
+                    turn spent getting there is a ruling about distance,
+                    speed and ground that only the person who watched it
+                    can make. Adding them together lost which was which,
+                    and the history is read by a model that then priced
+                    a free ability at a Grit. */}
                 {a.spend && (
                   <span className="flex items-center gap-1 font-mono text-[11px] text-stone-400">
-                    <span className="text-stone-600">spends</span>
+                    <span className="text-stone-600">action</span>
                     <button
                       className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
                       onClick={() =>
@@ -819,7 +853,7 @@ export function TurnStage({
                           applied: false,
                         })
                       }
-                      aria-label="spend less"
+                      aria-label="action costs less"
                     >
                       −
                     </button>
@@ -833,11 +867,42 @@ export function TurnStage({
                           applied: false,
                         })
                       }
-                      aria-label="spend more"
+                      aria-label="action costs more"
                     >
                       +
                     </button>
                     <span className="text-stone-600">{a.spend.counter}</span>
+                  </span>
+                )}
+                {costCounter && (
+                  <span className="flex items-center gap-1 font-mono text-[11px] text-stone-400">
+                    <span className="text-stone-600">moving</span>
+                    <button
+                      className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
+                      onClick={() =>
+                        onAdvice({
+                          ...a,
+                          moved: Math.max(0, (a.moved ?? 0) - 1),
+                          applied: false,
+                        })
+                      }
+                      aria-label="moved less"
+                    >
+                      −
+                    </button>
+                    <span className={(a.moved ?? 0) > 0 ? 'text-amber-200' : 'text-stone-600'}>
+                      {a.moved ?? 0}
+                    </span>
+                    <button
+                      className="rounded px-1 text-sm text-stone-500 hover:bg-stone-800 hover:text-stone-100"
+                      onClick={() =>
+                        onAdvice({ ...a, moved: (a.moved ?? 0) + 1, applied: false })
+                      }
+                      aria-label="moved more"
+                    >
+                      +
+                    </button>
+                    <span className="text-stone-600">{costCounter}</span>
                   </span>
                 )}
                 <button

@@ -105,8 +105,8 @@ export function EncounterPanel({
     blocked: number;
     damage: number;
     statuses: { name: string; severity: number }[];
-    /** What the ACTOR pays for the turn, out of which counter. */
-    spend?: { counter: string; amount: number };
+    /** Line items — what each part of the turn paid for. */
+    spend?: { counter: string; amount: number; on?: string }[];
   }) => void;
   onDropToken: (characterId: string, label: string) => void;
   onSpawn: (npcId: string, count: number) => void;

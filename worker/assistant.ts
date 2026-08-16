@@ -21,6 +21,7 @@
 import type {
   Campaign,
   Character,
+  Spend,
   Scene,
   SessionState,
   ResolvedTurn,
@@ -397,6 +398,29 @@ function describeFight(
  */
 function describeHistory(recent: ResolvedTurn[], foeId: string): string {
   if (!recent.length) return 'WHAT HAS ALREADY HAPPENED: nothing recorded yet this fight.';
+  /**
+   * What it cost, and what each part BOUGHT.
+   *
+   * Said as a lump, "spent 1 Grit" on a turn that both moved and used
+   * a free ability taught the next creature that the ABILITY costs a
+   * Grit — which it stated as fact in its premises. Naming what each
+   * line paid for is the fix; rows written before `Spend[]` existed
+   * are single objects and still read fine.
+   */
+  const paidOf = (r: ResolvedTurn): string => {
+    const raw = r.spend as unknown;
+    const lines: Spend[] = Array.isArray(raw) ? raw : raw ? [raw as Spend] : [];
+    if (!lines.length) return '';
+    // A zero is a POSITIVE fact — this cost nothing — and saying it as
+    // "0 Grit" invites it to be read as a missing number.
+    const said = lines.map((s) =>
+      s.amount === 0
+        ? `${s.on} cost no ${s.counter}`
+        : `${s.amount} ${s.counter}${s.on ? ` on ${s.on}` : ''}`,
+    );
+    return ` (spent ${said.join(', ')})`;
+  };
+
   const lines = recent.map((r) => {
     const mine = r.by === foeId ? ' (you did this)' : '';
     // A turn aimed at nobody has no damage to report and reads wrong
@@ -404,8 +428,7 @@ function describeHistory(recent: ResolvedTurn[], foeId: string): string {
     // what it cost. Hiding, repositioning and readying are exactly the
     // turns a later decision most wants to know about.
     if (!r.targetName) {
-      const paid = r.spend ? ` (spent ${r.spend.amount} ${r.spend.counter})` : '';
-      return `round ${r.round}: ${r.byName} — ${r.action}${paid}${mine}`;
+      return `round ${r.round}: ${r.byName} — ${r.action}${paidOf(r)}${mine}`;
     }
     const hit = r.damage > 0 ? `${r.damage} damage` : 'no damage';
     const vital = r.vital ? ` (${r.vital.name} ${r.vital.from} → ${r.vital.to})` : '';
@@ -413,7 +436,9 @@ function describeHistory(recent: ResolvedTurn[], foeId: string): string {
     const left = r.statuses.length
       ? `, leaving ${r.statuses.map((s) => `${s.name} ${s.severity}`).join(' and ')}`
       : '';
-    return `round ${r.round}: ${r.byName} used ${r.action} on ${r.targetName} — ${hit}${blocked}${vital}${left}${mine}`;
+    // An attack's cost belongs here too: what a turn could afford last
+    // round is how a creature judges what it can afford this one.
+    return `round ${r.round}: ${r.byName} used ${r.action} on ${r.targetName} — ${hit}${blocked}${vital}${left}${paidOf(r)}${mine}`;
   });
   return [
     'WHAT HAS ALREADY HAPPENED (oldest first; this is where the conditions above came from):',

@@ -48,6 +48,7 @@ import type {
   Counter,
   RulesPack,
   SessionOp,
+  Spend,
   SessionState,
   Token,
 } from './types';
@@ -1374,7 +1375,8 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       blocked?: number;
       damage?: number;
       statuses?: { name: string; severity: number }[];
-      spend?: { counter: string; amount: number };
+      /** One line or many — a turn that moved AND swung says both. */
+      spend?: Spend | Spend[];
     }>();
     // A turn that hits nobody is still a turn (TEL-98, found in play).
     // The assistant is instructed in as many words to omit `target`
@@ -1437,13 +1439,33 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     // a creature could attack every round forever. The counter is NAMED
     // by the caller — read off the attack's own printed cost — because
     // what a turn spends is the system's business, not teller's.
-    const spend = body.spend;
-    if (spend?.counter && spend.amount > 0) {
-      const paid = actor.data.counters.map((c) =>
-        c.name.toLowerCase() === spend.counter.toLowerCase()
-          ? { ...c, current: Math.max(0, c.current - Math.round(spend.amount)) }
-          : c,
-      );
+    // Line items, not a lump. One line still arrives as one object from
+    // older callers and normalises to a list of one.
+    const spends: Spend[] = (
+      Array.isArray(body.spend) ? body.spend : body.spend ? [body.spend] : []
+    )
+      // A line worth ZERO is kept when it says what it bought, and it
+      // is the most useful line in the log: "Echoes of Nature — 0 Grit"
+      // is precisely the fact whose absence made the next creature
+      // price a free ability at a Grit. A bare zero with no `on`
+      // carries nothing and is dropped.
+      .filter((s) => s?.counter && Number(s.amount) >= 0 && (Number(s.amount) > 0 || s.on))
+      .map((s) => ({
+        counter: String(s.counter),
+        amount: Math.round(Number(s.amount)),
+        ...(s.on ? { on: String(s.on) } : {}),
+      }));
+    if (spends.length) {
+      // Two lines out of the same counter come off it once.
+      const owed = new Map<string, number>();
+      for (const s of spends) {
+        const key = s.counter.toLowerCase();
+        owed.set(key, (owed.get(key) ?? 0) + s.amount);
+      }
+      const paid = actor.data.counters.map((c) => {
+        const due = owed.get(c.name.toLowerCase());
+        return due ? { ...c, current: Math.max(0, c.current - due) } : c;
+      });
       await env.DB.prepare(
         "UPDATE characters SET data = ?, updated_at = datetime('now') WHERE id = ?",
       )
@@ -1475,9 +1497,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           }
         : {}),
       statuses,
-      ...(body.spend && body.spend.amount > 0
-        ? { spend: { counter: body.spend.counter, amount: Math.round(body.spend.amount) } }
-        : {}),
+      ...(spends.length ? { spend: spends } : {}),
       round: session?.round ?? 1,
     };
     // `entity_id` is the one it happened TO, which for a turn aimed at
