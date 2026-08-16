@@ -4,6 +4,9 @@
 // primitives (fields, counters, tags, notes) that humans fill in.
 // No rules engine — see CLAUDE.md ("track, don't compute").
 
+export type { Tag } from './tags';
+import type { Tag } from './tags';
+
 export type Counter = {
   id: string;
   name: string;
@@ -179,7 +182,7 @@ export type Item = {
    */
   fields: Field[];
   counters: Counter[];
-  tags?: string[];
+  tags?: Tag[];
   notes?: string;
   /**
    * Free-text grouping — "weapon", "ability", "gear".
@@ -344,7 +347,7 @@ export type FittedUpgrade = {
 export type CharacterData = {
   fields: Field[];
   counters: Counter[];
-  tags: string[];
+  tags: Tag[];
   notes: string;
   /** Things the character carries — see `Item`. Absent means none. */
   items?: Item[];
@@ -380,7 +383,7 @@ export type NpcBlueprint = {
   name: string;
   fields: Field[];
   counters: Counter[];
-  tags: string[];
+  tags: Tag[];
   /** The page this foe is printed on, when it came from a book. */
   page?: number;
   /** Which book that page is in. Stamped from the pack when it's absent. */
@@ -577,7 +580,7 @@ export type Placement = {
     counters?: Record<string, { current?: number; max?: number | null }>;
   };
   /** Conditions it starts with — asleep, dug in, already wounded. */
-  tags?: string[];
+  tags?: Tag[];
   /**
    * Where it starts, in map space (see docs/BATTLEMAP.md). Only
    * meaningful when the encounter names a scene; a mapless fight simply
@@ -809,13 +812,13 @@ export type SystemTemplate = {
   character: {
     fields: { key: string; label: string; value?: string }[];
     counters: TemplateCounter[];
-    tags: string[];
+    tags: Tag[];
   };
   /** Starting kit for kind 'npc' (foes/NPCs). Falls back to `character`. */
   npc?: {
     fields: { key: string; label: string; value?: string }[];
     counters: TemplateCounter[];
-    tags: string[];
+    tags: Tag[];
   };
   campaign: {
     counters: TemplateCounter[];
@@ -2117,7 +2120,7 @@ export type PublicCharacter = {
   data: {
     fields: Field[];
     counters: Counter[];
-    tags: string[];
+    tags: Tag[];
     /**
      * Qualitative state derived server-side from the first max-bearing
      * counter — the table may know a wolf is Bloodied, NEVER its

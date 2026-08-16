@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import type { PackEntry } from '../../worker/types';
-import { formatTag, parseTag } from '../lib/tags';
+import { hasTag, setTag, toTags, withoutTag, type Tag } from '../../worker/tags';
 import { input, sectionLabel } from '../lib/ui';
 
 // Conditions, statuses, trophies — any list of words on an entity.
 //
-// Numbered tags: a tag ending in a number ("Afraid 3") is a stacked
-// status — tapping it decrements the number (WIW-style Severity
-// relief), reaching 0 removes it. The ✕ removes outright. Plain tags
-// keep tap-to-remove. Pure convention: the stored value is still just
-// a string, so every system and old datum works unchanged.
+// A tag carrying a number ("Afraid 3") is a stacked status — tapping it
+// decrements (WIW-style Severity relief), reaching 0 removes it. The ✕
+// removes outright. Plain tags keep tap-to-remove.
+//
+// Typing is still free-text, because a Warden writing "Afraid 3" into a
+// box shouldn't have to meet a second field: `toTags` reads what they
+// meant. What's stored is structured (worker/tags.ts).
 //
 // When a `lookup` is provided (rules packs), tags with a matching
 // rules entry grow an ⓘ — tapping it opens the rule card inline.
@@ -20,8 +22,8 @@ export function TagSection({
   label = 'Tags',
   lookup,
 }: {
-  tags: string[];
-  onChange: (next: string[]) => void;
+  tags: Tag[];
+  onChange: (next: Tag[]) => void;
   label?: string;
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
 }) {
@@ -29,18 +31,19 @@ export function TagSection({
   const [openInfo, setOpenInfo] = useState<string | null>(null);
 
   const add = () => {
-    const tag = draft.trim();
-    if (!tag || tags.includes(tag)) return;
-    onChange([...tags, tag]);
+    const [tag] = toTags([draft]);
+    if (!tag || hasTag(tags, tag)) return;
+    onChange(setTag(tags, tag.name, tag.value));
     setDraft('');
   };
 
-  const remove = (tag: string) => onChange(tags.filter((t) => t !== tag));
+  const remove = (tag: Tag) => onChange(withoutTag(tags, tag));
 
-  const decrement = (tag: string) => {
-    const { name, value } = parseTag(tag);
-    if (value === null || value <= 1) return remove(tag);
-    onChange(tags.map((t) => (t === tag ? formatTag(name, value - 1) : t)));
+  const decrement = (tag: Tag) => {
+    if (tag.value === undefined) return remove(tag);
+    // setTag drops it at zero, so one call covers "ease it" and "that
+    // was the last of it".
+    onChange(setTag(tags, tag.name, tag.value - 1));
   };
 
   const info = openInfo ? lookup?.(openInfo) : undefined;
@@ -50,20 +53,20 @@ export function TagSection({
       <span className={sectionLabel}>{label}</span>
       <div className="flex flex-wrap items-center gap-1.5">
         {tags.map((tag) => {
-          const { name, value } = parseTag(tag);
+          const { name, value } = tag;
           const entry = lookup?.(name);
           return (
             <span
-              key={tag}
+              key={name}
               className="flex items-center overflow-hidden rounded-full bg-amber-950/60 text-xs text-amber-200"
             >
               <button
                 className="flex items-center gap-1.5 py-1 pl-2.5 pr-1.5 transition-colors hover:bg-amber-900/60"
                 onClick={() => decrement(tag)}
-                title={value !== null ? 'tap to reduce severity' : 'tap to remove'}
+                title={value !== undefined ? 'tap to reduce severity' : 'tap to remove'}
               >
                 {name}
-                {value !== null && (
+                {value !== undefined && (
                   <span className="rounded-full bg-amber-800 px-1.5 font-mono text-amber-100">
                     {value}
                   </span>

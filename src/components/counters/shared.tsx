@@ -11,6 +11,7 @@ import type {
   SystemTemplate,
   Vendor,
 } from '../../../worker/types';
+import type { Tag } from '../../../worker/tags';
 import type { StockLine } from '../../../worker/items';
 import type { Candidate } from '../sheet/NotchDialog';
 
@@ -73,8 +74,8 @@ export type CounterViewProps = {
    * a STATUSES panel with a fixed list and a number in each box, which a
    * row of chips can't be. Declared in `seat-layouts.ts`.
    */
-  tags?: string[];
-  onTags?: (next: string[]) => void;
+  tags?: Tag[];
+  onTags?: (next: Tag[]) => void;
   /** The things the character carries, for layouts that place them. */
   items?: Item[];
   onItems?: (next: Item[]) => void;
@@ -106,7 +107,7 @@ export type CounterViewProps = {
     counters?: Counter[];
     items?: Item[];
     fields?: Field[];
-    tags?: string[];
+    tags?: Tag[];
   }) => void;
   itemsLabel?: string;
   /** The catalogue items may point into. */

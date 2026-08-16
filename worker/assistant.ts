@@ -33,6 +33,10 @@ import type {
 // Pure parsing over the pack's own printed text — no runtime deps, so
 // it reads the same in a Worker as it does in the browser.
 import { namedBlocks, parseAttacks } from '../src/lib/statblock';
+// A condition reaches the model as the words it would be spoken as —
+// "Trapped 4", not an object. The measured number is the whole point
+// of passing it at all.
+import { formatTag } from './tags';
 
 export type AssistantEnv = {
   /** Endpoint. Absent = Anthropic's. An ollama or teller.ink URL works the same. */
@@ -196,7 +200,8 @@ function describeFoe(foe: Character): string {
   for (const c of foe.data.counters) {
     lines.push(`${c.name}: ${c.current}${c.max !== null ? `/${c.max}` : ''}`);
   }
-  if (foe.data.tags.length) lines.push(`conditions: ${foe.data.tags.join(', ')}`);
+  if (foe.data.tags.length)
+    lines.push(`conditions: ${foe.data.tags.map(formatTag).join(', ')}`);
 
   const fields = foe.data.fields.filter((f) => f.value);
   const attacksField = fields.find((f) => /^attacks$/i.test(f.key))?.value;
@@ -519,7 +524,9 @@ function describeFight(
         // The foe sees what the table sees: a state word, never a
         // PC's numbers (the /public boundary, applied to a prompt).
         const state = who ? ` — ${who.kind === 'pc' ? 'PC' : 'foe'}, ${vitalityOf(who)}` : '';
-        const tags = who?.data.tags.length ? `, ${who.data.tags.join('/')}` : '';
+        const tags = who?.data.tags.length
+          ? `, ${who.data.tags.map(formatTag).join('/')}`
+          : '';
         // Armor and shields are worn in plain sight, so they belong in
         // the same sentence as the wound state — both are what the foe
         // can see, and neither is a number off anyone's sheet.

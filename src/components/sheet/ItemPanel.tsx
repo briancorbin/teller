@@ -4,6 +4,7 @@ import type {
   Item,
   RulesPack,
   SystemTemplate,
+  Tag,
 } from '../../../worker/types';
 import {
   catalogOf,
@@ -14,6 +15,7 @@ import {
   standingOf,
   type OwnCatalog,
 } from '../../../worker/items';
+import { findTag, formatTag } from '../../../worker/tags';
 import { bumped, isGauge, Step } from '../counters/shared';
 import type { Candidate } from './NotchDialog';
 import { Reticle } from './Reticle';
@@ -129,7 +131,7 @@ export function ItemPanel({
   /** What each `use.costs` counter holds, for the disabled state. */
   balances?: Record<string, number>;
   /** The character's tags — where a Talent lives ("Talent: Rifles"). */
-  tags?: string[];
+  tags?: Tag[];
   /** The system's mark declaration — see `SystemTemplate.marks`. */
   marks?: SystemTemplate['marks'];
   /**
@@ -173,13 +175,7 @@ export function ItemPanel({
   // wears the printed sheet's ✶. Display only; the reroll is real dice.
   const group = item.from ? catalog.get(item.from)?.group : undefined;
   const talent =
-    marks && group
-      ? tags.find(
-          (t) =>
-            t.trim().toLowerCase() ===
-            `${marks.prefix}${group}`.trim().toLowerCase(),
-        )
-      : undefined;
+    marks && group ? findTag(tags, `${marks.prefix}${group}`) : undefined;
 
   // Base stats from the catalogue, upgrades applied, the chambered
   // round last, anything a person typed on top — see `worker/items.ts`.
@@ -256,7 +252,7 @@ export function ItemPanel({
       title={item.name}
       fill={fill}
       className="w-full"
-      mark={talent ? { title: `${talent} — ${marks?.text ?? ''}` } : undefined}
+      mark={talent ? { title: `${formatTag(talent)} — ${marks?.text ?? ''}` } : undefined}
     >
       <div className={`flex flex-col gap-1 ${fill ? 'min-h-0 flex-1' : ''}`}>
         {/* The FRONT face: stats. Filing information stays in the
@@ -661,14 +657,14 @@ export function ItemPanel({
           <div className="flex flex-wrap gap-1 pt-0.5">
             {item.tags.map((tag) => (
               <span
-                key={tag}
+                key={tag.name}
                 className="rounded-full border px-2 py-0.5 text-[0.65rem] uppercase tracking-wider"
                 style={{
                   borderColor: 'var(--sheet-accent, #f59e0b)',
                   color: 'var(--sheet-accent, #f59e0b)',
                 }}
               >
-                {tag}
+                {formatTag(tag)}
               </span>
             ))}
           </div>

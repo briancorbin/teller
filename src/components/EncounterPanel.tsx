@@ -13,6 +13,15 @@ import type {
   TurnSuggestion,
 } from '../../worker/types';
 import { newLocalId } from '../lib/api';
+import {
+  findTag,
+  formatTag,
+  hasTag,
+  sameTag,
+  setTag,
+  withoutTag,
+  type Tag,
+} from '../../worker/tags';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 import { QuickSpawn } from './BestiaryPanel';
 import { CreatureSheet } from './CreatureSheet';
@@ -54,7 +63,7 @@ function suggestions(
 ): EncounterState[] {
   return states.filter((state) => {
     if (!state.suggest) return false;
-    if (character.data.tags.includes(state.name)) return false;
+    if (hasTag(character.data.tags, state.name)) return false;
     const counter = character.data.counters.find(
       (c) => c.name.toLowerCase() === state.suggest!.counter.toLowerCase(),
     );
@@ -271,13 +280,16 @@ export function EncounterPanel({
     });
   };
 
-  const toggleTag = (character: Character, tag: string) => {
-    const has = character.data.tags.includes(tag);
+  // On or off, by NAME — so taking "Trapped" off takes off the
+  // "Trapped 4" they're actually wearing, instead of leaving it there
+  // and adding a second, bare one beside it.
+  const toggleTag = (character: Character, tag: Tag | string) => {
+    const { name, value } = typeof tag === 'string' ? { name: tag, value: undefined } : tag;
     onPatchCharacter(character.id, {
       data: {
-        tags: has
-          ? character.data.tags.filter((t) => t !== tag)
-          : [...character.data.tags, tag],
+        tags: hasTag(character.data.tags, name)
+          ? withoutTag(character.data.tags, name)
+          : setTag(character.data.tags, name, value),
       },
     });
   };
@@ -307,9 +319,9 @@ export function EncounterPanel({
     // Mid-roll, the LIST is the status board: a row still owed a
     // number says so on the row, not in a sentence above it.
     const owed = rolling && typeof entry.score !== 'number';
-    const dots = states.filter((s) => character?.data.tags.includes(s.name));
+    const dots = states.filter((s) => character && hasTag(character.data.tags, s.name));
     const extra = character
-      ? character.data.tags.filter((t) => !states.some((s) => s.name === t))
+      ? character.data.tags.filter((t) => !states.some((s) => sameTag(s.name, t)))
       : [];
 
     return (
@@ -390,13 +402,13 @@ export function EncounterPanel({
                 key={s.name}
                 className="h-1.5 w-1.5 rounded-full"
                 style={{ background: STATE_EFFECTS[s.effect ?? 'mark'].chip }}
-                title={s.name}
+                title={formatTag(findTag(character!.data.tags, s.name) ?? { name: s.name })}
               />
             ))}
             {extra.length > 0 && (
               <span
                 className="h-1.5 w-1.5 rounded-full bg-sky-400"
-                title={extra.join(', ')}
+                title={extra.map(formatTag).join(', ')}
               />
             )}
             {offers.length > 0 && (

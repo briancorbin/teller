@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Campaign, Counter, PublicCharacter } from '../../worker/types';
+import { formatTag } from '../../worker/tags';
 import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
@@ -175,10 +176,10 @@ export function BoardView({ campaignId }: { campaignId: string }) {
                   <div className="flex flex-wrap gap-1.5">
                     {character.data.tags.map((tag) => (
                       <span
-                        key={tag}
+                        key={tag.name}
                         className="rounded-full bg-amber-950/60 px-3 py-1 text-sm text-amber-200"
                       >
-                        {tag}
+                        {formatTag(tag)}
                       </span>
                     ))}
                   </div>
@@ -200,8 +201,8 @@ export function BoardView({ campaignId }: { campaignId: string }) {
               >
                 {npc.name}
                 {npc.data.tags.map((tag) => (
-                  <span key={tag} className="ml-2 text-sm text-red-300">
-                    {tag}
+                  <span key={tag.name} className="ml-2 text-sm text-red-300">
+                    {formatTag(tag)}
                   </span>
                 ))}
               </span>

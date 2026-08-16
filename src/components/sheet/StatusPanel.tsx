@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { PackEntry } from '../../../worker/types';
-import { formatTag, parseTag, sameTag } from '../../lib/tags';
+import { findTag, setTag, type Tag } from '../../../worker/tags';
 import { InfoPopover } from './InfoPopover';
 import { SheetPanel } from './SheetPanel';
 
@@ -118,8 +118,8 @@ export function StatusPanel({
 }: {
   /** The declared list, from the pack. Empty means no panel. */
   entries: (PackEntry & { section?: string })[];
-  tags: string[];
-  onChange: (next: string[]) => void;
+  tags: Tag[];
+  onChange: (next: Tag[]) => void;
   title: string;
   /** The line the sheet sets under the heading. Pack-supplied only. */
   note?: string;
@@ -149,12 +149,11 @@ export function StatusPanel({
   const [openInfo, setOpenInfo] = useState<string | null>(null);
 
   const severityOf = (name: string) => {
-    const hit = tags.find((t) => sameTag(t, name));
+    const hit = findTag(tags, name);
     if (hit === undefined) return 0;
-    const { value } = parseTag(hit);
     // A bare tag with no number is present at strength 1 — someone typed
     // "Afraid" and meant it, and reading that as 0 would erase them.
-    return value ?? 1;
+    return hit.value ?? 1;
   };
 
   const statuses = relievers.length
@@ -177,14 +176,12 @@ export function StatusPanel({
   // declaration outranks it (rule 1).
   const known = new Set(statuses.map((e) => e.name.trim().toLowerCase()));
   const loose = tags
-    .map((t) => parseTag(t))
     .filter((t) => !known.has(t.name.trim().toLowerCase()))
     .map<Row>((t) => ({ name: t.name, severity: t.value ?? 1, loose: true }));
 
-  const set = (name: string, next: number) => {
-    const others = tags.filter((t) => !sameTag(t, name));
-    onChange(next <= 0 ? others : [...others, formatTag(name, next)]);
-  };
+  // `setTag` takes a zero off entirely, which is what easing a status
+  // all the way down has always meant here.
+  const set = (name: string, next: number) => onChange(setTag(tags, name, next));
 
   if (!declared.length && !loose.length) return null;
 

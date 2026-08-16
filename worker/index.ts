@@ -10,6 +10,7 @@ import {
   toPublicCharacter,
   type Env,
 } from './db';
+import { findTag, setTag } from './tags';
 import {
   actorOf,
   canDm,
@@ -1451,11 +1452,6 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           })()
         : undefined;
 
-    const named = /^(.*?)\s+(\d+)$/;
-    const nameOf = (tag: string) => {
-      const m = named.exec(tag);
-      return (m ? m[1] : tag).toLowerCase();
-    };
     const eased: { name: string; from: number; to: number | null }[] = [];
 
     /**
@@ -1474,15 +1470,14 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       const counters = who.data.counters.map((c, i) =>
         i === vitalIndex ? { ...c, current: Math.max(0, c.current - damage) } : c,
       );
-      const tags = [...who.data.tags];
+      let tags = [...who.data.tags];
       for (const st of statuses) {
-        const at = tags.findIndex((t) => nameOf(t) === st.name.toLowerCase());
-        if (at < 0) {
-          const tag = `${st.name} ${st.severity}`.trim();
-          if (!tags.includes(tag)) tags.push(tag);
+        const held = findTag(tags, st.name);
+        if (!held) {
+          tags = setTag(tags, st.name, st.severity);
           continue;
         }
-        const had = Number(named.exec(tags[at])?.[2] ?? 0);
+        const had = held.value ?? 0;
         const mode = stacking?.stack ?? 'higher';
         let next =
           mode === 'sum'
@@ -1494,20 +1489,21 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           (n) => n.toLowerCase() === st.name.toLowerCase(),
         );
         if (stacking?.cap !== undefined && !exempt) next = Math.min(stacking.cap, next);
-        tags[at] = `${st.name} ${next}`.trim();
+        tags = setTag(tags, st.name, next);
       }
       // Off, after on — so a turn that both lands and eases something
       // reads in the order it happened.
       for (const r of relieved) {
-        const at = tags.findIndex((t) => nameOf(t) === r.name.toLowerCase());
-        if (at < 0) continue;
-        const had = Number(named.exec(tags[at])?.[2] ?? 0);
+        const held = findTag(tags, r.name);
+        if (!held) continue;
+        const had = held.value ?? 0;
         // No `by` means all the way off — clearing is the common case
         // and shouldn't need a number nobody has to hand.
         const next = r.by === undefined ? 0 : Math.max(0, had - Math.round(r.by));
         eased.push({ name: r.name, from: had, to: next > 0 ? next : null });
-        if (next > 0) tags[at] = `${r.name} ${next}`.trim();
-        else tags.splice(at, 1);
+        // `setTag` takes a zero off entirely, which is what easing to
+        // nothing means everywhere else too.
+        tags = setTag(tags, r.name, next);
       }
       return {
         data: { ...who.data, counters, tags } as CharacterData,

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { Field, PackEntry, SystemTemplate } from '../../../worker/types';
+import type { Tag } from '../../../worker/tags';
 import { InfoPopover } from './InfoPopover';
 import { SheetPanel } from './SheetPanel';
 import { Track } from './Track';
@@ -105,7 +106,7 @@ export function SkillPanel({
   /** Finds a skill's pack entry, so its description can open on tap. */
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
   /** The character's tags — where a Talent lives ("Talent: Nerve"). */
-  tags?: string[];
+  tags?: Tag[];
   /** The system's mark declaration — see `SystemTemplate.marks`. */
   marks?: SystemTemplate['marks'];
 }) {
@@ -118,7 +119,7 @@ export function SkillPanel({
     Boolean(marks) &&
     tags.some(
       (t) =>
-        t.trim().toLowerCase() === `${marks!.prefix}${label}`.trim().toLowerCase(),
+        t.name.trim().toLowerCase() === `${marks!.prefix}${label}`.trim().toLowerCase(),
     );
 
   return (

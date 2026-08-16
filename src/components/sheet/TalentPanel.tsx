@@ -1,4 +1,5 @@
 import type { SystemTemplate } from '../../../worker/types';
+import { setTag, withoutTag, type Tag } from '../../../worker/tags';
 import { SheetPanel } from './SheetPanel';
 import { Starburst } from './Track';
 
@@ -26,22 +27,22 @@ export function TalentPanel({
   fill = false,
 }: {
   marks: NonNullable<SystemTemplate['marks']>;
-  tags: string[];
+  tags: Tag[];
   /** Absent on a surface that may look but not edit. */
-  onTags?: (next: string[]) => void;
+  onTags?: (next: Tag[]) => void;
   note?: string;
   fill?: boolean;
 }) {
   const tagFor = (category: string) => `${marks.prefix}${category}`;
   const owns = (category: string) =>
     tags.some(
-      (t) => t.trim().toLowerCase() === tagFor(category).trim().toLowerCase(),
+      (t) => t.name.trim().toLowerCase() === tagFor(category).trim().toLowerCase(),
     );
 
   const categories = marks.categories ?? [];
   // Mark tags naming no declared category — shown, never dropped.
   const strays = tags.filter((t) => {
-    const l = t.trim().toLowerCase();
+    const l = t.name.trim().toLowerCase();
     if (!l.startsWith(marks.prefix.trim().toLowerCase())) return false;
     return !categories.some((c) => tagFor(c).trim().toLowerCase() === l);
   });
@@ -49,13 +50,7 @@ export function TalentPanel({
   const toggle = (category: string) => {
     if (!onTags) return;
     const tag = tagFor(category);
-    onTags(
-      owns(category)
-        ? tags.filter(
-            (t) => t.trim().toLowerCase() !== tag.trim().toLowerCase(),
-          )
-        : [...tags, tag],
-    );
+    onTags(owns(category) ? withoutTag(tags, tag) : setTag(tags, tag));
   };
 
   return (
@@ -100,7 +95,7 @@ export function TalentPanel({
         })}
         {strays.map((tag) => (
           <span
-            key={tag}
+            key={tag.name}
             className="flex min-w-[9.5rem] flex-1 items-center gap-2 px-1 py-0.5"
             title={marks.text}
           >
@@ -111,7 +106,7 @@ export function TalentPanel({
               <Starburst size={11} fill="#1c1917" />
             </span>
             <span className="break-words text-[0.8rem] leading-tight text-stone-100">
-              {tag.slice(marks.prefix.length).trim() || tag}
+              {tag.name.slice(marks.prefix.length).trim() || tag.name}
             </span>
           </span>
         ))}

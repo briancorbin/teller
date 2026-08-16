@@ -1,5 +1,6 @@
 import { newId, type Env } from './db';
 import { packsFor } from './packs';
+import { setTag, toTags } from './tags';
 import type { Campaign, CharacterData, NpcBlueprint, Placement } from './types';
 
 // Where foes come from.
@@ -154,7 +155,13 @@ export function stamp(
         current: over?.current ?? full,
       };
     }),
-    tags: [...blueprint.tags, ...(placement?.tags ?? [])],
+    // The placement's conditions layer OVER the blueprint's rather than
+    // sitting beside them: "already wounded" on this one Bloodsucker is
+    // a statement about this one, and one condition is one tag.
+    tags: toTags(placement?.tags).reduce(
+      (tags, t) => setTag(tags, t.name, t.value),
+      toTags(blueprint.tags),
+    ),
     notes: '',
     blueprintId: blueprint.id,
   };

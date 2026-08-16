@@ -5,6 +5,7 @@ import type {
   Campaign,
   PublicCharacter,
 } from '../../worker/types';
+import { hasTag } from '../../worker/tags';
 import { api } from '../lib/api';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
@@ -269,7 +270,7 @@ export function TableView({
             // the numbers behind them never do.
             const state = linked
               ? (campaign?.data.states ?? []).find((s) =>
-                  linked.data.tags.includes(s.name),
+                  hasTag(linked.data.tags, s.name),
                 )
               : null;
             const stateVisual = state ? STATE_EFFECTS[state.effect ?? 'mark'] : null;

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Counter, PublicCharacter } from '../../worker/types';
+import { formatTag } from '../../worker/tags';
 import { useSession } from '../lib/use-session';
 import { useWakeLock } from '../lib/use-wake-lock';
 import { ClockFace } from '../components/ClockFace';
@@ -135,10 +136,10 @@ export function BadgeView({ characterId }: { characterId: string }) {
         <div className="flex flex-wrap justify-center gap-3">
           {character.data.tags.map((tag) => (
             <span
-              key={tag}
+              key={tag.name}
               className="rounded-full bg-amber-950/80 px-5 py-2 text-2xl text-amber-200"
             >
-              {tag}
+              {formatTag(tag)}
             </span>
           ))}
         </div>

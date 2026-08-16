@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Campaign, Character, Encounter, Placement, Scene } from '../../worker/types';
 import type { SourcedNpc } from '../../worker/bestiary';
+import { formatTag, toTags } from '../../worker/tags';
 import { api, newLocalId } from '../lib/api';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui';
 
@@ -110,13 +111,15 @@ function PlacementRow({
           <input
             className={`${input} w-full`}
             placeholder="starting conditions — asleep, dug in…"
-            value={(placement.tags ?? []).join(', ')}
+            value={(placement.tags ?? []).map(formatTag).join(', ')}
             onChange={(e) =>
               onChange({
-                tags: e.target.value
-                  .split(',')
-                  .map((t) => t.trim())
-                  .filter(Boolean),
+                tags: toTags(
+                  e.target.value
+                    .split(',')
+                    .map((t) => t.trim())
+                    .filter(Boolean),
+                ),
               })
             }
           />
