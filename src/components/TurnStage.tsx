@@ -9,6 +9,9 @@ import type {
 } from '../../worker/types';
 import { combinePools, tallyFaces } from '../lib/dice';
 import {
+  gateMet,
+  namedBlocks,
+  parseAbilities,
   parseAttacks,
   parseDefense,
   statusTag,
@@ -222,6 +225,23 @@ export function TurnStage({
     ...parseAttacks(fieldOf(character, 'attacks')),
     ...weaponAttacks(character.data.items ?? [], catalog),
   ];
+  /**
+   * The things it can do that AREN'T on the attack line — a frenzy, a
+   * special. Every long field is swept rather than a named one, because
+   * which heading a book files its specials under is the book's affair
+   * and teller has no list of them (rule 2).
+   */
+  const abilities = character.data.fields
+    .filter((f) => f.value && f.key !== 'attacks' && f.value.includes('.'))
+    .flatMap((f) => parseAbilities(f.value));
+  /** The short values — the printed stat line, read at a glance. */
+  const statLine = character.data.fields.filter(
+    (f) => f.value && f.key !== 'attacks' && !f.value.includes('\n') && f.value.length <= 40,
+  );
+  /** Everything long, split into the parts a book prints it in. */
+  const traitBlocks = character.data.fields
+    .filter((f) => f.value && f.key !== 'attacks' && !statLine.includes(f))
+    .flatMap((f) => namedBlocks(f.value));
   const byId = new Map(characters.map((c) => [c.id, c]));
   const target = a.targetId ? byId.get(a.targetId) : undefined;
   const targetFoe = target?.kind === 'npc';
@@ -426,6 +446,59 @@ export function TurnStage({
           </span>
         </button>
       ))}
+      {/*
+        The things it can do that aren't on the attack line. A gate it
+        hasn't reached DIMS the chip and never disables it — teller
+        shows the Warden where the line is and lets them cross it
+        (rule 1). Reaching one is the interesting moment of a fight and
+        it lights up on its own.
+      */}
+      {abilities.map((ab, i) => {
+        const open = gateMet(ab, character.data.counters);
+        return (
+          <button
+            key={`ab-${i}`}
+            className={`rounded-md px-2 py-1 text-left font-mono text-[11px] transition-colors ${
+              a.roll?.for === ab.name
+                ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
+                : open
+                  ? 'bg-rose-950/70 text-rose-200 hover:bg-rose-900/70'
+                  : 'bg-stone-900 text-stone-600 hover:bg-stone-800'
+            }`}
+            title={`${ab.gate ? `at ${ab.gate.at} ${ab.gate.counter} or less — ` : ''}${ab.text}`}
+            onClick={() =>
+              onAdvice({
+                ...a,
+                intent: `${ab.name}. ${ab.text}`,
+                roll: ab.dice
+                  ? { dice: ab.dice, for: ab.name, statuses: ab.statuses }
+                  : undefined,
+                ...(ab.cost
+                  ? { spend: { counter: ab.cost.unit, amount: ab.cost.amount } }
+                  : {}),
+                faces: undefined,
+                defFaces: undefined,
+                sevFaces: {},
+                applied: false,
+                narration: undefined,
+              })
+            }
+          >
+            {ab.name}
+            {ab.gate && (
+              <span className={`ml-1.5 text-[10px] ${open ? 'text-rose-300' : 'text-stone-600'}`}>
+                {open ? 'ready' : `at ${ab.gate.at} ${ab.gate.counter.toLowerCase()}`}
+              </span>
+            )}
+            {ab.dice && <span className="ml-1.5 text-amber-300">{ab.dice}</span>}
+            {ab.cost && (
+              <span className="ml-1.5 text-[10px] text-stone-500">
+                {ab.cost.amount} {ab.cost.unit.toLowerCase()}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -506,12 +579,44 @@ export function TurnStage({
 
         {/* What the book says it can do — chips, so the pool and the
             status it inflicts are one tap away without asking anyone. */}
-        {attacks.length > 0 && (
+        {attacks.length + abilities.length > 0 && (
           <div className="mt-3 border-t border-stone-800 pt-2.5">
             <span className="text-[10px] uppercase tracking-widest text-stone-600">
               What it does
             </span>
             <div className="mt-1.5">{attackChips}</div>
+            {/*
+              And what it IS, right here (Brian, 2026-08-15: "I don't
+              wanna have to click into the info popup every time I have
+              a question"). The sheet dialog is for reading a creature;
+              this is for deciding a turn, and a decision you have to
+              open a dialog to make is one you make worse.
+
+              Everything long is split into its named parts, because a
+              trait you can find is worth four you have to read past.
+              Nothing is filtered by name — which heading a book files
+              its specials under is the book's affair (rule 2).
+            */}
+            {(statLine.length > 0 || traitBlocks.length > 0) && (
+              <div className="mt-2.5 space-y-1.5">
+                {statLine.length > 0 && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[10px] text-stone-500">
+                    {statLine.map((f) => (
+                      <span key={f.key}>
+                        {f.label}{' '}
+                        <span className="text-stone-300">{f.value}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {traitBlocks.map((t, i) => (
+                  <p key={i} className="text-[11px] leading-snug text-stone-500">
+                    {t.name && <span className="text-stone-300">{t.name}. </span>}
+                    {t.text}
+                  </p>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -645,7 +750,7 @@ export function TurnStage({
             didn't say. Either way the card must offer a next step
             instead of ending in prose, so its own attacks come to you.
           */}
-          {a.suggestion && !a.roll && attacks.length > 0 && (
+          {a.suggestion && !a.roll && attacks.length + abilities.length > 0 && (
             <div className="mt-3 border-t border-stone-800 pt-2.5">
               <span className="text-[11px] text-stone-500">
                 no roll named — if it attacked, pick which

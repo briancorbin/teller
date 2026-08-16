@@ -192,3 +192,84 @@ export function statusTag(status: StatStatus, rolled?: number): string {
   const severity = status.severity ?? rolled ?? null;
   return severity === null ? status.name : `${status.name} ${severity}`;
 }
+
+/**
+ * A named ability that COSTS something — a frenzy, a special, anything
+ * the book prints as prose rather than on the attack line.
+ *
+ * The console's attack chips read `parseAttacks`, which only ever sees
+ * the `attacks` field. So the Pondweed Peril's Lake Sludge — its
+ * signature move, the thing it does when it's wounded — was in the
+ * statblock, in the creature sheet, and in the assistant's prompt, and
+ * was the one action the Warden could not tap (Brian, 2026-08-15: "in
+ * the 'what it does' section, I don't see a frenzy action anywhere").
+ *
+ * Nothing here knows what a Frenzy is (rule 2). It reads the author's
+ * own notation and picks up three things when they're written down:
+ *
+ *   - a THRESHOLD in the block's name — "Lake Sludge (18 Health)"
+ *   - a COST anywhere in the prose — "Spending 4 Grit, the Peril dives"
+ *   - the dice and conditions it hangs, the same way an attack line does
+ *
+ * A block with none of those is a passive trait and stays out: a chip
+ * you can press should do something.
+ */
+export type StatAbility = {
+  name: string;
+  /** The number its name gates it behind, and which counter watches it. */
+  gate?: { at: number; counter: string };
+  cost?: { amount: number; unit: string };
+  dice: string | null;
+  statuses: StatStatus[];
+  /** The block's own words, for the tooltip and the sheet. */
+  text: string;
+};
+
+const GATE = /^(.*?)\s*\((\d+)\s+([A-Za-z][A-Za-z ]*)\)\s*$/;
+const SPEND = /\bspend(?:ing)?\s+(\d+)\s+([A-Za-z]+)/i;
+/**
+ * A pool in PROSE is only a pool if the prose says to roll it.
+ *
+ * An attack line is all business — strip the statuses and what's left
+ * is the damage. A paragraph is not: Lake Sludge mentions "+1B" for a
+ * defence bonus and "-1B" for a relief penalty, and taking any pool
+ * that appears handed the Warden a 1B chip to roll for an ability
+ * whose only roll is its status severity. Rolling a number nobody
+ * asked for is worse than offering none.
+ */
+const ROLLED = /(?:\broll\s+|\bfor\s+)((?:\d+[BG])+)|((?:\d+[BG])+)\s+damage/i;
+
+export function parseAbilities(field: string): StatAbility[] {
+  const out: StatAbility[] = [];
+  for (const block of namedBlocks(field ?? '')) {
+    if (!block.name) continue;
+    const gated = GATE.exec(block.name);
+    const spend = SPEND.exec(block.text);
+    if (!gated && !spend) continue;
+    const { statuses, rest } = pullStatuses(block.text);
+    out.push({
+      name: (gated ? gated[1] : block.name).trim(),
+      ...(gated ? { gate: { at: Number(gated[2]), counter: gated[3].trim() } } : {}),
+      ...(spend ? { cost: { amount: Number(spend[1]), unit: spend[2] } } : {}),
+      dice: (() => {
+        const m = ROLLED.exec(rest);
+        return m ? (m[1] ?? m[2]) : null;
+      })(),
+      statuses,
+      text: block.text,
+    });
+  }
+  return out;
+}
+
+/** Whether a gated ability's number has been reached. Absent gate = always. */
+export function gateMet(
+  ability: StatAbility,
+  counters: { name: string; current: number }[],
+): boolean {
+  if (!ability.gate) return true;
+  const counter = counters.find(
+    (c) => c.name.toLowerCase() === ability.gate!.counter.toLowerCase(),
+  );
+  return counter ? counter.current <= ability.gate.at : true;
+}
