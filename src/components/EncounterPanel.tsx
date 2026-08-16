@@ -673,10 +673,17 @@ export function EncounterPanel({
         }
       >
         <div className="space-y-2">
-          {initiative.length > 0 && (
+          {initiative.length > 0 ? (
             <ol className="divide-y divide-stone-800/60 overflow-hidden rounded-lg">
               {initiative.map(rosterRow)}
             </ol>
+          ) : (
+            // Staging with nobody seated: the column that will hold the
+            // order says so, rather than leaving a hole beside a full
+            // one and reading as broken.
+            <p className="rounded-lg border border-dashed border-stone-800 px-3 py-6 text-center text-[11px] text-stone-600">
+              the turn order builds here
+            </p>
           )}
 
           {/* While a fight runs, setup is one line until asked for. */}
@@ -694,7 +701,6 @@ export function EncounterPanel({
             <div className="@2xl:hidden">{setupTools}</div>
           )}
 
-          {!running && <div className="pt-1">{turnControls}</div>}
         </div>
 
         <div className="space-y-3">
@@ -739,6 +745,11 @@ export function EncounterPanel({
           )}
         </div>
       </div>
+
+      {/* Staging: the way in sits under BOTH columns, because it acts on
+          the order and the setup together. Running, it lives under the
+          stage instead — beside the turn it advances. */}
+      {!running && turnControls}
     </section>
   );
 }

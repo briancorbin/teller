@@ -336,7 +336,20 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         // A payload we can't read is one line of history, not an error.
       }
     }
-    const recent = [...seen.entries()].sort(([a], [b]) => a - b).map(([, r]) => r);
+    // History outlives the creatures in it, and shouldn't.
+    //
+    // Clear the table and redeploy and you get NEW characters wearing
+    // the old names, while the log still describes the dead ones — so
+    // the board says a foe is at full health and the history says it
+    // took two, which is exactly the contradiction the model caught
+    // and flagged ("Board lists 34/34; log shows 32 — check tracker").
+    // A line about somebody who no longer exists isn't context, it's a
+    // ghost; drop it and let the board speak.
+    const alive = new Set(characters.map((c) => c.id));
+    const recent = [...seen.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, r]) => r)
+      .filter((r) => alive.has(r.by) && alive.has(r.target));
 
     // Movement, same selection rule: this creature's own crossings
     // never age out, and the rest is whoever moved lately.
@@ -367,7 +380,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
         // One unreadable line of history, not an error.
       }
     }
-    const moves = [...movesById.entries()].sort(([a], [b]) => a - b).map(([, m]) => m);
+    // Same for movement: a token that belonged to a cleared creature
+    // is a ghost walking. A move with no character at all (a marker,
+    // a prop) is kept — nobody's health contradicts it.
+    const moves = [...movesById.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, m]) => m)
+      .filter((m) => !m.characterId || alive.has(m.characterId));
 
     try {
       const template = await getSystem(env, campaign.system);

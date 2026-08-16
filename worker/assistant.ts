@@ -461,7 +461,7 @@ async function complete(env: AssistantEnv, system: string, user: string): Promis
       },
       body: JSON.stringify({
         model,
-        max_tokens: 2048,
+        max_tokens: 4096,
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: user },
@@ -485,7 +485,7 @@ async function complete(env: AssistantEnv, system: string, user: string): Promis
     },
     body: JSON.stringify({
       model,
-      max_tokens: 2048,
+      max_tokens: 4096,
       system,
       messages: [{ role: 'user', content: user }],
     }),
@@ -497,12 +497,55 @@ async function complete(env: AssistantEnv, system: string, user: string): Promis
   return text;
 }
 
+/**
+ * The first COMPLETE top-level object in a reply.
+ *
+ * This used to be indexOf('{') to lastIndexOf('}'), which breaks three
+ * ways: a chatty preamble containing a brace starts the slice early, a
+ * closing note ends it late, and a reply TRUNCATED mid-object has no
+ * closing brace at all and reported the confusing "replied without
+ * JSON" while staring at a reply that plainly began with JSON.
+ *
+ * Walking the braces (respecting strings and escapes) handles all
+ * three, and returning null for an unterminated object is what lets
+ * the caller say "cut off" instead of "malformed".
+ */
+function firstObject(text: string): string | null {
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === '\\') escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (c === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 /** The model was ASKED for bare JSON; a chatty one gets its braces found anyway. */
 function parseSuggestion(reply: string, model: string): TurnSuggestion {
-  const start = reply.indexOf('{');
-  const end = reply.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error(`assistant replied without JSON: ${reply.slice(0, 200)}`);
-  const parsed = JSON.parse(reply.slice(start, end + 1)) as Partial<TurnSuggestion>;
+  const found = firstObject(reply);
+  if (!found) {
+    throw new Error(
+      reply.includes('{')
+        ? 'the assistant\'s answer was cut off before it finished — try again'
+        : `assistant replied without JSON: ${reply.slice(0, 200)}`,
+    );
+  }
+  const parsed = JSON.parse(found) as Partial<TurnSuggestion>;
   if (!parsed.action) throw new Error('assistant suggestion had no action');
   // The roll is optional, and SALVAGED rather than judged: a model
   // that answers "2G damage" or "roll 2B1G" has named the pool
@@ -647,12 +690,15 @@ export async function narrateOutcome(
     `\nNarrate what just happened.`,
   ].join('\n\n');
   const reply = await complete(env, NARRATE_SYSTEM, user);
-  const start = reply.indexOf('{');
-  const end = reply.lastIndexOf('}');
-  if (start < 0 || end <= start) {
-    throw new Error(`assistant replied without JSON: ${reply.slice(0, 200)}`);
+  const found = firstObject(reply);
+  if (!found) {
+    throw new Error(
+      reply.includes('{')
+        ? 'the assistant\'s answer was cut off before it finished — try again'
+        : `assistant replied without JSON: ${reply.slice(0, 200)}`,
+    );
   }
-  const parsed = JSON.parse(reply.slice(start, end + 1)) as { narration?: string };
+  const parsed = JSON.parse(found) as { narration?: string };
   if (!parsed.narration) throw new Error('assistant narration was empty');
   return { narration: String(parsed.narration), model: env.ASSISTANT_MODEL! };
 }
