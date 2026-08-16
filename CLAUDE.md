@@ -105,6 +105,13 @@ It is no longer where play happens.
   guesses in a week. Mechanics only (rule 4); the book's prose stays
   in the pack. It maps the domain; screens are still designed one at
   a time.
+- **`docs/ARCHITECTURE.md`** — the six layers (Core · Plugin · System ·
+  Pack · Campaign · Session), what each may change, the degradation
+  contract, the resolution law, and **the three one-way doors**. Read it
+  before deciding where a new concept lives — it exists because every
+  stuck question on 2026-08-16 turned out to be a layer confusion, and
+  three of them had already been resolved by carving a namespace into
+  whichever list was nearest.
 - **`packs/README.md`** — the pack format (archive/folder layout,
   `rights`, art). The content itself never lives in the repo; the
   authoring copies are the shelf folders in `~/.teller/packs/`.
@@ -190,8 +197,10 @@ Three separate things, and only the first is absolute:
   gitignored to enforce it (everything but the README — a pack is a
   folder now, and a rule naming only `*.json` would have let one walk
   in). teller is presentation and bookkeeping
-  software; it ships empty and it stays empty. **teller hosts no
-  content** — that half of 4a is unchanged and load-bearing.
+  software; it ships empty and it stays empty. **teller hosts nobody's
+  book** — that half of 4a is unchanged and load-bearing. (It was
+  written as "hosts no content", which 2026-08-16 narrowed: the
+  constraint is about IP, not about files in general. See 4a.)
 - **A pack may contain IP. Done.** (Brian, 2026-08-14.) Rules, prose,
   descriptions, stat blocks, the lot — a pack is *the* sanctioned home
   for content, and pretending its contents had to be sanitized made the
@@ -334,10 +343,29 @@ The repo's `packs/` holds only the format README; everything else under
 it is gitignored (`packs/*`), because whatever a pack carries, it is
 never repo content (rule 4).
 
-**teller hosts no content.** Not packs, not books. Listing anything is
-possible only with a rightsholder's sanction, and even then it's
-distributed by them or whoever they authorize — never by teller. What
-people do with files they have is between them and the publisher.
+**teller hosts what its author can authorize — and nobody's book.**
+Narrowed 2026-08-16 (Brian), the THIRD time rule 4 has been found too
+broad in exactly the pattern this rule's own history documents: a real
+constraint stated as a wider one that was easier to remember. It read
+"teller hosts no content", which was aimed at IP and swept up everything
+else with it.
+
+The distinguishing property was never code-versus-prose, it's **whether
+the author can grant redistribution**. A plugin qualifies trivially —
+functional, author-owned. So does a `homebrew` pack, which this rule
+*already* says its author may hand out freely. A `licensed` or
+`personal` pack does not, and never will: its author usually cannot
+grant what they'd be granting, so listing one is possible only with a
+rightsholder's sanction, and even then it's distributed by them or
+whoever they authorize — never by teller. What people do with files they
+have is between them and the publisher.
+
+This is what finally gives `rights` a job. At the table it correctly
+gates nothing; hosting is the one place the answer has to be
+machine-readable — and teller still cannot verify the claim, so hosting
+means a takedown posture, not a guarantee. **Nothing is hosted today and
+nothing should be built** (v0 is a GitHub repo, per the deferral below).
+See `docs/ARCHITECTURE.md`.
 
 ### 5. Turn order is an ordered list + a current index
 
@@ -638,4 +666,7 @@ Bundle rules that follow from this (`worker/bundle.ts`, `worker/import.ts`):
   coherent: the host is already the authority, so a remote seat is a
   screen that happens to be far away.
 - Community template distribution (v0 of that is a GitHub repo of JSON,
-  not a platform).
+  not a platform). **The same answer now covers plugin hosting**, which
+  rule 4a newly permits — permitted is not built, and a registry for
+  zero plugins is infrastructure for an ecosystem of one
+  (`docs/ARCHITECTURE.md`).
