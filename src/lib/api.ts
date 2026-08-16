@@ -120,10 +120,19 @@ export const api = {
   assistant: () => req<{ configured: boolean; model?: string }>('/api/assistant'),
 
   /** One foe's turn, proposed. Reads the board; writes nothing (rule 1). */
-  suggestTurn: (campaignId: string, characterId: string) =>
+  suggestTurn: (
+    campaignId: string,
+    characterId: string,
+    /**
+     * The Warden's own call, when they've made it — "use the Frenzy".
+     * teller then does the rest of the turn around that decision
+     * instead of making it: premises, dice, target, preface.
+     */
+    intent?: string,
+  ) =>
     req<TurnSuggestion>(`/api/campaigns/${campaignId}/assistant/turn`, {
       method: 'POST',
-      body: JSON.stringify({ characterId }),
+      body: JSON.stringify({ characterId, ...(intent ? { intent } : {}) }),
     }),
 
   /** The second click: the table's real results in, read-aloud story out. */

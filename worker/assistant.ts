@@ -936,6 +936,29 @@ function assembleContext(
     .join('\n\n');
 }
 
+/**
+ * What changes when the WARDEN has already decided.
+ *
+ * The whole flow assumed teller proposes and a human disposes, which
+ * left no way to say "I've decided it uses the Frenzy — you do the
+ * rest" (Brian, 2026-08-15). The automation worth having isn't the
+ * choosing; it's the premises, the dice, and the words to read out.
+ *
+ * So the decision becomes an input. Rule 1 read forwards for once:
+ * usually the human overrules the machine after the fact, and here
+ * they simply go first. The last line matters most — a Warden's
+ * ruling that contradicts the book is still the ruling, and teller
+ * carries it out while saying plainly what it noticed.
+ */
+function decided(intent: string): string {
+  return [
+    `THE WARDEN HAS ALREADY DECIDED THIS TURN: ${intent}`,
+    'Do NOT choose a different action, a different target, or a better one. That decision is made and it is not yours.',
+    "Your job is the rest of it: the premises this rests on, the dice it calls for from this creature's own printed lines, who it is aimed at, and the preface to read aloud.",
+    'If the decision looks like it breaks a rule — a band it cannot reach, a cost it cannot pay, a threshold not met — say so plainly in premises and then write the turn anyway. The table\'s ruling beats the book, and your job is to flag, not to refuse.',
+  ].join('\n');
+}
+
 export async function suggestTurn(
   env: AssistantEnv,
   campaign: Campaign,
@@ -951,8 +974,15 @@ export async function suggestTurn(
   moves: TokenMove[] = [],
   bands?: SystemTemplate['bands'],
   statusRules?: SystemTemplate['statuses'],
+  /** The Warden's own call, when they've made it. See `decided`. */
+  intent?: string,
 ): Promise<TurnSuggestion> {
-  const user = `${assembleContext(campaign, characters, session, foe, heightInches, space, recent, moves, bands, statusRules)}\n\n\nWhat would ${foe.name} do this turn?`;
+  const context = assembleContext(
+    campaign, characters, session, foe, heightInches, space, recent, moves, bands, statusRules,
+  );
+  const user = intent?.trim()
+    ? `${context}\n\n\n${decided(intent.trim())}`
+    : `${context}\n\n\nWhat would ${foe.name} do this turn?`;
   return parseSuggestion(await complete(env, SYSTEM, user), env.ASSISTANT_MODEL!);
 }
 

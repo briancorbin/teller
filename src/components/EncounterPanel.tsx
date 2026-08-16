@@ -119,7 +119,7 @@ export function EncounterPanel({
    * is configured, and the button simply doesn't exist — an
    * unconfigured host never nags (rule 7).
    */
-  onSuggest?: (characterId: string) => Promise<TurnSuggestion>;
+  onSuggest?: (characterId: string, intent?: string) => Promise<TurnSuggestion>;
   /**
    * The second click (Brian's two-step): the Warden runs the action
    * with REAL dice, records what the table rolled, and Teller hands
@@ -176,10 +176,10 @@ export function EncounterPanel({
       return { ...prev, [entryId]: patch };
     });
 
-  const ask = (entryId: string, characterId: string) => {
+  const ask = (entryId: string, characterId: string, intent?: string) => {
     if (!onSuggest) return;
     setAdvice((prev) => ({ ...prev, [entryId]: { ...prev[entryId], busy: true } }));
-    onSuggest(characterId)
+    onSuggest(characterId, intent)
       // A fresh suggestion starts a fresh turn: whatever results or
       // narration the LAST one earned would be stale under it. The
       // model's named target is taken as the OPENING guess only.
@@ -639,7 +639,9 @@ export function EncounterPanel({
                 dieArt={dieArt}
                 advice={advice[active.id]}
                 onAdvice={(patch) => patchAdvice(active.id, patch)}
-                onSuggest={onSuggest ? () => ask(active.id, actor.id) : undefined}
+                onSuggest={
+                  onSuggest ? (intent?: string) => ask(active.id, actor.id, intent) : undefined
+                }
                 onNarrate={
                   onNarrate
                     ? (action, result, preface) =>

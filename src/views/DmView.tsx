@@ -564,7 +564,9 @@ export function DmView({
       }
       onDropToken={dropToken}
       onSuggest={
-        assistantOn ? (characterId) => api.suggestTurn(campaignId, characterId) : undefined
+        assistantOn
+          ? (characterId, intent) => api.suggestTurn(campaignId, characterId, intent)
+          : undefined
       }
       onNarrate={
         assistantOn

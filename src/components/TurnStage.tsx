@@ -38,6 +38,11 @@ export type Advice = {
   busy?: boolean;
   error?: string;
   suggestion?: TurnSuggestion;
+  /**
+   * The Warden's own call for this turn, when they've made it. Sent to
+   * teller as the decision to work around rather than a hint.
+   */
+  intent?: string;
   /** The pool in play — from the suggestion, or a primed attack. */
   roll?: { dice: string; for: string; statuses?: StatStatus[] };
   faces?: (string | null)[];
@@ -175,7 +180,12 @@ export function TurnStage({
   dieArt?: DieArt;
   advice: Advice | undefined;
   onAdvice: (patch: Advice | null) => void;
-  onSuggest?: () => void;
+  /**
+   * Ask Teller for the turn. With an `intent` the Warden has already
+   * decided WHAT happens and is asking for everything else — premises,
+   * dice, target, and the words to read out.
+   */
+  onSuggest?: (intent?: string) => void;
   onNarrate?: (action: string, result: string, preface?: string) => void;
   onPatchCharacter: (id: string, patch: { data?: Partial<Character['data']> }) => void;
   /** Land the exchange and record who did it — see EncounterPanel. */
@@ -390,6 +400,9 @@ export function TurnStage({
           onClick={() =>
             onAdvice({
               ...a,
+              // Priming an attack is already a decision — say so, so
+              // "…or tell it what they do" is one Enter away.
+              intent: `${atk.name} — ${atk.band}, ${atk.cost} ${atk.costUnit}, ${atk.effect}`,
               roll: atk.dice
         ? { dice: atk.dice, for: atk.name, statuses: atk.statuses }
         : undefined,
@@ -541,7 +554,7 @@ export function TurnStage({
                   : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100'
               }`}
               disabled={a.busy}
-              onClick={onSuggest}
+              onClick={() => onSuggest()}
             >
               {a.busy ? 'thinking…' : a.suggestion ? 'ask again ↻' : 'what would they do?'}
             </button>
@@ -555,6 +568,35 @@ export function TurnStage({
               </button>
             )}
           </div>
+          )}
+
+          {/*
+            You decide, teller does the rest (Brian, 2026-08-15: "if I
+            want to just say that I think it would use the frenzy
+            attack now because I decided, but I still want the rest of
+            the agent automation").
+
+            The choosing was never the valuable part — the premises,
+            the dice off the printed line, and the words to read out
+            are. So the decision becomes an input, and rule 1 reads
+            forwards for once: instead of the human overruling the
+            machine afterwards, they go first.
+
+            Tapping a printed attack fills this, so the common case is
+            two taps rather than typing.
+          */}
+          {onSuggest && foe && (
+            <input
+              className="mt-2 w-full rounded-md border border-stone-800 bg-stone-950 px-2.5 py-1.5 text-[12px] text-stone-200 placeholder:text-stone-600 focus:border-amber-700 focus:outline-none"
+              placeholder="…or tell it what they do, and press enter"
+              value={a.intent ?? ''}
+              disabled={a.busy}
+              onChange={(e) => onAdvice({ ...a, intent: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter' || !a.intent?.trim()) return;
+                onSuggest(a.intent.trim());
+              }}
+            />
           )}
 
           {a.error && <p className="mt-2 text-[11px] text-red-300">{a.error}</p>}

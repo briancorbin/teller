@@ -243,11 +243,13 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
     }
     const campaignId = m[1];
     const ask = m[2];
-    const { characterId, action, result, preface } = await request.json<{
+    const { characterId, action, result, preface, intent } = await request.json<{
       characterId?: string;
       action?: string;
       result?: string;
       preface?: string;
+      /** The Warden decided the turn themselves; dress it, don't choose it. */
+      intent?: string;
     }>();
     if (!characterId) return err('characterId required', 400);
     if (ask === 'narrate' && (!action || !result)) {
@@ -423,6 +425,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
               moves,
               template?.bands,
               template?.statuses,
+              intent,
             ),
       );
     } catch (e) {
