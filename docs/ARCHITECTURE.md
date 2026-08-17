@@ -63,7 +63,14 @@ of all of it:
 
 ## 1 · Core
 
-**Is:** the software. Primitives and surfaces.
+**Is:** the software. Three responsibilities, not two — the first
+draft of this file said "primitives and surfaces" and left out the
+whole third of it that keeps the lights on:
+
+1. **The primitives** — what can be stored. The closed set (door 1).
+2. **The surfaces** — the roles, and what each may see and do.
+3. **The plumbing** — persistence, transport, auth, routing, sync,
+   asset serving, the event log, undo.
 
 **May:** store, log, undo, render, pair screens, serve, sync, roll
 declared dice.
@@ -171,6 +178,55 @@ Campaign data; the DO is a cache with opinions about latency.
 
 **Authored by:** nobody. **Delivered as:** `CampaignDO` + SSE. Never a
 file.
+
+---
+
+## Inside Core — seams, not modules
+
+The question that prompted this (Brian, 2026-08-17): storage, server↔panel
+communication, routing, AI, connection protocols — all Core, and should
+they be isolated modules?
+
+All Core, yes. There is no layer beneath it and nothing above it can
+supply any of it. But **isolation is not the useful unit here.** The
+single package is deliberate (`CLAUDE.md`: no workspace), and at ~11k
+lines with one author, package boundaries cost more ceremony than they
+catch. A module is only *one* way to enforce a seam; a chokepoint
+function, a type that refuses to expose the wrong thing, or a lint rule
+is usually cheaper and catches the actual failure instead of a proxy for
+it.
+
+Three seams earn enforcement. Only one of them is currently unguarded.
+
+**1 · The runtime seam — the important one, held by discipline alone.**
+`CLAUDE.md`: *keep route handlers runtime-agnostic or this dies.* The
+Cloudflare coupling is three things — `env.ASSETS.fetch`, one
+`crypto.subtle` call, and the Durable Object — and `host/d1.mjs`,
+`r2.mjs`, `durable.mjs`, `assets.mjs` supply each against `node:sqlite`
+and local disk.
+
+The failure is a route reaching for an `env.` API only one runtime has,
+and **it is silent on whichever runtime you happen to be developing
+on.** That profile — invisible until someone else runs it — is what
+justifies structural prevention. The cheap fix isn't a package, it's an
+`Env` type that doesn't expose non-portable APIs to route code. A
+boundary the compiler holds beats one a comment holds.
+
+**2 · The public-snapshot boundary.** What a passive surface may see:
+notes stripped, NPC numbers never shown. A security boundary, so it
+should be one function nothing can route around. Mostly already is.
+
+**3 · The authorization boundary** (rule 7). Role-derived, never
+re-derived from a secret the client holds. Already concentrated in
+`worker/tickets.ts` plus the role lookup.
+
+Everything else — routing, storage, sync — is the worker doing its job.
+Splitting it buys ceremony.
+
+**Where size is actually doing damage**, and it isn't architectural:
+`worker/index.ts` at ~2,000 lines and `worker/types.ts` at ~2,260. That's
+code organisation, worth doing on its own terms, and it neither blocks
+nor informs anything in this file.
 
 ---
 
@@ -303,6 +359,23 @@ alongside Core," and it is the version that can be versioned.
 The proposer tier is pure, so it is portable across both runtimes and
 safe to run from a stranger's file. The effectful tier cannot exist on
 Workers at all and is where the dual-runtime rule gets expensive.
+
+**The proposer tier already has a working reference implementation, and
+it shipped before we had a name for it.** Run `worker/assistant.ts`
+through the three-question test: it holds no state a human needs
+recorded (it proposes; results land in ordinary slots), it isn't
+universal, and losing it means the Warden makes the call themselves.
+Three for three → plugin. Its shape matches exactly — four exports, two
+of them config predicates, two of them `(state, question) → proposal`,
+and **zero database writes**. It's even optional by configuration
+already: no `assistant.json` means no assistant and no button, never a
+nag, which is the degradation contract written before it was stated.
+
+So when the proposer interface is eventually extracted, it gets
+extracted from something that works rather than designed against a
+guess. And it confirms the pattern for Scan: build it shaped like a
+plugin, ship it inside Core, extract the interface when there is a
+**second one of the same tier** — not a second one overall.
 
 ### The one confirmed instance, and what it corrected
 
