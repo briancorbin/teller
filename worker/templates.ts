@@ -53,7 +53,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 19,
+  version: 21,
   name: 'Wild Imaginary West',
   // The table's scale, as mechanics (numbers and band names — the
   // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
@@ -329,10 +329,11 @@ const wiw: SystemTemplate = {
   },
   // Talents (p. 32): 4 Prestige buys a category — a skill, a weapon
   // family, Defense, Mechs, Forstalls — and that category rerolls
-  // Spurs. Stored as a tag ("Talent: Rifles"), shown as the printed
-  // sheet's ✶ box filling in.
+  // Spurs. Held under the `mark` kind, shown as the printed sheet's ✶
+  // box filling in. ("mark" is the generic name; "Talents" is this
+  // system's label for it — rule 2.)
   marks: {
-    prefix: 'Talent: ',
+    kind: 'mark',
     text: 'rerolls Spurs',
     label: 'Talents',
     // The full menu from p. 32, "organized by how they're used": the
@@ -432,7 +433,7 @@ const wiw: SystemTemplate = {
   // a second entry here when mounts arrive (TEL-72's neighbour).
   ladders: [
     {
-      prefix: 'rep_',
+      kind: 'standing',
       label: 'Reputation',
       section: 'Factions',
       text: 'applies to Charm rolls with that faction',

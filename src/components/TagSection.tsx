@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { PackEntry } from '../../worker/types';
-import { hasTag, setTag, toTags, withoutTag, type Tag } from '../../worker/tags';
+import { hasTag, numberOf, setTag, toTags, withoutTag, type Tag } from '../../worker/tags';
 import { input, sectionLabel } from '../lib/ui';
 
 // Conditions, statuses, trophies — any list of words on an entity.
@@ -40,10 +40,14 @@ export function TagSection({
   const remove = (tag: Tag) => onChange(withoutTag(tags, tag));
 
   const decrement = (tag: Tag) => {
-    if (tag.value === undefined) return remove(tag);
+    // Only a COUNT eases down. A tag wearing a word (a standing's rung)
+    // has nothing to subtract, so tapping it takes it off, same as a
+    // bare one.
+    const n = numberOf(tag);
+    if (n === undefined) return remove(tag);
     // setTag drops it at zero, so one call covers "ease it" and "that
     // was the last of it".
-    onChange(setTag(tags, tag.name, tag.value - 1));
+    onChange(setTag(tags, tag.name, n - 1));
   };
 
   const info = openInfo ? lookup?.(openInfo) : undefined;

@@ -6,6 +6,8 @@
 
 export type { Tag } from './tags';
 import type { Tag } from './tags';
+export type { Kinds } from './kinds';
+import type { Kinds } from './kinds';
 
 export type Counter = {
   id: string;
@@ -378,6 +380,22 @@ export type CharacterData = {
    * and nothing remembers it was born guided (TEL-75).
    */
   draft?: boolean;
+  /**
+   * What this character holds of each SYSTEM-DECLARED KIND, keyed by
+   * the kind's id — see `worker/kinds.ts` and `docs/ARCHITECTURE.md`.
+   *
+   * The store exists so a system can declare a kind Core has never
+   * heard of without Core growing a property for it. Talents live here
+   * under `mark`, standings under whatever each ladder names.
+   *
+   * CONDITIONS deliberately do not: `tags` is the un-kinded kind, and
+   * it stays that way. It's the degradation target — a `{name, value?}`
+   * nobody declared is still a thing a human can add and remove — and
+   * the statuses panel merges declared conditions with typed-in ones on
+   * purpose, which only works while both live in one list. See
+   * `docs/ARCHITECTURE.md`, "tags is the un-kinded kind".
+   */
+  kinds?: Kinds;
   /**
    * The blueprint this was stamped from — PROVENANCE, not a live link.
    * Editing the blueprint later never reaches back into creatures
@@ -1292,14 +1310,22 @@ export type SystemTemplate = {
     rest?: boolean;
   }[];
   /**
-   * Tag-driven category marks — WiW's Talents.
+   * Category marks — WiW's Talents.
    *
-   * A tag of `${prefix}${category}` fills the ✶ box on whatever matches
-   * the category: a skill row whose LABEL matches ("Talent: Nerve"), or
-   * an item panel whose catalogue GROUP matches ("Talent: Rifles" on
-   * every carried rifle). The printed sheet's spur-and-box beside each
-   * skill track and each weapon's Model line is exactly this marker —
-   * settled 2026-08-11, after it was twice misread as Aim.
+   * A mark held under `kind` fills the ✶ box on whatever matches its
+   * name: a skill row whose LABEL matches ("Nerve"), or an item panel
+   * whose catalogue GROUP matches ("Rifles", on every carried rifle).
+   * The printed sheet's spur-and-box beside each skill track and each
+   * weapon's Model line is exactly this marker — settled 2026-08-11,
+   * after it was twice misread as Aim.
+   *
+   * This used to be `prefix`, and marks lived in `tags` named
+   * `"Talent: Rifles"`. That is the mechanic-hiding-in-a-text-field
+   * pattern (rule 4), and it cost exactly what the pattern always
+   * costs: a mark rendered as a condition with a severity box, and the
+   * seat had to split its tag list into `plainTags` and `markTags` on
+   * every read and rejoin them on every write. The category is now the
+   * mark's NAME, in its own kind.
    *
    * Display only, deliberately: what the mark DOES (WiW: reroll Spurs
    * on that category's rolls) happens in the player's hand with real
@@ -1308,7 +1334,8 @@ export type SystemTemplate = {
    * on the marker.
    */
   marks?: {
-    prefix: string;
+    /** The kind id marks are held under — `CharacterData.kinds[kind]`. */
+    kind: string;
     text?: string;
     /** The roster panel's own heading — "Talents". */
     label?: string;
@@ -1343,21 +1370,26 @@ export type SystemTemplate = {
    * (rule 4) — a section title is the join, the same way `note` and
    * `lookup` already find pack prose by name.
    *
-   * A standing is an ordinary FIELD: key `${prefix}${slug(name)}`,
-   * label the party's name, value a step's label — no new type, and
-   * editable anywhere fields are edited (rule 1). Nothing is stored
-   * until a standing moves off `defaultStep` ("everyone starts
-   * Neutral"), and a stored field whose name the roster doesn't know
-   * still renders — the strays promise again. A step's `mod` is shown,
-   * never applied: the dice it modifies are in the player's hand.
+   * A standing is a held thing of its own KIND: name the party, value
+   * the step's label. Nothing is stored until a standing moves off
+   * `defaultStep` ("everyone starts Neutral"), and a stored standing
+   * whose party the roster doesn't know still renders — the strays
+   * promise again. A step's `mod` is shown, never applied: the dice it
+   * modifies are in the player's hand.
+   *
+   * This used to be a FIELD keyed `${prefix}${slug(name)}`, which is
+   * the mechanic-hiding-in-a-text-field pattern for the second time in
+   * one declaration block: the party's identity was slugged into a key
+   * and read back out, and every list of fields had to remember to
+   * exclude the ones that were secretly standings.
    *
    * An array because the shape recurs — the book runs horse bonds on
    * the same five steps, which will be a second entry with its own
    * prefix, not a special case.
    */
   ladders?: {
-    /** Field-key namespace — 'rep_'. Identifies which fields ride this. */
-    prefix: string;
+    /** The kind standings are held under — `CharacterData.kinds[kind]`. */
+    kind: string;
     /** The panel's heading — "Reputation". */
     label: string;
     /** Pack section whose entry names seed the roster. */

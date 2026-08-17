@@ -12,6 +12,7 @@ import type {
   Vendor,
 } from '../../../worker/types';
 import type { Tag } from '../../../worker/tags';
+import type { Kinds } from '../../../worker/kinds';
 import type { StockLine } from '../../../worker/items';
 import type { Candidate } from '../sheet/NotchDialog';
 
@@ -83,19 +84,29 @@ export type CounterViewProps = {
   use?: SystemTemplate['use'];
   /** How carried items split into screens, when the system declares it. */
   screens?: SystemTemplate['screens'];
-  /** Tag-driven category marks (Talents), when the system declares them. */
+  /** Category marks (Talents), when the system declares them. */
   marks?: SystemTemplate['marks'];
+  /**
+   * Everything this character holds of every system-declared kind.
+   *
+   * ONE prop and one writer rather than a pair per kind, which is the
+   * point of the store being closed: a system declaring a kind nobody
+   * anticipated needs no new prop to reach its panel. Each panel is
+   * handed its own slice (`held(kinds, id)`) by the sheet.
+   */
+  kinds?: Kinds;
+  /** Writes the whole store back. Absent on a look-but-don't-edit surface. */
+  onKinds?: (next: Kinds | undefined) => void;
   /** The progression purchases (Prestige), when the system declares them. */
   spends?: SystemTemplate['spends'];
   /** Standing scales (Reputation), when the system declares them. */
   ladders?: SystemTemplate['ladders'];
-  /**
-   * Writes the character's fields — the ladder panel setting a
-   * standing. Receives the fields THIS surface was given; anything the
-   * caller withheld (the description) must ride back in its handler,
-   * or the first standing tap deletes it (the StatusPanel lesson).
-   */
-  onFields?: (next: Field[]) => void;
+  // `onFields` lived here so the ladder panel could set a standing, and
+  // every caller had to remember to ride the withheld description back
+  // in on each write or the first tap deleted it. Standings hold their
+  // own kind now and nothing writes a field from a panel, so both the
+  // prop and that hazard are gone. Bring it back when something needs
+  // it, with the same care.
   /**
    * One write for a spend that touches more than one part of the sheet —
    * the fire button debits Grit and an ammo pool together, a Prestige
@@ -108,6 +119,7 @@ export type CounterViewProps = {
     items?: Item[];
     fields?: Field[];
     tags?: Tag[];
+    kinds?: Kinds;
   }) => void;
   itemsLabel?: string;
   /** The catalogue items may point into. */

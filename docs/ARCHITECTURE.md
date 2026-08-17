@@ -805,12 +805,36 @@ Name it for the contract — `scratch`, not `data` or `state` — so the
 durability promise is legible at the call site. Not built; nothing needs
 it until the first plugin exists.
 
-**What's left of this door is the build**, not the decision: introduce
-the kind store, move statuses/Talents/standings into it, and retire
-`marks.prefix` and `ladders[].prefix`. `wip/marks` (`496d6e9`) is
-premised on the open answer and should be reworked rather than
-cherry-picked — its one durable catch is the PATCH allowlist entry,
-without which every write returns 200 and stores nothing.
+### `tags` is the un-kinded kind — and conditions live there
+
+Decided 2026-08-17, on contact with the code, and it REVERSES the line
+this file carried for a day ("statuses and standings are moving").
+Standings moved. Statuses stay, and the reason is the contract:
+
+`StatusPanel` deliberately merges two sources — the declared list from
+the pack, and any LOOSE tag nobody declared, so a Warden typing
+"Bleeding" mid-session isn't lost. Split declared statuses into
+`kinds.status` and leave undeclared ones in `tags`, and the panel reads
+two lists, a newly typed condition has to pick one, and "Trapped" and
+"Bleeding" — the same fact from a human's side — get stored in
+different places. Move ALL tags into `kinds.status` instead and the
+un-kinded bucket disappears, taking the degradation target with it: a
+system declaring no statuses would have nowhere to put a typed
+condition.
+
+So `tags` is kind zero. **`kinds` holds the kinds BEYOND the default**,
+which is what the store was always for. The floor keeps its name.
+
+(The cost side agreed: `tags` is on seven entity types — characters,
+NPCs, blueprints, encounter foes, items, both template seeds — so this
+was the widest sweep available, on the one kind that already worked, to
+make the design worse.)
+
+**What's left of this door is nothing.** The store exists
+(`worker/kinds.ts`), marks and standings are in it, and `marks.prefix`
+and `ladders[].prefix` are both gone. `wip/marks` (`496d6e9`) was
+premised on the open answer and is superseded — delete it; its one
+durable catch, the PATCH allowlist entry, is in.
 
 ### Door 2 — System identity is a hand-chosen slug *(open, cheap now)*
 

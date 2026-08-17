@@ -10,7 +10,7 @@ import {
   toPublicCharacter,
   type Env,
 } from './db';
-import { findTag, setTag } from './tags';
+import { findTag, numberOf, setTag } from './tags';
 import { statusesFor } from './statuses';
 import {
   actorOf,
@@ -1127,6 +1127,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       tags: patch.tags ?? character.data.tags,
       notes: patch.notes ?? character.data.notes,
       items: patch.items ?? character.data.items,
+      kinds: patch.kinds ?? character.data.kinds,
       // `draft` is flow state, not provenance — the builder's last step
       // clears it, so an explicit false must land (?? would eat it).
       draft: patch.draft !== undefined ? patch.draft : character.data.draft,
@@ -1484,7 +1485,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
           tags = setTag(tags, st.name, st.severity);
           continue;
         }
-        const had = held.value ?? 0;
+        const had = numberOf(held) ?? 0;
         const mode = stacking?.stack ?? 'higher';
         let next =
           mode === 'sum'
@@ -1503,7 +1504,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       for (const r of relieved) {
         const held = findTag(tags, r.name);
         if (!held) continue;
-        const had = held.value ?? 0;
+        const had = numberOf(held) ?? 0;
         // No `by` means all the way off — clearing is the common case
         // and shouldn't need a number nobody has to hand.
         const next = r.by === undefined ? 0 : Math.max(0, had - Math.round(r.by));

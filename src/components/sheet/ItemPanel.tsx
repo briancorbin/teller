@@ -89,7 +89,7 @@ export function ItemPanel({
   extraCost = 0,
   available,
   balances = {},
-  tags = [],
+  marksHeld = [],
   marks,
   notch,
   onNotch,
@@ -130,8 +130,8 @@ export function ItemPanel({
   available?: number;
   /** What each `use.costs` counter holds, for the disabled state. */
   balances?: Record<string, number>;
-  /** The character's tags — where a Talent lives ("Talent: Rifles"). */
-  tags?: Tag[];
+  /** The marks this character holds — an item is marked by its GROUP. */
+  marksHeld?: Tag[];
   /** The system's mark declaration — see `SystemTemplate.marks`. */
   marks?: SystemTemplate['marks'];
   /**
@@ -171,11 +171,10 @@ export function ItemPanel({
   const round = chambered?.from ? catalog.get(chambered.from) : undefined;
 
   // The Talent tick (see `SystemTemplate.marks`): the catalogue GROUP is
-  // the category — carry a rifle, hold "Talent: Rifles", and the panel
+  // the category — carry a rifle, hold the "Rifles" mark, and the panel
   // wears the printed sheet's ✶. Display only; the reroll is real dice.
   const group = item.from ? catalog.get(item.from)?.group : undefined;
-  const talent =
-    marks && group ? findTag(tags, `${marks.prefix}${group}`) : undefined;
+  const talent = marks && group ? findTag(marksHeld, group) : undefined;
 
   // Base stats from the catalogue, upgrades applied, the chambered
   // round last, anything a person typed on top — see `worker/items.ts`.

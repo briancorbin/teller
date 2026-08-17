@@ -1,5 +1,11 @@
 import type { SystemTemplate } from '../../../worker/types';
-import { setTag, withoutTag, type Tag } from '../../../worker/tags';
+import {
+  hasTag,
+  sameTag,
+  setTag,
+  withoutTag,
+  type Tag,
+} from '../../../worker/tags';
 import { SheetPanel } from './SheetPanel';
 import { Starburst } from './Track';
 
@@ -13,48 +19,46 @@ import { Starburst } from './Track';
 // second, which is how the whole sheet has gone together. It sits on
 // whatever screen the layout gives it and moves in one line.
 //
-// Tapping toggles the tag — a manual grant/revoke, the same authority a
-// stepper has over a counter (rule 1). The PRICED buy (4 Prestige) is
+// Tapping toggles the mark — a manual grant/revoke, the same authority
+// a stepper has over a counter (rule 1). The PRICED buy (4 Prestige) is
 // the spend menu's job (TEL-66); this panel is the truth it writes to.
-// A mark tag outside the declared categories still renders, at the end:
-// a homebrew category doesn't disappear for want of a declaration.
+// A mark naming no declared category still renders, at the end: a
+// homebrew category doesn't disappear for want of a declaration.
+//
+// Marks are held in their own kind now, so a mark's NAME is the bare
+// category ("Rifles"). It used to be a tag called "Talent: Rifles" and
+// every reader here sliced the prefix back off — see `worker/kinds.ts`.
 
 export function TalentPanel({
   marks,
-  tags,
-  onTags,
+  held,
+  onHeld,
   note,
   fill = false,
 }: {
   marks: NonNullable<SystemTemplate['marks']>;
-  tags: Tag[];
+  /** What this character holds of the mark kind. */
+  held: Tag[];
   /** Absent on a surface that may look but not edit. */
-  onTags?: (next: Tag[]) => void;
+  onHeld?: (next: Tag[]) => void;
   note?: string;
   fill?: boolean;
 }) {
-  const tagFor = (category: string) => `${marks.prefix}${category}`;
-  const owns = (category: string) =>
-    tags.some(
-      (t) => t.name.trim().toLowerCase() === tagFor(category).trim().toLowerCase(),
-    );
+  const owns = (category: string) => hasTag(held, category);
 
   const categories = marks.categories ?? [];
-  // Mark tags naming no declared category — shown, never dropped.
-  const strays = tags.filter((t) => {
-    const l = t.name.trim().toLowerCase();
-    if (!l.startsWith(marks.prefix.trim().toLowerCase())) return false;
-    return !categories.some((c) => tagFor(c).trim().toLowerCase() === l);
-  });
+  // Marks naming no declared category — shown, never dropped.
+  const strays = held.filter((t) => !categories.some((c) => sameTag(c, t)));
 
   const toggle = (category: string) => {
-    if (!onTags) return;
-    const tag = tagFor(category);
-    onTags(owns(category) ? withoutTag(tags, tag) : setTag(tags, tag));
+    if (!onHeld) return;
+    onHeld(
+      owns(category) ? withoutTag(held, category) : setTag(held, category),
+    );
   };
 
   return (
-    <SheetPanel title={marks.label ?? marks.prefix.trim()} note={note} fill={fill}>
+    <SheetPanel title={marks.label ?? 'Marks'} note={note} fill={fill}>
       <div className="flex flex-wrap content-center gap-x-4 gap-y-1.5">
         {categories.map((category) => {
           const owned = owns(category);
@@ -62,10 +66,10 @@ export function TalentPanel({
             <button
               key={category}
               type="button"
-              disabled={!onTags}
+              disabled={!onHeld}
               onClick={() => toggle(category)}
               aria-pressed={owned}
-              aria-label={`${tagFor(category)} — ${owned ? 'owned' : 'not owned'}${
+              aria-label={`${category} — ${owned ? 'owned' : 'not owned'}${
                 marks.text ? `; ${marks.text}` : ''
               }`}
               className="flex min-w-[9.5rem] flex-1 items-center gap-2 rounded px-1 py-0.5 text-left transition-colors enabled:hover:bg-stone-800/60"
@@ -106,7 +110,7 @@ export function TalentPanel({
               <Starburst size={11} fill="#1c1917" />
             </span>
             <span className="break-words text-[0.8rem] leading-tight text-stone-100">
-              {tag.name.slice(marks.prefix.length).trim() || tag.name}
+              {tag.name}
             </span>
           </span>
         ))}

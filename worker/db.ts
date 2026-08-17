@@ -12,6 +12,7 @@ import type {
   RulesPack,
   Scene,
 } from './types';
+import { toKinds } from './kinds';
 import { toTags } from './tags';
 
 /** Ids are opaque and unguessable; the prefix is for humans reading rows. */
@@ -148,6 +149,9 @@ export function toCharacter(row: CharacterRow): Character {
   // any `.story` or pack authored against that — reading is forgiving
   // so that a file older than the change still opens (worker/tags.ts).
   data.tags = toTags(data.tags);
+  // Same bargain for the kind store: every list in it is tags, and a
+  // file authored before it existed simply has none (worker/kinds.ts).
+  data.kinds = toKinds(data.kinds);
   for (const item of data.items ?? []) {
     if (item.tags) item.tags = toTags(item.tags);
   }
