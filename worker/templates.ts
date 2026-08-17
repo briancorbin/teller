@@ -53,7 +53,7 @@ const dnd5e: SystemTemplate = {
 // structure.
 const wiw: SystemTemplate = {
   system: 'wiw',
-  version: 20,
+  version: 21,
   name: 'Wild Imaginary West',
   // The table's scale, as mechanics (numbers and band names — the
   // book's prose stays in the pack). 6" ≈ 30 yards, so an inch is
@@ -433,7 +433,7 @@ const wiw: SystemTemplate = {
   // a second entry here when mounts arrive (TEL-72's neighbour).
   ladders: [
     {
-      prefix: 'rep_',
+      kind: 'standing',
       label: 'Reputation',
       section: 'Factions',
       text: 'applies to Charm rolls with that faction',

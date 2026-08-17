@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Counter, Field, Item } from '../../../worker/types';
+import { held as heldOf, withHeld } from '../../../worker/kinds';
+import type { Tag } from '../../../worker/tags';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
@@ -206,8 +208,7 @@ export function Sheet({
   tags = [],
   onTags,
   kinds,
-  marksHeld = [],
-  onMarksHeld,
+  onKinds,
   conditions = [],
   conditionsLabel = 'Conditions',
   lookup,
@@ -219,7 +220,6 @@ export function Sheet({
   marks,
   spends,
   ladders,
-  onFields,
   onSpend,
   items = [],
   onItems,
@@ -233,6 +233,15 @@ export function Sheet({
   const { gauges, tallies } = split(counters);
   const update = (next: Counter) =>
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
+
+  // Each panel's own slice of the store, and the writer that puts it
+  // back. Derived here rather than passed in, so a new kind is one line
+  // in this file instead of a new prop through every caller.
+  const marksHeld = heldOf(kinds, marks?.kind ?? '');
+  const setMarks =
+    onKinds && marks
+      ? (next: Tag[]) => onKinds(withHeld(kinds, marks.kind, next))
+      : undefined;
 
   // Marks used to live in `tags` behind a "Talent: " prefix, so this is
   // where they had to be sieved back out — the statuses panel writes its
@@ -303,16 +312,15 @@ export function Sheet({
 
   /** Fields with no block of their own. Only shown on an undesigned sheet. */
   const allPinned = new Set(Object.values(pins ?? {}).flat());
-  // A standing field belongs to its ladder's panel, not the loose strip.
-  const laddered = (key: string) =>
-    (ladders ?? []).some((l) => key.startsWith(l.prefix));
+  // Standings used to be fields too, so this list had to exclude the
+  // ones secretly wearing a ladder's key prefix. They hold their own
+  // kind now, so a field here is just a field.
   const rest = fields.filter(
     (f) =>
       !(skillKeys ?? []).includes(f.key) &&
       f.key !== titleKey &&
       f.key !== playerKey &&
-      !allPinned.has(f.key) &&
-      !laddered(f.key),
+      !allPinned.has(f.key),
   );
 
   /**
@@ -587,18 +595,20 @@ export function Sheet({
     <TalentPanel
       marks={marks!}
       held={marksHeld}
-      onHeld={onMarksHeld}
+      onHeld={setMarks}
       note={note?.(marks!.label ?? 'Marks')}
       fill={strip}
     />
   );
   const ladderBlocks = ladderPanels.map((ladder) => (
     <LadderPanel
-      key={ladder.prefix}
+      key={ladder.kind}
       ladder={ladder}
-      fields={fields}
+      held={heldOf(kinds, ladder.kind)}
       packs={packs}
-      onFields={onFields}
+      onHeld={
+        onKinds ? (next) => onKinds(withHeld(kinds, ladder.kind, next)) : undefined
+      }
       lookup={lookup}
       note={note?.(ladder.label)}
       fill={strip}
@@ -659,7 +669,7 @@ export function Sheet({
       )}
       {ladderBlocks.map((block, i) => (
         <div
-          key={ladderPanels[i].prefix}
+          key={ladderPanels[i].kind}
           className="flex flex-[1_0_26rem] snap-start flex-col self-stretch"
         >
           {block}
@@ -1011,10 +1021,13 @@ export function Sheet({
     const held = shelfItems(def, first);
     // The filter rail: distinct kinds on THIS screen, derived from the
     // items themselves — a new kind grows a chip, nothing is declared.
-    const kinds = [...new Set(held.map((i) => i.kind ?? ''))];
+    // Named `itemKinds`, not `kinds`: the sheet now takes a `kinds`
+    // prop (the kind store) and a shelf filter shadowing it reads like
+    // a bug even when it isn't.
+    const itemKinds = [...new Set(held.map((i) => i.kind ?? ''))];
     const chosen = shelfKind[def.name] ?? '';
     const mine =
-      kinds.length > 1 && chosen
+      itemKinds.length > 1 && chosen
         ? held.filter((i) => (i.kind ?? '') === chosen)
         : held;
     const minePools = mine.filter((i) => pools.includes(i));
@@ -1134,7 +1147,7 @@ export function Sheet({
             only where the card scrolls (held glass); mounted glass
             never scrolls, so there is nothing to stick to. Kind names
             are the packs' own words, shown as written. */}
-        {(kinds.length > 1 || (strip && pocket.length > 0)) && (
+        {(itemKinds.length > 1 || (strip && pocket.length > 0)) && (
           <div
             className={`flex shrink-0 gap-2 self-start ${
               mounted ? 'flex-col' : 'w-full'
@@ -1142,7 +1155,7 @@ export function Sheet({
               strip && pocket.length > 0 ? 'w-[13rem] self-stretch justify-center' : ''
             } ${mounted ? '' : 'sticky top-0 z-10'}`}
           >
-            {kinds.length > 1 && (
+            {itemKinds.length > 1 && (
               <div
                 className={`flex gap-1 ${
                   !mounted || (strip && pocket.length > 0)
@@ -1150,7 +1163,7 @@ export function Sheet({
                     : 'flex-col'
                 }`}
               >
-                {['', ...kinds].map((kind) => (
+                {['', ...itemKinds].map((kind) => (
                   <button
                     key={kind || 'all'}
                     type="button"

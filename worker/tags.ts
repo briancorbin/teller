@@ -31,8 +31,19 @@
 
 export type Tag = {
   name: string;
-  /** Absent means a plain condition — Prone, Ally, Gunslinger. */
-  value?: number;
+  /**
+   * Absent means a plain condition — Prone, Ally, Gunslinger.
+   *
+   * A NUMBER is a count: Severity, an exhaustion level, anything that
+   * steps. A STRING is a named position on a scale — a standing's rung
+   * ("Friendly"), which is a value the system declares rather than one
+   * you add to. Both are the same fact from a human's side, which is
+   * why they share a slot: a thing you hold, and how much or which.
+   *
+   * Anything doing arithmetic must go through `numberOf`, not read
+   * this directly.
+   */
+  value?: number | string;
 };
 
 /** `"Afraid 3"` and `"Afraid [3]"` both parse; anything else is a name. */
@@ -62,11 +73,13 @@ export function toTags(raw: unknown): Tag[] {
       const name = String((entry as Tag).name ?? '').trim();
       if (!name) continue;
       const value = (entry as Tag).value;
-      out.push(
-        typeof value === 'number' && Number.isFinite(value)
-          ? { name, value }
-          : { name },
-      );
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        out.push({ name, value });
+      } else if (typeof value === 'string' && value.trim()) {
+        out.push({ name, value: value.trim() });
+      } else {
+        out.push({ name });
+      }
     }
   }
   return out;
@@ -75,6 +88,18 @@ export function toTags(raw: unknown): Tag[] {
 /** How it reads to a human — and to a model, which wants the number. */
 export function formatTag(tag: Tag): string {
   return tag.value === undefined ? tag.name : `${tag.name} ${tag.value}`;
+}
+
+/**
+ * The value as a NUMBER, when it is one.
+ *
+ * The single door for arithmetic. A standing's rung is a string, so
+ * `tag.value - 1` is a real mistake the type system can now catch —
+ * this is the thing to reach for instead, and `undefined` back means
+ * "not a countable value", which is not the same as zero.
+ */
+export function numberOf(tag: Tag | undefined): number | undefined {
+  return typeof tag?.value === 'number' ? tag.value : undefined;
 }
 
 /** Do these name the same condition, whatever numbers they carry? */
@@ -106,8 +131,14 @@ export function withoutTag(tags: Tag[], name: Tag | string): Tag[] {
  * eased to nothing is not a condition worth carrying, and every surface
  * that eases one wants the same answer.
  */
-export function setTag(tags: Tag[], name: string, value?: number): Tag[] {
-  if (value !== undefined && value <= 0) return withoutTag(tags, name);
+export function setTag(
+  tags: Tag[],
+  name: string,
+  value?: number | string,
+): Tag[] {
+  // Only a COUNT eases away to nothing. A named rung of zero doesn't
+  // exist, and a standing of "Hostile" must not vanish for sorting low.
+  if (typeof value === 'number' && value <= 0) return withoutTag(tags, name);
   const next: Tag = value === undefined ? { name } : { name, value };
   const at = tags.findIndex((t) => sameTag(t, name));
   if (at < 0) return [...tags, next];

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { PackEntry } from '../../../worker/types';
-import { findTag, setTag, type Tag } from '../../../worker/tags';
+import { findTag, numberOf, setTag, type Tag } from '../../../worker/tags';
 import { InfoPopover } from './InfoPopover';
 import { SheetPanel } from './SheetPanel';
 
@@ -152,8 +152,10 @@ export function StatusPanel({
     const hit = findTag(tags, name);
     if (hit === undefined) return 0;
     // A bare tag with no number is present at strength 1 — someone typed
-    // "Afraid" and meant it, and reading that as 0 would erase them.
-    return hit.value ?? 1;
+    // "Afraid" and meant it, and reading that as 0 would erase them. A
+    // non-numeric value reads the same way: it's held, it just doesn't
+    // count (a status wearing a word is not a severity).
+    return numberOf(hit) ?? 1;
   };
 
   const statuses = relievers.length
@@ -177,7 +179,7 @@ export function StatusPanel({
   const known = new Set(statuses.map((e) => e.name.trim().toLowerCase()));
   const loose = tags
     .filter((t) => !known.has(t.name.trim().toLowerCase()))
-    .map<Row>((t) => ({ name: t.name, severity: t.value ?? 1, loose: true }));
+    .map<Row>((t) => ({ name: t.name, severity: numberOf(t) ?? 1, loose: true }));
 
   // `setTag` takes a zero off entirely, which is what easing a status
   // all the way down has always meant here.

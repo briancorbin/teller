@@ -1,5 +1,12 @@
 import { useState } from 'react';
-import type { Field, PackEntry, RulesPack, SystemTemplate } from '../../../worker/types';
+import type { PackEntry, RulesPack, SystemTemplate } from '../../../worker/types';
+import {
+  findTag,
+  sameTag,
+  setTag,
+  withoutTag,
+  type Tag,
+} from '../../../worker/tags';
 import { InfoPopover } from './InfoPopover';
 import { SheetPanel } from './SheetPanel';
 
@@ -10,37 +17,36 @@ import { SheetPanel } from './SheetPanel';
 // plus any stored standing whose name the roster doesn't know (strays
 // never disappear).
 //
-// A standing is an ordinary field and the rungs are steppers over it
-// (rule 1): tap a rung, the field is written; tap the default rung and
-// the field is REMOVED, because "everyone starts Neutral" means the
-// unstored state and a sheet full of stored defaults is noise in every
-// bundle. The mod on the active rung is shown, never applied — the
-// dice it modifies are in the player's hand.
+// A standing is a held thing of the ladder's own kind, and the rungs
+// are steppers over it (rule 1): tap a rung, the standing is written;
+// tap the default rung and it is REMOVED, because "everyone starts
+// Neutral" means the unstored state and a sheet full of stored defaults
+// is noise in every bundle. The mod on the active rung is shown, never
+// applied — the dice it modifies are in the player's hand.
+//
+// It used to be an ordinary field keyed `rep_<slug>`, so the party's
+// name was slugged into a key and read back out of it, and every list
+// of fields had to remember which ones were secretly standings. The
+// party is the standing's NAME now (worker/kinds.ts).
 //
 // Standalone on purpose (blocks first, arrangement second). Horse
 // bonds reuse the same shape as a second ladder, not a special case.
 
-/** A party's name as a field key: stable, readable, collision-poor. */
-const slug = (name: string) =>
-  name
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-
 export function LadderPanel({
   ladder,
-  fields,
+  held,
   packs = [],
-  onFields,
+  onHeld,
   lookup,
   note,
   fill = false,
 }: {
   ladder: NonNullable<SystemTemplate['ladders']>[number];
-  fields: Field[];
+  /** The standings this character holds on this ladder. */
+  held: Tag[];
   packs?: RulesPack[];
   /** Absent on a surface that may look but not edit. */
-  onFields?: (next: Field[]) => void;
+  onHeld?: (next: Tag[]) => void;
   /** Finds a party's pack entry, so its description opens on tap. */
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
   note?: string;
@@ -61,25 +67,16 @@ export function LadderPanel({
     }
   }
 
-  const keyFor = (name: string) => `${ladder.prefix}${slug(name)}`;
-  const stored = (name: string) => fields.find((f) => f.key === keyFor(name));
-
   // Standings the character holds with parties no roster names.
-  const strays = fields.filter(
-    (f) =>
-      f.key.startsWith(ladder.prefix) &&
-      !roster.some((name) => keyFor(name) === f.key),
-  );
-  const rows = [...roster, ...strays.map((f) => f.label || f.key)];
+  const strays = held.filter((t) => !roster.some((name) => sameTag(name, t)));
+  const rows = [...roster, ...strays.map((t) => t.name)];
 
   const setStanding = (name: string, step: string) => {
-    if (!onFields) return;
-    const key = keyFor(name);
-    const rest = fields.filter((f) => f.key !== key);
-    onFields(
+    if (!onHeld) return;
+    onHeld(
       step === ladder.defaultStep
-        ? rest
-        : [...rest, { key, label: name, value: step }],
+        ? withoutTag(held, name)
+        : setTag(held, name, step),
     );
   };
 
@@ -89,7 +86,7 @@ export function LadderPanel({
     <SheetPanel title={ladder.label} note={note ?? ladder.text} fill={fill} className="relative">
       <div className="divide-y divide-stone-800/80">
         {rows.map((name) => {
-          const current = stored(name)?.value ?? ladder.defaultStep;
+          const current = findTag(held, name)?.value ?? ladder.defaultStep;
           const entry = lookup?.(name);
           const active = ladder.steps.find((s) => s.label === current);
           return (
@@ -114,7 +111,7 @@ export function LadderPanel({
                     <button
                       key={step.label}
                       type="button"
-                      disabled={!onFields}
+                      disabled={!onHeld}
                       onClick={() => setStanding(name, step.label)}
                       aria-pressed={lit}
                       aria-label={`${name}: ${step.label}${step.mod ? ` (${step.mod})` : ''}`}

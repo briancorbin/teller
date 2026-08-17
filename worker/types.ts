@@ -1364,21 +1364,26 @@ export type SystemTemplate = {
    * (rule 4) — a section title is the join, the same way `note` and
    * `lookup` already find pack prose by name.
    *
-   * A standing is an ordinary FIELD: key `${prefix}${slug(name)}`,
-   * label the party's name, value a step's label — no new type, and
-   * editable anywhere fields are edited (rule 1). Nothing is stored
-   * until a standing moves off `defaultStep` ("everyone starts
-   * Neutral"), and a stored field whose name the roster doesn't know
-   * still renders — the strays promise again. A step's `mod` is shown,
-   * never applied: the dice it modifies are in the player's hand.
+   * A standing is a held thing of its own KIND: name the party, value
+   * the step's label. Nothing is stored until a standing moves off
+   * `defaultStep` ("everyone starts Neutral"), and a stored standing
+   * whose party the roster doesn't know still renders — the strays
+   * promise again. A step's `mod` is shown, never applied: the dice it
+   * modifies are in the player's hand.
+   *
+   * This used to be a FIELD keyed `${prefix}${slug(name)}`, which is
+   * the mechanic-hiding-in-a-text-field pattern for the second time in
+   * one declaration block: the party's identity was slugged into a key
+   * and read back out, and every list of fields had to remember to
+   * exclude the ones that were secretly standings.
    *
    * An array because the shape recurs — the book runs horse bonds on
    * the same five steps, which will be a second entry with its own
    * prefix, not a special case.
    */
   ladders?: {
-    /** Field-key namespace — 'rep_'. Identifies which fields ride this. */
-    prefix: string;
+    /** The kind standings are held under — `CharacterData.kinds[kind]`. */
+    kind: string;
     /** The panel's heading — "Reputation". */
     label: string;
     /** Pack section whose entry names seed the roster. */
