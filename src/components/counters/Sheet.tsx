@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Counter, Field, Item } from '../../../worker/types';
-import type { Tag } from '../../../worker/tags';
 import { HealthPanel } from '../sheet/HealthPanel';
 import { Cylinder, dialable } from '../sheet/Cylinder';
 import { ItemPanel } from '../sheet/ItemPanel';
@@ -206,6 +205,9 @@ export function Sheet({
   icons,
   tags = [],
   onTags,
+  kinds,
+  marksHeld = [],
+  onMarksHeld,
   conditions = [],
   conditionsLabel = 'Conditions',
   lookup,
@@ -232,18 +234,11 @@ export function Sheet({
   const update = (next: Counter) =>
     onChange(counters.map((c) => (c.id === next.id ? next : c)));
 
-  /**
-   * Mark tags (Talents) versus everything else. The statuses panel gets
-   * only the others — "Talent: Rifles" is not a condition — but its
-   * onChange writes the tag list WHOLESALE, so the withheld marks must
-   * ride back on every write or the first status tap silently deletes
-   * every talent the character owns.
-   */
-  const isMark = (t: Tag) =>
-    Boolean(marks) &&
-    t.name.trim().toLowerCase().startsWith(marks!.prefix.trim().toLowerCase());
-  const markTags = tags.filter(isMark);
-  const plainTags = tags.filter((t) => !isMark(t));
+  // Marks used to live in `tags` behind a "Talent: " prefix, so this is
+  // where they had to be sieved back out — the statuses panel writes its
+  // tag list WHOLESALE, and any mark not carried back rode off with it.
+  // A status tap silently deleting every Talent you owned was one missed
+  // rejoin away. They have their own kind now; nothing to sieve.
 
   // The sheet's SKILLS panel is a declared set, not "every stat" — see
   // `SystemTemplate.groups`. WiW's holds exactly Charm, Finesse,
@@ -410,7 +405,7 @@ export function Sheet({
             title={SKILLS_TITLE}
             note={note?.(SKILLS_TITLE)}
             fill={strip}
-            tags={tags}
+            marksHeld={marksHeld}
             marks={marks}
           />
           {/* Stats with no block of their own — Speed, for WiW — used to
@@ -524,13 +519,8 @@ export function Sheet({
           >
             <StatusPanel
               entries={conditions}
-              // A tag that IS a mark isn't a condition — "Talent:
-              // Rifles" was rendering as a status with a severity box.
-              // It has its own home (the ✶ ticks); the panel keeps every
-              // other stray tag, table-invented statuses included. The
-              // marks ride back on every write (see `markTags`).
-              tags={plainTags}
-              onChange={(next) => onTags?.([...next, ...markTags])}
+              tags={tags}
+              onChange={(next) => onTags?.(next)}
               title={conditionsLabel}
               note={note?.(conditionsLabel)}
               relievers={skills.map((f) => f.label)}
@@ -596,9 +586,9 @@ export function Sheet({
   const talentBlock = roster && (
     <TalentPanel
       marks={marks!}
-      tags={tags}
-      onTags={onTags}
-      note={note?.(marks!.label ?? marks!.prefix.trim())}
+      held={marksHeld}
+      onHeld={onMarksHeld}
+      note={note?.(marks!.label ?? 'Marks')}
       fill={strip}
     />
   );
@@ -620,7 +610,8 @@ export function Sheet({
       counters={counters}
       fields={fields}
       groups={groups}
-      tags={tags}
+      kinds={kinds}
+      marksHeld={marksHeld}
       marks={marks}
       items={items}
       packs={packs}
@@ -982,7 +973,7 @@ export function Sheet({
             }
             extraCost={armedCost}
             available={available}
-            tags={tags}
+            marksHeld={marksHeld}
             marks={marks}
             // Only where this surface can write. A seat showing someone
             // else's card, or a passive display, has no business

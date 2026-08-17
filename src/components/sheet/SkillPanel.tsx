@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Field, PackEntry, SystemTemplate } from '../../../worker/types';
-import type { Tag } from '../../../worker/tags';
+import { hasTag, type Tag } from '../../../worker/tags';
 import { InfoPopover } from './InfoPopover';
 import { SheetPanel } from './SheetPanel';
 import { Track } from './Track';
@@ -92,7 +92,7 @@ export function SkillPanel({
   lookup,
   note,
   fill = false,
-  tags = [],
+  marksHeld = [],
   marks,
 }: {
   fields: Field[];
@@ -105,8 +105,8 @@ export function SkillPanel({
   fill?: boolean;
   /** Finds a skill's pack entry, so its description can open on tap. */
   lookup?: (name: string) => (PackEntry & { section: string }) | undefined;
-  /** The character's tags — where a Talent lives ("Talent: Nerve"). */
-  tags?: Tag[];
+  /** The marks this character holds — a skill is marked by NAME. */
+  marksHeld?: Tag[];
   /** The system's mark declaration — see `SystemTemplate.marks`. */
   marks?: SystemTemplate['marks'];
 }) {
@@ -115,12 +115,7 @@ export function SkillPanel({
   if (!fields.length) return null;
 
   const shown = openInfo ? lookup?.(openInfo) : undefined;
-  const marked = (label: string) =>
-    Boolean(marks) &&
-    tags.some(
-      (t) =>
-        t.name.trim().toLowerCase() === `${marks!.prefix}${label}`.trim().toLowerCase(),
-    );
+  const marked = (label: string) => Boolean(marks) && hasTag(marksHeld, label);
 
   return (
     // Full width of whatever column it's in; hugging the CONTENT is the
@@ -144,7 +139,9 @@ export function SkillPanel({
             }
             marked={marked(field.label)}
             markTitle={
-              marks ? `${marks.prefix}${field.label} — ${marks.text ?? ''}` : undefined
+              marks
+                ? `${marks.label ?? 'Mark'}: ${field.label} — ${marks.text ?? ''}`
+                : undefined
             }
           />
         ))}

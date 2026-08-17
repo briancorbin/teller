@@ -1127,6 +1127,7 @@ async function api(request: Request, env: Env, url: URL): Promise<Response> {
       tags: patch.tags ?? character.data.tags,
       notes: patch.notes ?? character.data.notes,
       items: patch.items ?? character.data.items,
+      kinds: patch.kinds ?? character.data.kinds,
       // `draft` is flow state, not provenance — the builder's last step
       // clears it, so an explicit false must land (?? would eat it).
       draft: patch.draft !== undefined ? patch.draft : character.data.draft,

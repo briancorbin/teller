@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { held, withHeld } from '../../worker/kinds';
 import type {
   Calibration,
   Campaign,
@@ -584,6 +585,20 @@ export function SeatView({
               use={template?.use}
               screens={template?.screens}
               marks={template?.marks}
+              kinds={character.data.kinds}
+              marksHeld={held(character.data.kinds, template?.marks?.kind ?? '')}
+              onMarksHeld={
+                ownsTags(layout) && template?.marks
+                  ? (next) =>
+                      patch({
+                        kinds: withHeld(
+                          character.data.kinds,
+                          template.marks!.kind,
+                          next,
+                        ),
+                      })
+                  : undefined
+              }
               spends={template?.spends}
               ladders={template?.ladders}
               shop={shop}

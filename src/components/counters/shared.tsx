@@ -12,6 +12,7 @@ import type {
   Vendor,
 } from '../../../worker/types';
 import type { Tag } from '../../../worker/tags';
+import type { Kinds } from '../../../worker/kinds';
 import type { StockLine } from '../../../worker/items';
 import type { Candidate } from '../sheet/NotchDialog';
 
@@ -83,8 +84,18 @@ export type CounterViewProps = {
   use?: SystemTemplate['use'];
   /** How carried items split into screens, when the system declares it. */
   screens?: SystemTemplate['screens'];
-  /** Tag-driven category marks (Talents), when the system declares them. */
+  /** Category marks (Talents), when the system declares them. */
   marks?: SystemTemplate['marks'];
+  /**
+   * The whole kind store. Panels read their own slice through
+   * `marksHeld` and friends; this is here so a COMBINED write (a
+   * Prestige purchase granting a mark) can merge rather than replace.
+   */
+  kinds?: Kinds;
+  /** What this character holds of the mark kind — `kinds[marks.kind]`. */
+  marksHeld?: Tag[];
+  /** Writes the marks back. Absent on a surface that may look, not edit. */
+  onMarksHeld?: (next: Tag[]) => void;
   /** The progression purchases (Prestige), when the system declares them. */
   spends?: SystemTemplate['spends'];
   /** Standing scales (Reputation), when the system declares them. */
@@ -108,6 +119,7 @@ export type CounterViewProps = {
     items?: Item[];
     fields?: Field[];
     tags?: Tag[];
+    kinds?: Kinds;
   }) => void;
   itemsLabel?: string;
   /** The catalogue items may point into. */

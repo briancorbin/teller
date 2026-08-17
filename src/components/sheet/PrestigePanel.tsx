@@ -8,7 +8,8 @@ import type {
   SystemTemplate,
 } from '../../../worker/types';
 import { amendPool, catalogOf } from '../../../worker/items';
-import { setTag, type Tag } from '../../../worker/tags';
+import { hasTag, setTag, type Tag } from '../../../worker/tags';
+import { withHeld, type Kinds } from '../../../worker/kinds';
 import { newLocalId } from '../../lib/api';
 import { bumped, Step } from '../counters/shared';
 import { SheetPanel } from './SheetPanel';
@@ -31,7 +32,8 @@ export function PrestigePanel({
   counters,
   fields,
   groups,
-  tags,
+  kinds,
+  marksHeld = [],
   marks,
   items,
   packs = [],
@@ -46,7 +48,10 @@ export function PrestigePanel({
   counters: Counter[];
   fields: Field[];
   groups?: SystemTemplate['groups'];
-  tags: Tag[];
+  /** The whole kind store, so a granted mark merges instead of replacing. */
+  kinds?: Kinds;
+  /** What's held of the mark kind, for "already owned". */
+  marksHeld?: Tag[];
   marks?: SystemTemplate['marks'];
   items: Item[];
   packs?: RulesPack[];
@@ -60,6 +65,7 @@ export function PrestigePanel({
     items?: Item[];
     fields?: Field[];
     tags?: Tag[];
+    kinds?: Kinds;
   }) => void;
   note?: string;
   fill?: boolean;
@@ -86,7 +92,13 @@ export function PrestigePanel({
   /** Debit the spend counter, then apply the purchase's other writes. */
   const buy = (
     spend: NonNullable<SystemTemplate['spends']>['menu'][number],
-    extra: { items?: Item[]; fields?: Field[]; tags?: Tag[] } = {},
+    extra: {
+      items?: Item[];
+      fields?: Field[];
+      tags?: Tag[];
+      /** A granted mark — folded into the kind store on the way out. */
+      marksHeld?: Tag[];
+    } = {},
     amendCounters?: (debited: Counter[]) => Counter[],
   ) => {
     if (!onSpend) return;
@@ -100,9 +112,16 @@ export function PrestigePanel({
           ? bumped(c, spend.cost)
           : c,
     );
+    const { marksHeld: grantedMarks, ...rest } = extra;
     onSpend({
       counters: amendCounters ? amendCounters(debited) : debited,
-      ...extra,
+      ...rest,
+      // The purchase and the mark it grants are ONE write, so the kind
+      // store has to be assembled here rather than patched separately —
+      // two patches would be two events and two undos for one act.
+      ...(grantedMarks && marks
+        ? { kinds: withHeld(kinds, marks.kind, grantedMarks) }
+        : {}),
     });
     setOpen(null);
   };
@@ -138,18 +157,15 @@ export function PrestigePanel({
         }));
     }
     if (effect.kind === 'mark') {
-      const prefix = marks?.prefix ?? '';
-      const owned = (category: string) =>
-        tags.some(
-          (t) =>
-            t.name.trim().toLowerCase() === `${prefix}${category}`.trim().toLowerCase(),
-        );
       return (marks?.categories ?? [])
-        .filter((c) => !owned(c))
+        .filter((c) => !hasTag(marksHeld, c))
         .map((category) => ({
           key: category,
           label: category,
-          act: () => buy(spend, { tags: setTag(tags, `${prefix}${category}`) }),
+          act: () =>
+            buy(spend, {
+              marksHeld: setTag(marksHeld, category),
+            }),
         }));
     }
     if (effect.kind === 'item') {
