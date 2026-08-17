@@ -386,8 +386,14 @@ export type CharacterData = {
    *
    * The store exists so a system can declare a kind Core has never
    * heard of without Core growing a property for it. Talents live here
-   * under `mark`; statuses and standings are still in `tags` and
-   * `fields` and are moving.
+   * under `mark`, standings under whatever each ladder names.
+   *
+   * CONDITIONS deliberately do not: `tags` is the un-kinded kind, and
+   * it stays that way. It's the degradation target — a `{name, value?}`
+   * nobody declared is still a thing a human can add and remove — and
+   * the statuses panel merges declared conditions with typed-in ones on
+   * purpose, which only works while both live in one list. See
+   * `docs/ARCHITECTURE.md`, "tags is the un-kinded kind".
    */
   kinds?: Kinds;
   /**

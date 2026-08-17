@@ -10,6 +10,11 @@ import { toTags, type Tag } from './tags';
 // a standing behind a `rep_` field key. Three hacks, one cause, and all
 // three are the same primitive underneath — `{ name, value? }`.
 //
+// CONDITIONS are the exception and stay in `tags`, which is the
+// UN-KINDED kind: the degradation target, and the one list the statuses
+// panel can merge declared conditions and typed-in ones into. This
+// store holds the kinds BEYOND that default. See `docs/ARCHITECTURE.md`.
+//
 // This is that one place. The kind's id is the key; Core never learns
 // the word "Talent". Which is what `docs/ARCHITECTURE.md` means by
 // Core's primitive list being CLOSED: a system decides what goes in the
