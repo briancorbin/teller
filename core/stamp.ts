@@ -1,0 +1,113 @@
+// The stamp — one link, variable thickness. `docs/CORE-NEXT.md` §13/§14.
+//
+// A template is content: the monster in the bestiary, the gun in the
+// catalogue, the shop as written. An entity is an instance: the foe on
+// the board at Health 5. The link between them is always `refs.from` —
+// a template id minted at authoring, plus the cached name that degrades
+// when the template is gone.
+//
+// Thickness is a property of the stamping ACTION, not the link. A THIN
+// stamp stores nothing and derives everything through `from` — it's the
+// book's gun until the table says otherwise, and a pack correction
+// reaches it at the next render. A THICK stamp copied every value at
+// birth — creation is authorship — and behaves identically thereafter,
+// because the rule is one rule: everything derives through `from`, and
+// stored values win.
+//
+// > Copy as little as the thing's nature allows.
+//
+// Resolution is a READING, computed at the point of use and stored
+// nowhere (§8) — which is why a stamp can't go stale.
+
+import {
+  refIn,
+  toEntity,
+  type Entity,
+  type Entry,
+  type Ref,
+} from './entity.ts';
+import { mergeNamed } from './merge.ts';
+import { newId } from './id.ts';
+
+/**
+ * Entity-shaped content: what a bestiary blueprint, a catalogue item or
+ * a shop-as-written carries. Not an entity — it isn't in play — but the
+ * same limbs, which is what lets one stamp cover all of them.
+ */
+export type Template = {
+  id: string;
+  name: string;
+  type?: string;
+  lists?: Record<string, Entry[]>;
+  notes?: string;
+};
+
+/** Where resolution looks templates up — the caller brings the merge. */
+export type TemplateOf = (id: string) => Template | undefined;
+
+/**
+ * A new entity from a template.
+ *
+ * Thin unless told otherwise. `name` lets a deployment christen the
+ * instance ("Bark Watcher 2"); the ref keeps the template's own name
+ * for degradation either way.
+ */
+export function stamp(
+  template: Template,
+  opts: { thick?: boolean; name?: string } = {},
+): Entity {
+  const from: Ref = { id: template.id, name: template.name };
+  const out: Entity = {
+    id: newId('ent'),
+    name: opts.name ?? template.name,
+    lists: {},
+    refs: { from },
+  };
+  if (template.type) out.type = template.type;
+  if (opts.thick) {
+    out.lists = structuredClone(template.lists ?? {});
+    if (template.notes) out.notes = template.notes;
+  }
+  return out;
+}
+
+/**
+ * The entity as the table should read it: template underneath, stored
+ * values on top, stored wins by name — rule 1 wearing its merge shape.
+ *
+ * No `from`, or a template nobody has? The entity as it stands — the
+ * cached name in the ref is the surface's business to mark. Children
+ * resolve through the same lookup, recursively: a stamped gun inside a
+ * stamped character reads right too.
+ */
+export function resolve(entity: Entity, templateOf: TemplateOf): Entity {
+  const out: Entity = { ...entity };
+  const from = refIn(entity.refs, 'from');
+  const template = from ? templateOf(from.id) : undefined;
+  if (template) {
+    const lists: Record<string, Entry[]> = {};
+    for (const key of new Set([
+      ...Object.keys(template.lists ?? {}),
+      ...Object.keys(entity.lists),
+    ])) {
+      lists[key] = mergeNamed(template.lists?.[key], entity.lists[key]);
+    }
+    out.lists = lists;
+    if (out.notes === undefined && template.notes) out.notes = template.notes;
+  }
+  if (entity.children?.length) {
+    out.children = entity.children.map((child) => resolve(child, templateOf));
+  }
+  return out;
+}
+
+/** A template from anything entity-shaped — a blueprint row, a catalogue line. Forgiving, like every read. */
+export function toTemplate(raw: unknown): Template | undefined {
+  const entity = toEntity(raw);
+  if (!entity) return undefined;
+  const out: Template = { id: entity.id, name: entity.name };
+  if (entity.type) out.type = entity.type;
+  if (Object.keys(entity.lists).length) out.lists = entity.lists;
+  if (entity.notes) out.notes = entity.notes;
+  return out;
+}

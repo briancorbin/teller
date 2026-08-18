@@ -687,6 +687,45 @@ The sequence:
    `.panel`-shaped declarations once real panels exist to arrange.
    *Settles E.*
 
+### Contact log — H step 1 *(started 2026-08-18, `feat/core-next`, `core/`)*
+
+The doc said building would amend it. What building found, first day:
+
+- **A ref slot holds one ref OR an ordered list** (`Ref | Ref[]`).
+  §10's drafted `Record<string, Ref>` had no home for the campaign's
+  packs, where precedence order is the whole point. `refIn`/`refsIn`
+  are the two readers.
+- **Question D has a draft** (`core/kind.ts`): the spine is
+  name/label/note + a domain — `count` (with `zero: 'clears' | 'stays'`
+  and a presented-never-enforced `cap`), `steps` (with `rest`, the
+  defaultStep pattern generalised), or `text`. The zero rule sits on
+  the declaration exactly as §1 demanded. The UNDECLARED default is
+  `'stays'`: deleting a value nobody declared deletable is automation
+  past a human, so an undeclared list behaves like the old counters and
+  a system opts a kind into clearing.
+- **A value write never re-spells the name.** `setEntry` keeps the
+  stored entry's own casing when updating in place — caught by a test
+  asserting `charm` over `Charm`; changing a value is not permission to
+  re-case the table's word.
+- **Event ids are the rowid** — a single-writer local file wants
+  insertion order, not minted strings. Updates log `{before, after}`,
+  deletes log `{before}` and cascade one event per row, so `/undo`
+  stays a reader of the log rather than a feature.
+- **`core/` imports carry explicit `.ts` extensions** so node's native
+  type stripping runs the core with no build step —
+  `node core/anything.ts` is the whole harness. Headless-testable,
+  literally.
+- **`core/` typechecks as its own project** (`tsconfig.core.json`,
+  node types): workers-types and node ambients can't share a tsconfig.
+  A deliberate scar of the half-done sweep — it retires with `worker/`
+  when §16 finishes.
+
+Green at day's end: 46 tests (`pnpm test`), both typecheck projects,
+and `~/.teller-next` seeded headless — `shelf.db` +
+`campaigns/unlikely-duo.db`, a thin-stamped foe resolving Health
+through its blueprint, the manifest's ordered pack refs surviving a
+reopen.
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
