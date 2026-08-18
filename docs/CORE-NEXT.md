@@ -367,9 +367,10 @@ board_state ( board_id PRIMARY KEY, data )                        -- placements 
 ```
 
 The campaign manifest is the root entity row (`parent_id IS NULL`).
-Characters are promoted children; blueprints, encounters, vendors,
-handouts are children inline in the root's blob until rule 8 promotes
-them. **No new table per type, ever.**
+Characters are promoted children. `children` holds INSTANCES only
+(§13): the campaign's own blueprints, encounters, vendors and catalog
+are its TEMPLATE half and live in the manifest, not as child entities.
+**No new table per type, ever.**
 
 Promoted columns, each earning its keep: `parent_id` (fetch children),
 `type` (filter + strip). Everything else is blob (rule 8).
@@ -391,6 +392,50 @@ Scene-as-campaign-content (→ boards + board_state), `do_storage`
 **Fork noted, default standing:** placements stay a blob per board
 (rule 8 — nothing addresses one from outside yet; a player moving only
 their own token would be the promotion trigger).
+
+### 13 · An entity is an instance
+
+*(Brian, 2026-08-18: "an entity is simply an instantiated instance of
+something else… the monster in a bestiary is NOT an entity; the
+instantiated version that has hp and statuses and exists in an
+encounter is." Confirmed, with two sharpenings.)*
+
+> **An entity is a thing in play at this table — usually stamped from a
+> template, never required to be.** `refs.from` is the stamp mark; its
+> absence is fine (a character invented at the table has no template,
+> and degradation demands templates stay optional).
+
+| template (content) | instance (entity) |
+|---|---|
+| bestiary blueprint | the foe on the board, at Health 5 |
+| trade | the character a player built from it |
+| catalogue item | the pistol in Barrett's belt |
+| encounter | the deployed fight |
+| board (asset) | board_state |
+
+The encounter runner proves it was already true: an encounter's foes
+are `{blueprintId, name, u, v}` — instructions for instantiation — and
+deploying stamps real characters.
+
+**The campaign layer has two halves.** Its OWN bestiary, catalog and
+statuses are templates — the campaign's contribution to the merge
+(system → packs → campaign, wins on collision), authored content that
+travels. Its characters and deployed foes are instances — in no merge,
+because they aren't content, they're the game. Templates change by
+version bump; instances change by logged, undoable events (rule 3).
+This is also why a blueprint correction never reaches creatures already
+on the table — `blueprintId` was documented "provenance, not a live
+link" from the start.
+
+**Amendment to §12:** `children` holds INSTANCES only. The campaign's
+template half (own blueprints, encounters, vendors, catalog, statuses)
+lives in the manifest, not as child entities. A vendor is the boundary
+case that shows the seam working: the shop-as-written is template; the
+moment the table tracks depleted stock, THAT is the instantiation.
+
+Noted for later, not pursued now: prep vs play — the console split
+Brian asked for at the very start — is exactly template vs instance.
+Prep authors templates and arrangements; play manipulates instances.
 
 ---
 
