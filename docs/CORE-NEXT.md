@@ -437,6 +437,45 @@ Noted for later, not pursued now: prep vs play — the console split
 Brian asked for at the very start — is exactly template vs instance.
 Prep authors templates and arrangements; play manipulates instances.
 
+### 14 · The stamp — one link, variable thickness
+
+*(2026-08-18, out of "how does the gun know its template, how does the
+npc know its monster, and should a store instantiate whole?")*
+
+**The link is always `refs.from`**, holding a template id minted at
+authoring (`npc_wiw_bark_watcher`, a catalogue `id`) plus the cached
+name. Resolution goes through **the same merge that presents content**
+(the `bestiaryFor`/`catalogOf` path) — deliberately, because that is
+how corrections propagate: fix a stat in the pack and every thin stamp
+reads the fix at render. The cached name degrades it when the pack is
+gone. "Stock is part of the store" is the OTHER relationship —
+containment — and stock lines match template lines by name (vocabulary
+coupling, §10).
+
+**Thickness is a property of the stamping ACTION, not the link.** Today
+there are secretly two behaviours: the gun is a THIN stamp (stores only
+overrides, derives the rest through `from`, rule 1), and the character
+is a THICK one (creation copies everything at birth; `blueprintId` is
+documented "provenance, not a live link"). Unified: everything derives
+through `from` and stored values win — a thick stamp is just a stamp
+that stored every value at birth. The character behaves exactly as
+today, but stops being a special case.
+
+> Copy as little as the thing's nature allows. Characters copy
+> everything, because creation is authorship. Guns copy nothing,
+> because it's the book's gun until the table says otherwise. Shops
+> copy nothing and instantiate late.
+
+**Vendors, settled concretely** (amends the lazy-per-line sketch in
+§13's vendor note): instantiate the WHOLE vendor as an entity at first
+transaction or first DM edit — never on browse — so "the shop went
+live" is one event, addressable and undoable, and the console can show
+as-written vs live. But instantiate THIN: store only depleted counts
+(`VendorLine.qty` is the template default; an entry exists only once it
+moves off it — the defaultStep pattern). A thick-copied shop would be
+frozen at instantiation day; a thin one carries the pack's new items
+automatically.
+
 ---
 
 ## Open — with what would settle each
