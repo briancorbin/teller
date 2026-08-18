@@ -1,22 +1,40 @@
-// The minimal loop's three views, routed by query string:
+// The minimal loop's client, now living under rule 7.
 //
-//   /                → console: roster + create + stamp + boards
-//   /?entity=<id>    → one entity's bare panel (console actor)
-//   /?seat=<id>      → the same panel, as that seat (actor seat:<id>)
-//   /?board=<id>     → one board's live state, primitive on purpose
+// Two ways in, matching the two families of authority:
 //
-// SSE nudges a refetch. A refetch never clobbers a control someone is
-// typing in — if focus is in a field, the nudge waits for the next one.
+//   * CONSOLE — the DM's own device. Opens `/?console`, pastes the one
+//     key (printed by the host's terminal), and holds it in storage.
+//     `/?entity=` and `/?board=` are console sub-pages.
+//   * SCREEN — everything else. A bare visit is a screen: it says
+//     hello, keeps its display id, shows its pairing code until the DM
+//     adopts it, then renders whatever it was ASSIGNED. A screen never
+//     chooses what it is.
+//
+// The stream takes a ticket (an EventSource can't send a header); an
+// 'assign' nudge makes a screen re-ask what it is, 'identify' flashes
+// its name. SSE nudges a refetch; a refetch never clobbers a control
+// someone is typing in.
 
 import { renderPanel } from '/panel.js';
 
 const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
 
+const stored = {
+  get key() { return localStorage.getItem('teller.key') ?? ''; },
+  set key(v) { v ? localStorage.setItem('teller.key', v) : localStorage.removeItem('teller.key'); },
+  get display() { return localStorage.getItem('teller.display') ?? ''; },
+  set display(v) { v ? localStorage.setItem('teller.display', v) : localStorage.removeItem('teller.display'); },
+};
+
 async function api(method, path, body) {
+  const headers = {};
+  if (stored.key) headers['x-teller-key'] = stored.key;
+  if (stored.display) headers['x-teller-display'] = stored.display;
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   const res = await fetch(path, {
     method,
-    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return res.json();
@@ -33,13 +51,17 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-// ---------------------------------------------------------------- views
+const ROLES = ['console', 'table', 'board', 'art', 'seat', 'badge', 'blank'];
+
+// ---------------------------------------------------------------- console
 
 async function consoleView() {
-  const [campaign, roster, boards] = await Promise.all([
-    api('GET', '/api/campaign'),
+  const campaign = await api('GET', '/api/campaign');
+  if (campaign.error) return keyView(campaign.error);
+  const [roster, boards, displays] = await Promise.all([
     api('GET', '/api/entities'),
     api('GET', '/api/boards'),
+    api('GET', '/api/displays'),
   ]);
   const bestiary = await api('GET', '/api/stack/templates/bestiary');
 
@@ -54,6 +76,8 @@ async function consoleView() {
       ...campaign.missing.map((m) =>
         el('span', { class: 'missing' }, `  MISSING ${m.slot}: ${m.ref.name}`),
       ),
+      el('span', { class: 'dim' }, '  ·  '),
+      el('a', { href: '#', onclick: (e) => { e.preventDefault(); stored.key = ''; location.search = '?console'; } }, 'lock'),
     ),
     el('h2', {}, 'roster'),
     el(
@@ -68,7 +92,6 @@ async function consoleView() {
             { class: 'open', onclick: () => (location.search = `?entity=${row.id}`) },
             `${row.name}${row.type ? ` · ${row.type}` : ''}`,
           ),
-          el('a', { href: `/?seat=${row.id}`, title: 'open as this seat' }, 'seat'),
           el(
             'button',
             {
@@ -92,7 +115,6 @@ async function consoleView() {
             if (!name || !name.trim()) return;
             const made = await api('POST', '/api/entities', {
               draft: { name: name.trim() },
-              actor: 'console',
             });
             location.search = `?entity=${made.id}`;
           },
@@ -113,7 +135,6 @@ async function consoleView() {
                     await api('POST', '/api/stamp', {
                       slot: 'bestiary',
                       templateId: t.id,
-                      actor: 'console',
                     });
                     consoleView();
                   },
@@ -123,6 +144,30 @@ async function consoleView() {
             ),
           )
         : '',
+    ),
+    el('h2', {}, 'screens'),
+    ...displays.map((d) => screenRow(d, roster, boards)),
+    el(
+      'div',
+      { class: 'row' },
+      el('input', { id: 'claim-code', placeholder: 'pairing code', maxLength: 6 }),
+      el(
+        'button',
+        {
+          class: 'add',
+          onclick: async () => {
+            const code = document.getElementById('claim-code')?.value ?? '';
+            if (!code.trim()) return;
+            const claimed = await api('POST', '/api/displays/claim', {
+              code,
+              name: prompt('name this screen?') ?? undefined,
+            });
+            if (claimed.error) alert(claimed.error);
+            consoleView();
+          },
+        },
+        'adopt',
+      ),
     ),
     el('h2', {}, 'boards'),
     ...boards.map((b) =>
@@ -136,27 +181,122 @@ async function consoleView() {
   document
     .getElementById('log')
     ?.replaceChildren(
-      ...events.map((e) =>
+      ...(events.error ? [] : events).map((e) =>
         el('div', {}, `${e.createdAt.slice(11, 19)} · ${e.actor} · ${e.kind}`),
       ),
     );
 }
 
-async function entityView(id, actor) {
+/** One adopted-or-waiting screen in the console's list. */
+function screenRow(d, roster, boards) {
+  const jobOf = () => {
+    if (d.role === 'seat') {
+      const who = roster.find((r) => r.id === d.params.entityId);
+      return who ? ` → ${who.name}` : ' → (unassigned)';
+    }
+    if (d.role === 'board') {
+      const which = boards.find((b) => b.id === d.params.boardId);
+      return which ? ` → ${which.name}` : '';
+    }
+    return '';
+  };
+  const roleSelect = el(
+    'select',
+    {
+      onchange: async () => {
+        const role = roleSelect.value;
+        const patch = { role, params: {} };
+        // A seat or a board points at something; ask which.
+        if (role === 'seat') {
+          const lines = roster.map((r, i) => `${i + 1}. ${r.name}`).join('\n');
+          const pick = Number(prompt(`which entity?\n${lines}`) ?? 0);
+          const who = roster[pick - 1];
+          if (!who) return consoleView();
+          patch.params = { entityId: who.id };
+        }
+        if (role === 'board' && boards.length) {
+          const lines = boards.map((b, i) => `${i + 1}. ${b.name}`).join('\n');
+          const pick = Number(prompt(`which board?\n${lines}`) ?? 0);
+          if (boards[pick - 1]) patch.params = { boardId: boards[pick - 1].id };
+        }
+        await api('PATCH', `/api/displays/${d.id}`, patch);
+        consoleView();
+      },
+    },
+    ...ROLES.map((r) =>
+      el('option', { value: r, selected: d.role === r }, r),
+    ),
+  );
+  return el(
+    'div',
+    { class: 'row' },
+    d.code
+      ? el('span', { class: 'chip' }, `waiting · code ${d.code}`)
+      : el('span', {}, `${d.name ?? '(unnamed)'}${jobOf()}`),
+    d.code ? '' : roleSelect,
+    d.code
+      ? ''
+      : el(
+          'button',
+          { title: 'flash its name on it', onclick: () => api('POST', `/api/displays/${d.id}/identify`) },
+          'identify',
+        ),
+    el(
+      'button',
+      {
+        class: 'danger',
+        onclick: async () => {
+          if (!confirm(`forget ${d.name ?? 'this screen'}?`)) return;
+          await api('DELETE', `/api/displays/${d.id}`);
+          consoleView();
+        },
+      },
+      '×',
+    ),
+  );
+}
+
+/** The console's front door: the one key, typed once. */
+function keyView(message) {
+  app.replaceChildren(
+    el('h1', {}, 'console'),
+    message ? el('p', { class: 'missing' }, message) : '',
+    el('p', { class: 'dim' }, 'paste the DM key — the host terminal prints it'),
+    el(
+      'div',
+      { class: 'row' },
+      el('input', { id: 'key-in', type: 'password', placeholder: 'DM key' }),
+      el(
+        'button',
+        {
+          onclick: () => {
+            stored.key = document.getElementById('key-in')?.value.trim() ?? '';
+            consoleView();
+          },
+        },
+        'unlock',
+      ),
+    ),
+  );
+}
+
+// ---------------------------------------------------------------- entity
+
+async function entityView(id, seat) {
   const entity = await api('GET', `/api/entities/${id}`);
   if (entity.error) {
     app.replaceChildren(el('p', { class: 'missing' }, entity.error));
     return;
   }
   const save = async () => {
-    await api('PUT', `/api/entities/${id}`, { entity, actor });
+    await api('PUT', `/api/entities/${id}`, { entity });
     render();
   };
   const render = () => {
     app.replaceChildren(
-      actor === 'console'
-        ? el('div', { class: 'crumb' }, el('a', { href: '/' }, '← console'))
-        : el('div', { class: 'crumb' }, `seat · ${entity.name}`),
+      seat
+        ? el('div', { class: 'crumb' }, `seat · ${entity.name}`)
+        : el('div', { class: 'crumb' }, el('a', { href: '/?console' }, '← console')),
       renderPanel(entity, save),
       el(
         'details',
@@ -173,7 +313,9 @@ async function entityView(id, actor) {
   render();
 }
 
-async function boardView(id) {
+// ---------------------------------------------------------------- board
+
+async function boardView(id, passive) {
   const [boards, roster] = await Promise.all([
     api('GET', '/api/boards'),
     api('GET', '/api/entities'),
@@ -189,13 +331,14 @@ async function boardView(id) {
   const save = async () => {
     await api('PUT', `/api/board-state/${id}`, {
       data: { ...state, placements },
-      actor: 'console',
     });
-    boardView(id);
+    boardView(id, passive);
   };
 
   app.replaceChildren(
-    el('div', { class: 'crumb' }, el('a', { href: '/' }, '← console')),
+    passive
+      ? el('div', { class: 'crumb' }, 'board')
+      : el('div', { class: 'crumb' }, el('a', { href: '/?console' }, '← console')),
     el('h1', {}, board ? board.name : id),
     el('h2', {}, 'placements'),
     el(
@@ -212,56 +355,142 @@ async function boardView(id) {
           el(
             'td',
             {},
-            el(
-              'button',
-              {
-                class: 'danger',
-                onclick: () => {
-                  placements.splice(i, 1);
-                  save();
-                },
-              },
-              '×',
-            ),
+            passive
+              ? ''
+              : el(
+                  'button',
+                  {
+                    class: 'danger',
+                    onclick: () => {
+                      placements.splice(i, 1);
+                      save();
+                    },
+                  },
+                  '×',
+                ),
           ),
         ),
       ),
     ),
-    el(
-      'button',
-      {
-        class: 'add',
-        onclick: () => {
-          const label = prompt('label (or entity id)?');
-          if (!label) return;
-          const u = Number(prompt('u?') ?? 0) || 0;
-          const v = Number(prompt('v?') ?? 0) || 0;
-          const placement = { u, v, sizeInches: 1 };
-          if (label.startsWith('ent_')) placement.entityId = label;
-          else placement.label = label;
-          placements.push(placement);
-          save();
-        },
-      },
-      '+ place',
+    passive
+      ? ''
+      : el(
+          'button',
+          {
+            class: 'add',
+            onclick: () => {
+              const label = prompt('label (or entity id)?');
+              if (!label) return;
+              const u = Number(prompt('u?') ?? 0) || 0;
+              const v = Number(prompt('v?') ?? 0) || 0;
+              const placement = { u, v, sizeInches: 1 };
+              if (label.startsWith('ent_')) placement.entityId = label;
+              else placement.label = label;
+              placements.push(placement);
+              save();
+            },
+          },
+          '+ place',
+        ),
+  );
+}
+
+// ---------------------------------------------------------------- screen
+
+/** A screen's whole life: hello, wait for adoption, render the job. */
+let me = null; // { display, handle }
+
+async function screenView() {
+  me = await api('POST', '/api/displays/hello', stored.display ? { id: stored.display } : {});
+  if (!me.display) {
+    app.replaceChildren(el('p', { class: 'missing' }, 'the host is not answering'));
+    return;
+  }
+  stored.display = me.display.id;
+  const { display } = me;
+
+  if (display.code) {
+    // A stranger: show the code, wait to be adopted. The screen shows,
+    // the DM types — the dumbest panel in the room needs no keyboard.
+    app.replaceChildren(
+      el('div', { class: 'pairing' },
+        el('div', { class: 'dim' }, 'adopt this screen from the console'),
+        el('div', { class: 'code' }, display.code),
+      ),
+    );
+    setTimeout(screenView, 5000);
+    return;
+  }
+
+  api('POST', '/api/displays/viewport', { w: innerWidth, h: innerHeight });
+
+  await ensureStream();
+
+  if (display.role === 'console') return consoleView();
+  if (display.role === 'seat' && display.params.entityId) {
+    return entityView(display.params.entityId, true);
+  }
+  if (display.role === 'board' && display.params.boardId) {
+    return boardView(display.params.boardId, true);
+  }
+  // Adopted, no job yet (blank / table / art / badge — those surfaces
+  // arrive with their ports). Say who we are and hold.
+  app.replaceChildren(
+    el('div', { class: 'pairing' },
+      el('div', { class: 'code', id: 'self-name' }, display.name ?? '(unnamed)'),
+      el('div', { class: 'dim' }, `${display.role} · waiting for a job`),
     ),
   );
 }
 
-// ---------------------------------------------------------------- boot
-
-function current() {
-  if (params.get('seat')) return entityView(params.get('seat'), `seat:${params.get('seat')}`);
-  if (params.get('entity')) return entityView(params.get('entity'), 'console');
-  if (params.get('board')) return boardView(params.get('board'));
-  return consoleView();
+function flashIdentity() {
+  const name = me?.display?.name ?? '(unnamed)';
+  const color = me?.display?.color ?? 'var(--accent)';
+  const overlay = el('div', { class: 'identify' }, name);
+  overlay.style.background = color;
+  document.body.append(overlay);
+  setTimeout(() => overlay.remove(), 2500);
 }
 
-const stream = new EventSource('/api/stream');
-stream.onmessage = () => {
-  const active = document.activeElement;
-  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
-  current();
-};
+// ---------------------------------------------------------------- stream
+
+let stream = null;
+
+async function ensureStream() {
+  if (stream) return;
+  const slip = await api('GET', '/api/ticket');
+  if (slip.error) return; // not at the table yet — screenView polls
+  stream = new EventSource(`/api/stream?handle=${slip.handle}&ticket=${slip.ticket}`);
+  stream.onmessage = (msg) => {
+    if (msg.data === 'identify') return flashIdentity();
+    if (msg.data === 'assign') return current();
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return;
+    current();
+  };
+  stream.onerror = () => {
+    // A dead ticket (or a restarted host): re-ticket rather than let
+    // the EventSource retry a 401 forever.
+    stream?.close();
+    stream = null;
+    setTimeout(ensureStream, 3000);
+  };
+}
+
+// ---------------------------------------------------------------- boot
+
+const isConsole =
+  params.has('console') || params.has('entity') || params.has('board');
+
+function current() {
+  if (isConsole) {
+    if (!stored.key) return keyView();
+    ensureStream();
+    if (params.get('entity')) return entityView(params.get('entity'), false);
+    if (params.get('board')) return boardView(params.get('board'), false);
+    return consoleView();
+  }
+  return screenView();
+}
 
 current();

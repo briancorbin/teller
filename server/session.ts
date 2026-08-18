@@ -22,7 +22,8 @@ export class Session {
   readonly campaign: Campaign;
   /** The resolved content stack — system, packs, campaign's own — from boot. */
   loaded: Loaded;
-  #subscribers = new Set<(msg: string) => void>();
+  /** Each listener, keyed by its send fn; the value is the screen's handle (or undefined for the DM's own console). */
+  #subscribers = new Map<(msg: string) => void, string | undefined>();
 
   constructor(shelf: Shelf, campaign: Campaign) {
     this.shelf = shelf;
@@ -36,8 +37,8 @@ export class Session {
     this.changed('reload');
   }
 
-  subscribe(send: (msg: string) => void): () => void {
-    this.#subscribers.add(send);
+  subscribe(send: (msg: string) => void, handle?: string): () => void {
+    this.#subscribers.set(send, handle);
     return () => this.#subscribers.delete(send);
   }
 
@@ -46,7 +47,18 @@ export class Session {
   }
 
   changed(what: string): void {
-    for (const send of this.#subscribers) send(what);
+    for (const send of this.#subscribers.keys()) send(what);
+  }
+
+  /**
+   * One screen, not the room — how an assignment or an identify reaches
+   * a passive surface (rule 6: console-driven over SSE is the
+   * sanctioned way anything reaches one).
+   */
+  notify(handle: string, what: string): void {
+    for (const [send, h] of this.#subscribers) {
+      if (h === handle) send(what);
+    }
   }
 
   // -- mutations, each one store-write + room-nudge ---------------------

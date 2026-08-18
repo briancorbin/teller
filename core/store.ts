@@ -26,6 +26,7 @@
 // backward from, because `/undo` is a reader of this table, not a
 // feature bolted on later.
 
+import { randomBytes } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -542,6 +543,89 @@ export type Board = {
   grid?: unknown;
 };
 
+
+// ---------------------------------------------------------------------
+// The room's screens (rule 7).
+//
+// A display's `id` is capability-bearing — it is what the server checks
+// — so it gets real entropy and is never rendered anywhere. The pairing
+// `code` is the opposite: short, readable across a lit room, and
+// short-lived; it only ever means "adopt this screen", never "grant
+// this power". A display with NO code has been adopted — the code is
+// consumed by the claim, and a deleted display simply introduces
+// itself again as a stranger.
+
+export type DisplayRole =
+  | 'console'
+  | 'table'
+  | 'board'
+  | 'art'
+  | 'seat'
+  | 'badge'
+  | 'blank';
+
+export type Display = {
+  id: string;
+  name?: string;
+  color?: string;
+  role: DisplayRole;
+  /** The assignment's details — `entityId` for a seat, `pane` for a console slice. */
+  params: Record<string, unknown>;
+  code?: string;
+  codeExpiresAt?: string;
+  lastSeenAt?: string;
+  ppi?: number;
+  ppiY?: number;
+  viewport?: { w: number; h: number };
+};
+
+const DISPLAY_ROLES: DisplayRole[] = [
+  'console',
+  'table',
+  'board',
+  'art',
+  'seat',
+  'badge',
+  'blank',
+];
+
+export function isDisplayRole(value: unknown): value is DisplayRole {
+  return DISPLAY_ROLES.includes(value as DisplayRole);
+}
+
+/** No I/L/O/0/1 — this gets read aloud across a lit room. */
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CODE_LENGTH = 6;
+const CODE_TTL_MIN = 15;
+
+function newPairingCode(): string {
+  const bytes = randomBytes(CODE_LENGTH);
+  let out = '';
+  for (const b of bytes) out += CODE_ALPHABET[b % CODE_ALPHABET.length];
+  return out;
+}
+
+const codeExpiry = () => new Date(Date.now() + CODE_TTL_MIN * 60_000).toISOString();
+
+function rowToDisplay(row: Row): Display {
+  const out: Display = {
+    id: String(row.id),
+    role: isDisplayRole(row.role) ? row.role : 'blank',
+    params: (parseJson(row.params) as Record<string, unknown> | undefined) ?? {},
+  };
+  if (row.name) out.name = String(row.name);
+  if (row.color) out.color = String(row.color);
+  if (row.code) out.code = String(row.code);
+  if (row.code_expires_at) out.codeExpiresAt = String(row.code_expires_at);
+  if (row.last_seen_at) out.lastSeenAt = String(row.last_seen_at);
+  if (typeof row.ppi === 'number') out.ppi = row.ppi;
+  if (typeof row.ppi_y === 'number') out.ppiY = row.ppi_y;
+  if (typeof row.vw === 'number' && typeof row.vh === 'number') {
+    out.viewport = { w: row.vw, h: row.vh };
+  }
+  return out;
+}
+
 function rowToBoard(row: Row): Board {
   const out: Board = {
     id: String(row.id),
@@ -727,6 +811,104 @@ export class Shelf {
 
   removeBoard(id: string): void {
     this.#db.prepare('DELETE FROM boards WHERE id = ?').run(id);
+  }
+
+  // -- displays ---------------------------------------------------------
+
+  /** Mint a fresh screen, retrying if a pairing code happens to collide. */
+  createDisplay(): Display {
+    for (let attempt = 0; ; attempt++) {
+      const id = `dsp_${randomBytes(24).toString('hex')}`;
+      try {
+        this.#db
+          .prepare('INSERT INTO displays (id, code, code_expires_at) VALUES (?, ?, ?)')
+          .run(id, newPairingCode(), codeExpiry());
+        return this.display(id)!;
+      } catch (err) {
+        if (attempt === 4) throw err;
+      }
+    }
+  }
+
+  display(id: string): Display | undefined {
+    const row = this.#db
+      .prepare('SELECT * FROM displays WHERE id = ?')
+      .get(id) as Row | undefined;
+    return row ? rowToDisplay(row) : undefined;
+  }
+
+  displays(): Display[] {
+    const rows = this.#db
+      .prepare('SELECT * FROM displays ORDER BY last_seen_at IS NULL, last_seen_at DESC, id')
+      .all() as Row[];
+    return rows.map(rowToDisplay);
+  }
+
+  /** An unclaimed screen showing this code, if the code is still alive. */
+  displayByCode(code: string): Display | undefined {
+    const row = this.#db
+      .prepare('SELECT * FROM displays WHERE code = ? AND code_expires_at >= ?')
+      .get(code.trim().toUpperCase(), now()) as Row | undefined;
+    return row ? rowToDisplay(row) : undefined;
+  }
+
+  touchDisplay(id: string): void {
+    this.#db.prepare('UPDATE displays SET last_seen_at = ? WHERE id = ?').run(now(), id);
+  }
+
+  /** An unclaimed screen left on overnight shouldn't show a dead code. */
+  refreshCodeIfExpired(display: Display): Display {
+    if (!display.code) return display; // adopted — nothing to refresh
+    if (display.codeExpiresAt && display.codeExpiresAt >= now()) return display;
+    this.#db
+      .prepare('UPDATE displays SET code = ?, code_expires_at = ? WHERE id = ?')
+      .run(newPairingCode(), codeExpiry(), display.id);
+    return this.display(display.id)!;
+  }
+
+  /** Adoption consumes the code — a display with no code is the room's. */
+  claimDisplay(id: string, name: string): Display {
+    this.#db
+      .prepare('UPDATE displays SET name = ?, code = NULL, code_expires_at = NULL WHERE id = ?')
+      .run(name, id);
+    return this.display(id)!;
+  }
+
+  updateDisplay(
+    id: string,
+    patch: {
+      name?: string;
+      color?: string;
+      role?: DisplayRole;
+      params?: Record<string, unknown>;
+      ppi?: number | null;
+      ppiY?: number | null;
+    },
+  ): Display {
+    const have = this.display(id);
+    if (!have) throw new Error(`no display ${id}`);
+    this.#db
+      .prepare(
+        'UPDATE displays SET name = ?, color = ?, role = ?, params = ?, ppi = ?, ppi_y = ? WHERE id = ?',
+      )
+      .run(
+        patch.name?.trim() ?? have.name ?? null,
+        patch.color ?? have.color ?? null,
+        patch.role ?? have.role,
+        JSON.stringify(patch.params ?? have.params),
+        patch.ppi === undefined ? (have.ppi ?? null) : patch.ppi,
+        patch.ppiY === undefined ? (have.ppiY ?? null) : patch.ppiY,
+        id,
+      );
+    return this.display(id)!;
+  }
+
+  removeDisplay(id: string): void {
+    this.#db.prepare('DELETE FROM displays WHERE id = ?').run(id);
+  }
+
+  setDisplayViewport(id: string, w: number, h: number): void {
+    this.#db.prepare('UPDATE displays SET vw = ?, vh = ? WHERE id = ?').run(w, h, id);
   }
 
   close(): void {

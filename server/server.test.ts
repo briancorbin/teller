@@ -13,6 +13,9 @@ let session: Session;
 let server: Server;
 let base: string;
 
+/** These tests hold the key throughout — auth's own tests live in auth.test.ts. */
+const KEY = 'test-key-0123456789abcdef';
+
 async function api(
   method: string,
   path: string,
@@ -20,7 +23,10 @@ async function api(
 ): Promise<{ status: number; body: any }> {
   const res = await fetch(`${base}${path}`, {
     method,
-    headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+    headers: {
+      'x-teller-key': KEY,
+      ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return { status: res.status, body: await res.json() };
@@ -52,7 +58,7 @@ beforeEach(async () => {
     'host',
   );
   session = new Session(shelf, campaign);
-  server = serve(session, 0);
+  server = serve(session, 0, KEY);
   await new Promise((r) => server.on('listening', r));
   base = `http://localhost:${(server.address() as AddressInfo).port}`;
 });
@@ -175,7 +181,11 @@ describe('board state over HTTP', () => {
 
 describe('the stream', () => {
   it('nudges subscribers when anything changes', async () => {
-    const res = await fetch(`${base}/api/stream`);
+    const slip = await api('GET', '/api/ticket');
+    expect(slip.body.handle).toBe('dm');
+    const res = await fetch(
+      `${base}/api/stream?handle=${slip.body.handle}&ticket=${slip.body.ticket}`,
+    );
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let text = '';

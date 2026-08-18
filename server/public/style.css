@@ -62,3 +62,14 @@ details pre { font-size: 0.75rem; overflow-x: auto; background: var(--panel); pa
 .missing { color: var(--danger); }
 table { border-collapse: collapse; }
 td, th { border: 1px solid var(--line); padding: 0.25rem 0.5rem; text-align: left; }
+
+/* A screen waiting for adoption, or holding with no job. */
+.pairing {
+  position: fixed; inset: 0; display: grid; place-content: center; gap: 0.75rem;
+  text-align: center;
+}
+.pairing .code { font-size: 3.5rem; letter-spacing: 0.35em; font-weight: 700; }
+.identify {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  font-size: 4rem; font-weight: 700; color: #14120f; opacity: 0.95;
+}

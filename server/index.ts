@@ -1,14 +1,14 @@
-// The host, minimal loop edition — the first server on the new core.
+// The host — the first server on the new core, now with the one key.
 //
 // One runtime (§16): `node server/index.ts --data ~/.teller-next
 // --campaign <slug>` and nothing else. No build, no bundler, no
 // Cloudflare shape anywhere — routes call the Session, the Session
 // calls the store, and the store is a file.
 //
-// DELIBERATELY KEYLESS, for now: the minimal loop runs on localhost to
-// prove the core; the one-key auth, display pairing and tickets (rule
-// 7) are working code in the old world and port with the surfaces in
-// H step 4. Do not ship a table on this until they do.
+// Auth is rule 7, ported (server/auth.ts): the DM key is the root of
+// trust, screens pair by code and hold role assignments, the stream
+// takes a ticket because an EventSource can't send a header. A route
+// never re-derives authority from anything but the key or the role.
 //
 // The client contract is small on purpose: JSON in, JSON out,
 // `/api/stream` nudges and the page refetches. Serializers stay at the
@@ -24,23 +24,44 @@ import { toEntity } from '../core/entity.ts';
 import { resolve as resolveEntity } from '../core/stamp.ts';
 import {
   createCampaign,
+  isDisplayRole,
   listCampaigns,
   openCampaign,
   openShelf,
   type EntityDraft,
 } from '../core/store.ts';
+import {
+  actorOf,
+  adopted,
+  canDm,
+  canEditEntity,
+  canWatch,
+  checkTicket,
+  displayHandle,
+  loadDmKey,
+  mintTicket,
+  resolveAuth,
+  STREAM_MINUTES,
+  type Auth,
+} from './auth.ts';
 import { Session } from './session.ts';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
 
-/** Which slots `?resolved=1` derives through — the stampable ones the minimal loop knows. */
+/** Which slots `?resolved=1` derives through — the stampable ones the loop knows. */
 const STAMP_SLOTS = ['bestiary', 'catalog'];
 
 type Reply = { status: number; body: unknown };
 
+/** Everything a route may know. The key rides along only for tickets. */
+export type Ctx = { session: Session; auth: Auth; key: string };
+
 function reply(status: number, body: unknown): Reply {
   return { status, body };
 }
+
+const denied = () => reply(401, { error: 'DM key required' });
+const notAtTable = () => reply(401, { error: 'not at this table' });
 
 async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -56,25 +77,148 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
   }
 }
 
-function actorOf(body: Record<string, unknown>, url: URL): string {
-  const actor =
-    String(body.actor ?? '').trim() || url.searchParams.get('actor')?.trim();
-  return actor || 'console';
-}
-
 /**
  * The API, as one function — testable without a socket, servable with
  * one. Returns undefined for paths that aren't the API's.
  */
 export async function handleApi(
-  session: Session,
+  ctx: Ctx,
   method: string,
   url: URL,
   req: IncomingMessage,
 ): Promise<Reply | undefined> {
+  const { session, auth, key } = ctx;
   const parts = url.pathname.split('/').filter(Boolean); // ['api', …]
   if (parts[0] !== 'api') return undefined;
   const [, head, a, b] = parts;
+
+  // -- screens ----------------------------------------------------------
+
+  if (head === 'displays') {
+    // A screen announcing itself. Unauthenticated on purpose: this is
+    // how a screen comes into existence, and it confers nothing — a
+    // brand new display is 'blank' and belongs to nobody until the DM
+    // adopts it by the code it shows.
+    if (method === 'POST' && a === 'hello' && !b) {
+      const body = await bodyOf(req);
+      let display =
+        typeof body.id === 'string' ? session.shelf.display(body.id) : undefined;
+      if (display) {
+        session.shelf.touchDisplay(display.id);
+        display = session.shelf.refreshCodeIfExpired(display);
+      } else {
+        display = session.shelf.createDisplay();
+      }
+      // The handle is told, not derived: a LAN origin is not a secure
+      // context, so the client couldn't compute its own sha-256.
+      return reply(200, { display, handle: displayHandle(display.id) });
+    }
+
+    // A screen reporting its own viewport — telemetry about the caller
+    // itself, clamped hard, only ever writes the caller's own row.
+    if (method === 'POST' && a === 'viewport' && !b) {
+      const self = auth.display;
+      if (!self) return reply(401, { error: 'display required' });
+      const body = await bodyOf(req);
+      const clamp = (n: unknown) =>
+        typeof n === 'number' && Number.isFinite(n)
+          ? Math.min(20000, Math.max(1, Math.round(n)))
+          : null;
+      const w = clamp(body.w);
+      const h = clamp(body.h);
+      if (!w || !h) return reply(400, { error: 'w and h required' });
+      if (self.viewport?.w !== w || self.viewport?.h !== h) {
+        session.shelf.setDisplayViewport(self.id, w, h);
+      }
+      return reply(200, { ok: true });
+    }
+
+    // Everything below is the DM arranging the room.
+    if (!canDm(auth)) return denied();
+
+    if (method === 'GET' && !a) return reply(200, session.shelf.displays());
+
+    // Adopt a waiting screen by the code it's showing.
+    if (method === 'POST' && a === 'claim' && !b) {
+      const body = await bodyOf(req);
+      const code = String(body.code ?? '').trim();
+      if (!code) return reply(400, { error: 'pairing code required' });
+      const found = session.shelf.displayByCode(code);
+      if (!found) return reply(404, { error: 'no screen is showing that code' });
+      const claimed = session.shelf.displays().filter((d) => !d.code).length;
+      const name =
+        (typeof body.name === 'string' && body.name.trim()) ||
+        `Screen ${claimed + 1}`;
+      const display = session.shelf.claimDisplay(found.id, name);
+      session.changed('displays');
+      return reply(200, display);
+    }
+
+    // "Which one of you is Screen 3?"
+    if (method === 'POST' && a && b === 'identify') {
+      const display = session.shelf.display(a);
+      if (!adopted(display)) return reply(404, { error: 'display not found' });
+      session.notify(displayHandle(display.id), 'identify');
+      return reply(200, { ok: true });
+    }
+
+    if (a && !b && (method === 'PATCH' || method === 'DELETE')) {
+      const display = session.shelf.display(a);
+      if (!display) return reply(404, { error: 'display not found' });
+
+      if (method === 'DELETE') {
+        session.shelf.removeDisplay(a);
+        // It's still connected: tell it to go look at itself and
+        // discover it's a stranger again.
+        session.notify(displayHandle(a), 'assign');
+        session.changed('displays');
+        return reply(200, { ok: true });
+      }
+
+      const body = await bodyOf(req);
+      const patch: Parameters<typeof session.shelf.updateDisplay>[1] = {};
+      if (typeof body.name === 'string') patch.name = body.name;
+      if (typeof body.color === 'string') patch.color = body.color;
+      if (body.role !== undefined) {
+        if (!isDisplayRole(body.role)) {
+          return reply(400, { error: `not a role: ${String(body.role)}` });
+        }
+        patch.role = body.role;
+      }
+      if (body.params && typeof body.params === 'object') {
+        patch.params = body.params as Record<string, unknown>;
+      }
+      if (body.ppi === null || typeof body.ppi === 'number') patch.ppi = body.ppi;
+      if (body.ppiY === null || typeof body.ppiY === 'number') patch.ppiY = body.ppiY;
+      const updated = session.shelf.updateDisplay(a, patch);
+      session.notify(displayHandle(a), 'assign');
+      session.changed('displays');
+      return reply(200, updated);
+    }
+  }
+
+  // The stream's permission slip. The DM's own device rides as 'dm';
+  // an adopted screen gets a ticket for its own handle and nothing else.
+  if (method === 'GET' && head === 'ticket' && !a) {
+    if (adopted(auth.display)) {
+      const handle = displayHandle(auth.display.id);
+      return reply(200, {
+        handle,
+        ticket: mintTicket(key, `stream:${handle}`, STREAM_MINUTES),
+      });
+    }
+    if (auth.key) {
+      return reply(200, {
+        handle: 'dm',
+        ticket: mintTicket(key, 'stream:dm', STREAM_MINUTES),
+      });
+    }
+    return notAtTable();
+  }
+
+  // -- the table itself. Watching requires being adopted (or the key). --
+
+  if (!canWatch(auth)) return notAtTable();
 
   if (method === 'GET' && head === 'campaign' && !a) {
     const { manifest, system, packs, missing } = session.loaded;
@@ -100,11 +244,12 @@ export async function handleApi(
       );
     }
     if (method === 'POST') {
+      if (!canDm(auth)) return denied();
       const body = await bodyOf(req);
       try {
         const entity = session.create(
           (body.draft ?? {}) as EntityDraft,
-          actorOf(body, url),
+          actorOf(auth, String(body.actor ?? '')),
           typeof body.parentId === 'string' ? body.parentId : undefined,
         );
         return reply(201, entity);
@@ -115,14 +260,20 @@ export async function handleApi(
   }
 
   if (method === 'POST' && head === 'stamp' && !a) {
+    if (!canDm(auth)) return denied();
     const body = await bodyOf(req);
     const slot = String(body.slot ?? 'bestiary');
     const templateId = String(body.templateId ?? '');
-    const entity = session.stampFrom(slot, templateId, actorOf(body, url), {
-      name: typeof body.name === 'string' ? body.name : undefined,
-      thick: body.thick === true,
-      parentId: typeof body.parentId === 'string' ? body.parentId : undefined,
-    });
+    const entity = session.stampFrom(
+      slot,
+      templateId,
+      actorOf(auth, String(body.actor ?? '')),
+      {
+        name: typeof body.name === 'string' ? body.name : undefined,
+        thick: body.thick === true,
+        parentId: typeof body.parentId === 'string' ? body.parentId : undefined,
+      },
+    );
     if (!entity)
       return reply(404, {
         error: `no template ${templateId} in ${slot} — missing pack?`,
@@ -132,6 +283,9 @@ export async function handleApi(
 
   if (head === 'entities' && a && !b) {
     if (method === 'GET') {
+      // Reading a whole entity is the seat's privilege for its own, and
+      // the DM's for anyone — a passive surface gets the roster list.
+      if (!canEditEntity(auth, a)) return denied();
       const entity = session.campaign.get(a);
       if (!entity) return reply(404, { error: `no entity ${a}` });
       if (url.searchParams.get('resolved') === '1') {
@@ -143,27 +297,30 @@ export async function handleApi(
       return reply(200, entity);
     }
     if (method === 'PUT') {
+      if (!canEditEntity(auth, a)) return denied();
       const body = await bodyOf(req);
       const entity = toEntity({ ...((body.entity as object) ?? {}), id: a });
       if (!entity) return reply(400, { error: 'not an entity' });
       try {
-        return reply(200, session.save(entity, actorOf(body, url)));
+        return reply(200, session.save(entity, actorOf(auth, String(body.actor ?? ''))));
       } catch (err) {
         return reply(404, { error: String(err) });
       }
     }
     if (method === 'DELETE') {
-      session.remove(a, url.searchParams.get('actor') ?? 'console');
+      if (!canDm(auth)) return denied();
+      session.remove(a, actorOf(auth, url.searchParams.get('actor') ?? ''));
       return reply(200, { ok: true });
     }
   }
 
   if (method === 'POST' && head === 'entities' && a && b === 'move') {
+    if (!canDm(auth)) return denied();
     const body = await bodyOf(req);
     const parentId = String(body.parentId ?? '');
     if (!parentId) return reply(400, { error: 'move needs a parentId' });
     try {
-      session.move(a, parentId, actorOf(body, url));
+      session.move(a, parentId, actorOf(auth, String(body.actor ?? '')));
       return reply(200, { ok: true });
     } catch (err) {
       return reply(404, { error: String(err) });
@@ -184,13 +341,15 @@ export async function handleApi(
       return reply(200, session.campaign.boardState(a) ?? null);
     }
     if (method === 'PUT') {
+      if (!canDm(auth)) return denied();
       const body = await bodyOf(req);
-      session.putBoardState(a, body.data ?? null, actorOf(body, url));
+      session.putBoardState(a, body.data ?? null, actorOf(auth, String(body.actor ?? '')));
       return reply(200, { ok: true });
     }
   }
 
   if (method === 'GET' && head === 'events' && !a) {
+    if (!canDm(auth)) return denied();
     return reply(
       200,
       session.campaign.events({
@@ -227,21 +386,43 @@ function serveStatic(pathname: string, res: ServerResponse): boolean {
   }
 }
 
-/** The whole server, session in, listener out. Tests call this on port 0. */
-export function serve(session: Session, port: number) {
+/** The whole server, session + key in, listener out. Tests call this on port 0. */
+export function serve(session: Session, port: number, key: string) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
+    // The stream can't send headers, so it presents a ticket instead —
+    // signed by the one key over exactly this handle, and worthless for
+    // anything else. A display's handle must still belong to an adopted
+    // screen: a ticket identifies, it never grants a power the
+    // assignment didn't already have (rule 7).
     if (url.pathname === '/api/stream') {
+      const handle = url.searchParams.get('handle') ?? '';
+      const ticket = url.searchParams.get('ticket');
+      let valid = Boolean(handle) && checkTicket(key, `stream:${handle}`, ticket);
+      if (valid && handle !== 'dm') {
+        const display = session.shelf
+          .displays()
+          .find((d) => displayHandle(d.id) === handle);
+        valid = adopted(display);
+      }
+      if (!valid) {
+        res.writeHead(401, { 'Content-Type': 'text/plain' });
+        res.end('ticket required');
+        return;
+      }
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       });
       res.write('retry: 2000\n\n');
-      const unsubscribe = session.subscribe((what) => {
-        res.write(`data: ${what}\n\n`);
-      });
+      const unsubscribe = session.subscribe(
+        (what) => {
+          res.write(`data: ${what}\n\n`);
+        },
+        handle === 'dm' ? undefined : handle,
+      );
       const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
       req.on('close', () => {
         clearInterval(ping);
@@ -250,7 +431,17 @@ export function serve(session: Session, port: number) {
       return;
     }
 
-    const handled = await handleApi(session, req.method ?? 'GET', url, req);
+    const auth = resolveAuth(session.shelf, key, {
+      key: req.headers['x-teller-key'] as string | undefined,
+      display: req.headers['x-teller-display'] as string | undefined,
+    });
+
+    const handled = await handleApi(
+      { session, auth, key },
+      req.method ?? 'GET',
+      url,
+      req,
+    );
     if (handled) {
       res.writeHead(handled.status, {
         'Content-Type': 'application/json; charset=utf-8',
@@ -301,11 +492,12 @@ if (import.meta.main) {
   }
 
   const shelf = openShelf(dataDir);
+  const key = loadDmKey(dataDir);
   const campaign = args.new
     ? createCampaign(dataDir, slug, args.new)
     : openCampaign(dataDir, slug);
   const session = new Session(shelf, campaign);
-  serve(session, port);
+  serve(session, port, key);
 
   const { system, packs, missing } = session.loaded;
   console.log(`teller-next · ${campaign.slug} · http://localhost:${port}`);
@@ -316,4 +508,6 @@ if (import.meta.main) {
   for (const miss of missing) {
     console.log(`  MISSING ${miss.slot}: ${miss.ref.name} (${miss.ref.id})`);
   }
+  // The host's own terminal is the DM's device — this is `teller key`.
+  console.log(`  DM key: ${key}  (open /?console and paste it)`);
 }
