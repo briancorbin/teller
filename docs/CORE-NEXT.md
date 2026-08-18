@@ -294,6 +294,104 @@ and a campaign overrides a status by restating it. A dangling ref
 renders its cached name, marked missing — never dropped (rule 9),
 never a bare id (degradation).
 
+### 11 · The campaign is the file — held loosely
+
+*(2026-08-18. Brian: "go with it for now" — explicitly NOT 100% sold;
+keep thinking. This is the one Settled section marked provisional.)*
+
+A campaign row turned out to be: a small MANIFEST (name, system ref,
+pack/book lists in precedence order, vocabulary, party counters), plus
+everything it contains, plus a little live state. Of the three live
+campaigns one is real and two are test furniture; nothing crosses
+between them, and 35 of 42 displays belong to NO campaign — a symptom
+of instance-level things stuffed into a campaign-scoped table.
+
+So the campaign isn't a special table or a merged root row — **it's the
+boundary of the database file.** Boot-time loading is the resolution law
+finding its home: teller starts, reads the manifest, resolves
+system/packs against the shelf, reports what's missing, degrades. Once,
+at boot — not per-request. The CLI already half-says this: `teller host
+[path]` exists so "a campaign can live on a stick you carry."
+
+The split falls exactly on rule 9's line — what a publisher wrote stays
+put (shelf), what you wrote travels (the campaign file):
+
+```
+~/.teller/
+  shelf.db          books · packs · systems · boards · displays
+  books/ packs/ art/ dm.key
+  campaigns/
+    the-unlikely-duo.db      entities · events · board_state
+```
+
+What it deletes: `root_id` from entities/events/board_state (scoping IS
+the file); per-request campaign checks (rule 7's one key unlocks the
+loaded campaign); the SSE scoping question; ever importing the Guidebook
+twice. Backup becomes copying one file.
+
+**The three costs, named:**
+
+1. **Switching campaigns = restarting teller.** Probably correct — a
+   game night is one campaign; `teller host` with no arg lists
+   `campaigns/` and asks.
+2. **Displays move to the shelf** — fixes the orphan problem (a kiosk is
+   the ROOM's, pairs once, survives switches), and a stale assignment
+   pointing into an unloaded campaign is just a dangling ref: cached
+   name, degrade to standby. The model handles it for free.
+3. **Cloudflare doesn't do multiple database files.** D1 is one binding.
+   Costs nothing today (play is local-first; CF is the landing page) but
+   it is the dual-runtime seam genuinely strained for the first time —
+   written down here so it's a decision, not a discovery.
+
+Also: `cmp_` ids stop scoping requests, which touches most route
+signatures — so this lands WITH the entity migration in H, not
+separately.
+
+### 12 · The table schema, after
+
+*(As amended by §11. Nine tables become 4 + 4, split by file.)*
+
+**`campaigns/<name>.db` — one campaign:**
+
+```sql
+entities (
+  id          TEXT PRIMARY KEY,   -- ent_…
+  parent_id   TEXT,               -- containment when promoted (§9); NULL at root
+  name        TEXT NOT NULL,
+  type        TEXT,               -- question C — loose; nothing branches on it
+  data        TEXT NOT NULL,      -- { lists, notes, refs, children[] inline }
+  created_at, updated_at
+)
+events      ( id, entity_id, actor, kind, payload, created_at )   -- unchanged shape
+board_state ( board_id PRIMARY KEY, data )                        -- placements + fog + view; NEVER in a .story
+```
+
+The campaign manifest is the root entity row (`parent_id IS NULL`).
+Characters are promoted children; blueprints, encounters, vendors,
+handouts are children inline in the root's blob until rule 8 promotes
+them. **No new table per type, ever.**
+
+Promoted columns, each earning its keep: `parent_id` (fetch children),
+`type` (filter + strip). Everything else is blob (rule 8).
+
+**`shelf.db` — this machine:**
+
+```sql
+systems  ( id sys_…, name, version, data, builtin )   -- door 2 done: minted id, 'wiw' demotes to a name
+packs    ( id pak_…, system, name, data, … )          -- unchanged
+books    ( id bok_…, … ) + book_pages                 -- unchanged
+boards   ( id brd_…, key, name, width_inches, grid )  -- NEW: the asset half of §4
+displays ( id, name, color, role, params, code, ppi… )-- campaign_id GONE; the room's screens
+```
+
+Gone entirely: `characters` (→ entities), `campaigns` (→ the file),
+Scene-as-campaign-content (→ boards + board_state), `do_storage`
+(session state; the DO's cache lives wherever the runtime puts it).
+
+**Fork noted, default standing:** placements stay a blob per board
+(rule 8 — nothing addresses one from outside yet; a player moving only
+their own token would be the promotion trigger).
+
 ---
 
 ## Open — with what would settle each
