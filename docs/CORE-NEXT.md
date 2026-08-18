@@ -799,11 +799,37 @@ Guidebook pack via a conversion script — `fields`/`counters`/`tags` →
 It lands with step 4 / the WiW move-in, inside the last free format
 break.
 
-Green at day's end: 64 tests (`pnpm test`), both typecheck projects,
-and `~/.teller-next` seeded headless — `shelf.db` +
-`campaigns/unlikely-duo.db`, a thin-stamped foe resolving Health
-through its blueprint, the manifest's ordered pack refs surviving a
-reopen.
+Fourth pass — **the minimal loop is lit** (`server/`, H step 3):
+
+- **`CampaignDO` became `Session`** — a plain class holding one loaded
+  campaign and an SSE subscriber set; every mutation is a store-write
+  plus a room-nudge, so forgetting to broadcast is unrepresentable.
+  The server is `node server/index.ts --data ~/.teller-next --campaign
+  <slug>` — no build, no bundler. DELIBERATELY KEYLESS on localhost;
+  rule 7's auth and pairing port with the surfaces in step 4, and the
+  file says so at the top.
+- **The bare panel exists and is the floor made real** (`server/
+  public/panel.js`, vanilla ESM, view-source IS the source): every
+  §7 control derived from value shape alone, everything writes,
+  verified live — a Grit bump through the bar landed in the store and
+  the log with its actor. **The Gunslinger bug is structurally dead**:
+  descriptors render as chips in their own list, conditions count in
+  theirs, and there is no un-kinded bucket for them to collide in.
+- **A thin stamp's panel is honest and nearly empty** — stored values
+  only, the `from` chip, and a read-only "reads as" block showing the
+  resolved reading. Editing resolved values while storing only what
+  you touch (resolve-with-sparse-write) is SEAT design work for step
+  4, deliberately not smuggled into the floor.
+- **The board view derives `who` through the link** (§5) at render —
+  a placement shows its entity's current name, `label` covers the
+  unlinked rock, and a dangling `entityId` prints as missing rather
+  than as a bare id.
+
+Green at day's end: 72 tests (`pnpm test`), both typecheck projects,
+and the loop live at `localhost:4526` against `~/.teller-next` —
+console roster, stamping from the merged bestiary, two seats' worth of
+entities, a board with placements, and the event log rendering rule 3
+back at you.
 
 ### Still open from `ARCHITECTURE.md`
 
