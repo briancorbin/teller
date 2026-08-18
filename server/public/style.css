@@ -73,3 +73,7 @@ td, th { border: 1px solid var(--line); padding: 0.25rem 0.5rem; text-align: lef
   position: fixed; inset: 0; display: grid; place-items: center;
   font-size: 4rem; font-weight: 700; color: #14120f; opacity: 0.95;
 }
+
+input.score { width: 4.5rem; text-align: center; }
+.turn-strip { border: 1px solid var(--line); border-radius: 6px; padding: 0.35rem 0.6rem; margin-bottom: 0.6rem; }
+.your-turn { color: var(--accent); font-weight: 700; }

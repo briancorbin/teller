@@ -17,6 +17,7 @@ import { findEntry, sameName, withoutEntry, type Entity } from '../core/entity.t
 import { kindFor, setEntry, toKindDef, type KindDef } from '../core/kind.ts';
 import { resolve, stamp } from '../core/stamp.ts';
 import type { Campaign, EntityDraft, Shelf } from '../core/store.ts';
+import { applyTurnOp, toTurnState, type TurnOp, type TurnState } from './turn.ts';
 
 /** Which slots resolution stamps through — the stampable ones this loop knows. */
 export const STAMP_SLOTS = ['bestiary', 'catalog'];
@@ -163,6 +164,60 @@ export class Session {
     const saved = this.campaign.save({ ...entity, lists }, actor);
     this.changed('entities');
     return saved;
+  }
+
+  // -- the turn order (rule 5) ------------------------------------------
+
+  turnState(): TurnState {
+    return toTurnState(this.campaign.turnState());
+  }
+
+  turnOp(op: TurnOp, actor: string): TurnState {
+    const next = applyTurnOp(this.turnState(), op);
+    this.campaign.putTurnState(next, actor, op.op);
+    this.changed('turn');
+    return next;
+  }
+
+  /**
+   * Deploy a prepared fight (§13: the encounter is PREP — a campaign
+   * template; deploying stamps instances, and the recipe stays
+   * pristine so it can run again for another posse). Each foe stamps
+   * THIN and joins the turn order by link; what the fight does to them
+   * is theirs, not the recipe's.
+   */
+  deployEncounter(
+    encounterId: string,
+    actor: string,
+  ): { deployed: Entity[]; turn: TurnState } | undefined {
+    const raw = this.campaign.templateRaw(encounterId);
+    if (!raw || typeof raw !== 'object') return undefined;
+    const enc = raw as {
+      foes?: { templateId?: string; name?: string; count?: number }[];
+    };
+    const deployed: Entity[] = [];
+    for (const foe of enc.foes ?? []) {
+      if (!foe.templateId) continue;
+      // A foe whose template is missing is skipped and shows up as the
+      // count coming up short — reported by absence, never faked.
+      const template = this.loaded.templateOf('bestiary')(foe.templateId);
+      if (!template) continue;
+      const count = Math.max(1, Math.min(50, Math.floor(foe.count ?? 1)));
+      const base = foe.name?.trim() || template.name;
+      for (let n = 1; n <= count; n++) {
+        const entity = this.stampFrom('bestiary', foe.templateId, actor, {
+          name: count > 1 ? `${base} ${n}` : base,
+        });
+        if (entity) deployed.push(entity);
+      }
+    }
+    let turn = this.turnState();
+    for (const entity of deployed) {
+      turn = applyTurnOp(turn, { op: 'add', entityId: entity.id });
+    }
+    this.campaign.putTurnState(turn, actor, 'deploy');
+    this.changed('turn');
+    return { deployed, turn };
   }
 
   putBoardState(boardId: string, data: unknown, actor: string): void {

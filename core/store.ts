@@ -96,6 +96,11 @@ CREATE TABLE IF NOT EXISTS templates (
   updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS templates_slot ON templates(slot);
+CREATE TABLE IF NOT EXISTS turn_state (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  data       TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 `;
 
 export type EventRow = {
@@ -401,6 +406,29 @@ export class Campaign {
   clearBoardState(boardId: string, actor: string): void {
     this.#db.prepare('DELETE FROM board_state WHERE board_id = ?').run(boardId);
     this.append(boardId, actor, 'board.cleared');
+  }
+
+  /**
+   * The live turn order (rule 5): an ordered list, a current index, a
+   * round — one row, whole. Ops are the caller's business; the store
+   * keeps the fact and logs the change like every other fact (rule 3 —
+   * which the old world's DO never did for initiative).
+   */
+  turnState(): unknown {
+    const row = this.#db
+      .prepare('SELECT data FROM turn_state WHERE id = 1')
+      .get() as Row | undefined;
+    return row ? parseJson(row.data) : undefined;
+  }
+
+  putTurnState(data: unknown, actor: string, op?: string): void {
+    this.#db
+      .prepare(
+        `INSERT INTO turn_state (id, data, updated_at) VALUES (1, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
+      )
+      .run(JSON.stringify(data ?? null), now());
+    this.append(null, actor, 'turn.updated', op ? { op } : undefined);
   }
 
   close(): void {

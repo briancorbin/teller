@@ -59,10 +59,12 @@ const ROLES = ['console', 'table', 'board', 'art', 'seat', 'badge', 'blank'];
 async function consoleView() {
   const campaign = await api('GET', '/api/campaign');
   if (campaign.error) return keyView(campaign.error);
-  const [roster, boards, displays] = await Promise.all([
+  const [roster, boards, displays, turn, encounters] = await Promise.all([
     api('GET', '/api/entities'),
     api('GET', '/api/boards'),
     api('GET', '/api/displays'),
+    api('GET', '/api/turn'),
+    api('GET', '/api/templates/encounters'),
   ]);
   const bestiary = await api('GET', '/api/stack/templates/bestiary');
 
@@ -146,6 +148,64 @@ async function consoleView() {
           )
         : '',
     ),
+    el('h2', {}, 'turn'),
+    turnPanel(turn, roster),
+    el('h2', {}, 'encounters'),
+    ...encounters.map((enc) =>
+      el(
+        'div',
+        { class: 'row' },
+        el('span', {}, enc.name),
+        el('span', { class: 'dim' }, `${(enc.foes ?? []).reduce((n, f) => n + (f.count ?? 1), 0)} foes`),
+        el(
+          'button',
+          {
+            onclick: async () => {
+              await api('POST', `/api/encounters/${enc.id}/deploy`, {});
+              consoleView();
+            },
+          },
+          'deploy',
+        ),
+        el(
+          'button',
+          {
+            class: 'danger',
+            onclick: async () => {
+              if (!confirm(`remove ${enc.name}?`)) return;
+              await api('DELETE', `/api/templates/encounters/${enc.id}`);
+              consoleView();
+            },
+          },
+          '×',
+        ),
+      ),
+    ),
+    el(
+      'button',
+      {
+        class: 'add',
+        onclick: async () => {
+          const name = prompt('encounter name?');
+          if (!name || !name.trim()) return;
+          const foes = [];
+          while (bestiary.length) {
+            const lines = bestiary.map((t, i) => `${i + 1}. ${t.name}`).join('\n');
+            const pick = prompt(`add which foe? (blank = done)\n${lines}`);
+            if (!pick || !pick.trim()) break;
+            const t = bestiary[Number(pick) - 1];
+            if (!t) continue;
+            const count = Number(prompt(`how many ${t.name}?`) ?? 1) || 1;
+            foes.push({ templateId: t.id, count });
+          }
+          await api('POST', '/api/templates/encounters', {
+            template: { name: name.trim(), foes },
+          });
+          consoleView();
+        },
+      },
+      '+ new encounter',
+    ),
     el('h2', {}, 'screens'),
     ...displays.map((d) => screenRow(d, roster, boards)),
     el(
@@ -186,6 +246,72 @@ async function consoleView() {
         el('div', {}, `${e.createdAt.slice(11, 19)} · ${e.actor} · ${e.kind}`),
       ),
     );
+}
+
+/** The runner: an ordered list, a current index, buttons that walk it. */
+function turnPanel(turn, roster) {
+  const names = new Map(roster.map((r) => [r.id, r.name]));
+  const whoOf = (e) =>
+    e.label ?? (e.entityId ? (names.get(e.entityId) ?? `missing: ${e.entityId}`) : '?');
+  const op = async (body) => {
+    await api('POST', '/api/turn', body);
+    consoleView();
+  };
+  return el(
+    'div',
+    {},
+    el(
+      'div',
+      { class: 'row' },
+      el('span', { class: 'dim' }, `round ${turn.round}`),
+      el('button', { onclick: () => op({ op: 'next' }) }, turn.turn === null ? 'start' : 'next'),
+      el('button', { onclick: () => op({ op: 'prev' }) }, 'prev'),
+      el('button', { onclick: () => op({ op: 'end' }) }, 'end'),
+      el(
+        'button',
+        { onclick: () => op({ op: 'rolling', on: !turn.rolling }) },
+        turn.rolling ? 'stop rolling' : 'roll!',
+      ),
+    ),
+    ...turn.order.map((e, i) =>
+      el(
+        'div',
+        { class: 'row' },
+        el('span', { class: i === turn.turn ? '' : 'dim' }, i === turn.turn ? '▶' : '·'),
+        el('span', { class: 'entry-name', title: e.entityId ?? '' }, whoOf(e)),
+        turn.rolling || typeof e.score === 'number'
+          ? el('input', {
+              class: 'score',
+              value: typeof e.score === 'number' ? String(e.score) : '',
+              placeholder: '—',
+              onchange: (ev) => {
+                const n = Number(ev.target.value);
+                op({ op: 'score', entryId: e.id, score: Number.isFinite(n) ? n : null });
+              },
+            })
+          : '',
+        el(
+          'span',
+          { class: 'x dim', title: 'remove', onclick: () => op({ op: 'remove', entryId: e.id }) },
+          '×',
+        ),
+      ),
+    ),
+    el(
+      'button',
+      {
+        class: 'add',
+        onclick: () => {
+          const lines = roster.map((r, i) => `${i + 1}. ${r.name}`).join('\n');
+          const pick = prompt(`add who? (a number, or type a label)\n${lines}`);
+          if (!pick || !pick.trim()) return;
+          const linked = roster[Number(pick) - 1];
+          op(linked ? { op: 'add', entityId: linked.id } : { op: 'add', label: pick.trim() });
+        },
+      },
+      '+ add to order',
+    ),
+  );
 }
 
 /** One adopted-or-waiting screen in the console's list. */
@@ -272,7 +398,7 @@ function keyView(message) {
         {
           onclick: () => {
             stored.key = document.getElementById('key-in')?.value.trim() ?? '';
-            consoleView();
+            current(); // through the front door, so the stream comes up too
           },
         },
         'unlock',
@@ -334,9 +460,44 @@ async function seatView(id) {
     await api('PUT', `/api/entities/${id}`, { entity });
     seatView(id);
   };
+  const [turn, roster] = await Promise.all([
+    api('GET', '/api/turn'),
+    api('GET', '/api/entities'),
+  ]);
   app.replaceChildren(
     el('div', { class: 'crumb' }, `seat · ${reads.name}`),
+    seatTurnStrip(turn, roster, id),
     renderSeat(stored, reads, writeEntry, saveStored),
+  );
+}
+
+/** Whose turn it is, and — while rolling — the one thing a seat may say. */
+function seatTurnStrip(turn, roster, myEntityId) {
+  if (!turn.order.length) return el('span', {});
+  const names = new Map(roster.map((r) => [r.id, r.name]));
+  const whoOf = (e) => e.label ?? names.get(e.entityId) ?? '?';
+  const acting = turn.turn === null ? null : turn.order[turn.turn];
+  const mine = turn.order.find((e) => e.entityId === myEntityId);
+  const myTurn = acting && acting.entityId === myEntityId;
+  return el(
+    'div',
+    { class: 'row turn-strip' },
+    el('span', { class: 'dim' }, `round ${turn.round}`),
+    acting
+      ? el('span', { class: myTurn ? 'your-turn' : '' }, myTurn ? '▶ your turn' : `▶ ${whoOf(acting)}`)
+      : el('span', { class: 'dim' }, turn.rolling ? 'rolling…' : 'between fights'),
+    turn.rolling && mine && typeof mine.score !== 'number'
+      ? el('input', {
+          class: 'score',
+          placeholder: 'your roll',
+          onchange: async (ev) => {
+            const n = Number(ev.target.value);
+            if (!Number.isFinite(n)) return;
+            await api('POST', '/api/turn', { op: 'score', entryId: mine.id, score: n });
+            seatView(myEntityId);
+          },
+        })
+      : '',
   );
 }
 
@@ -443,6 +604,7 @@ async function screenView() {
       el('div', { class: 'pairing' },
         el('div', { class: 'dim' }, 'adopt this screen from the console'),
         el('div', { class: 'code' }, display.code),
+        el('div', {}, el('a', { href: '/?console', class: 'dim' }, 'this is the DM device — open the console')),
       ),
     );
     setTimeout(screenView, 5000);

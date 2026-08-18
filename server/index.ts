@@ -44,6 +44,7 @@ import {
   type Auth,
 } from './auth.ts';
 import { Session, type EntryEdit } from './session.ts';
+import type { TurnOp } from './turn.ts';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
 
@@ -336,6 +337,65 @@ export async function handleApi(
     } catch (err) {
       return reply(404, { error: String(err) });
     }
+  }
+
+  // -- the turn order (rule 5). Everyone reads; the DM drives; a seat
+  // may submit exactly one thing — a score for its own entity's row.
+  if (head === 'turn' && !a) {
+    if (method === 'GET') return reply(200, session.turnState());
+    if (method === 'POST') {
+      const body = await bodyOf(req);
+      const op = body as unknown as TurnOp;
+      if (typeof op.op !== 'string') return reply(400, { error: 'an op needs an op' });
+      if (!canDm(auth)) {
+        const seat = auth.display;
+        const owns =
+          op.op === 'score' &&
+          adopted(seat) &&
+          seat.role === 'seat' &&
+          session
+            .turnState()
+            .order.some(
+              (e) => e.id === op.entryId && e.entityId === seat.params.entityId,
+            );
+        if (!owns) return denied();
+      }
+      return reply(200, session.turnOp(op, actorOf(auth, String(body.actor ?? ''))));
+    }
+  }
+
+  // -- the campaign's own template half — prep (§13), DM's business.
+  if (head === 'templates' && a) {
+    if (method === 'GET' && !b) return reply(200, session.campaign.templatesIn(a));
+    if (!canDm(auth)) return denied();
+    if (method === 'POST' && !b) {
+      const body = await bodyOf(req);
+      try {
+        const made = session.campaign.putTemplate(
+          a,
+          body.template,
+          actorOf(auth, String(body.actor ?? '')),
+        );
+        session.changed('templates');
+        return reply(201, made);
+      } catch (err) {
+        return reply(400, { error: String(err) });
+      }
+    }
+    if (method === 'DELETE' && b) {
+      session.campaign.removeTemplate(b, actorOf(auth, url.searchParams.get('actor') ?? ''));
+      session.changed('templates');
+      return reply(200, { ok: true });
+    }
+  }
+
+  // Deploy a prepared fight: stamp the foes, seed the order.
+  if (method === 'POST' && head === 'encounters' && a && b === 'deploy') {
+    if (!canDm(auth)) return denied();
+    const body = await bodyOf(req);
+    const result = session.deployEncounter(a, actorOf(auth, String(body.actor ?? '')));
+    if (!result) return reply(404, { error: `no encounter ${a}` });
+    return reply(200, result);
   }
 
   if (method === 'GET' && head === 'stack' && a && b) {
