@@ -191,25 +191,67 @@ computed — it already did.
 
 ---
 
+### 9 · An item is an entity; where it's stored is a promotion decision
+
+*(Settled 2026-08-18 — was open questions A and B.)*
+
+"Container or entity" turned out to be a false question conflating two
+things that come apart:
+
+- **What it IS:** an entity. Same type as its owner.
+- **Where it's STORED:** inside the parent's blob vs its own row —
+  which is **rule 8 applied to entities**: promote a nested entity to a
+  row when something outside needs to address it, the same law that
+  promotes a blob key to a column when a query needs it.
+
+Containment is an ordinary relationship between entities, not a second
+kind of thing. Authority follows it (rule 7 stays simple): a seat edits
+its one entity and everything nested inside.
+
+The evidence, from the live install:
+
+- **Live items are stamps.** All 14 sampled: `from` set, zero local
+  fields/counters — a name, a catalogue reference, a grouping word.
+  And `Item.from` is `CharacterData.blueprintId` wearing another name:
+  provenance of a stamp, typed values beating derived ones. One
+  concept, currently two spellings.
+- **Items already hold cross-references.** `loaded` points at a SIBLING
+  (the comment says it: "a SELECTION, not containment"); `upgrades[].from`
+  points into the catalogue; `worker/items.ts:719` addresses `item.id`
+  from outside the owner.
+- **`history` (Deeds) is a private event log** — `{what, where, round,
+  when}` — re-implemented small inside the blob because an item had no
+  `entity_id` to log against. Core already has that table.
+
+What dissolves: Item-the-type (`fields/counters/tags/notes` → lists +
+prose; `from` → provenance; `loaded`/`upgrades` → references; `history`
+→ events; `kind` → question C). The horse hard case (an entity contained
+by a character AND addressable on the board — promotion, not
+reclassification). Trade-as-copy-and-delete (handing over a pistol is
+reparenting; the history rides along).
+
+This also settles old question A: **entries stay strictly name/value**,
+because anything richer was an entity all along.
+
+---
+
 ## Open — with what would settle each
 
-### A · Do entries carry arbitrary attributes, or do rich things become child entities?
+### B′ · References — now the biggest open question
 
-Leaning: **child entities**; only leaves are name/value. Tokens are
-resolved (they're *placements*, not entries). **Items are not** — an Item
-has `from`, `loaded`, `upgrades[]`, `history[]`.
+Settling §9 promoted this from "one credible future Core addition"
+(`ARCHITECTURE.md`) to **the connective tissue of the whole model**:
+`from`, `loaded`, `upgrades[].from`, a placement's `entityId`, and
+containment itself are all ids pointing at ids.
 
-*Settles by:* deciding B.
+Every reference needs the resolve-AND-degrade answer: a stable id for
+machines plus a human-readable name that survives the target vanishing —
+an opaque id fails "the most a human can still operate," a bare name
+silently breaks on rename. Open: one reference shape for all of these,
+or is containment special? What does a dangling reference render as?
 
-### B · Is an Item a container or an entity?
-
-If entities nest, an Item is just an entity whose parent is a character.
-That deletes the Item type and the `kinds`-missing-on-Item leak in one
-move. The cost is that everything item-shaped (catalogue, store, fire
-button, upgrades) goes through the entity path.
-
-*Settles by:* writing the entity type and seeing whether Item survives
-contact with it.
+*Settles by:* writing the entity type with references in it and walking
+the five existing cases through it.
 
 ### C · Does an entity have a TYPE, and whose is it?
 
