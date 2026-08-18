@@ -485,6 +485,83 @@ moves off it — the defaultStep pattern). A thick-copied shop would be
 frozen at instantiation day; a thin one carries the pack's new items
 automatically.
 
+### 15 · How a plugin loads
+
+*(2026-08-18, confirmed. The assistant is the proof port.)*
+
+A plugin is a **folder on the shelf** — `~/.teller/plugins/<name>/` —
+manifest beside code: `plugin.json` (`plg_` id, name, version, tiers,
+`provides`, `needs`) + `host.mjs` (proposer/effectful entry) +
+`panel.mjs` (surface entry, served to the browser).
+
+**The sweep DISCOVERS; only a human ENABLES.** Discovery lists it as
+available in the console; enabling is an explicit per-plugin act where
+the manifest's claims are shown app-permissions style (`needs: []` is a
+meaningful, checkable claim). Enablement lives in **shelf.db, never the
+campaign** — trust is a fact about this machine. Content may REQUIRE a
+plugin by ref; requirement is a claim and cannot grant trust. Missing or
+disabled → reported and degraded, like a missing pack. Uninstall-and-look
+stays the compliance test.
+
+**Boot:** read enabled list → `import()` each entry → the module exports
+implementations keyed by **extension point**:
+
+```js
+export const provides = {
+  'propose.turn':  (snapshot, question) => …,
+  'control.clock': …,   // served from panel.mjs, client-registered
+  'pane.scan':     …,
+}
+```
+
+Points live in ONE registry file (the `panes.ts` precedent: a point not
+in the registry isn't a point), starting tiny — `propose.*`, `control.*`
+(generalising `dials`), `pane.*` — growing only when a real plugin needs
+a real point.
+
+**The call boundary is async and message-shaped from day one** —
+serializable snapshots in, proposals out, no live objects — even though
+v1 runs in-process. Moving to `worker_threads`/subprocess later is then
+a transport change, not an API break. Stated honestly: in-process code
+is NOT sandboxed; pre-alpha, the enable gate is the security model, and
+real isolation arrives with the transport swap, before any registry of
+third-party plugins exists.
+
+**Held line:** plugins get snapshots PUSHED; they never query. It keeps
+proposers pure, portable, cacheable. The first plugin that genuinely
+can't live with it makes the argument (the empirical-ceiling rule).
+
+**Plugin №1 is the assistant.** It already passes the three-question
+test, already has the config precedent (`assistant.json` — absent means
+no button), and already is two proposers: `suggestTurn` and
+`narrateOutcome` are `propose.turn` and `propose.narrate` wearing
+today's names. Porting it validates manifest, enable gate, registry and
+degradation against working code. Per-plugin config generalises
+`assistant.json`: one blob per plugin id, on the shelf.
+
+### 16 · One runtime — Cloudflare is a brochure
+
+*(Brian, 2026-08-18: "CF doesn't need to know anything at all about
+teller as a program. It's just a landing page." Supersedes the
+dual-runtime rule in CLAUDE.md — fold on merge.)*
+
+"One codebase, two runtimes, no fork" existed only to keep play possible
+on Cloudflare, and play left. Consequences:
+
+- `host/*.mjs` stop being shims and become the implementation:
+  `node:sqlite` direct, no D1 interface contract, no boolean-bind
+  coercion, `CampaignDO` → a plain class.
+- "Keep route handlers runtime-agnostic or this dies" — retired.
+- §11 cost 3 (D1 can't do per-campaign files) — evaporates.
+- §15's CF caveat — evaporates.
+- The landing page is a static site with zero teller code.
+
+**The nuance kept:** TEL-84 (remote reachability) may someday put a
+relay on teller.ink for remote seats. A relay is a dumb pipe —
+rendezvous infrastructure, not teller-the-program.
+
+> **teller.ink may carry bytes; it never runs the game.**
+
 ---
 
 ## Open — with what would settle each
@@ -553,11 +630,58 @@ and let strays-promise catch it.
 One `notes` per entity, or a note per list, or notes as a list of their
 own? Prose is the ultimate degradation target and shouldn't be squeezed.
 
-### H · The convergence path
+### H · The path — a clean break at the core *(drafted 2026-08-18)*
 
-Storage first (inside `data`, no schema change, old accessors as views),
-then declaration, then panels. Boards/placements are independent and
-smaller — can go first or last.
+**The premise changed and the plan changed with it.** Convergence was
+chosen to protect a live table; Brian, 2026-08-18: nothing is live,
+nothing is shared, all testing. So: **rebuild the data core in place as
+a break** — delete the old types, write the new core fresh, seed a fresh
+database, let typecheck drive the sweep. No migrations, no
+views-over-lists shims, no reading two shapes. The tags refactor proved
+the method; this is the same move at full scale.
+
+NOT a rewrite of the repo: SSE/leader election, display pairing and
+tickets, battlemap rendering, dice, pack sweep, book FTS, the builder,
+the sheet components — working, orthogonal, kept. The shelf's packs and
+books are template content and survive as-is.
+
+**The last free format break** (dated, deliberate): with no third-party
+files in existence, `.story`, `.pack` and the db may all break once,
+cleanly. The moment anything is shared — a playtester, the Boylei
+proposal — the window closes and reading-forgiving hardens into the
+permanent contract it was written to be.
+
+**Parallel worlds:** the rebuild runs against `--data ~/.teller-next`
+from day one; old teller keeps running against `~/.teller` as the
+reference. The clean break's classic failure (a long dark stretch with
+nothing runnable) is mitigated by never turning the old one off and by
+lighting a minimal loop early.
+
+**The porting filter IS the console redesign.** Surfaces port one at a
+time, and porting is an editorial act: every pane answers "does this
+earn porting, and is it prep or play?" (template vs instance, §13). The
+"full" pane doesn't get ported; it gets deleted — which is what the
+redesign was going to do anyway.
+
+The sequence:
+
+1. **The core, fresh** — Entity/Entry/Ref, the kind declaration, stamp/
+   resolve (§14), the merge, shelf.db + campaign files (§11/12), boards
+   + board_state, events. Single-runtime (§16): `node:sqlite` direct,
+   DO → class. Headless-testable. *Settles D and F by contact; G falls
+   out.*
+2. **Plugin registry + the assistant ported as plugin №1** (§15) —
+   proves the load path while the surface area is small.
+3. **The bare panel** — first UI on the new core; the floor (§7).
+   *Minimal loop lights up here: console roster + one bare seat + a
+   board.*
+4. **Port surfaces through the filter** — seat layouts, table/board/
+   badge, console panes in dependency order; design tokens ride along;
+   delete what doesn't earn porting. *Settles C when the first horse
+   gets stamped.*
+5. **Declared panels** — the six layout Records consolidate into
+   `.panel`-shaped declarations once real panels exist to arrange.
+   *Settles E.*
 
 ### Still open from `ARCHITECTURE.md`
 
