@@ -43,6 +43,7 @@ import {
   STREAM_MINUTES,
   type Auth,
 } from './auth.ts';
+import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
 import { Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
@@ -339,6 +340,54 @@ export async function handleApi(
     }
   }
 
+  // -- proposals (§15). The host assembles the snapshot, fans it out to
+  // every enabled provider, and returns words. Playing any of it is the
+  // DM's act — a proposal lands nowhere a human didn't put it (rule 1).
+  if (method === 'POST' && head === 'propose' && a && !b) {
+    if (!canDm(auth)) return denied();
+    const point = a === 'turn' ? 'propose.turn' : a === 'narrate' ? 'propose.narrate' : undefined;
+    if (!point) return reply(404, { error: `no such point: ${a}` });
+    const body = await bodyOf(req);
+    let payload: unknown = body.payload ?? {};
+    if (point === 'propose.turn') {
+      // Assemble the snapshot server-side: a fact the host holds and
+      // doesn't pass on is a fact the model invents.
+      const turn = session.turnState();
+      const acting = turn.turn === null ? undefined : turn.order[turn.turn];
+      const actingEntity = acting?.entityId
+        ? session.campaign.get(acting.entityId)
+        : undefined;
+      const names = new Map(
+        session.campaign
+          .children(session.loaded.manifest.id)
+          .map((e) => [e.id, e.name]),
+      );
+      payload = {
+        round: turn.round,
+        order: turn.order.map((e, i) => ({
+          name: e.label ?? (e.entityId ? (names.get(e.entityId) ?? 'unknown') : '?'),
+          score: e.score ?? null,
+          acting: i === turn.turn,
+        })),
+        acting: actingEntity ? session.reading(actingEntity) : null,
+        ...(typeof body.payload === 'object' && body.payload !== null
+          ? (body.payload as object)
+          : {}),
+      };
+    }
+    const providers = providersOf(session.plugins, point);
+    const proposals: { plugin: string; proposal?: unknown; error?: string }[] = [];
+    for (const provider of providers) {
+      try {
+        const proposal = await provider.call(payload);
+        proposals.push({ plugin: provider.id, proposal });
+      } catch (err) {
+        proposals.push({ plugin: provider.id, error: String(err) });
+      }
+    }
+    return reply(200, { point, providers: providers.length, proposals });
+  }
+
   // -- the turn order (rule 5). Everyone reads; the DM drives; a seat
   // may submit exactly one thing — a score for its own entity's row.
   if (head === 'turn' && !a) {
@@ -552,6 +601,40 @@ if (import.meta.main) {
   const port = Number(args.port ?? 4526);
   const slug = args.campaign;
 
+  // Plugin management — the CLI is where a HUMAN enables (§15). These
+  // are commands, not server modes: they act on the shelf and exit,
+  // campaign or no campaign.
+  if ('plugins' in args || args.enable || args.disable || args.configure) {
+    const shelf = openShelf(dataDir);
+    if ('plugins' in args) {
+      const { found, problems } = discoverPlugins(dataDir, shelf);
+      if (!found.length && !problems.length) {
+        console.log(`no plugins in ${join(dataDir, 'plugins')}`);
+      }
+      for (const p of found) {
+        console.log(
+          `${p.enabled ? '[on] ' : '[off]'} ${p.manifest.id} · ${p.manifest.name}` +
+            ` v${p.manifest.version} · provides ${p.manifest.provides.join(', ') || '(nothing)'}` +
+            ` · needs ${p.manifest.needs.join(', ') || '(nothing)'}`,
+        );
+      }
+      for (const p of problems) console.log(`  PROBLEM ${p.dir}: ${p.problem}`);
+    } else if (args.enable || args.disable) {
+      const id = args.enable || args.disable;
+      shelf.setPluginEnabled(id, Boolean(args.enable));
+      console.log(`${id} ${args.enable ? 'enabled' : 'disabled'}`);
+    } else if (args.configure) {
+      try {
+        shelf.setPluginConfig(args.configure, JSON.parse(args.config ?? 'null'));
+        console.log(`${args.configure} configured`);
+      } catch (err) {
+        console.error(`--config must be JSON: ${String(err)}`);
+        process.exit(1);
+      }
+    }
+    process.exit(0);
+  }
+
   if (!slug) {
     const have = listCampaigns(dataDir);
     console.log(
@@ -563,11 +646,15 @@ if (import.meta.main) {
   }
 
   const shelf = openShelf(dataDir);
+
   const key = loadDmKey(dataDir);
   const campaign = args.new
     ? createCampaign(dataDir, slug, args.new)
     : openCampaign(dataDir, slug);
   const session = new Session(shelf, campaign);
+  const plugins = await loadPlugins(dataDir, shelf);
+  session.plugins = plugins.loaded;
+  session.pluginProblems = plugins.problems;
   serve(session, port, key);
 
   const { system, packs, missing } = session.loaded;
@@ -579,6 +666,12 @@ if (import.meta.main) {
   for (const miss of missing) {
     console.log(`  MISSING ${miss.slot}: ${miss.ref.name} (${miss.ref.id})`);
   }
+  if (plugins.loaded.length) {
+    console.log(
+      `  plugins: ${plugins.loaded.map((p) => p.manifest.name).join(', ')}`,
+    );
+  }
+  for (const p of plugins.problems) console.log(`  PLUGIN PROBLEM ${p.dir}: ${p.problem}`);
   // The host's own terminal is the DM's device — this is `teller key`.
   console.log(`  DM key: ${key}  (open /?console and paste it)`);
 }

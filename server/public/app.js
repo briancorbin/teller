@@ -272,7 +272,35 @@ function turnPanel(turn, roster) {
         { onclick: () => op({ op: 'rolling', on: !turn.rolling }) },
         turn.rolling ? 'stop rolling' : 'roll!',
       ),
+      turn.turn !== null
+        ? el(
+            'button',
+            {
+              title: 'ask the plugins for a proposal — words, nothing else',
+              onclick: async () => {
+                const out = await api('POST', '/api/propose/turn', {});
+                const target = document.getElementById('proposals');
+                if (!target) return;
+                if (!out.providers) {
+                  target.textContent = 'no plugin offers propose.turn (install + enable one)';
+                  return;
+                }
+                target.textContent = out.proposals
+                  .map((p) =>
+                    p.error
+                      ? `${p.plugin}: ${p.error}`
+                      : p.proposal === undefined || p.proposal === null
+                        ? `${p.plugin}: (nothing — configured?)`
+                        : JSON.stringify(p.proposal, null, 2),
+                  )
+                  .join('\n\n');
+              },
+            },
+            'assist',
+          )
+        : '',
     ),
+    el('pre', { id: 'proposals', class: 'dim proposals' }, ''),
     ...turn.order.map((e, i) =>
       el(
         'div',

@@ -1,0 +1,7 @@
+{
+  "id": "plg_7ec543dd0e9a",
+  "name": "Assistant",
+  "version": 1,
+  "provides": ["propose.turn", "propose.narrate"],
+  "needs": ["network: the model endpoint in its config"]
+}

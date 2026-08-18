@@ -77,3 +77,5 @@ td, th { border: 1px solid var(--line); padding: 0.25rem 0.5rem; text-align: lef
 input.score { width: 4.5rem; text-align: center; }
 .turn-strip { border: 1px solid var(--line); border-radius: 6px; padding: 0.35rem 0.6rem; margin-bottom: 0.6rem; }
 .your-turn { color: var(--accent); font-weight: 700; }
+.proposals { white-space: pre-wrap; font-size: 0.8rem; }
+.proposals:empty { display: none; }

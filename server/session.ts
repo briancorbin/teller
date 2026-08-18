@@ -13,6 +13,7 @@
 // later optimisation with this exact seam already in place.
 
 import { loadCampaign, type Loaded } from '../core/boot.ts';
+import type { LoadedPlugin, PluginProblem } from '../core/plugins.ts';
 import { findEntry, sameName, withoutEntry, type Entity } from '../core/entity.ts';
 import { kindFor, setEntry, toKindDef, type KindDef } from '../core/kind.ts';
 import { resolve, stamp } from '../core/stamp.ts';
@@ -36,6 +37,9 @@ export class Session {
   readonly campaign: Campaign;
   /** The resolved content stack — system, packs, campaign's own — from boot. */
   loaded: Loaded;
+  /** Enabled plugins, wired at boot by the caller (loadPlugins is async; the constructor is not). */
+  plugins: LoadedPlugin[] = [];
+  pluginProblems: PluginProblem[] = [];
   /** Each listener, keyed by its send fn; the value is the screen's handle (or undefined for the DM's own console). */
   #subscribers = new Map<(msg: string) => void, string | undefined>();
 

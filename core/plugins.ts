@@ -124,11 +124,12 @@ export function discoverPlugins(
  * HERE, today, in process — not the day the transport changes.
  */
 function messageShaped(
-  fn: (payload: unknown) => unknown,
+  fn: (payload: unknown, config: unknown) => unknown,
+  config: unknown,
 ): (payload: unknown) => Promise<unknown> {
   return async (payload) => {
     const sent = structuredClone(payload);
-    const result = await fn(sent);
+    const result = await fn(sent, structuredClone(config ?? null));
     return result === undefined ? undefined : structuredClone(result);
   };
 }
@@ -179,7 +180,13 @@ export async function loadPlugins(
         });
         continue;
       }
-      wired[point] = messageShaped(fn as (payload: unknown) => unknown);
+      // Config rides into every call as a cloned second argument — the
+      // plugin never reads the shelf, and the same clone boundary that
+      // guards payloads guards what a human configured.
+      wired[point] = messageShaped(
+        fn as (payload: unknown, config: unknown) => unknown,
+        shelf.pluginTrust(manifest.id)?.config,
+      );
     }
     loaded.push({ manifest, provides: wired });
   }
