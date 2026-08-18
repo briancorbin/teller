@@ -546,6 +546,31 @@ today's names. Porting it validates manifest, enable gate, registry and
 degradation against working code. Per-plugin config generalises
 `assistant.json`: one blob per plugin id, on the shelf.
 
+**There are no builtin plugins, and there never will be** (Brian,
+2026-08-18: "None required or given by default. Download/install the
+ones you want"). teller ships with ZERO plugins — the same posture rule
+4 takes for content, now taken for code: teller ships empty and stays
+empty, in both domains. Two consequences:
+
+- The assistant is not ported INTO the new core; it is ported OUT of
+  teller. `worker/assistant.ts` dies in the sweep, and the assistant
+  becomes an ordinary installed plugin — first among equals, no
+  special discovery path, the same enable gate as anything else. Its
+  authoring copy lives where a pack's does: the shelf folder IS the
+  authoring copy. Distribution, when it matters, is the
+  already-deferred answer (a git repo, not a platform).
+- The degradation contract gets its strongest reading for free: a
+  teller with no plugins isn't degraded, it's COMPLETE.
+
+**Sequencing amendment (contact, same day):** the assistant port rides
+BEHIND the minimal loop, not ahead of it. `propose.turn` wants a
+session snapshot — turn order, the round — and session state doesn't
+exist in the new core until the server layer ports (DO → class, step
+3). The load path is already proven against real fixture plugins; the
+assistant is the proof of the SNAPSHOT CONTRACT, and that contract has
+nothing to describe until there's a session to describe. Step 2's
+machinery half is done; its proof half lands with step 3.
+
 ### 16 · One runtime — Cloudflare is a brochure
 
 *(Brian, 2026-08-18: "CF doesn't need to know anything at all about
