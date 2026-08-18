@@ -747,7 +747,34 @@ Second pass, same day — the boot loader (`core/boot.ts`):
   provenance, so a console can say "campaign, overriding the
   Guidebook".
 
-Green at day's end: 54 tests (`pnpm test`), both typecheck projects,
+Third pass — the plugin load path (`core/registry.ts`,
+`core/plugins.ts`; step 2's machinery, ahead of the assistant port):
+
+- **"The sweep discovers; only a human enables" is structural now**:
+  discovery reads disk and the trust table and writes NEITHER — a
+  trust row exists only once a human acted, so the sweep cannot enable
+  anything even by bug. Trust and per-plugin config live in a
+  `plugins` table on the shelf (config generalises `assistant.json`).
+- **The registry opens with two points** — `propose.turn`,
+  `propose.narrate` — exactly what plugin №1 needs and nothing
+  speculative. A provide against an unregistered point is refused out
+  loud in the load report (tested with a plugin claiming
+  `decide.turn`, a name chosen to remember why).
+- **The message boundary is enforced, not promised**: every call
+  crosses `structuredClone` both ways, so a plugin returning a live
+  object fails TODAY, in process — not the day the transport changes.
+  Tested.
+- **A broken plugin degrades like a missing pack**: import throws, no
+  entry file, malformed manifest — each a problem in the report, none
+  a crash.
+
+**Noted for the porting era** (Brian, 2026-08-18): retiring the old
+Guidebook pack via a conversion script — `fields`/`counters`/`tags` →
+`lists` — is the FIRST EXERCISE of the new pack format, not a chore.
+It lands with step 4 / the WiW move-in, inside the last free format
+break.
+
+Green at day's end: 64 tests (`pnpm test`), both typecheck projects,
 and `~/.teller-next` seeded headless — `shelf.db` +
 `campaigns/unlikely-duo.db`, a thin-stamped foe resolving Health
 through its blueprint, the manifest's ordered pack refs surviving a

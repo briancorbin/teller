@@ -510,6 +510,12 @@ CREATE TABLE IF NOT EXISTS boards (
   grid          TEXT,
   created_at    TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS plugins (
+  id         TEXT PRIMARY KEY,
+  enabled    INTEGER NOT NULL DEFAULT 0,
+  config     TEXT,
+  updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS displays (
   id              TEXT PRIMARY KEY,
   name            TEXT,
@@ -649,6 +655,39 @@ export class Shelf {
       .prepare('SELECT id FROM packs WHERE system = ? ORDER BY created_at, id')
       .all(system) as Row[];
     return rows.map((r) => String(r.id));
+  }
+
+  // Plugin TRUST — enablement and per-plugin config, and nothing else.
+  // Trust is a fact about this machine, so it lives on the shelf and
+  // never in a campaign. A row exists only once a HUMAN acted: the
+  // discovery sweep may never write here, which is how "the sweep
+  // discovers; only a human enables" is structural instead of polite
+  // (§15). Config generalises `assistant.json`: one blob per plugin id.
+
+  pluginTrust(id: string): { enabled: boolean; config: unknown } | undefined {
+    const row = this.#db
+      .prepare('SELECT * FROM plugins WHERE id = ?')
+      .get(id) as Row | undefined;
+    if (!row) return undefined;
+    return { enabled: row.enabled === 1, config: parseJson(row.config) };
+  }
+
+  setPluginEnabled(id: string, enabled: boolean): void {
+    this.#db
+      .prepare(
+        `INSERT INTO plugins (id, enabled, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, updated_at = excluded.updated_at`,
+      )
+      .run(id, enabled ? 1 : 0, now());
+  }
+
+  setPluginConfig(id: string, config: unknown): void {
+    this.#db
+      .prepare(
+        `INSERT INTO plugins (id, enabled, config, updated_at) VALUES (?, 0, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET config = excluded.config, updated_at = excluded.updated_at`,
+      )
+      .run(id, config === undefined ? null : JSON.stringify(config), now());
   }
 
   putBoard(board: Omit<Board, 'id'> & { id?: string }): Board {
