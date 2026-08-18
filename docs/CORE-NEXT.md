@@ -303,10 +303,14 @@ and a campaign overrides a status by restating it. A dangling ref
 renders its cached name, marked missing — never dropped (rule 9),
 never a bare id (degradation).
 
-### 11 · The campaign is the file — held loosely
+### 11 · The campaign is the file
 
 *(2026-08-18. Brian: "go with it for now" — explicitly NOT 100% sold;
-keep thinking. This is the one Settled section marked provisional.)*
+keep thinking. **Confirmed later the same day** ("yeah 11 is good"),
+re-raised before H step 1 as the handoff required — no longer
+provisional. The two probes that were chewed on: a character following
+a player between tables is a file op, and switching campaigns is a
+restart; both accepted.)*
 
 A campaign row turned out to be: a small MANIFEST (name, system ref,
 pack/book lists in precedence order, vocabulary, party counters), plus
