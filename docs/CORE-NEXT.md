@@ -377,13 +377,16 @@ entities (
 )
 events      ( id, entity_id, actor, kind, payload, created_at )   -- unchanged shape
 board_state ( board_id PRIMARY KEY, data )                        -- placements + fog + view; NEVER in a .story
+templates   ( id, slot, name, data, … )                           -- the template half; slot is a COLUMN (contact log)
 ```
 
 The campaign manifest is the root entity row (`parent_id IS NULL`).
 Characters are promoted children. `children` holds INSTANCES only
 (§13): the campaign's own blueprints, encounters, vendors and catalog
-are its TEMPLATE half and live in the manifest, not as child entities.
-**No new table per type, ever.**
+are its TEMPLATE half — first written as "live in the manifest", which
+contact proved unbuildable (see the log); they live in the `templates`
+table, one table for the whole half, the slot a column. **No new table
+per TYPE, ever.**
 
 Promoted columns, each earning its keep: `parent_id` (fetch children),
 `type` (filter + strip). Everything else is blob (rule 8).
@@ -720,7 +723,31 @@ The doc said building would amend it. What building found, first day:
   A deliberate scar of the half-done sweep — it retires with `worker/`
   when §16 finishes.
 
-Green at day's end: 46 tests (`pnpm test`), both typecheck projects,
+Second pass, same day — the boot loader (`core/boot.ts`):
+
+- **The template half's home.** §12/§13 said the campaign's own
+  bestiary/statuses/catalog "live in the manifest" — unbuildable: the
+  manifest is an entity row, entries are strictly leaves, and
+  entity-shaped content cannot ride through the coercer. It lives in a
+  fourth campaign table, `templates (id, slot, name, data)` — ONE table
+  for the whole half, the slot ('bestiary' · 'statuses' · …) a column
+  and the format's word. "No new table per type" holds; §12 amended in
+  place. Rows log `template.updated`/`.deleted` like everything else.
+- **The coupling line reached storage**: `mergeNamed` (vocabulary) and
+  `mergeById` (identity) are one `mergeBy` with two keys. A campaign
+  overrides a status by restating its NAME and a pack's monster by
+  restating its ID — both verified in tests.
+- **`loadCampaign(shelf, campaign)` is the resolution law, once**:
+  resolves the manifest's refs, reports `missing` as `{slot, ref}`
+  (never dropped), degrades (a missing system loads with empty
+  declarations and the table plays on), and with NO declared pack list
+  applies every pack for the system in arrival order. `Loaded` hands
+  out `declarations(slot)` (by name), `templates(slot)` (by id),
+  `templateOf(…slots)` for `resolve()`, and `sourceOf(slot, name)` —
+  provenance, so a console can say "campaign, overriding the
+  Guidebook".
+
+Green at day's end: 54 tests (`pnpm test`), both typecheck projects,
 and `~/.teller-next` seeded headless — `shelf.db` +
 `campaigns/unlikely-duo.db`, a thin-stamped foe resolving Health
 through its blueprint, the manifest's ordered pack refs surviving a

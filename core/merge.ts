@@ -12,19 +12,38 @@
 // earlier one IN PLACE — the book's ordering survives a correction —
 // and genuinely new names append in the order their layer declared.
 
-import { sameName } from './entity.ts';
+// The coupling line (§10) decides the key: VOCABULARY couples by name —
+// a campaign overrides a status by restating it — while IDENTITY
+// couples by id — a campaign overrides a pack's monster by carrying the
+// same minted id. Two keys, one merge.
 
-export function mergeNamed<T extends { name: string }>(
+export function mergeBy<T>(
+  keyOf: (item: T) => string,
   ...layers: (readonly T[] | undefined)[]
 ): T[] {
   const out: T[] = [];
   for (const layer of layers) {
     if (!layer) continue;
     for (const item of layer) {
-      const at = out.findIndex((held) => sameName(held.name, item.name));
+      const key = keyOf(item);
+      const at = out.findIndex((held) => keyOf(held) === key);
       if (at < 0) out.push(item);
       else out[at] = item;
     }
   }
   return out;
+}
+
+/** Vocabulary-coupled content — statuses, kind declarations. */
+export function mergeNamed<T extends { name: string }>(
+  ...layers: (readonly T[] | undefined)[]
+): T[] {
+  return mergeBy((item) => item.name.trim().toLowerCase(), ...layers);
+}
+
+/** Identity-coupled content — bestiaries, catalogues, anything stamped. */
+export function mergeById<T extends { id: string }>(
+  ...layers: (readonly T[] | undefined)[]
+): T[] {
+  return mergeBy((item) => item.id, ...layers);
 }

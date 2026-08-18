@@ -86,6 +86,15 @@ CREATE TABLE IF NOT EXISTS board_state (
   data       TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS templates (
+  id         TEXT PRIMARY KEY,
+  slot       TEXT NOT NULL,
+  name       TEXT NOT NULL,
+  data       TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS templates_slot ON templates(slot);
 `;
 
 export type EventRow = {
@@ -297,6 +306,71 @@ export class Campaign {
             .all(limit)
     ) as Row[];
     return rows.map(rowToEvent);
+  }
+
+  // -- the campaign's template half (§13) ------------------------------
+  //
+  // Its OWN bestiary, statuses, catalog: the campaign's contribution to
+  // the merge, authored content that travels with the file. §12 first
+  // said this "lives in the manifest", and contact said no: the
+  // manifest is an entity row, and entity-shaped content cannot pass
+  // through a coercer whose leaves are strictly name/value. So the
+  // template half gets ONE table — the SLOT ('bestiary' · 'statuses' ·
+  // 'catalog' · …) is a column and the format's word, never a table
+  // per type. Rows store whatever was authored, whole; the columns are
+  // just what the merge addresses them by.
+
+  /**
+   * Author or amend one of this campaign's own template entries. The
+   * id is identity (a row restating a pack's id is how the campaign
+   * overrides that monster); minted here when the thing is new.
+   */
+  putTemplate(slot: string, raw: unknown, actor: string): { id: string } {
+    if (!raw || typeof raw !== 'object') {
+      throw new Error('a template needs at least a name');
+    }
+    const o = raw as Record<string, unknown>;
+    const name = String(o.name ?? '').trim();
+    if (!name) throw new Error('a template needs at least a name');
+    const id = String(o.id ?? '').trim() || newId('tpl');
+    const at = now();
+    const before = this.templateRaw(id);
+    this.#db
+      .prepare(
+        `INSERT INTO templates (id, slot, name, data, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           slot = excluded.slot, name = excluded.name,
+           data = excluded.data, updated_at = excluded.updated_at`,
+      )
+      .run(id, slot, name, JSON.stringify({ ...o, id, name }), at, at);
+    this.append(id, actor, 'template.updated', { slot, before, after: o });
+    return { id };
+  }
+
+  /** The authored object, as written — the format reads its own shape out of this. */
+  templateRaw(id: string): unknown {
+    const row = this.#db
+      .prepare('SELECT data FROM templates WHERE id = ?')
+      .get(id) as Row | undefined;
+    return row ? parseJson(row.data) : undefined;
+  }
+
+  /** One slot's authored objects, oldest first — a merge layer, ready to stack. */
+  templatesIn(slot: string): unknown[] {
+    const rows = this.#db
+      .prepare(
+        'SELECT data FROM templates WHERE slot = ? ORDER BY created_at, id',
+      )
+      .all(slot) as Row[];
+    return rows.map((r) => parseJson(r.data)).filter((d) => d !== undefined);
+  }
+
+  removeTemplate(id: string, actor: string): void {
+    const before = this.templateRaw(id);
+    if (before === undefined) return;
+    this.#db.prepare('DELETE FROM templates WHERE id = ?').run(id);
+    this.append(id, actor, 'template.deleted', { before });
   }
 
   // -- live board state -----------------------------------------------
