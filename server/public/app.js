@@ -16,6 +16,7 @@
 // someone is typing in.
 
 import { renderPanel } from '/panel.js';
+import { renderSeat } from '/seat.js';
 
 const app = document.getElementById('app');
 const params = new URLSearchParams(location.search);
@@ -313,6 +314,32 @@ async function entityView(id, seat) {
   render();
 }
 
+// ---------------------------------------------------------------- seat
+
+/** A player's own sheet: the resolved reading, sparse writes. */
+async function seatView(id) {
+  const [stored, reads] = await Promise.all([
+    api('GET', `/api/entities/${id}`),
+    api('GET', `/api/entities/${id}?resolved=1`),
+  ]);
+  if (stored.error) {
+    app.replaceChildren(el('p', { class: 'missing' }, stored.error));
+    return;
+  }
+  const writeEntry = async (edit) => {
+    await api('POST', `/api/entities/${id}/entry`, edit);
+    seatView(id);
+  };
+  const saveStored = async (entity) => {
+    await api('PUT', `/api/entities/${id}`, { entity });
+    seatView(id);
+  };
+  app.replaceChildren(
+    el('div', { class: 'crumb' }, `seat · ${reads.name}`),
+    renderSeat(stored, reads, writeEntry, saveStored),
+  );
+}
+
 // ---------------------------------------------------------------- board
 
 async function boardView(id, passive) {
@@ -428,7 +455,7 @@ async function screenView() {
 
   if (display.role === 'console') return consoleView();
   if (display.role === 'seat' && display.params.entityId) {
-    return entityView(display.params.entityId, true);
+    return seatView(display.params.entityId);
   }
   if (display.role === 'board' && display.params.boardId) {
     return boardView(display.params.boardId, true);

@@ -61,6 +61,41 @@ export type KindDef = {
     | { kind: 'text' };
 };
 
+/**
+ * The forgiving read for a declaration arriving in pack JSON — same
+ * posture as `toEntity`: keep what parses, drop what doesn't, never
+ * throw at content.
+ */
+export function toKindDef(raw: unknown): KindDef | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const name = typeof r.name === 'string' ? r.name.trim() : '';
+  if (!name) return undefined;
+  const out: KindDef = { name };
+  if (typeof r.label === 'string' && r.label.trim()) out.label = r.label;
+  if (typeof r.note === 'string' && r.note.trim()) out.note = r.note;
+  const d =
+    r.domain && typeof r.domain === 'object'
+      ? (r.domain as Record<string, unknown>)
+      : undefined;
+  if (d?.kind === 'count') {
+    out.domain = {
+      kind: 'count',
+      ...(d.zero === 'clears' || d.zero === 'stays' ? { zero: d.zero } : {}),
+      ...(typeof d.cap === 'number' ? { cap: d.cap } : {}),
+    };
+  } else if (d?.kind === 'steps' && Array.isArray(d.steps) && d.steps.length) {
+    out.domain = {
+      kind: 'steps',
+      steps: d.steps.map(String),
+      ...(typeof d.rest === 'string' ? { rest: d.rest } : {}),
+    };
+  } else if (d?.kind === 'text') {
+    out.domain = { kind: 'text' };
+  }
+  return out;
+}
+
 /** The declaration for that list, if the system made one. */
 export function kindFor(
   kinds: KindDef[] | undefined,

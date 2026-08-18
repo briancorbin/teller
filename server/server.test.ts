@@ -35,7 +35,14 @@ async function api(
 beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'teller-server-'));
   const shelf = openShelf(dir);
-  shelf.putSystem({ id: 'sys_wiw', name: 'WiW', version: 1, data: {} });
+  shelf.putSystem({
+    id: 'sys_wiw',
+    name: 'WiW',
+    version: 1,
+    data: {
+      kinds: [{ name: 'conditions', domain: { kind: 'count', zero: 'clears' } }],
+    },
+  });
   shelf.putPack({
     id: 'pak_guide',
     system: 'sys_wiw',
@@ -164,6 +171,77 @@ describe('the stack endpoints', () => {
     expect(templates.body.map((t: any) => t.id)).toEqual(['npc_bark_watcher']);
     const declarations = await api('GET', '/api/stack/declarations/statuses');
     expect(declarations.body).toEqual([]);
+  });
+});
+
+describe('the sparse write (the seat\'s door)', () => {
+  async function stampOne(): Promise<string> {
+    const stamped = await api('POST', '/api/stamp', {
+      slot: 'bestiary',
+      templateId: 'npc_bark_watcher',
+      name: 'Watcher 1',
+    });
+    return stamped.body.id;
+  }
+
+  it('copies the touched entry down from the template, and only that', async () => {
+    const id = await stampOne();
+    const hit = await api('POST', `/api/entities/${id}/entry`, {
+      list: 'resources',
+      name: 'health', // wrong case on purpose
+      value: 9,
+    });
+    expect(hit.status).toBe(200);
+    // Stored: exactly one entry, with the TEMPLATE's spelling and max.
+    expect(hit.body.stored.lists).toEqual({
+      resources: [{ name: 'Health', value: 9, max: 12 }],
+    });
+    // Reads: the stored touch over the template underneath.
+    expect(hit.body.reads.lists.resources).toEqual([
+      { name: 'Health', value: 9, max: 12 },
+    ]);
+    // The template itself never moved.
+    const stack = await api('GET', '/api/stack/templates/bestiary');
+    expect(stack.body[0].lists.resources[0].value).toBe(12);
+  });
+
+  it('a declared kind clears at zero; an undeclared one keeps it', async () => {
+    const id = await stampOne();
+    await api('POST', `/api/entities/${id}/entry`, {
+      list: 'conditions',
+      name: 'Trapped',
+      value: 2,
+    });
+    const eased = await api('POST', `/api/entities/${id}/entry`, {
+      list: 'conditions',
+      name: 'Trapped',
+      value: 0,
+    });
+    expect(eased.body.stored.lists.conditions).toBeUndefined();
+
+    // Resources made no such declaration: zero is a fact on the sheet.
+    const spent = await api('POST', `/api/entities/${id}/entry`, {
+      list: 'resources',
+      name: 'Health',
+      value: 0,
+    });
+    expect(spent.body.stored.lists.resources).toEqual([
+      { name: 'Health', value: 0, max: 12 },
+    ]);
+  });
+
+  it('remove is a human act and works on any entry', async () => {
+    const id = await stampOne();
+    await api('POST', `/api/entities/${id}/entry`, {
+      list: 'descriptors',
+      name: 'Gunslinger',
+    });
+    const gone = await api('POST', `/api/entities/${id}/entry`, {
+      list: 'descriptors',
+      name: 'Gunslinger',
+      remove: true,
+    });
+    expect(gone.body.stored.lists.descriptors).toBeUndefined();
   });
 });
 

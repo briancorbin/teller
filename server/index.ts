@@ -21,7 +21,6 @@ import { dirname, extname, join, normalize, resolve as resolvePath } from 'node:
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { toEntity } from '../core/entity.ts';
-import { resolve as resolveEntity } from '../core/stamp.ts';
 import {
   createCampaign,
   isDisplayRole,
@@ -44,12 +43,9 @@ import {
   STREAM_MINUTES,
   type Auth,
 } from './auth.ts';
-import { Session } from './session.ts';
+import { Session, type EntryEdit } from './session.ts';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
-
-/** Which slots `?resolved=1` derives through — the stampable ones the loop knows. */
-const STAMP_SLOTS = ['bestiary', 'catalog'];
 
 type Reply = { status: number; body: unknown };
 
@@ -289,10 +285,7 @@ export async function handleApi(
       const entity = session.campaign.get(a);
       if (!entity) return reply(404, { error: `no entity ${a}` });
       if (url.searchParams.get('resolved') === '1') {
-        return reply(
-          200,
-          resolveEntity(entity, session.loaded.templateOf(...STAMP_SLOTS)),
-        );
+        return reply(200, session.reading(entity));
       }
       return reply(200, entity);
     }
@@ -312,6 +305,24 @@ export async function handleApi(
       session.remove(a, actorOf(auth, url.searchParams.get('actor') ?? ''));
       return reply(200, { ok: true });
     }
+  }
+
+  // The seat's one door: edit the reading, store only the touch.
+  if (method === 'POST' && head === 'entities' && a && b === 'entry') {
+    if (!canEditEntity(auth, a)) return denied();
+    const body = await bodyOf(req);
+    const list = String(body.list ?? '').trim();
+    const name = String(body.name ?? '').trim();
+    if (!list || !name) return reply(400, { error: 'entry needs a list and a name' });
+    const edit: EntryEdit = { list, name };
+    if (typeof body.value === 'number' || typeof body.value === 'string') {
+      edit.value = body.value;
+    }
+    if (body.max === null || typeof body.max === 'number') edit.max = body.max;
+    if (body.remove === true) edit.remove = true;
+    const saved = session.writeEntry(a, edit, actorOf(auth, String(body.actor ?? '')));
+    if (!saved) return reply(404, { error: `no entity ${a}` });
+    return reply(200, { stored: saved, reads: session.reading(saved) });
   }
 
   if (method === 'POST' && head === 'entities' && a && b === 'move') {

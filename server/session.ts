@@ -13,9 +13,22 @@
 // later optimisation with this exact seam already in place.
 
 import { loadCampaign, type Loaded } from '../core/boot.ts';
-import type { Entity } from '../core/entity.ts';
-import { stamp } from '../core/stamp.ts';
+import { findEntry, sameName, withoutEntry, type Entity } from '../core/entity.ts';
+import { kindFor, setEntry, toKindDef, type KindDef } from '../core/kind.ts';
+import { resolve, stamp } from '../core/stamp.ts';
 import type { Campaign, EntityDraft, Shelf } from '../core/store.ts';
+
+/** Which slots resolution stamps through — the stampable ones this loop knows. */
+export const STAMP_SLOTS = ['bestiary', 'catalog'];
+
+/** One touched entry — everything a seat may say about a list. */
+export type EntryEdit = {
+  list: string;
+  name: string;
+  value?: number | string;
+  max?: number | null;
+  remove?: boolean;
+};
 
 export class Session {
   readonly shelf: Shelf;
@@ -101,6 +114,55 @@ export class Session {
   move(id: string, parentId: string, actor: string): void {
     this.campaign.move(id, parentId, actor);
     this.changed('entities');
+  }
+
+  /** The entity as a player reads it — template underneath, stored on top. */
+  reading(entity: Entity): Entity {
+    return resolve(entity, this.loaded.templateOf(...STAMP_SLOTS));
+  }
+
+  /**
+   * Resolve-with-sparse-write — the seat's one door (§7's grammar with
+   * §14's economy). The player edits the READING; the store keeps only
+   * what was touched. Touching an entry that lives only in the template
+   * copies exactly that entry down first, so its max and its spelling
+   * survive without the whole template thickening in. The write itself
+   * goes through `setEntry`, so a declared kind's zero-rule applies the
+   * same here as everywhere.
+   */
+  writeEntry(entityId: string, edit: EntryEdit, actor: string): Entity | undefined {
+    const entity = this.campaign.get(entityId);
+    if (!entity) return undefined;
+    const lists = { ...entity.lists };
+    let stored = [...(lists[edit.list] ?? [])];
+
+    if (edit.remove) {
+      stored = withoutEntry(stored, edit.name);
+    } else {
+      if (!findEntry(stored, edit.name)) {
+        const read = this.reading(entity);
+        const prior = findEntry(read.lists[edit.list] ?? [], edit.name);
+        if (prior) stored = [...stored, { ...prior }];
+      }
+      const kinds = this.loaded
+        .declarations('kinds')
+        .map(toKindDef)
+        .filter((k): k is KindDef => k !== undefined);
+      stored = setEntry(stored, edit.name, edit.value, kindFor(kinds, edit.list));
+      if (edit.max !== undefined) {
+        stored = stored.map((e) => {
+          if (!sameName(e, edit.name)) return e;
+          const { max: _dropped, ...rest } = e;
+          return edit.max === null ? rest : { ...rest, max: edit.max };
+        });
+      }
+    }
+
+    if (stored.length) lists[edit.list] = stored;
+    else delete lists[edit.list];
+    const saved = this.campaign.save({ ...entity, lists }, actor);
+    this.changed('entities');
+    return saved;
   }
 
   putBoardState(boardId: string, data: unknown, actor: string): void {
