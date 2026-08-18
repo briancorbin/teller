@@ -12,6 +12,14 @@
 base for everything here — mapped off a live install, not off the types.
 `docs/ARCHITECTURE.md` is the law this has to satisfy.
 
+**The working posture** (Brian, 2026-08-18): teller is pre-alpha, and
+this doc is not chasing perfect or final. The bar is *thought through
+enough that iteration is cheap when justified* — settle the shapes that
+would be expensive to change (storage, references, the merge), stay
+loose on everything that's one migration away, and expect "Settled"
+sections to be amended by contact with WiW. Building starts before this
+doc is finished, on purpose.
+
 ---
 
 ## Why this exists
@@ -235,23 +243,72 @@ because anything richer was an entity all along.
 
 ---
 
+### 10 · The entity type, drafted — and every reference walks through it
+
+*(2026-08-18. Settles B′'s shape question; C stays open and has a
+marked slot.)*
+
+```
+Ref    { id · name }                     // id resolves; name degrades
+Entry  { name · value?: number|string · max? }   // strictly a leaf (§9)
+Entity {
+  id · name · type?                      // type? = question C, unresolved
+  lists    Record<string, Entry[]>
+  notes?
+  children? Entity[]                     // inline until promoted (rule 8)
+  refs?    Record<string, Ref>           // 'from' · 'loaded' · 'system' · …
+}
+```
+
+**The Ref shape was found, not invented**: encounter foes are already
+`{blueprintId, name, u, v, hidden}` — id to resolve, cached name to
+degrade to. The encounter runner needed it and built it locally.
+
+Every existing reference, walked:
+
+| today | becomes | degrades to |
+|---|---|---|
+| `Item.from` | `refs.from` | cached name; local values are all it has |
+| `blueprintId` | `refs.from` — same slot | ordinary character |
+| `Item.loaded` | `refs.loaded` | name shows; firing can't decrement |
+| `FittedUpgrade` | child entity, `refs.from` + range entry | a named lump |
+| placement `entityId` | already conforms — `label` is the degrade name | unlinked marker |
+| encounter foes | already literally `{blueprintId, name}` | blank you type over |
+| containment | inline children; promoted child carries parent ref | — |
+| `campaign.system` | `refs.system` — door 2 becomes just another ref | vocabulary + dice lost, table plays on |
+
+Two findings bigger than the walk:
+
+**The campaign is the root entity.** Counters are lists, reference is
+notes, npcs/encounters/vendors/scenes are children, books/packs/system
+are refs. This dissolves STORAGE.md's headline anomaly: the seven
+tableless entity types are children of the campaign entity, each
+individually promotable under rule 8. `characters` is just the one
+that got promoted first.
+
+**Identity couples by id; vocabulary couples by name.** Entities point
+at entities by Ref. Kind entries match declarations BY NAME — a
+condition its StatusDef, a standing its party, a mark its category —
+deliberately, because the whole merge system runs on later-wins-by-name
+and a campaign overrides a status by restating it. A dangling ref
+renders its cached name, marked missing — never dropped (rule 9),
+never a bare id (degradation).
+
+---
+
 ## Open — with what would settle each
 
-### B′ · References — now the biggest open question
+### B′ · References — shape settled in §10; two residues
 
-Settling §9 promoted this from "one credible future Core addition"
-(`ARCHITECTURE.md`) to **the connective tissue of the whole model**:
-`from`, `loaded`, `upgrades[].from`, a placement's `entityId`, and
-containment itself are all ids pointing at ids.
+One Ref shape covers all five existing cases (see §10's walk). Left:
 
-Every reference needs the resolve-AND-degrade answer: a stable id for
-machines plus a human-readable name that survives the target vanishing —
-an opaque id fails "the most a human can still operate," a bare name
-silently breaks on rename. Open: one reference shape for all of these,
-or is containment special? What does a dangling reference render as?
-
-*Settles by:* writing the entity type with references in it and walking
-the five existing cases through it.
+- Does a Ref ever need to say what it EXPECTS to point at? (C's
+  territory — a typed ref is half an entity type.)
+- Staleness: the cached `name` goes stale on rename while the target
+  is still present. Refresh on write? On read? Never (it only matters
+  when dangling)? Leaning: refresh opportunistically on any write that
+  touches the ref, accept staleness otherwise — it is display, not
+  identity.
 
 ### C · Does an entity have a TYPE, and whose is it?
 
@@ -291,9 +348,14 @@ knowing what data it lays out.
 
 ### F · `Field`'s key/label split
 
-`Field` is `{key, label, value}`; `Counter` and `Tag` are `{name, …}`.
-Identity-vs-display, spelled two ways. Does `Entry` need a stable id
-separate from its name?
+`Field` is `{key, label, value}`; Entry is `{name, …}`. §10's coupling
+line sharpens this: `key` exists so DECLARATIONS could match a field
+while its label stayed editable — the id-vs-name split, inside a leaf.
+Under name-coupling, renaming an entry breaks its declaration match
+(rename Charm and `groups.skills` loses it). One known tension now,
+not a smell. Options: entries keep an optional stable key; or renames
+are edits to the DECLARATION layer, not the entry; or accept the break
+and let strays-promise catch it.
 
 ### G · Where prose lives
 
