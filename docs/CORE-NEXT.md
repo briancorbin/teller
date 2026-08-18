@@ -181,10 +181,19 @@ counters — that's the actual gap.
 | `{name, value: number, max}` | a bar or a ring, capped |
 | `{name, value: string}` | an inline text field |
 | child entity | a titled sub-block, recursive |
+| **ref** | **a link chip — cached name; marked when dangling; clear / retarget** |
 
 List name → section heading. Entity name → title. Notes → textarea.
-Everything writes. That is a complete, ugly, fully-operable sheet with
-zero declaration — the floor, made concrete.
+`type` → an editable word. Everything writes. That is a complete, ugly,
+fully-operable sheet with zero declaration — the floor, made concrete.
+
+*Checked against the full entity type, 2026-08-18 — it holds, with the
+ref row added above and one scoping note:* the bare panel is an
+**instance** surface (§13). Template halves — a pack's bestiary, the
+campaign's own catalog — are authored on prep surfaces, which are the
+console's business, not this rule's. Every field of
+`Entity { name, type, lists, notes, children, refs }` now has a bare
+control; the only thing never rendered is `id`.
 
 Already shipped as proof: `Gauges`' own blurb is the rule out loud —
 *"bars for anything with a ceiling; the rest tucked underneath."*
