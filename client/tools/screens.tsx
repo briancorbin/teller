@@ -54,7 +54,13 @@ const SLOT_SUGGESTIONS = ['tv', 'board', 'art', 'seat'];
 /** A screen is "live" if it has spoken to us lately. */
 function isLive(display: Display): boolean {
   if (!display.lastSeenAt) return false;
-  const seen = Date.parse(display.lastSeenAt.replace(' ', 'T') + 'Z');
+  // The new store writes real ISO strings; the massage below is only
+  // for the old worker's SQLite spelling ("YYYY-MM-DD HH:MM:SS") and
+  // appending 'Z' to an ISO string made every screen read dead (…ZZ).
+  const raw = display.lastSeenAt;
+  const seen = Date.parse(
+    raw.includes('T') ? raw : raw.replace(' ', 'T') + 'Z',
+  );
   return Number.isFinite(seen) && Date.now() - seen < 60_000;
 }
 
