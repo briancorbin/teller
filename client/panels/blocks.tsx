@@ -10,6 +10,7 @@ import type { Entity, Entry } from '../../core/entity.ts';
 import type { PanelBlock } from '../../core/panels.ts';
 import { api, fileUrl } from '../lib/api.ts';
 import { card, sectionLabel } from '../lib/ui.ts';
+import type { DiceRecord } from '../lib/dice.ts';
 import { CounterStepper } from '../components/Vitals.tsx';
 import { TagSection } from '../components/TagSection.tsx';
 import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters.tsx';
@@ -236,7 +237,12 @@ registerBlock('list', (block, ctx) => {
       <SheetPanel title={titleCase(name)} className="w-full">
         <div className="divide-y divide-stone-800/80">
           {entries.map((entry) => (
-            <SkillRow key={entry.name} entry={entry} accent={accent} />
+            <SkillRow
+              key={entry.name}
+              entry={entry}
+              accent={accent}
+              dice={ctx.records.dice as DiceRecord | undefined}
+            />
           ))}
         </div>
       </SheetPanel>
