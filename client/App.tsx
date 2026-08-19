@@ -3,7 +3,7 @@
 // (&entity=<id>), #entity=<id>, #board=<id>. Bare hash = this screen's
 // assignment (pairing flow when unclaimed).
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import {
   api,
   displaySlot,
@@ -12,7 +12,7 @@ import {
   forgetSlips,
   type DisplayInfo,
 } from './lib/api.ts';
-import { onIdentify, useLive } from './lib/use-session.ts';
+import { onIdentify, resetStream, useLive } from './lib/use-session.ts';
 import { btnPrimary, card, input, sectionLabel } from './lib/ui.ts';
 import type { PanelDef } from '../core/panels.ts';
 import { PanelSurface, type BlockCtx, type Glass } from './panels/render.tsx';
@@ -254,12 +254,26 @@ function Home() {
 function PairScreen() {
   const me = useLive(() => hello(), []);
   const display = me.data?.display;
+  // Heartbeat: quick while a code is showing (the DM is typing it),
+  // slow forever after — an adopted screen that never says hello reads
+  // as dead in the console (grey dot, "last seen an hour ago").
   useEffect(() => {
-    if (!display?.code) return;
-    const t = setInterval(() => me.reload(), 3000);
+    const t = setInterval(() => me.reload(), display?.code ? 3000 : 20_000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [display?.code]);
+  // Adoption invalidates the slips: on a key-holding machine the stream
+  // bound to 'dm' before the DM adopted this screen, and identify aims
+  // at the screen's OWN handle — reconnect under the new identity.
+  const wasCode = useRef(false);
+  useEffect(() => {
+    if (display?.code) wasCode.current = true;
+    else if (display && wasCode.current) {
+      wasCode.current = false;
+      forgetSlips();
+      resetStream();
+    }
+  }, [display, display?.code]);
   if (!display) return null;
   if (display.code)
     return (

@@ -66,6 +66,22 @@ function maybeClose(): void {
   }
 }
 
+/**
+ * Tear the stream down and come back with fresh slips. The moment that
+ * needs this is ADOPTION on a key-holding machine: before adoption the
+ * slips bind the stream to the DM handle, and an identify aimed at the
+ * screen's own handle would land nowhere until a reload.
+ */
+export function resetStream(): void {
+  source?.close();
+  source = null;
+  if (backoff) {
+    clearTimeout(backoff);
+    backoff = null;
+  }
+  if (listeners.size + identifyListeners.size > 0) ensureStream();
+}
+
 /** Subscribe to nudges. Returns an unsubscribe. */
 export function onNudge(fn: Listener): () => void {
   listeners.add(fn);
