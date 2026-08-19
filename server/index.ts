@@ -45,6 +45,7 @@ import {
 } from './auth.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
 import { panelDir, seedPanels } from '../core/panels-shelf.ts';
+import { packDir, systemIndexModule } from '../core/packs-shelf.ts';
 import { Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
@@ -383,10 +384,11 @@ export async function handleApi(
   // load path live, so the enable gate and the running set never drift.
   //
   // The trust table this reads and writes is the same one a code-
-  // carrying `.panel` rides (§E: "trust rides the plugins table") — so
-  // this route doubles as the panel-code enablement endpoint. A `pan_`
-  // id reloads the CONTENT stack (panel code is attached there, at
-  // sweep); anything else reloads the PLUGIN load path, as before.
+  // carrying `.panel` rides (§E: "trust rides the plugins table") — and
+  // a code-carrying PACK too (§L phase 2) — so this route doubles as the
+  // code enablement endpoint for both. A `pan_` or `pak_` id reloads the
+  // CONTENT stack (that's where their code is attached, at sweep);
+  // anything else reloads the PLUGIN load path, as before.
   if (head === 'plugins') {
     if (!canDm(auth)) return denied();
     const dataDir = session.dataDir;
@@ -411,10 +413,10 @@ export async function handleApi(
         return reply(400, { error: 'enabled must be true or false' });
       }
       session.shelf.setPluginEnabled(a, body.enabled);
-      if (a.startsWith('pan_')) {
-        // Panel code isn't a plugin's `provides` — it's attached to the
-        // panel's declaration by the sweep, so what needs re-running is
-        // the content stack, not the plugin load path.
+      if (a.startsWith('pan_') || a.startsWith('pak_')) {
+        // Panel and pack code aren't a plugin's `provides` — both are
+        // attached to their declaration by the sweep, so what needs
+        // re-running is the content stack, not the plugin load path.
         session.reload();
       } else {
         await reloadPlugins();
@@ -616,6 +618,45 @@ export function serve(session: Session, port: number, key: string) {
       const rel = decodeURIComponent(url.pathname.slice('/panel-code/'.length));
       const [panelId, ...fileParts] = rel.split('/').filter(Boolean);
       const dir = dataDir && panelId ? panelDir(dataDir, panelId) : undefined;
+      const buildRoot = dir ? join(dir, '.build') : undefined;
+      const path = buildRoot && fileParts.length
+        ? normalize(join(buildRoot, ...fileParts))
+        : undefined;
+      if (!path || !buildRoot || !path.startsWith(buildRoot) || !existsSync(path)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('not here');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': MIME[extname(path)] ?? 'application/octet-stream',
+      });
+      res.end(readFileSync(path));
+      return;
+    }
+
+    // A pack's compiled presentations (§L phase 2) — served plain, on
+    // the same terms as `/panel-code/`: this is app code, not
+    // player-secret content, and trust decides whether anything DECLARES
+    // these urls, not whether a byte is fetchable once someone has one.
+    //
+    // `/pack-code/system.js` is the `system` specifier's body: generated,
+    // not stored, from whatever the campaign's content stack resolves to
+    // right now — so a sweep regenerates it by definition and it can
+    // never drift from the packs actually loaded. Empty stack, empty
+    // module: importing `system` must never 404 a panel.
+    if (url.pathname.startsWith('/pack-code/')) {
+      const dataDir = session.dataDir;
+      const rel = decodeURIComponent(url.pathname.slice('/pack-code/'.length));
+      if (rel === 'system.js') {
+        res.writeHead(200, {
+          'Content-Type': 'text/javascript',
+          'Cache-Control': 'no-store',
+        });
+        res.end(systemIndexModule(session.loaded.presentations()));
+        return;
+      }
+      const [packId, ...fileParts] = rel.split('/').filter(Boolean);
+      const dir = dataDir && packId ? packDir(dataDir, packId) : undefined;
       const buildRoot = dir ? join(dir, '.build') : undefined;
       const path = buildRoot && fileParts.length
         ? normalize(join(buildRoot, ...fileParts))

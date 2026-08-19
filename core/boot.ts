@@ -47,8 +47,19 @@ function slotOf(layer: Layer, slot: string): unknown[] {
 export class Loaded {
   readonly manifest: Entity;
   readonly system?: { id: string; name: string; version: number };
-  /** Resolved packs, in the precedence order the manifest declared. */
-  readonly packs: { id: string; name: string; version: number }[];
+  /**
+   * Resolved packs, in the precedence order the manifest declared.
+   * `code` is the system's own presentations (§L phase 2), present only
+   * for a pack a human has trusted; `codePending` says a folder carries
+   * compiled code nobody has enabled yet.
+   */
+  readonly packs: {
+    id: string;
+    name: string;
+    version: number;
+    code?: { presentations: Record<string, string> };
+    codePending?: boolean;
+  }[];
   /** Every ref that didn't resolve. The console's business to say out loud. */
   readonly missing: Missing[];
   /** A `panels/*\/panel.json` that failed to parse. Reported, never a crash. */
@@ -64,7 +75,7 @@ export class Loaded {
     missing: Missing[],
     campaign: Campaign,
     system?: { id: string; name: string; version: number },
-    packs: { id: string; name: string; version: number }[] = [],
+    packs: Loaded['packs'] = [],
     panels: PanelDef[] = STANDARD_PANELS,
     panelProblems: { dir: string; problem: string }[] = [],
     packProblems: PackProblem[] = [],
@@ -85,6 +96,18 @@ export class Loaded {
       ...layers,
     ];
     this.#campaign = campaign;
+  }
+
+  /**
+   * What the `system` specifier resolves to for this campaign (§L
+   * phase 2): every trusted pack's presentations, name → url, walked in
+   * PRECEDENCE order so a later pack shadows an earlier one's component
+   * by restating its filename — the later-wins law, applied to code.
+   */
+  presentations(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const pack of this.packs) Object.assign(out, pack.code?.presentations ?? {});
+    return out;
   }
 
   /**
@@ -201,7 +224,7 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
   const missing: Missing[] = [];
   const layers: Layer[] = [];
 
-  const sweptPacks = dataDir ? sweepPacks(dataDir) : undefined;
+  const sweptPacks = dataDir ? sweepPacks(dataDir, shelf) : undefined;
   const folderSystems = new Map((sweptPacks?.systems ?? []).map((s) => [s.id, s]));
   const folderPacks = new Map((sweptPacks?.packs ?? []).map((p) => [p.id, p]));
 
@@ -230,11 +253,16 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
     return ids.map((id) => ({ id, name: id }));
   };
   const packRefs: Ref[] = declared.length ? declared : undeclared();
-  const packs: { id: string; name: string; version: number }[] = [];
+  const packs: Loaded['packs'] = [];
   for (const ref of packRefs) {
-    const row = folderPacks.get(ref.id) ?? shelf.pack(ref.id);
+    const folder = folderPacks.get(ref.id);
+    const row = folder ?? shelf.pack(ref.id);
     if (row) {
-      packs.push({ id: row.id, name: row.name, version: row.version });
+      const entry: Loaded['packs'][number] = { id: row.id, name: row.name, version: row.version };
+      // Only a FOLDER carries code — a `shelf.db` row has no source to compile.
+      if (folder?.code) entry.code = folder.code;
+      if (folder?.codePending) entry.codePending = true;
+      packs.push(entry);
       layers.push({ source: `pack:${row.id}`, data: asRecord(row.data) });
     } else {
       missing.push({ slot: 'pack', ref });

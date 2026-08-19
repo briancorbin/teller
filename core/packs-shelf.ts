@@ -61,6 +61,30 @@
 // sweep rewrites those strings to the installed key (`art/<pak_id>/…`)
 // as it assembles the blob — so a folder installs under any id on any
 // host and still finds its own pictures, and nobody types a global key.
+//
+// CODE (§L phase 2, 2026-08-19). A pack folder may carry
+// `presentations/*.tsx` — the system's own components, which is where
+// §L says HealthPanel and the Cylinder belong ("data-generic was
+// conflated with belongs-to-teller"). They compile through the SAME
+// esbuild pass a `.panel`'s blocks do (`core/compile.ts`), into
+// `<folder>/.build/presentations/`, mtime-gated, a compile error being
+// a `PackProblem` and never a crash.
+//
+// Three rules, each with a reason:
+//
+//   * **Trust gates code, not data** (§E's line, applied verbatim). The
+//     `pluginTrust` row is keyed by the pack's `pak_` id — one trust
+//     table, three kinds of thing riding it now. An untrusted pack's
+//     declarations, bestiary and art load exactly as before; only
+//     `code` is withheld, and `codePending` says so out loud.
+//   * **A presentation may not import `system`** — it IS the system.
+//     `PACK_IMPORTS` leaves that specifier out, so esbuild refuses to
+//     resolve it and the author reads why in the load report.
+//   * **The export name is the FILE name.** `TestFace.tsx` is
+//     `TestFace` in `system`, which is what makes the index module
+//     (`systemIndexModule`) mechanical and what lets a later pack in
+//     precedence order shadow an earlier one's component by restating
+//     the filename — the same later-wins law as every other layer.
 
 import {
   copyFileSync,
@@ -71,6 +95,8 @@ import {
   statSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { compileFolder, PACK_IMPORTS } from './compile.ts';
+import type { Shelf } from './store.ts';
 
 /** A folder, or one file inside it, that didn't parse — reported, never a crash. */
 export type PackProblem = { dir: string; problem: string };
@@ -82,6 +108,19 @@ export type ShelfPack = {
   name: string;
   version: number;
   data: Record<string, unknown>;
+  /**
+   * The system's own presentation code (§L phase 2), attached at SWEEP
+   * and only once the pack is TRUSTED — never carried in `pack.json`.
+   * One entry per `presentations/*.tsx`, named by its file, pointing at
+   * `/pack-code/<pak_id>/presentations/<name>.js`.
+   */
+  code?: { presentations: Record<string, string> };
+  /**
+   * Set instead of `code` when a folder compiled presentations but no
+   * human has enabled the pack yet — the console's cue to say "this
+   * pack carries code awaiting enablement". Its DATA loaded regardless.
+   */
+  codePending?: boolean;
 };
 
 /** A system as the shelf holds one — the same shape `Shelf#system` returns. */
@@ -166,6 +205,94 @@ function copyNewer(from: string, to: string): void {
   }
 }
 
+/** A JS identifier, because the index module re-exports under this name. */
+const IMPORTABLE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+/**
+ * Compile one pack folder's `presentations/*.tsx` into
+ * `<dir>/.build/presentations/`. Returns the urls the client should be
+ * given — trust is the caller's decision, not this function's, so it
+ * runs unconditionally and reports what it found regardless of who
+ * eventually gets to see it. (`compilePanelCode`'s posture, and the
+ * same shape of answer.)
+ */
+export function compilePackCode(
+  dir: string,
+  packId: string,
+): { presentations?: Record<string, string>; problems: string[] } {
+  const srcDir = join(dir, 'presentations');
+  if (!existsSync(srcDir)) return { problems: [] };
+
+  const problems: string[] = [];
+  const { built, problems: compileProblems } = compileFolder(
+    srcDir,
+    join(dir, '.build', 'presentations'),
+    PACK_IMPORTS,
+  );
+  for (const { file, problem } of compileProblems) {
+    problems.push(`presentations/${file}: ${problem}`);
+  }
+
+  const presentations: Record<string, string> = {};
+  for (const name of built) {
+    if (!IMPORTABLE.test(name)) {
+      problems.push(
+        `presentations/${name}.tsx: the file name is the export name, and this one isn't a JS identifier`,
+      );
+      continue;
+    }
+    presentations[name] = `/pack-code/${packId}/presentations/${name}.js`;
+  }
+  return {
+    presentations: Object.keys(presentations).length ? presentations : undefined,
+    problems,
+  };
+}
+
+/**
+ * Which folder holds a pack's compiled output, for the server's
+ * `/pack-code/<pak_id>/…` route to resolve — `panelDir`'s twin, and a
+ * linear scan for the same reason (a shelf holds a handful of packs).
+ */
+export function packDir(dataDir: string, packId: string): string | undefined {
+  const root = join(dataDir, 'packs');
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return undefined;
+  }
+  for (const name of names) {
+    const dir = join(root, name);
+    const path = join(dir, 'pack.json');
+    if (!existsSync(path)) continue;
+    try {
+      const raw = JSON.parse(readFileSync(path, 'utf8')) as { id?: unknown };
+      if (raw && typeof raw === 'object' && raw.id === packId) return dir;
+    } catch {
+      // a broken pack.json is sweepPacks's problem to report, not this lookup's
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The `system` specifier's body: one re-export per presentation the
+ * campaign's trusted packs supplied, named by its file.
+ *
+ * With nothing to re-export this is a VALID EMPTY MODULE, deliberately
+ * — importing `system` from panel code must never 404 a panel, and a
+ * system with no code of its own is the ordinary case, not an error.
+ * The degradation is the panel finding no such export and saying so,
+ * which is a thing the client can render; a failed module fetch is not.
+ */
+export function systemIndexModule(presentations: Record<string, string>): string {
+  const lines = Object.entries(presentations).map(
+    ([name, url]) => `export { default as ${name} } from '${url}';`,
+  );
+  return lines.length ? `${lines.join('\n')}\n` : 'export {};\n';
+}
+
 /**
  * Every pack folder on the shelf, read back in folder-name order.
  *
@@ -177,7 +304,7 @@ function copyNewer(from: string, to: string): void {
  * is a problem too, and only that slot is lost: the pack loads what
  * parses.
  */
-export function sweepPacks(dataDir: string): PackSweep {
+export function sweepPacks(dataDir: string, shelf?: Shelf): PackSweep {
   const systems: ShelfSystem[] = [];
   const packs: ShelfPack[] = [];
   const problems: PackProblem[] = [];
@@ -275,6 +402,18 @@ export function sweepPacks(dataDir: string): PackSweep {
     if (typeof manifest.system === 'string' && manifest.system.trim()) {
       pack.system = manifest.system.trim();
     }
+
+    // Code last: it neither blocks nor is blocked by the data above.
+    const { presentations, problems: codeProblems } = compilePackCode(dir, id);
+    for (const problem of codeProblems) problems.push({ dir, problem });
+    if (presentations) {
+      if (shelf?.pluginTrust(id)?.enabled) {
+        pack.code = { presentations };
+      } else {
+        pack.codePending = true;
+      }
+    }
+
     packs.push(pack);
   }
 

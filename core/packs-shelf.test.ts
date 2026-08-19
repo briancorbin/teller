@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadCampaign } from './boot.ts';
-import { sweepPacks } from './packs-shelf.ts';
+import { packDir, sweepPacks, systemIndexModule } from './packs-shelf.ts';
 import { createCampaign, openShelf, type Campaign, type Shelf } from './store.ts';
 
 let dir: string;
@@ -325,6 +325,159 @@ describe('loadCampaign — a folder beats a row', () => {
     expect(loaded.packProblems).toHaveLength(1);
     expect(loaded.packProblems[0].dir).toBe(brokenDir);
     expect(loaded.templates('bestiary')).toHaveLength(1);
+    campaign.close();
+  });
+});
+
+describe('sweepPacks — the system carries code (§L phase 2)', () => {
+  const PRESENTATION = `export default function TestFace() { return null; }\n`;
+
+  /** A pack folder with `presentations/<name>.tsx` inside it. */
+  function writePresentation(pack: string, name: string, source: string): string {
+    const packDir = join(dir, 'packs', pack, 'presentations');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(join(packDir, `${name}.tsx`), source);
+    return packDir;
+  }
+
+  it('compiles to .build and the pack carries code.presentations once trusted', () => {
+    writePack('guidebook', GUIDEBOOK);
+    writePresentation('guidebook', 'TestFace', PRESENTATION);
+    shelf.setPluginEnabled('pak_folder01', true);
+
+    const { packs, problems } = sweepPacks(dir, shelf);
+    expect(problems).toEqual([]);
+    expect(packs[0].codePending).toBeUndefined();
+    expect(packs[0].code?.presentations.TestFace).toBe(
+      '/pack-code/pak_folder01/presentations/TestFace.js',
+    );
+
+    const built = readFileSync(
+      join(dir, 'packs', 'guidebook', '.build', 'presentations', 'TestFace.js'),
+      'utf8',
+    );
+    expect(built).toContain('TestFace');
+  });
+
+  it('untrusted: the data loads, the code does not', () => {
+    writePack('guidebook', GUIDEBOOK);
+    writePresentation('guidebook', 'TestFace', PRESENTATION);
+    // No trust row — the sweep discovers, only a human enables.
+
+    const { packs, systems } = sweepPacks(dir, shelf);
+    expect(packs[0].code).toBeUndefined();
+    expect(packs[0].codePending).toBe(true);
+    // …and every fact in the folder arrived anyway.
+    expect(packs[0].data.bestiary).toHaveLength(1);
+    expect(systems[0].data.dials).toEqual({ Grit: 'cylinder' });
+  });
+
+  it('a presentation importing `system` fails its compile, readably', () => {
+    writePack('guidebook', GUIDEBOOK);
+    writePresentation(
+      'guidebook',
+      'Cyclic',
+      `import { Other } from 'system';\nexport default function Cyclic() { return Other; }\n`,
+    );
+    shelf.setPluginEnabled('pak_folder01', true);
+
+    const { packs, problems } = sweepPacks(dir, shelf);
+    expect(problems).toHaveLength(1);
+    expect(problems[0].dir).toBe(join(dir, 'packs', 'guidebook'));
+    expect(problems[0].problem).toContain('presentations/Cyclic.tsx');
+    expect(problems[0].problem).toContain('system');
+    // The pack itself still loaded — a compile error costs the code, never the facts.
+    expect(packs[0].data.bestiary).toHaveLength(1);
+  });
+
+  it('mtime skip — a second sweep does not recompile an unchanged presentation', () => {
+    writePack('guidebook', GUIDEBOOK);
+    writePresentation('guidebook', 'TestFace', PRESENTATION);
+    shelf.setPluginEnabled('pak_folder01', true);
+
+    sweepPacks(dir, shelf);
+    const out = join(dir, 'packs', 'guidebook', '.build', 'presentations', 'TestFace.js');
+    const future = new Date(Date.now() + 60_000);
+    utimesSync(out, future, future);
+
+    sweepPacks(dir, shelf);
+    expect(statSync(out).mtimeMs).toBe(future.getTime());
+  });
+
+  it('packDir resolves a pak_ id back to its folder, and an unknown one to nothing', () => {
+    writePack('guidebook', GUIDEBOOK);
+    expect(packDir(dir, 'pak_folder01')).toBe(join(dir, 'packs', 'guidebook'));
+    expect(packDir(dir, 'pak_nope')).toBeUndefined();
+  });
+});
+
+describe('the `system` specifier — one index module over the whole stack', () => {
+  function writePresentation(pack: string, name: string, source: string) {
+    const packDir = join(dir, 'packs', pack, 'presentations');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(join(packDir, `${name}.tsx`), source);
+  }
+
+  function campaignOn(system: string, packs: string[]): Campaign {
+    const campaign = createCampaign(dir, 'table', 'The Table');
+    const root = campaign.root();
+    campaign.save(
+      {
+        ...root,
+        refs: {
+          system: { id: system, name: system },
+          packs: packs.map((id) => ({ id, name: id })),
+        },
+      },
+      'test',
+    );
+    return campaign;
+  }
+
+  it('no code anywhere is a VALID EMPTY MODULE, never a 404', () => {
+    expect(systemIndexModule({})).toBe('export {};\n');
+  });
+
+  it('re-exports each presentation by its file name', () => {
+    expect(systemIndexModule({ TestFace: '/pack-code/pak_a/presentations/TestFace.js' })).toBe(
+      "export { default as TestFace } from '/pack-code/pak_a/presentations/TestFace.js';\n",
+    );
+  });
+
+  it('later pack in precedence order wins a name collision', () => {
+    writePack('base', {
+      'pack.json': { id: 'pak_base', system: 'sys_test', name: 'Base', version: 1 },
+      'system.json': { id: 'sys_test', name: 'Test System', version: 1 },
+    });
+    writePack('extra', {
+      'pack.json': { id: 'pak_extra', system: 'sys_test', name: 'Extra', version: 1 },
+    });
+    writePresentation('base', 'TestFace', 'export default function TestFace() { return null; }\n');
+    writePresentation('extra', 'TestFace', 'export default function TestFace() { return null; }\n');
+    shelf.setPluginEnabled('pak_base', true);
+    shelf.setPluginEnabled('pak_extra', true);
+
+    // Declared order IS precedence order; the later one wins.
+    const campaign = campaignOn('sys_test', ['pak_base', 'pak_extra']);
+    const loaded = loadCampaign(shelf, campaign, dir);
+    expect(loaded.presentations()).toEqual({
+      TestFace: '/pack-code/pak_extra/presentations/TestFace.js',
+    });
+    expect(systemIndexModule(loaded.presentations())).toContain('pak_extra');
+    campaign.close();
+  });
+
+  it('an untrusted pack contributes nothing to the index', () => {
+    writePack('guidebook', GUIDEBOOK);
+    writePresentation(
+      'guidebook',
+      'TestFace',
+      'export default function TestFace() { return null; }\n',
+    );
+    const campaign = campaignOn('sys_test', ['pak_folder01']);
+    const loaded = loadCampaign(shelf, campaign, dir);
+    expect(loaded.packs[0].codePending).toBe(true);
+    expect(systemIndexModule(loaded.presentations())).toBe('export {};\n');
     campaign.close();
   });
 });

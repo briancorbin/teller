@@ -9,8 +9,12 @@
     <div id="root"></div>
     <!--
       The rung-4 import map (§E UN-DEFERRED, docs/CORE-NEXT.md): panel
-      code compiled by the sweep (core/panels-shelf.ts, EXTERNAL)
-      imports these three bare specifiers, and only these resolve.
+      code compiled by the sweep (core/compile.ts, PANEL_IMPORTS)
+      imports these bare specifiers, and only these resolve.
+      `system` is the odd one out and the point of §L phase 2: it is
+      served, not built — a generated index module re-exporting the
+      active system's pack-carried presentations, empty when no pack
+      supplies any, so importing it never 404s a panel.
       `/runtime-*.js` is a stable, unhashed build output
       (vite.client.config.ts) in prod; in dev the same urls are
       answered by a small middleware in that same config that
@@ -22,7 +26,8 @@
         "imports": {
           "react": "/runtime-react.js",
           "react/jsx-runtime": "/runtime-jsx-runtime.js",
-          "teller": "/runtime-teller.js"
+          "teller": "/runtime-teller.js",
+          "system": "/pack-code/system.js"
         }
       }
     </script>

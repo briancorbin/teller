@@ -22,6 +22,8 @@ type Problem = { dir: string; problem: string };
 type PluginsOut =
   | { found: Found[]; problems: Problem[]; running: string[] }
   | { error: string };
+/** Only the half this tool reads — the campaign's resolved pack stack. */
+type CampaignOut = { packs: { id: string; name: string; codePending?: boolean }[] };
 
 function PluginRow({
   found,
@@ -222,9 +224,71 @@ function PendingPanelCode() {
   );
 }
 
+/** A pack folder that compiled `presentations/*.tsx` and has no trust
+ * row yet (§L phase 2). Same table, same toggle, same posture as the
+ * panel section above — only the id prefix differs (`pak_`). The pack's
+ * DATA is already loaded and always was: trust gates code, never facts.
+ * `/api/campaign` is the seam because the pending flag belongs to the
+ * campaign's RESOLVED stack, which is the list that endpoint already
+ * carries — a second endpoint would only restate it. */
+function PendingPackCode() {
+  const { data, reload } = useLive(() => api<CampaignOut>('/api/campaign'), []);
+  const pending = (data?.packs ?? []).filter((p) => p.codePending);
+  if (!pending.length) return null;
+
+  return (
+    <section className={`${card} space-y-3`}>
+      <div className="flex items-center justify-between">
+        <span className={sectionLabel}>System code awaiting enablement</span>
+        <span className="font-mono text-[11px] text-stone-600">{pending.length}</span>
+      </div>
+      <ul className="space-y-2">
+        {pending.map((p) => (
+          <PendingPackRow key={p.id} pack={p} onChanged={reload} />
+        ))}
+      </ul>
+      <p className="text-[11px] text-stone-600">
+        a pack folder carries presentation code the sweep compiled but nobody's enabled
+        yet — its rules and bestiary loaded regardless; only the components wait.
+      </p>
+    </section>
+  );
+}
+
+function PendingPackRow({
+  pack,
+  onChanged,
+}: {
+  pack: { id: string; name: string };
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const enable = async () => {
+    setBusy(true);
+    try {
+      await api(`/api/plugins/${pack.id}`, { method: 'POST', body: { enabled: true } });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-md border border-stone-800 bg-stone-900/60 px-3 py-2">
+      <span className="text-sm text-stone-100">{pack.name}</span>
+      <span className="font-mono text-[11px] text-stone-600">{pack.id}</span>
+      <span className="ml-auto">
+        <button className={btnPrimary} disabled={busy} onClick={enable}>
+          enable
+        </button>
+      </span>
+    </li>
+  );
+}
+
 registerTool('plugins', () => (
   <div className="space-y-4">
     <PluginsSection />
     <PendingPanelCode />
+    <PendingPackCode />
   </div>
 ));

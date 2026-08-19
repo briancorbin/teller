@@ -52,11 +52,10 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
-  statSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
-import * as esbuild from 'esbuild';
+import { buildOne, compileFolder, newerThan, PANEL_IMPORTS } from './compile.ts';
 import { newId } from './id.ts';
 import { STANDARD_PANELS, toPanel, type PanelDef } from './panels.ts';
 import type { Shelf } from './store.ts';
@@ -65,11 +64,12 @@ import type { Shelf } from './store.ts';
 export type PanelProblem = { dir: string; problem: string };
 
 // The rung-4 public API (§E UN-DEFERRED): a custom block or a takeover
-// imports these three bare specifiers and nothing else resolves through
-// the bundle — the client serves them via an import map, so marking
-// them external here is what keeps the compiled output tiny and lets
-// the client supply its own copies at runtime.
-const EXTERNAL = ['react', 'react/jsx-runtime', 'teller'];
+// imports the bare specifiers in `PANEL_IMPORTS` and nothing else
+// resolves through the bundle — the client serves them via an import
+// map, so marking them external is what keeps the compiled output tiny
+// and lets the client supply its own copies at runtime. `system` joined
+// that list in §L phase 2: panel code consumes the active system's
+// pack-supplied presentations by the same seam.
 
 /**
  * Seed-if-absent: write every standard panel to its own folder, minting
@@ -92,33 +92,6 @@ export function seedPanels(dataDir: string, shelf?: Shelf): void {
     const seeded: PanelDef = { ...panel, id };
     writeFileSync(join(dir, 'panel.json'), `${JSON.stringify(seeded, null, 2)}\n`);
     shelf?.setPluginEnabled(id, true);
-  }
-}
-
-function newerThan(srcPath: string, outPath: string): boolean {
-  if (!existsSync(outPath)) return true;
-  return statSync(srcPath).mtimeMs > statSync(outPath).mtimeMs;
-}
-
-/** `undefined` on success, an error message on failure — never a throw. */
-function buildOne(srcPath: string, outPath: string): string | undefined {
-  try {
-    mkdirSync(dirname(outPath), { recursive: true });
-    esbuild.buildSync({
-      entryPoints: [srcPath],
-      outfile: outPath,
-      bundle: true,
-      format: 'esm',
-      jsx: 'automatic',
-      external: EXTERNAL,
-      minify: false,
-      write: true,
-      logLevel: 'silent',
-    });
-    return undefined;
-  } catch (err) {
-    const errors = (err as { errors?: { text: string }[] }).errors;
-    return errors?.length ? errors.map((e) => e.text).join('; ') : String(err);
   }
 }
 
@@ -152,28 +125,21 @@ export function compilePanelCode(
   const code: NonNullable<PanelDef['code']> = {};
 
   if (hasBlocks) {
+    const { built, problems: blockProblems } = compileFolder(
+      blocksDir,
+      join(buildRoot, 'blocks'),
+      PANEL_IMPORTS,
+    );
+    for (const { file, problem } of blockProblems) problems.push(`blocks/${file}: ${problem}`);
     const blocks: Record<string, string> = {};
-    for (const file of readdirSync(blocksDir).sort()) {
-      if (!file.endsWith('.tsx')) continue;
-      const name = file.slice(0, -'.tsx'.length);
-      const src = join(blocksDir, file);
-      const out = join(buildRoot, 'blocks', `${name}.js`);
-      if (newerThan(src, out)) {
-        const err = buildOne(src, out);
-        if (err) {
-          problems.push(`blocks/${file}: ${err}`);
-          continue;
-        }
-      }
-      if (existsSync(out)) blocks[name] = `/panel-code/${panelId}/blocks/${name}.js`;
-    }
+    for (const name of built) blocks[name] = `/panel-code/${panelId}/blocks/${name}.js`;
     if (Object.keys(blocks).length) code.blocks = blocks;
   }
 
   if (hasTakeover) {
     const out = join(buildRoot, 'panel.js');
     if (newerThan(takeoverPath, out)) {
-      const err = buildOne(takeoverPath, out);
+      const err = buildOne(takeoverPath, out, PANEL_IMPORTS);
       if (err) problems.push(`panel.tsx: ${err}`);
     }
     if (existsSync(out)) code.takeover = `/panel-code/${panelId}/panel.js`;

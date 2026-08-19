@@ -284,3 +284,17 @@ describe('the stream', () => {
     await reader.cancel();
   });
 });
+
+describe('/pack-code — the `system` specifier and the bytes behind it', () => {
+  it('system.js is a valid EMPTY module when no pack supplies code', async () => {
+    const res = await fetch(`${base}/pack-code/system.js`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('javascript');
+    expect(await res.text()).toBe('export {};\n');
+  });
+
+  it('an unknown pack id is 404, and so is a path climbing out of .build', async () => {
+    expect((await fetch(`${base}/pack-code/pak_nope/presentations/X.js`)).status).toBe(404);
+    expect((await fetch(`${base}/pack-code/pak_guide/../../pack.json`)).status).toBe(404);
+  });
+});
