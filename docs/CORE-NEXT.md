@@ -782,6 +782,34 @@ port doesn't paint the format into a corner. First real customer for
 rung 4 is likely the Aces `cards` fan — design the contract against
 that concrete case when it arrives, not in the abstract.
 
+**E extended again (2026-08-18, Brian): the defaults are `.panel`
+files too, and a panel owns its assets.**
+
+- **Nothing is gatekept.** teller's standard panels ship as `.panel`
+  files a host owner can open, edit, or duplicate — "ship" means SEED
+  (the `seedSystems` posture: insert-or-ignore, never clobber; rule 1
+  for files). Your edited `sheet` survives every upgrade; duplicate
+  and rename to make a variant, or restate the name to override the
+  default for every screen that asks for it. The end state is that
+  teller's client is the RUNTIME plus the standard component library,
+  and every panel — teller's own included — is a file. Two steps:
+  arrangements as seeded files (pure data, cheap, soon); tool-panel
+  BODIES as file-carried code (lands with the compile rung, not
+  before — until then their behavior compiles into the client and
+  their declarations ride the collection like everything else).
+- **The trust gate is consent for code arriving from OUTSIDE** — the
+  sweep discovers, a human enables. It is not a ceremony for your own
+  hands: shipped defaults are trusted because you installed teller,
+  and your edits are trusted because they're yours. The gate exists
+  for the `.panel` someone hands you.
+- **A `.panel` carries its art**, the pack precedent applied whole:
+  `art/` in the folder, referenced RELATIVE inside, refs rewritten to
+  a namespaced key at install, reversed on export. Which requires the
+  pack's identity move too: a minted **`pan_` id**, assigned once at
+  authoring and baked in — a panel is edited, so hashing would rename
+  it on every correction. The NAME stays the merge key (vocabulary);
+  the ID namespaces assets and names the file.
+
 ### F · `Field`'s key/label split
 
 `Field` is `{key, label, value}`; Entry is `{name, …}`. §10's coupling
