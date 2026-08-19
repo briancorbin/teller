@@ -1448,15 +1448,21 @@ game's identity; N plugins) and POSITION (the system rides the
 merge and owns vocabulary; a plugin never touches the merge and
 provides only at points). Do not collapse the concepts.
 
-**3 · The function/flavor line.** The 2026-08-16 statuses lesson,
-applied totally: *the system carries the mechanic; the pack carries
-the book's words — and now also its pictures — about it.* The
-migrated presentations get sorted one by one against "nothing
-branded": severity-boxes StatusPanel is function (system); the
-Cylinder is the known hard case — "a six-slot rotating spend dial
-that reloads on your turn" is function, drawing it as a REVOLVER is
-flavor (pack skins the system's dial). Expect judgment calls;
-record each.
+**3 · The function/flavor line — CORRECTED (2026-08-19, the
+Cylinder).** The first sort used "function vs flavor" and put the
+revolver in the pack; Brian's correction exposed that as a PROXY for
+the real test: **rights**. *Can this container's author freely share
+everything in it?* The Cylinder has personality, but the personality
+is Brian's own invention — no publisher IP anywhere in it — so it
+lives in the SYSTEM, whose whole point is free distributability.
+**Theme ≠ IP: a system may have all the personality its author owns;
+what it may not carry is anything only a rightsholder could hand
+on.** "Nothing branded" is retired as the phrasing; the pack is for
+the BOOK's stuff, and the sort question at every future call is
+"whose is this, really?" (Sorted so far: StatusPanel, HealthPanel,
+DicePool, SpendMenu, LadderPanel, Cylinder → system. The pack
+currently carries no code at all — purely the book's content, which
+is exactly the shape rule 4 wants to hand a publisher.)
 
 **4 · On disk, eventually** — a fourth shelf dir:
 
