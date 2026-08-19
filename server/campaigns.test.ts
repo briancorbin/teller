@@ -244,12 +244,18 @@ describe('a system that exists only as a folder', () => {
     );
   });
 
-  it('is on the shelf the dropdown reads', async () => {
-    // `/api/shelf` is a table route, so something has to be running for
-    // it to answer at all — a campaign on no system will do.
-    await api('POST', '/api/campaigns', { name: 'Systemless' });
-    const { body } = await api('GET', '/api/shelf');
+  it('is on the shelf the dropdown reads — on a host with nothing running', async () => {
+    // The whole bootstrap, on a VIRGIN host: the shelf is inventory, not
+    // table state, so it answers before any campaign exists — and what
+    // the dropdown offers is what creation then takes.
+    const { status, body } = await api('GET', '/api/shelf');
+    expect(status).toBe(200);
     expect(body.systems).toContainEqual({ id: 'sys_folded', name: 'Folded', version: 2 });
+    const made = await api('POST', '/api/campaigns', {
+      name: 'First Ever',
+      system: body.systems.find((s: any) => s.id === 'sys_folded').id,
+    });
+    expect(made.status).toBe(201);
   });
 
   it('is accepted at creation, and is what the new campaign loads', async () => {

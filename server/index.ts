@@ -599,6 +599,29 @@ export async function handleApi(
     }
   }
 
+  // -- the shelf, read whole — what this machine holds (DM's business).
+  //
+  // HOST-level inventory: `shelf.db` plus the folder sweeps, and not one
+  // word of it comes from a session. So it sits ABOVE the campaign gate,
+  // with the campaigns routes it serves — a virgin host has nothing
+  // running by definition, and the system dropdown on the screen where
+  // you make your FIRST campaign was reading a 503. The key gate is
+  // unchanged: this is still the DM's business and nobody else's.
+  //
+  // Folder-first, because the LOAD path is: a swept `systems/<name>/`
+  // or `packs/<name>/` folder is used INSTEAD of the `shelf.db` row of
+  // the same id (`loadCampaign`, "a folder beats a row"). A listing
+  // that read only the rows told a different story than the loader
+  // lived — the console said "Wild Imaginary West v21" while the folder
+  // it was actually running said 22.
+  if (method === 'GET' && head === 'shelf' && !a) {
+    if (!canDm(auth)) return denied();
+    return reply(200, {
+      ...shelfListing(host),
+      boards: shelf.boards().map(({ id, name }) => ({ id, name })),
+    });
+  }
+
   // -- the table itself. Watching requires being adopted (or the key). --
 
   if (!canWatch(auth)) return notAtTable();
@@ -792,22 +815,6 @@ export async function handleApi(
     } catch (err) {
       return reply(404, { error: String(err) });
     }
-  }
-
-  // -- the shelf, read whole — what this machine holds (DM's business).
-  //
-  // Folder-first, because the LOAD path is: a swept `systems/<name>/`
-  // or `packs/<name>/` folder is used INSTEAD of the `shelf.db` row of
-  // the same id (`loadCampaign`, "a folder beats a row"). A listing
-  // that read only the rows told a different story than the loader
-  // lived — the console said "Wild Imaginary West v21" while the folder
-  // it was actually running said 22.
-  if (method === 'GET' && head === 'shelf' && !a) {
-    if (!canDm(auth)) return denied();
-    return reply(200, {
-      ...shelfListing(host),
-      boards: shelf.boards().map(({ id, name }) => ({ id, name })),
-    });
   }
 
   // -- the sweep door (§L phase 1). "Edit the folder, sweep, live" needs
