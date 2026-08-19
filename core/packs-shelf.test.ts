@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadCampaign } from './boot.ts';
-import { packDir, sweepPacks, systemIndexModule } from './packs-shelf.ts';
+import { packDir, packPanelDir, sweepPacks, systemIndexModule } from './packs-shelf.ts';
 import { createCampaign, openShelf, type Campaign, type Shelf } from './store.ts';
 
 let dir: string;
@@ -408,6 +408,53 @@ describe('sweepPacks — the system carries code (§L phase 2)', () => {
     writePack('guidebook', GUIDEBOOK);
     expect(packDir(dir, 'pak_folder01')).toBe(join(dir, 'packs', 'guidebook'));
     expect(packDir(dir, 'pak_nope')).toBeUndefined();
+  });
+});
+
+describe('sweepPacks — a pack may ship panels', () => {
+  it('panel declarations ride the pack layer, and their code takes the same trust', () => {
+    const dirPath = writePack('guidebook', GUIDEBOOK);
+    mkdirSync(join(dirPath, 'panels', 'sheet', 'blocks'), { recursive: true });
+    writeFileSync(
+      join(dirPath, 'panels', 'sheet', 'panel.json'),
+      JSON.stringify({ id: 'pan_pak01', name: 'sheet', label: 'Sheet', blocks: [] }),
+    );
+    writeFileSync(
+      join(dirPath, 'panels', 'sheet', 'blocks', 'Row.tsx'),
+      'export default function Row() { return null; }\n',
+    );
+
+    const { packs, problems } = sweepPacks(dir, shelf);
+    expect(problems).toEqual([]);
+    const panels = packs[0].data.panels as { name: string; codePending?: boolean }[];
+    expect(panels.map((p) => p.name)).toEqual(['sheet']);
+    // Data always loads; the code waits for a human, exactly as the
+    // table's own and the system's panels do.
+    expect(panels[0].codePending).toBe(true);
+    expect(packPanelDir(dir, 'pan_pak01')).toBe(join(dirPath, 'panels', 'sheet'));
+    expect(packPanelDir(dir, 'pan_nope')).toBeUndefined();
+  });
+
+  it('trusted: the pan_ id is its own trust row, not the pack’s', () => {
+    const dirPath = writePack('guidebook', GUIDEBOOK);
+    mkdirSync(join(dirPath, 'panels', 'sheet', 'blocks'), { recursive: true });
+    writeFileSync(
+      join(dirPath, 'panels', 'sheet', 'panel.json'),
+      JSON.stringify({ id: 'pan_pak01', name: 'sheet', label: 'Sheet', blocks: [] }),
+    );
+    writeFileSync(
+      join(dirPath, 'panels', 'sheet', 'blocks', 'Row.tsx'),
+      'export default function Row() { return null; }\n',
+    );
+    shelf.setPluginEnabled('pan_pak01', true);
+
+    const { packs } = sweepPacks(dir, shelf);
+    const panels = packs[0].data.panels as {
+      codePending?: boolean;
+      code?: { blocks?: Record<string, string> };
+    }[];
+    expect(panels[0].codePending).toBeUndefined();
+    expect(panels[0].code?.blocks?.Row).toBe('/panel-code/pan_pak01/blocks/Row.js');
   });
 });
 

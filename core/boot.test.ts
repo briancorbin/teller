@@ -285,6 +285,52 @@ describe("teller's own furniture (§E)", () => {
     expect(loaded.panelProblems[0].dir).toBe(brokenDir);
     campaign.close();
   });
+
+  it("a pack's panel beats the system's by restating the name (branded over unbranded)", () => {
+    const shelf = openShelf(dir);
+    const campaign = createCampaign(dir, 'furn4', 'Furniture Four');
+    campaign.save(
+      {
+        ...campaign.root(),
+        refs: {
+          system: { id: 'sys_p', name: 'P' },
+          packs: [{ id: 'pak_p', name: 'Book' }],
+        },
+      },
+      't',
+    );
+
+    // The system's folder ships the unbranded sheet…
+    const sysPanel = join(dir, 'systems', 'p', 'panels', 'sheet');
+    mkdirSync(sysPanel, { recursive: true });
+    writeFileSync(
+      join(dir, 'systems', 'p', 'system.json'),
+      JSON.stringify({ id: 'sys_p', name: 'P', version: 1 }),
+    );
+    writeFileSync(
+      join(sysPanel, 'panel.json'),
+      JSON.stringify({ id: 'pan_sys', name: 'sheet', label: 'Sheet', blocks: [] }),
+    );
+
+    // …and the book's pack ships its own, under the same name.
+    const packPanel = join(dir, 'packs', 'book', 'panels', 'sheet');
+    mkdirSync(packPanel, { recursive: true });
+    writeFileSync(
+      join(dir, 'packs', 'book', 'pack.json'),
+      JSON.stringify({ id: 'pak_p', system: 'sys_p', name: 'Book', version: 1 }),
+    );
+    writeFileSync(
+      join(packPanel, 'panel.json'),
+      JSON.stringify({ id: 'pan_pak', name: 'sheet', label: 'The Book’s Sheet', blocks: [] }),
+    );
+
+    const loaded = loadCampaign(shelf, campaign, dir);
+    const sheet: any = loaded.declarations('panels').find((p: any) => p.name === 'sheet');
+    expect(sheet.label).toBe('The Book’s Sheet');
+    expect(sheet.id).toBe('pan_pak');
+    expect(loaded.sourceOf('panels', 'sheet')).toBe('pack:pak_p');
+    campaign.close();
+  });
 });
 
 describe('sections — declarations, merged by name (§J)', () => {

@@ -45,7 +45,7 @@ import {
 } from './auth.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
 import { panelDir, seedPanels } from '../core/panels-shelf.ts';
-import { packDir, systemIndexModule } from '../core/packs-shelf.ts';
+import { packDir, packPanelDir, systemIndexModule } from '../core/packs-shelf.ts';
 import { systemDir, systemPanelDir } from '../core/systems-shelf.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
@@ -804,12 +804,17 @@ export function serve(what: Session | Host, port: number, key: string) {
       const dataDir = host.dataDir;
       const rel = decodeURIComponent(url.pathname.slice('/panel-code/'.length));
       const [panelId, ...fileParts] = rel.split('/').filter(Boolean);
-      // The table's own panels first, then the active system's own
-      // (§M — a system ships unbranded panels, and they are ordinary
-      // `.panel` folders with ordinary `pan_` ids).
+      // The table's own panels first, then the systems', then the packs'
+      // (§M — a system ships unbranded panels and a pack ships the
+      // book's branded ones; both are ordinary `.panel` folders with
+      // ordinary `pan_` ids, so this is one more place to look, never a
+      // second scheme). Order here is only lookup order — precedence at
+      // the table is the merge's business, not this route's.
       const dir =
         dataDir && panelId
-          ? (panelDir(dataDir, panelId) ?? systemPanelDir(dataDir, panelId))
+          ? (panelDir(dataDir, panelId) ??
+            systemPanelDir(dataDir, panelId) ??
+            packPanelDir(dataDir, panelId))
           : undefined;
       const buildRoot = dir ? join(dir, '.build') : undefined;
       const path = buildRoot && fileParts.length

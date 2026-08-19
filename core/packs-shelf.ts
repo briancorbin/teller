@@ -23,6 +23,9 @@
 //     bestiary.json  ┐
 //     catalog.json   │ every other *.json is a SLOT, named by its file
 //     sections.json  ┘ — the pack's data blob, one key per file
+//     panels/<name>/ ordinary `.panel` folders, swept by `sweepPanelsIn`
+//                    — the BOOK's panels, merging above the system's
+//                    (§M-2's sort: system = unbranded, pack = branded)
 //     art/           the pictures, referenced relative from the slots
 //
 // **`system.json` in here is now the COMPATIBILITY path** (§M, 2026-08-19).
@@ -103,6 +106,8 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { compileFolder, PACK_IMPORTS } from './compile.ts';
+import { panelDirIn, sweepPanelsIn } from './panels-shelf.ts';
+import type { PanelDef } from './panels.ts';
 import type { Shelf } from './store.ts';
 
 /** A folder, or one file inside it, that didn't parse — reported, never a crash. */
@@ -317,6 +322,28 @@ export function packDir(dataDir: string, packId: string): string | undefined {
 }
 
 /**
+ * Which pack folder holds a code-carrying PANEL's build, for
+ * `/panel-code/<pan_id>/…` to resolve after the table's own `panels/`
+ * and the systems' came up empty. `systemPanelDir`'s twin: a pack's
+ * panels are ordinary panels — same id scheme, same trust row — so the
+ * only thing the route needs is a third place to look.
+ */
+export function packPanelDir(dataDir: string, panelId: string): string | undefined {
+  const root = join(dataDir, 'packs');
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return undefined;
+  }
+  for (const name of names.sort()) {
+    const hit = panelDirIn(join(root, name, 'panels'), panelId);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/**
  * The `system` specifier's body: one re-export per presentation the
  * campaign's trusted packs supplied, named by its file.
  *
@@ -418,6 +445,18 @@ export function sweepPacks(dataDir: string, shelf?: Shelf): PackSweep {
     // where it was" posture the converter takes.
     for (const [key, held] of Object.entries(manifest)) {
       if (!PACK_KEYS.has(key)) data[key] = withInstalledArt(held, id);
+    }
+
+    // The pack's own panels ride in its data blob, as the `panels` slot
+    // every layer merges by name — so a pack panel overrides the
+    // system's by restating its name, which is the whole point
+    // (branded-over-unbranded, §M-2's sort: the system ships the
+    // unbranded furniture, the book ships the book's).
+    const swept = sweepPanelsIn(join(dir, 'panels'), shelf);
+    for (const p of swept.problems) problems.push(p);
+    if (swept.panels.length) {
+      const floor = Array.isArray(data.panels) ? (data.panels as PanelDef[]) : [];
+      data.panels = [...floor, ...swept.panels];
     }
 
     const pack: ShelfPack = {
