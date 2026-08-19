@@ -6,7 +6,10 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
-    include: ['core/**/*.test.ts', 'server/**/*.test.ts'],
+    // `scripts/` too: the pack converter's boundary parse is the one
+    // place a printed statblock is read apart, and a grammar nothing
+    // tests is a grammar that quietly stops matching the book.
+    include: ['core/**/*.test.ts', 'server/**/*.test.ts', 'scripts/**/*.test.mjs'],
     environment: 'node',
   },
 });

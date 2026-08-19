@@ -8,7 +8,15 @@
 // pool grid, long prose under its own heading) is done here by KIND
 // instead — one card per list, its entries laid out in the pool grid
 // the old sheet used (`grid-cols-2 sm:grid-cols-4`) — with `notes` as
-// the one prose block the new template shape still carries.
+// the one free-text block the new template shape still carries.
+//
+// The prose half caught up second (2026-08-19): the old sheet gave
+// Description and Behavior their own headings and set a feature's NAME
+// in accent before its words, and this dumped all of it as one grey
+// blob because the DATA was one blob. It isn't any more — `about`,
+// `features`, `trophies` and frenzy children arrive already read apart
+// (`scripts/statblock-text.mjs`), so nothing here parses anything. A
+// pack nobody has re-converted still renders, through `TraitsSection`.
 //
 // It's a DIALOG, same as the old app, for the same reason: looking a
 // printing up mid-fight is a detour, and a detour should announce
@@ -126,7 +134,84 @@ function TolerancesSection({ entries }: { entries: Entry[] }) {
   );
 }
 
-/** `traits` — Features, Trophies, Frenzy: words as words, one prose block per entry. */
+/**
+ * `about` — Description, Behavior: plain prose, one section per entry,
+ * under the heading the book gave it. No lead-in, because there is no
+ * name to lead in with: the entry's name IS the heading.
+ */
+function AboutSections({ entries }: { entries: Entry[] }) {
+  if (!entries.length) return null;
+  return (
+    <>
+      {entries.map((e) => (
+        <div key={e.name}>
+          <span className={sectionLabel}>{e.name}</span>
+          <p className="mt-2 text-[13px] leading-relaxed text-stone-300">{e.value}</p>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * A list of NAMED things — features, trophies — the old app's shape:
+ * the name in accent, a full stop, then its words. That lead-in is the
+ * whole reason this isn't one grey wall (`src/components/Statblock.tsx`).
+ */
+function NamedSection({ label, entries }: { label: string; entries: Entry[] }) {
+  if (!entries.length) return null;
+  return (
+    <div>
+      <span className={sectionLabel}>{label}</span>
+      <div className="mt-2 space-y-2">
+        {entries.map((e) => (
+          <p key={e.name} className="text-[13px] leading-relaxed text-stone-300">
+            <span className="text-amber-200">{e.name}. </span>
+            {e.value}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Frenzy children — the same lead-in, with the printed threshold back
+ * in it: "Guillotine (30 Health)." Both halves come off the `gate`
+ * entry, so the counter is the pack's word and not a game concept
+ * spelled here (rule 2).
+ */
+function FrenzySection({ frenzies }: { frenzies: Template[] }) {
+  if (!frenzies.length) return null;
+  return (
+    <div>
+      <span className={sectionLabel}>Frenzy</span>
+      <div className="mt-2 space-y-2">
+        {frenzies.map((f) => {
+          const gate = (f.lists?.gate ?? [])[0];
+          return (
+            <p key={f.id} className="text-[13px] leading-relaxed text-stone-300">
+              <span className="text-amber-200">
+                {f.name}
+                {gate && ` (${gate.value} ${gate.name})`}.{' '}
+              </span>
+              {f.notes}
+            </p>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * `traits` — the OLD shape, a whole printed field as one blob.
+ *
+ * A pack nobody has re-converted still arrives this way and still
+ * renders: the sections above are what a migrated pack draws, this is
+ * the floor under an unmigrated one. It splits on newlines and leaves
+ * the names inside the prose, exactly as it always did.
+ */
 function TraitsSection({ entries }: { entries: Entry[] }) {
   if (!entries.length) return null;
   return (
@@ -169,16 +254,25 @@ export function TemplateSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // `tolerances` and `traits` get their own rendering (status chips,
-  // prose) — everything else still falls through to the pool grid
-  // that's the bare-panel floor for anything teller doesn't recognise
-  // (§7). Attack children never rode in `lists` at all.
+  // The lists with a rendering of their own — status chips, named
+  // prose, plain prose. Everything else still falls through to the pool
+  // grid that's the bare-panel floor for anything teller doesn't
+  // recognise (§7). Attack and frenzy children never rode in `lists`.
+  //
+  // ORDER is presentation, not knowledge, and it's the old app's order
+  // (`PROSE_ORDER` in `src/components/Statblock.tsx`): the pools first,
+  // then what it does, then what it is, then what it becomes.
+  const SPOKEN = ['about', 'features', 'trophies', 'tolerances', 'traits'];
   const lists = Object.entries(template.lists ?? {}).filter(
-    ([key, entries]) => entries.length && key !== 'tolerances' && key !== 'traits',
+    ([key, entries]) => entries.length && !SPOKEN.includes(key),
   );
+  const about = template.lists?.about ?? [];
+  const features = template.lists?.features ?? [];
+  const trophies = template.lists?.trophies ?? [];
   const tolerances = template.lists?.tolerances ?? [];
   const traits = template.lists?.traits ?? [];
   const attacks = (template.children ?? []).filter((c) => c.type === 'attack');
+  const frenzies = (template.children ?? []).filter((c) => c.type === 'frenzy');
 
   return (
     <div
@@ -204,6 +298,10 @@ export function TemplateSheet({
         <div className="space-y-5 px-5 py-4">
           {lists.length === 0 &&
             attacks.length === 0 &&
+            frenzies.length === 0 &&
+            about.length === 0 &&
+            features.length === 0 &&
+            trophies.length === 0 &&
             tolerances.length === 0 &&
             traits.length === 0 && (
               <p className="text-sm text-stone-600">nothing printed for this foe</p>
@@ -220,7 +318,11 @@ export function TemplateSheet({
           ))}
 
           <AttacksSection template={template} />
+          <AboutSections entries={about} />
+          <NamedSection label="Features" entries={features} />
+          <NamedSection label="Trophies" entries={trophies} />
           <TolerancesSection entries={tolerances} />
+          <FrenzySection frenzies={frenzies} />
           <TraitsSection entries={traits} />
 
           {template.notes && (

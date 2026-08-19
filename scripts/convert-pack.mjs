@@ -35,9 +35,15 @@
 //   * counters {current, max}       → entries {value, max}   (resources)
 //   * skill fields (system groups)  → entries in `skills`
 //   * short stat fields             → entries in `stats`
-//   * long text fields              → entries in `traits` — one each,
-//     so no mechanic hides appended to another's string
-//   * description/behavior          → notes (prose is prose)
+//   * features/trophies             → one entry per NAMED thing, in
+//     `features` / `trophies` — the book prints "Fast Swimmer. …" and
+//     the name is a name, not the first four words of a paragraph
+//   * frenzy                        → child entities, `type: 'frenzy'`,
+//     the printed threshold structured as a `gate` entry (the mechanic
+//     that was hiding in "Guillotine (30 Health)")
+//   * description/behavior          → entries in `about` (prose is
+//     prose, but a heading is not prose: they used to be glued into
+//     `notes` behind a "Description: " prefix)
 //   * statuses meta (stack/cap/uncapped) → a KIND declaration for
 //     `conditions` — the discriminator the rebuild was for: zero
 //     clears, the cap presented never enforced; a per-status exception
@@ -59,6 +65,12 @@ import { DatabaseSync } from 'node:sqlite';
 import { openShelf } from '../core/store.ts';
 import { newId } from '../core/id.ts';
 import { withInstalledArt } from '../core/packs-shelf.ts';
+import {
+  frenzyChildren,
+  namedEntries,
+  parseAttacks,
+  parseTolerances,
+} from './statblock-text.mjs';
 
 function parseArgs(argv) {
   const out = {};
@@ -167,124 +179,30 @@ for (const key of [
 }
 
 // ---------------------------------------------------------------- pack
+//
+// Nothing a creature prints stays a blob. `attacks` and `frenzy` become
+// child entities, `tolerances`/`features`/`trophies` become lists of
+// named entries, and `description`/`behavior` become `about` — each one
+// read apart ONCE, here, at the boundary, by `statblock-text.mjs`, so
+// the statblock renderer never parses again.
+//
+// All or nothing per field: if any line doesn't fit the grammar the
+// WHOLE field falls back to a `traits` blob (never a half-structured,
+// half-text statblock) and is logged — degradation out loud, never a
+// silent drop.
 
-// `attacks` and `tolerances` are STRUCTURED now (§I: attacks are
-// entities) — parsed below, never carried as a `traits` blob. Features,
-// Trophies and Frenzy are genuinely words and stay prose, one `traits`
-// entry each, exactly as before.
-const LONG_FIELDS = new Set(['features', 'trophies', 'frenzy']);
+/** Printed field key → the list its named entries land in. */
+const NAMED_FIELDS = new Map([
+  ['features', 'features'],
+  ['trophies', 'trophies'],
+]);
 const PROSE_FIELDS = new Set(['description', 'behavior']);
-
-// ------------------------------------------------------- attack parsing
-//
-// §I (docs/CORE-NEXT.md): an attack is a child entity of the foe
-// template, not a line of prose. The book prints one field —
-//   Melee — Big Foot (3 Grit): 2B2G damage + Dazed [2] · Brutal Fists (2 Grit): 2G damage
-// — and this reads it apart ONCE, here, at the boundary, so the
-// statblock renderer never parses again (the parse-at-render-time bug
-// this doc exists to end). Started from the old world's regex grammar
-// (`src/lib/statblock.ts`), extended for AOE and Piercing, which that
-// reader never had to structure because it stayed prose there.
-//
-// All or nothing per creature: if any line or entry in the field
-// doesn't fit the grammar, the WHOLE field falls back to prose (never
-// a half-structured, half-text statblock) and is logged — degradation
-// out loud, never a silent drop.
-
-const BAND_LINE = /^(.+?)\s+—\s+(.+)$/;
-const ATTACK_ENTRY = /^(.+?)(\s+\(AOE\))?\s+\((\d+)\s+([A-Za-z]+)\):\s*(.+)$/;
-const POOL_DAMAGE = /^((?:\d+[BG])+)\s+damage\b/i;
-// A chain item is "Name [severity]" — severity a plain number ("[2]")
-// or a full pool, one or more die groups ("[4B]", "[1B1G]") — or a bare
-// "Name" with no severity at all (a held tag, "+ Knockback").
-const CHAIN_TOKEN = /^([A-Z][A-Za-z'’ -]*?)(?:\s*\[([^\]]+)\])?$/;
-const BANDS = ['Melee', 'Short', 'Long'];
-
-/** The "+ Status [n]" / "+ Status" tail after the damage pool (or the whole effect, for a status-only line). */
-function parseChain(rest) {
-  const trimmed = rest.trim();
-  if (!trimmed) return { items: [], ok: true };
-  const tokens = trimmed.split(/\s*\+\s*/).filter(Boolean);
-  const items = [];
-  for (const token of tokens) {
-    const m = CHAIN_TOKEN.exec(token.trim());
-    if (!m) return { items: [], ok: false };
-    const [, name, raw] = m;
-    if (raw === undefined) {
-      items.push({ name: name.trim() });
-    } else {
-      const trimmedRaw = raw.trim();
-      items.push({ name: name.trim(), value: /^\d+$/.test(trimmedRaw) ? Number(trimmedRaw) : trimmedRaw });
-    }
-  }
-  return { items, ok: true };
-}
-
-/** One creature's printed `attacks` field → attack child entities, or `undefined` on any line it can't fit. */
-function parseAttacks(field) {
-  const out = [];
-  for (const line of field.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const bandMatch = BAND_LINE.exec(trimmed);
-    if (!bandMatch) return undefined;
-    const band = bandMatch[1].trim();
-    if (!BANDS.includes(band)) return undefined;
-    for (const part of bandMatch[2].split(' · ')) {
-      const entry = ATTACK_ENTRY.exec(part.trim());
-      if (!entry) return undefined;
-      const [, rawName, aoe, cost, unit, effectRaw] = entry;
-      if (unit.trim().toLowerCase() !== 'grit') return undefined;
-      const effect = effectRaw.trim();
-      const poolMatch = POOL_DAMAGE.exec(effect);
-      const damage = poolMatch ? poolMatch[1] : undefined;
-      const rest = poolMatch ? effect.slice(poolMatch[0].length) : effect;
-      const { items, ok } = parseChain(rest);
-      if (!ok) return undefined;
-      const piercing = items.find((i) => i.name.toLowerCase() === 'piercing');
-      const inflicts = items.filter((i) => i !== piercing);
-      const profile = [
-        { name: 'Band', value: band },
-        { name: 'Cost', value: Number(cost) },
-      ];
-      if (damage) profile.push({ name: 'Damage', value: damage });
-      if (aoe) profile.push({ name: 'AOE' });
-      if (piercing) {
-        profile.push(
-          piercing.value === undefined
-            ? { name: 'Piercing' }
-            : { name: 'Piercing', value: piercing.value },
-        );
-      }
-      out.push({
-        id: newId('atk'),
-        name: rawName.trim(),
-        type: 'attack',
-        lists: { profile, inflicts },
-      });
-    }
-  }
-  return out;
-}
-
-/** The printed `Tolerances` field → a plain list of entries (§I) — "None" prints as none at all. */
-function parseTolerances(field) {
-  const text = field.trim();
-  if (!text || /^none$/i.test(text)) return [];
-  const out = [];
-  for (const part of text.split(',')) {
-    const m = /^(.+?)\s*\[([^\]]+)\]\s*$/.exec(part.trim());
-    if (!m) return undefined;
-    const [, name, raw] = m;
-    const trimmedRaw = raw.trim();
-    out.push({ name: name.trim(), value: /^\d+$/.test(trimmedRaw) ? Number(trimmedRaw) : trimmedRaw });
-  }
-  return out;
-}
 
 const parseStats = {
   attacks: { parsed: 0, fellBack: 0 },
   tolerances: { parsed: 0, fellBack: 0 },
+  named: { parsed: 0, fellBack: 0 },
+  frenzy: { parsed: 0, fellBack: 0 },
   marks: 0,
 };
 
@@ -297,7 +215,7 @@ const marksPrefix = oldSys.marks?.prefix;
 
 function creatureOf(old) {
   const lists = {};
-  const notes = [];
+  const about = [];
   const skills = [];
   const stats = [];
   const traits = [];
@@ -318,7 +236,7 @@ function creatureOf(old) {
     const value = typeof f.value === 'string' ? f.value.trim() : f.value;
     if (value === '' || value === undefined) continue;
     if (f.key === 'attacks') {
-      const attacks = parseAttacks(value);
+      const attacks = parseAttacks(value, () => newId('atk'));
       if (attacks) {
         parseStats.attacks.parsed++;
         children.push(...attacks);
@@ -337,11 +255,31 @@ function creatureOf(old) {
         console.log(`  tolerances didn't parse cleanly for ${old.name} — kept as prose`);
         traits.push({ name: f.label, value });
       }
-    } else if (PROSE_FIELDS.has(f.key)) notes.push(`${f.label}: ${value}`);
+    } else if (f.key === 'frenzy') {
+      const frenzies = frenzyChildren(value, () => newId('frz'));
+      if (frenzies) {
+        parseStats.frenzy.parsed++;
+        children.push(...frenzies);
+      } else {
+        parseStats.frenzy.fellBack++;
+        console.log(`  frenzy didn't parse cleanly for ${old.name} — kept as prose`);
+        traits.push({ name: f.label, value });
+      }
+    } else if (NAMED_FIELDS.has(f.key)) {
+      const entries = namedEntries(value);
+      if (entries) {
+        parseStats.named.parsed++;
+        if (entries.length) lists[NAMED_FIELDS.get(f.key)] = entries;
+      } else {
+        parseStats.named.fellBack++;
+        console.log(`  ${f.key} didn't parse cleanly for ${old.name} — kept as prose`);
+        traits.push({ name: f.label, value });
+      }
+    } else if (PROSE_FIELDS.has(f.key)) about.push({ name: f.label, value });
     else if (skillKeys.has(f.key)) skills.push({ name: f.label, value });
-    else if (LONG_FIELDS.has(f.key)) traits.push({ name: f.label, value });
     else stats.push({ name: f.label, value: num(value) });
   }
+  if (about.length) lists.about = about;
   if (skills.length) lists.skills = skills;
   if (stats.length) lists.stats = stats;
   if (traits.length) lists.traits = traits;
@@ -355,7 +293,6 @@ function creatureOf(old) {
   if (resources.length) lists.resources = resources;
   const out = { id: old.id, name: old.name, type: 'foe', lists };
   if (children.length) out.children = children;
-  if (notes.length) out.notes = notes.join('\n\n');
   if (typeof old.page === 'number') out.page = old.page;
   return out;
 }
@@ -506,14 +443,13 @@ console.log(`system ${systemId} · ${sysRow.name} v${sysRow.version}`);
 console.log(`  statuses: ${statuses.length} · kinds: ${kinds.map((k) => k.name).join(', ')}`);
 console.log(`pack ${pack.id} · ${pack.name} v${pack.version}`);
 console.log(`  bestiary: ${bestiary.length} · catalog: ${catalog.length}`);
-console.log(
-  `  attacks parsed: ${parseStats.attacks.parsed}/${parseStats.attacks.parsed + parseStats.attacks.fellBack}` +
-    (parseStats.attacks.fellBack ? ` (${parseStats.attacks.fellBack} fell back to prose, see above)` : ''),
-);
-console.log(
-  `  tolerances parsed: ${parseStats.tolerances.parsed}/${parseStats.tolerances.parsed + parseStats.tolerances.fellBack}` +
-    (parseStats.tolerances.fellBack ? ` (${parseStats.tolerances.fellBack} fell back to prose, see above)` : ''),
-);
+for (const field of ['attacks', 'tolerances', 'named', 'frenzy']) {
+  const { parsed, fellBack } = parseStats[field];
+  console.log(
+    `  ${field} parsed: ${parsed}/${parsed + fellBack}` +
+      (fellBack ? ` (${fellBack} fell back to prose, see above)` : ''),
+  );
+}
 console.log(`  Talent tags converted to marks: ${parseStats.marks}`);
 for (const [slot, held] of Object.entries(packData)) {
   if (['bestiary', 'catalog'].includes(slot)) continue;
