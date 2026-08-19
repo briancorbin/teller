@@ -367,7 +367,8 @@ function screenRow(d, roster, boards) {
           const pick = Number(prompt(`which entity?\n${lines}`) ?? 0);
           const who = roster[pick - 1];
           if (!who) return consoleView();
-          patch.params = { entityId: who.id };
+          const bare = confirm('sheet layout? (cancel = bare)') === false;
+          patch.params = { entityId: who.id, layout: bare ? 'bare' : 'sheet' };
         }
         if (role === 'board' && boards.length) {
           const lines = boards.map((b, i) => `${i + 1}. ${b.name}`).join('\n');
@@ -470,11 +471,15 @@ async function entityView(id, seat) {
 
 // ---------------------------------------------------------------- seat
 
-/** A player's own sheet: the resolved reading, sparse writes. */
-async function seatView(id) {
-  const [stored, reads] = await Promise.all([
+/** A player's own sheet: the resolved reading, sparse writes, the assigned arrangement. */
+async function seatView(id, layout) {
+  const [stored, reads, statuses, kinds, turn, roster] = await Promise.all([
     api('GET', `/api/entities/${id}`),
     api('GET', `/api/entities/${id}?resolved=1`),
+    api('GET', '/api/stack/declarations/statuses'),
+    api('GET', '/api/stack/declarations/kinds'),
+    api('GET', '/api/turn'),
+    api('GET', '/api/entities'),
   ]);
   if (stored.error) {
     app.replaceChildren(el('p', { class: 'missing' }, stored.error));
@@ -482,20 +487,16 @@ async function seatView(id) {
   }
   const writeEntry = async (edit) => {
     await api('POST', `/api/entities/${id}/entry`, edit);
-    seatView(id);
+    seatView(id, layout);
   };
   const saveStored = async (entity) => {
     await api('PUT', `/api/entities/${id}`, { entity });
-    seatView(id);
+    seatView(id, layout);
   };
-  const [turn, roster] = await Promise.all([
-    api('GET', '/api/turn'),
-    api('GET', '/api/entities'),
-  ]);
   app.replaceChildren(
     el('div', { class: 'crumb' }, `seat · ${reads.name}`),
     seatTurnStrip(turn, roster, id),
-    renderSeat(stored, reads, writeEntry, saveStored),
+    renderSeat(stored, reads, writeEntry, saveStored, { statuses, kinds }, layout),
   );
 }
 
@@ -522,7 +523,7 @@ function seatTurnStrip(turn, roster, myEntityId) {
             const n = Number(ev.target.value);
             if (!Number.isFinite(n)) return;
             await api('POST', '/api/turn', { op: 'score', entryId: mine.id, score: n });
-            seatView(myEntityId);
+            current();
           },
         })
       : '',
@@ -645,7 +646,7 @@ async function screenView() {
 
   if (display.role === 'console') return consoleView();
   if (display.role === 'seat' && display.params.entityId) {
-    return seatView(display.params.entityId);
+    return seatView(display.params.entityId, display.params.layout);
   }
   if (display.role === 'board' && display.params.boardId) {
     return boardView(display.params.boardId, true);

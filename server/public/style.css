@@ -79,3 +79,36 @@ input.score { width: 4.5rem; text-align: center; }
 .your-turn { color: var(--accent); font-weight: 700; }
 .proposals { white-space: pre-wrap; font-size: 0.8rem; }
 .proposals:empty { display: none; }
+
+/* -- the sheet layout: arranged like the paper -------------------- */
+/* Held glass stacks; anything wide enough gets the paper's columns.
+   Nothing here ever scales or pans sideways — width decides columns,
+   and a layout that doesn't fit is a layout to fix. */
+.sheet { max-width: 100%; }
+.sheet-head { border-bottom: 2px solid var(--line); padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
+.sheet-name { font-size: 1.5rem; font-weight: 700; width: 100%; border: none; background: none; padding: 0; }
+.sheet-name:focus { outline: none; border-bottom: 1px solid var(--accent); }
+.sheet-sub { font-size: 0.85rem; }
+.sheet-cols { display: grid; grid-template-columns: 1fr; gap: 0 1.25rem; }
+@media (min-width: 760px) { .sheet-cols { grid-template-columns: 1fr 1.1fr 1.3fr; } }
+.sheet-col { min-width: 0; }
+.skill-row { display: flex; align-items: baseline; gap: 0.5rem; margin: 0.25rem 0; }
+.skill-name { flex: 1; }
+.skill-die { width: 4.5rem; text-align: center; font-size: 1.15rem; font-weight: 700; color: var(--accent); }
+.status-row { display: flex; align-items: center; gap: 0.4rem; margin: 0.2rem 0; }
+.status-row .status-name { flex: 1; }
+.status-row .status-relief { font-size: 0.75rem; }
+.status-row:not(.held) .status-severity { color: var(--dim); }
+.status-row.held .status-name { color: var(--accent); font-weight: 700; }
+.status-severity { min-width: 2.2rem; text-align: center; font-variant-numeric: tabular-nums; }
+.vital { margin: 0.4rem 0 0.8rem; }
+.vital-name { text-transform: uppercase; letter-spacing: 0.08em; font-size: 0.75rem; color: var(--dim); }
+.vital-row { display: flex; align-items: center; gap: 0.6rem; }
+.vital-value { font-size: 2rem; font-weight: 700; font-variant-numeric: tabular-nums; min-width: 5rem; text-align: center; }
+.vital-max { font-size: 1rem; color: var(--dim); font-weight: 400; }
+button.big { font-size: 1.4rem; padding: 0.1rem 0.85rem; }
+.bar.wide { width: 100%; height: 0.5rem; margin-top: 0.25rem; }
+.ledger-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.15rem 0; }
+.ledger-row .entry-name { flex: 1; min-width: 0; }
+.trait { margin: 0.4rem 0; font-size: 0.85rem; white-space: pre-wrap; }
+.trait-name { font-weight: 700; color: var(--accent); }
