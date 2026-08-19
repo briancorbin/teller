@@ -1366,12 +1366,12 @@ nobody had looked at a built client. **The rung-4/§L import contract is
 a public API and its entry signature is load-bearing — say so in the
 bundler config, or the bundler will assume otherwise.**
 
-### M · The grand scope, re-drawn — DRAFTED 2026-08-19 (Brian), for tearing apart
+### M · The grand scope, re-drawn — RATIFIED 2026-08-19 (Brian: "commit to it and let's make it happen")
 
 Two days of locally-right decisions quietly turned teller into a
 platform; this section makes that deliberate, and it amends the
-thesis itself. Read it as the seed of the ARCHITECTURE rewrite — the
-constitution's fold happens against THIS.
+thesis itself. This IS the constitution now — the ARCHITECTURE rewrite and the
+CLAUDE.md fold happen against it.
 
 **1 · The simulation ban is repealed. The manual floor is the
 contract.** (Brian: "It should be able to fully simulate everything.
