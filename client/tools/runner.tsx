@@ -15,11 +15,22 @@
 import { useState } from 'react';
 import type { Entity } from '../../core/entity.ts';
 import { api } from '../lib/api.ts';
+import { rollPool, tallyFaces, type DiceRecord } from '../lib/dice.ts';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
 import { registerBlock, type BlockCtx } from '../panels/render.tsx';
 import { EntityCard, usePanelRecords, useSheetPanel } from '../components/roster/EntityCard.tsx';
 import { registerTool } from './index.ts';
+
+// The `initiative` stack record (docs/CORE-NEXT.md §J, same shallow-merge
+// slot as `dice`/`marks`): which skill decides order, and which way it
+// reads. Ported straight off the old app's template row — Guidebook,
+// Turn Order: "the Warden will ask the players to roll with Finesse to
+// determine turn order. The player with the highest number of Hits will
+// go first" — `{ field: 'finesse', highWins: true }`. Fetching it live
+// rather than hardcoding "finesse" is what makes this generic: a
+// different system's row changes the record, not this file.
+type InitiativeRecord = { field?: string; highWins?: boolean };
 
 // ---- the shape of /api/turn (server/turn.ts) — mirrored, not imported:
 // the server module isn't otherwise part of the client's dependency
@@ -62,9 +73,12 @@ function move(order: TurnEntry[], from: number, to: number): TurnEntry[] {
 function RunnerTool() {
   const turn = useLive(() => api<TurnState>('/api/turn'), []);
   const roster = useLive(() => api<RosterEntry[]>('/api/entities'), []);
+  const dice = useLive(() => api<DiceRecord>('/api/stack/record/dice'), []);
+  const initiative = useLive(() => api<InitiativeRecord>('/api/stack/record/initiative'), []);
   const panel = useSheetPanel();
   const records = usePanelRecords();
   const [draft, setDraft] = useState('');
+  const [rollingFoes, setRollingFoes] = useState(false);
 
   const order = turn.data?.order ?? [];
   const running = turn.data?.turn !== null && turn.data !== undefined;
@@ -83,6 +97,47 @@ function RunnerTool() {
     if (!trimmed && !entityId) return;
     op({ op: 'add', entityId: entityId ?? undefined, label: trimmed || undefined });
     setDraft('');
+  };
+
+  const roles = new Map((roster.data ?? []).map((e) => [e.id, e.type]));
+  // Foes with a seat in the order and nothing rolled yet — a re-run
+  // after someone's hand-typed a score leaves that entry alone.
+  const unrolledFoes = order.filter(
+    (e) => e.entityId && roles.get(e.entityId) === 'foe' && e.score == null,
+  );
+
+  /**
+   * Roll initiative for the foes only (rule 5, as amended — teller may
+   * roll for monsters; the players' dice stay physical). Reads the
+   * `initiative` record for which skill decides it, rolls that skill's
+   * printed pool off the `dice` record, tallies it in the record's own
+   * unit, and writes the total the same way a hand-typed score would —
+   * a proposal into `POST /api/turn {op:'score'}`, one drag or retype
+   * from being overruled (rule 1).
+   *
+   * Deliberately does NOT touch `dice.banks` (Ace → Aces): banking an
+   * Ace onto a counter is a player-facing beat at the table, and a foe
+   * rolled by teller has nobody to hand that beat to. Left for a caller
+   * that rolls FOR a player to wire, not assumed here.
+   */
+  const rollFoes = async () => {
+    if (!dice.data || !initiative.data?.field || unrolledFoes.length === 0) return;
+    setRollingFoes(true);
+    try {
+      const field = initiative.data.field.toLowerCase();
+      for (const entry of unrolledFoes) {
+        const foe = await api<Entity>(`/api/entities/${entry.entityId}?resolved=1`);
+        const skills = foe.lists?.skills ?? [];
+        const skill = skills.find((s) => s.name.toLowerCase() === field);
+        if (!skill || typeof skill.value !== 'string') continue;
+        const faces = rollPool(skill.value, dice.data);
+        const { total } = tallyFaces(faces, dice.data);
+        await api('/api/turn', { body: { op: 'score', entryId: entry.id, score: total } });
+      }
+      turn.reload();
+    } finally {
+      setRollingFoes(false);
+    }
   };
 
   const acting = turn.data?.turn !== null && turn.data ? order[turn.data.turn!] : undefined;
@@ -123,12 +178,22 @@ function RunnerTool() {
                   seats can enter their own initiative
                 </span>
                 <button
-                  className={`${btn} ml-auto text-xs`}
+                  className={`${btn} text-xs`}
                   onClick={() => op({ op: 'rolling', on: true })}
                 >
                   take rolls
                 </button>
               </>
+            )}
+            {unrolledFoes.length > 0 && (
+              <button
+                className={`${btn} ${rolling ? '' : 'ml-auto'} text-xs`}
+                disabled={rollingFoes || !dice.data || !initiative.data?.field}
+                title={`roll ${initiative.data?.field ?? 'initiative'} for ${unrolledFoes.length} foe${unrolledFoes.length === 1 ? '' : 's'} — teller rolls, you can still overrule any of it`}
+                onClick={rollFoes}
+              >
+                {rollingFoes ? 'rolling…' : `roll ${unrolledFoes.length} foe${unrolledFoes.length === 1 ? '' : 's'}`}
+              </button>
             )}
           </div>
         )}

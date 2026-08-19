@@ -12,7 +12,8 @@
 // and a `Counter`-shaped `shared.tsx` had nothing left to share.
 
 import type { Entry } from '../../core/entity.ts';
-import { expandPool } from '../lib/dice.ts';
+import { expandPool, type DiceRecord } from '../lib/dice.ts';
+import { Starburst } from './sheet/SheetPanel.tsx';
 
 // ---- shared primitives (ported from counters/shared.tsx) --------------
 
@@ -201,12 +202,22 @@ export function LedgerRow({
 
 // ---- Rows — the printed sheet's dice track (ported from sheet/SkillPanel + Track) --
 
-/** One slot on the track — a die owned reads filled; an empty one doesn't. */
-function Slot({ die }: { die?: string }) {
+/**
+ * One slot on the track — a die owned reads filled; an empty one
+ * doesn't. `bonus` distinguishes an UNOWNED bonus slot (dimmer ring)
+ * from an unowned base slot, exactly as the old Track drew it — a
+ * player should see "three of a possible six, plus one Talent die"
+ * without counting anything.
+ */
+function Slot({ die, bonus }: { die?: string; bonus?: boolean }) {
   return (
     <span
       className={`flex h-[1.35rem] w-[1.15rem] shrink-0 items-center justify-center rounded-[2px] border font-serif text-[0.8rem] italic leading-none ${
-        die ? 'border-stone-200 bg-stone-200 text-stone-900' : 'border-stone-400 bg-transparent text-transparent'
+        die
+          ? 'border-stone-200 bg-stone-200 text-stone-900'
+          : bonus
+            ? 'border-stone-500 bg-stone-800/40 text-transparent'
+            : 'border-stone-400 bg-transparent text-transparent'
       }`}
       title={die ?? 'empty'}
     >
@@ -215,9 +226,40 @@ function Slot({ die }: { die?: string }) {
   );
 }
 
-export function SkillRow({ entry, accent }: { entry: Entry; accent?: string }) {
+/**
+ * The printed sheet's skill row: name right-aligned against a rule, a
+ * track of boxes to the right — one per die in the pool.
+ *
+ * Face-aware as of the `dice` stack record (docs/CORE-NEXT.md §J):
+ * given `dice`, the track pads out to the system's declared length and
+ * draws the starburst + Talent bonus slots, same as the old app's
+ * `Track`. Without it — today's only caller, the `rows` block in
+ * `panels/blocks.tsx`, doesn't fetch or pass the record yet — this
+ * renders exactly as before: one plain box per die, no starburst, no
+ * bonus. `dice` and `marked` are additive, never required.
+ */
+export function SkillRow({
+  entry,
+  accent,
+  dice,
+  /** This skill's Talent is bought — the ✶ box fills (see the `marks` record). */
+  marked = false,
+  markTitle,
+}: {
+  entry: Entry;
+  accent?: string;
+  dice?: DiceRecord;
+  marked?: boolean;
+  markTitle?: string;
+}) {
   const value = typeof entry.value === 'string' ? entry.value : String(entry.value ?? '');
   const owned = /^(?:\d+[A-Za-z])+$/.test(value.replace(/\s+/g, '')) ? expandPool(value) : [];
+  const declared = dice?.track ?? 0;
+  // A track only for things that ARE pools — a declared track was
+  // drawing empty boxes under "Normal" and throwing the word away.
+  const slots = owned.length ? Math.max(declared, owned.length) : 0;
+  const bonus = dice?.trackBonus ?? 0;
+
   return (
     <div className="flex items-center gap-2.5 py-1">
       <span
@@ -228,8 +270,34 @@ export function SkillRow({ entry, accent }: { entry: Entry; accent?: string }) {
       </span>
       <div className="w-px self-stretch bg-stone-600" />
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-        {owned.length ? (
-          owned.map((die, i) => <Slot key={i} die={die} />)
+        {slots ? (
+          <>
+            {Array.from({ length: slots }, (_, i) => (
+              <Slot key={i} die={owned[i]} />
+            ))}
+            {bonus > 0 && (
+              <>
+                <Starburst />
+                {Array.from({ length: bonus }, (_, i) =>
+                  marked ? (
+                    <span
+                      key={`b${i}`}
+                      title={markTitle}
+                      className="flex h-[1.35rem] w-[1.15rem] shrink-0 items-center justify-center rounded-[2px] border"
+                      style={{
+                        borderColor: 'var(--sheet-accent, #f59e0b)',
+                        background: 'var(--sheet-accent, #f59e0b)',
+                      }}
+                    >
+                      <Starburst size={11} fill="#1c1917" />
+                    </span>
+                  ) : (
+                    <Slot key={`b${i}`} die={owned[slots + i]} bonus />
+                  ),
+                )}
+              </>
+            )}
+          </>
         ) : (
           <span className="break-words font-mono text-sm text-stone-200">{value || '—'}</span>
         )}
