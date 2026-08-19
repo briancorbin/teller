@@ -11,19 +11,22 @@ import { SheetPanel } from './SheetPanel.tsx';
 // system's own `statuses` declaration (name/relief/effect); a host with
 // none renders no panel and still plays.
 //
-// `lookup` is additive (TEL rules-lookup): a status the declaration
-// carries no `effect` for can still open the pack's own Statuses
-// section entry, when there is one — same fallback the old
-// `TagSection` used for tags. Popped as an ABSOLUTE overlay, not
-// inline, so opening it never pushes mounted glass into overflow
-// (rule 6 — mounted never scrolls).
+// **The popover's body is the PACK's words, and only those** (rule 4's
+// split): the SYSTEM says the mechanic exists and what relieves it, the
+// PACK says what the book wrote about it. `effect` is a keyword on the
+// declaration ('daze'), not prose, and rendering it as a description
+// put a machine word where a sentence belonged. So the body comes off
+// `lookup` — the merged sections reading (`client/lib/rules.ts`), the
+// same path the rules tool reads — and a status with no entry opens
+// nothing at all. An absent description is absent, never substituted.
+// Popped as an ABSOLUTE overlay, not inline, so opening it never pushes
+// mounted glass into overflow (rule 6 — mounted never scrolls).
 
 export type StatusDecl = { name: string; relief?: string; effect?: string };
 
 type Row = {
   name: string;
   relief?: string;
-  effect?: string;
   severity: number;
   loose?: boolean;
 };
@@ -41,8 +44,8 @@ function StatusRow({
   open: boolean;
   onToggleInfo: () => void;
   hasInfo: boolean;
-  /** What to show when open — the declared effect, or a rule-lookup fallback. */
-  info?: { meta?: string; section?: string; text: string };
+  /** What to show when open — the pack entry's own words, or nothing. */
+  info?: { meta?: string; section?: string; text: string; page?: number };
 }) {
   const on = row.severity > 0;
   return (
@@ -113,6 +116,9 @@ function StatusRow({
           <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-stone-300">
             {info.text}
           </p>
+          {info.page !== undefined && (
+            <p className="mt-1 font-mono text-[10px] text-stone-600">p.{info.page}</p>
+          )}
         </div>
       )}
     </div>
@@ -150,7 +156,6 @@ export function StatusPanel({
   const rows: Row[] = declared.map((d) => ({
     name: d.name,
     relief: d.relief,
-    effect: d.effect,
     severity: severityOf(d.name),
   }));
 
@@ -173,9 +178,9 @@ export function StatusPanel({
   const allRows = [...rows, ...loose];
 
   const infoFor = (row: Row) => {
-    if (row.effect) return { text: row.effect };
     const hit = lookup?.(row.name);
-    return hit ? { meta: hit.meta, section: hit.section, text: hit.text } : undefined;
+    if (!hit || !hit.text.trim()) return undefined;
+    return { meta: hit.meta, section: hit.section, text: hit.text, page: hit.page };
   };
 
   return (
@@ -188,7 +193,7 @@ export function StatusPanel({
             onSet={(next) => set(row.name, next)}
             open={openInfo === row.name}
             onToggleInfo={() => setOpenInfo(openInfo === row.name ? null : row.name)}
-            hasInfo={Boolean(row.effect || lookup?.(row.name))}
+            hasInfo={Boolean(infoFor(row))}
             info={openInfo === row.name ? infoFor(row) : undefined}
           />
         ))}

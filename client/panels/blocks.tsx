@@ -498,7 +498,9 @@ registerBlock('list', (block, ctx) => {
 // a Severity box and the relieving Skill underneath the name (ported
 // `StatusPanel`, not a chip strip). The entity's own `conditions` list
 // is the stored truth; the declaration only supplies the row and the
-// relief/effect text.
+// relief. What a status DOES, in words, is the pack's — read off the
+// merged sections through `useRuleLookup`, never off the declaration's
+// `effect` keyword (rule 4's split: system mechanic, pack prose).
 
 function StatusesBlock({ ctx, title = 'Statuses' }: { ctx: BlockCtx; title?: string }) {
   useSystemFaces(); // re-render when the system module lands (url-loaded, async)
@@ -527,8 +529,8 @@ function StatusesBlock({ ctx, title = 'Statuses' }: { ctx: BlockCtx; title?: str
   // caption are how the WiW sheet PRINTS its statuses, not how every
   // system has them. Without a face the stored list still shows, in the
   // floor's own grammar: a labelled card of steppers you can edit. The
-  // declaration's extra columns (relief, effect) are what's lost, and
-  // losing them is honest — nothing renders them.
+  // declaration's relief column and the pack's own words are what's
+  // lost, and losing them is honest — nothing renders them.
   const Status = presentationOf<StatusFace>('StatusPanel');
   if (!Status) {
     if (!entries.length) return null;
