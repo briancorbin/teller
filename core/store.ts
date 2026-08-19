@@ -762,6 +762,32 @@ export class Shelf {
     return out;
   }
 
+  systems(): { id: string; name: string; version: number }[] {
+    const rows = this.#db
+      .prepare('SELECT id, name, version FROM systems ORDER BY created_at, id')
+      .all() as Row[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      name: String(r.name),
+      version: Number(r.version),
+    }));
+  }
+
+  packs(): { id: string; system?: string; name: string; version: number }[] {
+    const rows = this.#db
+      .prepare('SELECT id, system, name, version FROM packs ORDER BY created_at, id')
+      .all() as Row[];
+    return rows.map((r) => {
+      const out: { id: string; system?: string; name: string; version: number } = {
+        id: String(r.id),
+        name: String(r.name),
+        version: Number(r.version),
+      };
+      if (r.system) out.system = String(r.system);
+      return out;
+    });
+  }
+
   removePack(id: string): void {
     this.#db.prepare('DELETE FROM packs WHERE id = ?').run(id);
   }

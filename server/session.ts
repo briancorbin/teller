@@ -43,9 +43,13 @@ export class Session {
   /** Each listener, keyed by its send fn; the value is the screen's handle (or undefined for the DM's own console). */
   #subscribers = new Map<(msg: string) => void, string | undefined>();
 
-  constructor(shelf: Shelf, campaign: Campaign) {
+  /** Where this host's data lives — plugin discovery needs the path. */
+  dataDir?: string;
+
+  constructor(shelf: Shelf, campaign: Campaign, dataDir?: string) {
     this.shelf = shelf;
     this.campaign = campaign;
+    this.dataDir = dataDir;
     this.loaded = loadCampaign(shelf, campaign);
   }
 

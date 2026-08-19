@@ -22,6 +22,7 @@
 
 import { refIn, refsIn, sameName, type Entity, type Ref } from './entity.ts';
 import { mergeBy } from './merge.ts';
+import { STANDARD_PANELS } from './panels.ts';
 import { toTemplate, type Template, type TemplateOf } from './stamp.ts';
 import type { Campaign, Shelf } from './store.ts';
 
@@ -63,7 +64,13 @@ export class Loaded {
     this.system = system;
     this.packs = packs;
     this.missing = missing;
-    this.#layers = layers;
+    // teller's own furniture sits BELOW everything: the standard panel
+    // collection, overridable by any layer above restating the name
+    // (§E). The one slot teller ships declarations for.
+    this.#layers = [
+      { source: 'teller', data: { panels: STANDARD_PANELS } },
+      ...layers,
+    ];
     this.#campaign = campaign;
   }
 

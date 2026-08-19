@@ -634,17 +634,71 @@ Open: whether the kind declares its **control** or only its value
 domain, with the control derived. `dials` (`counter → 'cylinder' |
 'cards'`) already does the former, for counters, in two lines.
 
-### E · What `.panel` actually is
+### E · What `.panel` actually is — SETTLED (2026-08-18, with Brian)
 
-Six ad-hoc `Record`s already do this job: `groups`, `accents`, `pins`,
+Six ad-hoc `Record`s already did this job: `groups`, `accents`, `pins`,
 `dials`, `icons`, `screens`. `.panel` is their **consolidation**, not a
-new invention. Constraints already settled in `ARCHITECTURE.md`: two
-authored arrangements (mounted / held), never one responsive layout; a
-panel proposes and the **role** decides; layout + components only, never
-control flow.
+new invention. The blocker ("settles by doing D first") dissolved when
+D got its real contact, and the precondition of step 5 ("once real
+panels exist to arrange") was met the same day: two seat layouts and
+eight console panels existed as code. Brian: do the format now.
 
-*Settles by:* doing D first. Don't design a layout language before
-knowing what data it lays out.
+**A `.panel` is a named declaration that arranges components on a
+surface.** It rides the same stack as every other declaration —
+vocabulary-coupled, merged by NAME, later wins — in a `panels` slot on
+any layer. teller itself supplies the STANDARD collection as a base
+layer BELOW the system (`core/panels.ts`, source `teller`), so a
+system, pack, or campaign overrides a standard panel by restating its
+word. Furniture, not content: shipping arrangements is teller's job;
+they gate nothing and a human's layer always wins (rule 1 for UI).
+
+```jsonc
+{
+  "name": "sheet",            // the word; restate it to override
+  "label": "Sheet",
+  "blurb": "Arranged like the paper you already know.",
+  "subject": "entity",        // what it arranges: 'entity' | 'none'
+  "mounted": [ …blocks ],     // TWO AUTHORED ARRANGEMENTS —
+  "held":    [ …blocks ]      //   never one responsive layout
+}
+```
+
+The constraints from `ARCHITECTURE.md` hold structurally:
+
+- **Mounted / held are authored separately.** The sheet's brief
+  media-query era is repealed: a renderer picks the arrangement by
+  which family of glass the ASSIGNMENT says this screen is
+  (`params.glass`, defaulting by aspect), and never reflows one layout
+  into the other.
+- **A panel proposes; the role decides.** A `.panel` never grants: a
+  seat rendering `sheet` still edits only its one entity, a passive
+  screen showing a panel still writes nothing. Surface follows
+  assignment (`params.pane` for a console slice, `params.layout` for a
+  seat), and the same merged list feeds the console directory, the
+  hash routes, and the Screens panel's assignment picker — the
+  `panes.ts` law: a panel nobody can be assigned to doesn't exist.
+- **Layout + components only, never control flow.** Blocks are nouns:
+  `columns` (layout), `header`, `list` (with `list` name, a
+  presentation word `as`: `auto · chips · rows · bars · big · ledger`,
+  and an optional `filter`: `capped · uncapped`), `statuses` (the
+  system list with a severity box each), `rest` (every list not placed
+  elsewhere — strays SURFACE, the degradation contract applied to
+  arrangement), `notes`, `children`, `turn`, and `tool` (a named
+  built-in component: `roster · runner · encounters · screens · shelf
+  · plugins · boards · log`). `as: 'auto'` means §7's grammar — the
+  floor is the default presentation, declarations only dress it.
+- **Degradation.** A block kind this build doesn't know renders as a
+  labeled refusal, out loud (the registry posture). A panel that fails
+  entirely falls back to the bare panel. A subject-entity panel with
+  no entity says so. Nothing blank, nothing silent.
+
+**Two kinds of panel, one collection.** Arrangement panels (`sheet`,
+`bare`) declare blocks over an entity. Tool panels (`screens`,
+`plugins`, `shelf`, …) are teller furniture whose body is one `tool`
+block — declared in the same collection so they're addressable,
+assignable and overridable like everything else, while their behavior
+stays code. §15's "enablement is a human act in the console" finally
+has its room: the `plugins` tool panel.
 
 ### F · `Field`'s key/label split
 
@@ -713,7 +767,8 @@ The sequence:
    gets stamped.*
 5. **Declared panels** — the six layout Records consolidate into
    `.panel`-shaped declarations once real panels exist to arrange.
-   *Settles E.*
+   *Settled — see E; pulled forward by Brian the same day step 4
+   landed, once two seat layouts and eight console panels existed.*
 
 ### Contact log — H step 1 *(started 2026-08-18, `feat/core-next`, `core/`)*
 

@@ -90,8 +90,11 @@ input.score { width: 4.5rem; text-align: center; }
 .sheet-name:focus { outline: none; border-bottom: 1px solid var(--accent); }
 .sheet-sub { font-size: 0.85rem; }
 .sheet-cols { display: grid; grid-template-columns: 1fr; gap: 0 1.25rem; }
-@media (min-width: 760px) { .sheet-cols { grid-template-columns: 1fr 1.1fr 1.3fr; } }
+.glass-mounted .sheet-cols { grid-template-columns: 1fr 1.1fr 1.3fr; }
+/* Mounted glass clips — the clip is the diagnostic, never a transform
+   (the FitBox law). Held glass grows downward instead. */
 .sheet-col { min-width: 0; }
+.glass-mounted .sheet-col { overflow: hidden; }
 .skill-row { display: flex; align-items: baseline; gap: 0.5rem; margin: 0.25rem 0; }
 .skill-name { flex: 1; }
 .skill-die { width: 4.5rem; text-align: center; font-size: 1.15rem; font-weight: 700; color: var(--accent); }
@@ -112,3 +115,11 @@ button.big { font-size: 1.4rem; padding: 0.1rem 0.85rem; }
 .ledger-row .entry-name { flex: 1; min-width: 0; }
 .trait { margin: 0.4rem 0; font-size: 0.85rem; white-space: pre-wrap; }
 .trait-name { font-weight: 700; color: var(--accent); }
+
+/* The console directory. */
+.directory { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: 0.6rem; margin-top: 1rem; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.8rem; text-decoration: none; color: var(--ink); background: var(--panel); }
+.card:hover { border-color: var(--accent); }
+.card-name { font-weight: 700; }
+.card-blurb { font-size: 0.8rem; margin-top: 0.2rem; }
+.card-tag { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; margin-top: 0.3rem; }

@@ -340,6 +340,54 @@ export async function handleApi(
     }
   }
 
+  // -- the shelf, read whole — what this machine holds (DM's business).
+  if (method === 'GET' && head === 'shelf' && !a) {
+    if (!canDm(auth)) return denied();
+    return reply(200, {
+      systems: session.shelf.systems(),
+      packs: session.shelf.packs(),
+      boards: session.shelf.boards().map(({ id, name }) => ({ id, name })),
+    });
+  }
+
+  // -- plugins over HTTP: §15's "enablement is a human act in the
+  // console", finally in the console. Toggle and config reload the
+  // load path live, so the enable gate and the running set never drift.
+  if (head === 'plugins') {
+    if (!canDm(auth)) return denied();
+    const dataDir = session.dataDir;
+    if (!dataDir) return reply(501, { error: 'this host has no data dir' });
+    if (method === 'GET' && !a) {
+      const { found, problems } = discoverPlugins(dataDir, session.shelf);
+      return reply(200, {
+        found,
+        problems: [...problems, ...session.pluginProblems],
+        running: session.plugins.map((p) => p.manifest.id),
+      });
+    }
+    const reloadPlugins = async () => {
+      const result = await loadPlugins(dataDir, session.shelf);
+      session.plugins = result.loaded;
+      session.pluginProblems = result.problems;
+      session.changed('plugins');
+    };
+    if (method === 'POST' && a && !b) {
+      const body = await bodyOf(req);
+      if (typeof body.enabled !== 'boolean') {
+        return reply(400, { error: 'enabled must be true or false' });
+      }
+      session.shelf.setPluginEnabled(a, body.enabled);
+      await reloadPlugins();
+      return reply(200, { ok: true, running: session.plugins.map((p) => p.manifest.id) });
+    }
+    if (method === 'PUT' && a && b === 'config') {
+      const body = await bodyOf(req);
+      session.shelf.setPluginConfig(a, body.config);
+      await reloadPlugins();
+      return reply(200, { ok: true });
+    }
+  }
+
   // -- proposals (§15). The host assembles the snapshot, fans it out to
   // every enabled provider, and returns words. Playing any of it is the
   // DM's act — a proposal lands nowhere a human didn't put it (rule 1).
@@ -651,7 +699,7 @@ if (import.meta.main) {
   const campaign = args.new
     ? createCampaign(dataDir, slug, args.new)
     : openCampaign(dataDir, slug);
-  const session = new Session(shelf, campaign);
+  const session = new Session(shelf, campaign, dataDir);
   const plugins = await loadPlugins(dataDir, shelf);
   session.plugins = plugins.loaded;
   session.pluginProblems = plugins.problems;

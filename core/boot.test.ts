@@ -197,3 +197,34 @@ describe('the merged readings', () => {
     expect(campaign.templatesIn('statuses')).toEqual([]);
   });
 });
+
+describe("teller's own furniture (§E)", () => {
+  it('ships the standard panels below everything, overridable by name', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_x', name: 'X', data: {} });
+    const campaign = createCampaign(dir, 'furn', 'Furniture');
+    campaign.save(
+      { ...campaign.root(), refs: { system: { id: 'sys_x', name: 'X' } } },
+      't',
+    );
+    let loaded = loadCampaign(shelf, campaign);
+    const names = loaded.declarations('panels').map((p: any) => p.name);
+    expect(names).toContain('sheet');
+    expect(names).toContain('screens');
+    expect(loaded.sourceOf('panels', 'sheet')).toBe('teller');
+
+    // The campaign restates the word and wins — furniture, not law.
+    campaign.putTemplate(
+      'panels',
+      { name: 'sheet', label: 'House Sheet', subject: 'entity', held: [{ block: 'floor' }] },
+      't',
+    );
+    loaded = loadCampaign(shelf, campaign);
+    const sheet: any = loaded
+      .declarations('panels')
+      .find((p: any) => p.name === 'sheet');
+    expect(sheet.label).toBe('House Sheet');
+    expect(loaded.sourceOf('panels', 'sheet')).toBe('campaign');
+    campaign.close();
+  });
+});

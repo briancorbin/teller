@@ -81,7 +81,7 @@ beforeEach(async () => {
     { ...campaign.root(), refs: { system: { id: 'sys_wiw', name: 'WiW' } } },
     'host',
   );
-  session = new Session(shelf, campaign);
+  session = new Session(shelf, campaign, dir);
   const plugins = await loadPlugins(dir, shelf);
   expect(plugins.problems).toEqual([]);
   session.plugins = plugins.loaded;
@@ -130,5 +130,35 @@ describe('propose.turn over HTTP', () => {
     expect(
       (await call('POST', '/api/propose/decide', { key: true, body: {} })).status,
     ).toBe(404);
+  });
+});
+
+describe('plugin management over HTTP (§15 in the console)', () => {
+  it('lists, toggles live, and reconfigures without a restart', async () => {
+    const listed = await call('GET', '/api/plugins', { key: true });
+    expect(listed.status).toBe(200);
+    expect(listed.body.found.map((f: any) => f.manifest.id)).toEqual(['plg_echo00000001']);
+    expect(listed.body.running).toEqual(['plg_echo00000001']);
+
+    // Disable: the running set follows the human act immediately.
+    const off = await call('POST', '/api/plugins/plg_echo00000001', {
+      key: true,
+      body: { enabled: false },
+    });
+    expect(off.body.running).toEqual([]);
+    const silent = await call('POST', '/api/propose/turn', { key: true, body: {} });
+    expect(silent.body.providers).toBe(0);
+
+    // Re-enable with new config: the next call sees it.
+    await call('POST', '/api/plugins/plg_echo00000001', { key: true, body: { enabled: true } });
+    await call('PUT', '/api/plugins/plg_echo00000001/config', {
+      key: true,
+      body: { config: { style: 'grim' } },
+    });
+    const loud = await call('POST', '/api/propose/turn', { key: true, body: {} });
+    expect(loud.body.proposals[0].proposal.config).toEqual({ style: 'grim' });
+
+    // And none of it is a stranger's business.
+    expect((await call('GET', '/api/plugins')).status).toBe(401);
   });
 });
