@@ -1230,6 +1230,19 @@ how CARRIED items behave:
   2 pays from their NEXT turn" — nothing models a deferred spend, and
   the old world punted too) and dual-pistol slot pooling (two items;
   probably fine forever).
+- **Two things are called "a child" and only one is a thing you
+  carry** (found by the spends work, 2026-08-19): `POST /api/stamp`
+  with `parentId` makes a STORED entity row in the campaign's parent
+  tree (the roster's shape); a CARRIED thing is an inline child of
+  the character's own blob — §K's kind. Client code that gives a
+  character something goes through `addChild()` in
+  `client/lib/refs.ts`, never the stamp route. Also noted there:
+  a multi-write SpendPlan applies one entry at a time (cost first) —
+  not atomic; a failed later write leaves ordinary, fixable values,
+  and atomicity would be a server-side batch door if ever wanted.
+  And SYSTEMS.md §15's `rep_` field-prefix scheme is SUPERSEDED:
+  standings are entries in a ladder-named list, off-default storage
+  via the `steps` kind's resting rung.
 
 ### L · The library conflation — SETTLED in principle (2026-08-19, Brian), migration phased
 
