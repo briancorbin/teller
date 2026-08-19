@@ -68,15 +68,22 @@ function glassOf(params = {}) {
 
 const tools = {
   async roster(mount) {
-    const [roster, bestiary] = await Promise.all([
+    const [roster, bestiary, accents] = await Promise.all([
       api('GET', '/api/entities'),
       api('GET', '/api/stack/templates/bestiary'),
+      api('GET', '/api/stack/record/accents'),
     ]);
+    const dot = (type) => {
+      const mark = el('span', { class: 'accent-dot' });
+      if (type && accents?.[type]) mark.style.background = accents[type];
+      return mark;
+    };
     mount.replaceChildren(
       ...roster.map((row) =>
         el(
           'div',
           { class: 'row' },
+          dot(row.type),
           el(
             'button',
             { class: 'open', onclick: () => (location.hash = `panel=sheet&entity=${row.id}`) },
@@ -568,11 +575,12 @@ async function panelView(name, entityId) {
 
 /** Everything an entity arrangement needs: reads, stored, stack, the doors. */
 async function entityCtx(id, rerender) {
-  const [storedEntity, reads, statuses, kinds] = await Promise.all([
+  const [storedEntity, reads, statuses, kinds, accents] = await Promise.all([
     api('GET', `/api/entities/${id}`),
     api('GET', `/api/entities/${id}?resolved=1`),
     api('GET', '/api/stack/declarations/statuses'),
     api('GET', '/api/stack/declarations/kinds'),
+    api('GET', '/api/stack/record/accents'),
   ]);
   if (storedEntity.error) {
     app.replaceChildren(el('p', { class: 'missing' }, storedEntity.error));
@@ -586,6 +594,8 @@ async function entityCtx(id, rerender) {
     stored: storedEntity,
     reads,
     stack: { statuses, kinds },
+    // The system's own color for this type, when it declares one.
+    accent: reads.type ? accents?.[reads.type] : undefined,
     writeEntry: async (edit) => {
       await api('POST', `/api/entities/${id}/entry`, edit);
       rerender();

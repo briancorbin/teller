@@ -228,3 +228,32 @@ describe("teller's own furniture (§E)", () => {
     campaign.close();
   });
 });
+
+describe('the record stack (visual vocabulary)', () => {
+  it('shallow-merges records, later layer winning per key', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({
+      id: 'sys_r',
+      name: 'R',
+      data: { accents: { Doctor: '#ff8a28', Marshal: '#50a9dc' } },
+    });
+    shelf.putPack({
+      id: 'pak_r',
+      system: 'sys_r',
+      name: 'P',
+      data: { accents: { Marshal: '#123456' } },
+    });
+    const campaign = createCampaign(dir, 'rec', 'Rec');
+    campaign.save(
+      { ...campaign.root(), refs: { system: { id: 'sys_r', name: 'R' } } },
+      't',
+    );
+    const loaded = loadCampaign(shelf, campaign);
+    expect(loaded.record('accents')).toEqual({
+      Doctor: '#ff8a28',
+      Marshal: '#123456', // the pack restated the key and won
+    });
+    expect(loaded.record('nothing')).toEqual({});
+    campaign.close();
+  });
+});

@@ -111,6 +111,23 @@ export class Loaded {
   }
 
   /**
+   * A slot holding one RECORD per layer (the system's visual
+   * vocabulary: `accents`, `icons`, `vocabulary`) — shallow-merged,
+   * later layer winning per key. The declaration stack for objects
+   * that aren't lists.
+   */
+  record(slot: string): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const layer of this.#layers) {
+      const held = layer.data[slot];
+      if (held && typeof held === 'object' && !Array.isArray(held)) {
+        Object.assign(out, held as Record<string, unknown>);
+      }
+    }
+    return out;
+  }
+
+  /**
    * Which layer a merged entry came from — the LAST layer to state the
    * name, because that's the one whose version won. Provenance for a
    * console that wants to say "campaign, overriding the Guidebook".

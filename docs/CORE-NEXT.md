@@ -959,6 +959,15 @@ late — Brian pulled it forward the moment its precondition existed):
   reload the load path LIVE, so the enable gate and the running set
   cannot drift. §15's "enablement is a human act in the console" is now
   literally true; the CLI flags remain as the headless road.
+- **The identity came back, split three ways** (Brian's question
+  "does theming belong in the .panel?" — answered no, and the no is
+  load-bearing): teller's IDENTITY is tokens in its own stylesheet
+  (ink-and-brass, ported from ui.ts); the SYSTEM'S visual vocabulary
+  (`accents`, `icons`) is declarations read through the new
+  `Loaded.record(slot)` — shallow-merge, later layer wins per key —
+  and consumed by blocks (a Marshal's sheet wears Marshal blue from
+  the stack, verified live); the `.panel` stays arrangement only,
+  never palette, so restating a panel can't fork the look.
 
 ### Still open from `ARCHITECTURE.md`
 

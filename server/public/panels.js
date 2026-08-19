@@ -70,20 +70,22 @@ function autoRow(list, entry, writeEntry) {
   return el('div', { class: 'row' }, name, minus, el('span', { class: 'num' }, String(value)), plus);
 }
 
-function skillRow(list, entry, writeEntry) {
+function skillRow(list, entry, writeEntry, ctx) {
+  const die = el('input', {
+    class: 'skill-die',
+    value: entry.value ?? '',
+    onchange: (e) => writeEntry({ list, name: entry.name, value: e.target.value }),
+  });
+  if (ctx?.accent) die.style.color = ctx.accent;
   return el(
     'div',
     { class: 'skill-row' },
     el('span', { class: 'skill-name' }, entry.name),
-    el('input', {
-      class: 'skill-die',
-      value: entry.value ?? '',
-      onchange: (e) => writeEntry({ list, name: entry.name, value: e.target.value }),
-    }),
+    die,
   );
 }
 
-function bigCounter(list, entry, writeEntry) {
+function bigCounter(list, entry, writeEntry, ctx) {
   const value = typeof entry.value === 'number' ? entry.value : 0;
   const touch = (next) => writeEntry({ list, name: entry.name, value: next });
   const box = el('div', { class: 'vital' });
@@ -105,6 +107,7 @@ function bigCounter(list, entry, writeEntry) {
   if (typeof entry.max === 'number' && entry.max > 0) {
     const fill = el('div', { class: 'fill' });
     fill.style.width = `${Math.max(0, Math.min(100, (value / entry.max) * 100))}%`;
+    if (ctx?.accent) fill.style.background = ctx.accent;
     box.append(el('div', { class: 'bar wide' }, fill));
   }
   return box;
@@ -185,7 +188,7 @@ function listBlock(b, ctx, listName, entries) {
   });
   const out = [el('h2', {}, b.label ?? listName)];
   for (const entry of filtered) {
-    out.push(presentation(entry, b.as)(listName, entry, ctx.writeEntry));
+    out.push(presentation(entry, b.as)(listName, entry, ctx.writeEntry, ctx));
   }
   if (!b.filter) out.push(addEntry(listName, ctx.writeEntry));
   return out;
@@ -195,27 +198,33 @@ const BLOCKS = {
   header(b, ctx) {
     const reads = ctx.reads;
     const meta = reads.lists?.meta ?? [];
-    return [
+    const head = el(
+      'header',
+      { class: 'sheet-head' },
+      el('input', {
+        class: 'sheet-name',
+        value: reads.name,
+        onchange: (e) => {
+          ctx.stored.name = e.target.value.trim() || ctx.stored.name;
+          ctx.saveStored(ctx.stored);
+        },
+      }),
       el(
-        'header',
-        { class: 'sheet-head' },
-        el('input', {
-          class: 'sheet-name',
-          value: reads.name,
-          onchange: (e) => {
-            ctx.stored.name = e.target.value.trim() || ctx.stored.name;
-            ctx.saveStored(ctx.stored);
-          },
-        }),
-        el(
-          'div',
-          { class: 'sheet-sub dim' },
-          reads.type ?? '',
-          ...meta.map((m) => el('span', {}, ` · ${m.name}: ${m.value ?? ''}`)),
-          reads.refs?.from ? el('span', {}, ` · from ${reads.refs.from.name}`) : '',
-        ),
+        'div',
+        { class: 'sheet-sub dim' },
+        reads.type ? el('span', { class: 'sheet-type' }, reads.type) : '',
+        ...meta.map((m) => el('span', {}, ` · ${m.name}: ${m.value ?? ''}`)),
+        reads.refs?.from ? el('span', {}, ` · from ${reads.refs.from.name}`) : '',
       ),
-    ];
+    );
+    // The system's color for this type (accents) — identity from the
+    // stack, not the stylesheet.
+    if (ctx.accent) {
+      head.style.borderBottomColor = `${ctx.accent}66`;
+      const type = head.querySelector('.sheet-type');
+      if (type) type.style.color = ctx.accent;
+    }
+    return [head];
   },
 
   columns(b, ctx) {

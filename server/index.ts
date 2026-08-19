@@ -498,6 +498,7 @@ export async function handleApi(
   if (method === 'GET' && head === 'stack' && a && b) {
     if (a === 'declarations') return reply(200, session.loaded.declarations(b));
     if (a === 'templates') return reply(200, session.loaded.templates(b));
+    if (a === 'record') return reply(200, session.loaded.record(b));
   }
 
   if (method === 'GET' && head === 'boards' && !a) {
