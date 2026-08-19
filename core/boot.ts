@@ -25,6 +25,7 @@ import { mergeBy } from './merge.ts';
 import { STANDARD_PANELS, type PanelDef } from './panels.ts';
 import { sweepPanels } from './panels-shelf.ts';
 import { sweepPacks, type PackProblem } from './packs-shelf.ts';
+import { sweepSystems } from './systems-shelf.ts';
 import { toTemplate, type Template, type TemplateOf } from './stamp.ts';
 import type { Campaign, Shelf } from './store.ts';
 
@@ -46,7 +47,20 @@ function slotOf(layer: Layer, slot: string): unknown[] {
 
 export class Loaded {
   readonly manifest: Entity;
-  readonly system?: { id: string; name: string; version: number };
+  /**
+   * The active system. `code` is its own presentations (§M — the
+   * function half, from `systems/<name>/presentations/`), present only
+   * once a human trusted the `sys_` id; `codePending` says a folder
+   * carries compiled code nobody has enabled yet. A system that arrived
+   * as a `shelf.db` row or inside a pack folder carries neither.
+   */
+  readonly system?: {
+    id: string;
+    name: string;
+    version: number;
+    code?: { presentations: Record<string, string> };
+    codePending?: boolean;
+  };
   /**
    * Resolved packs, in the precedence order the manifest declared.
    * `code` is the system's own presentations (§L phase 2), present only
@@ -74,7 +88,7 @@ export class Loaded {
     layers: Layer[],
     missing: Missing[],
     campaign: Campaign,
-    system?: { id: string; name: string; version: number },
+    system?: Loaded['system'],
     packs: Loaded['packs'] = [],
     panels: PanelDef[] = STANDARD_PANELS,
     panelProblems: { dir: string; problem: string }[] = [],
@@ -100,12 +114,18 @@ export class Loaded {
 
   /**
    * What the `system` specifier resolves to for this campaign (§L
-   * phase 2): every trusted pack's presentations, name → url, walked in
-   * PRECEDENCE order so a later pack shadows an earlier one's component
-   * by restating its filename — the later-wins law, applied to code.
+   * phase 2, re-ordered by §M): the ACTIVE SYSTEM's presentations
+   * first, then each trusted pack's, in declared precedence order —
+   * LATER WINS on a filename collision.
+   *
+   * That order is the merge's, and it is exactly what makes "a pack
+   * skins the system's dial" work: the system ships the functional face
+   * (a spend dial), the pack restates the filename with the book's face
+   * (a revolver's cylinder), and the pack's is what a record summons.
+   * A pack shadowing another pack works the same way, as before.
    */
   presentations(): Record<string, string> {
-    const out: Record<string, string> = {};
+    const out: Record<string, string> = { ...(this.system?.code?.presentations ?? {}) };
     for (const pack of this.packs) Object.assign(out, pack.code?.presentations ?? {});
     return out;
   }
@@ -212,12 +232,18 @@ export class Loaded {
  * `STANDARD_PANELS` in memory — the same seed source `seedPanels` writes
  * from, so a host that hasn't booted once yet still has its furniture.
  *
- * **A folder beats a row.** A system or pack the pack sweep found is
- * used INSTEAD of the `shelf.db` row of the same id — the file on disk
- * is the authoring copy (rule 4a), so it wins, exactly the way a
- * swept `panel.json` beats the in-memory seed. The rows stay put and
- * stay readable, which is what makes the migration safe one pack at a
- * time: anything not yet folder-ized still loads from the database.
+ * **A folder beats a row.** A system or pack a sweep found is used
+ * INSTEAD of the `shelf.db` row of the same id — the file on disk is
+ * the authoring copy (rule 4a), so it wins, exactly the way a swept
+ * `panel.json` beats the in-memory seed. The rows stay put and stay
+ * readable, which is what makes the migration safe one pack at a time:
+ * anything not yet folder-ized still loads from the database.
+ *
+ * For a SYSTEM there are now three places it can come from, and the
+ * order is §M's: `systems/<name>/` (its own folder — the function half,
+ * with code) beats a `system.json` embedded in a pack folder (phase 1's
+ * merged shape) beats a `shelf.db` row. An old pack that still carries
+ * its system loads exactly as it did.
  */
 export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string): Loaded {
   const manifest = campaign.root();
@@ -225,15 +251,26 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
   const layers: Layer[] = [];
 
   const sweptPacks = dataDir ? sweepPacks(dataDir, shelf) : undefined;
+  const sweptSystems = dataDir ? sweepSystems(dataDir, shelf) : undefined;
+  const systemFolders = new Map((sweptSystems?.systems ?? []).map((s) => [s.id, s]));
   const folderSystems = new Map((sweptPacks?.systems ?? []).map((s) => [s.id, s]));
   const folderPacks = new Map((sweptPacks?.packs ?? []).map((p) => [p.id, p]));
 
   const systemRef = refIn(manifest.refs, 'system');
-  let system: { id: string; name: string; version: number } | undefined;
+  let system: Loaded['system'];
   if (systemRef) {
-    const row = folderSystems.get(systemRef.id) ?? shelf.system(systemRef.id);
+    // Precedence, per id (§M): the system's OWN folder, then a
+    // `system.json` embedded in a pack folder (phase 1's shape — old
+    // exports keep working), then the `shelf.db` row.
+    const own = systemFolders.get(systemRef.id);
+    const row = own ?? folderSystems.get(systemRef.id) ?? shelf.system(systemRef.id);
     if (row) {
       system = { id: row.id, name: row.name, version: row.version };
+      // Only a system's own folder carries code — an embedded
+      // `system.json` has no `presentations/` of its own and a row has
+      // no source to compile.
+      if (own?.code) system.code = own.code;
+      if (own?.codePending) system.codePending = true;
       layers.push({ source: `system:${row.id}`, data: asRecord(row.data) });
     } else {
       missing.push({ slot: 'system', ref: systemRef });
@@ -282,6 +319,6 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
     packs,
     panels,
     panelProblems,
-    sweptPacks?.problems ?? [],
+    [...(sweptSystems?.problems ?? []), ...(sweptPacks?.problems ?? [])],
   );
 }

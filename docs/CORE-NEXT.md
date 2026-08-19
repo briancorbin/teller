@@ -1476,6 +1476,60 @@ inside the pack folder — phase 1's right-for-the-migration choice,
 now known-temporary). The split is a folder move plus the sweep
 learning `systems/`; nothing about the loaded model changes.
 
+**LANDED on disk, 2026-08-19.** `core/systems-shelf.ts` sweeps
+`~/.teller-next/systems/<name>/` — `system.json` (read by the SAME
+`systemFrom` a pack-embedded one is, so the reserved-keys rule has one
+implementation), `presentations/*.tsx` (the shared `core/compile.ts`
+pass, `PACK_IMPORTS` — still no `system` self-import), `panels/`
+(ordinary `.panel` folders via a `sweepPanelsIn` extracted for the
+purpose; their declarations ride the system layer's `panels` slot and
+their code takes the same trust row), and `art/` (installed under
+`art/<sys_id>/…`, the pack copier reused). Precedence per id:
+**`systems/<name>/` > pack-folder-embedded `system.json` > `shelf.db`
+row** — the fallback is tested, so an export written before today keeps
+working. Trust is one `pluginTrust` row keyed by the `sys_` id; the
+`/pack-code/` and `/panel-code/` routes gained a second place to look
+rather than a second route, and `POST /api/plugins/<sys_id>` is the
+toggle. `sys_wiw`'s row was enabled by hand on Brian's own shelf (his
+own files, rule 7's "a table's own files are its own").
+
+`Loaded#presentations()` now merges **system first, then packs in
+declared order, later winning** — which is precisely what makes the
+revolver beat the generic dial rather than the reverse.
+
+**The sort calls, one line each** (the code was the evidence, not the
+header comments — every one of these files was *described* as the
+book's face while containing no branded string):
+
+- `StatusPanel.tsx` → **system**. Severity-counted statuses with a named
+  relief is the mechanic; the names and reliefs arrive as declarations.
+- `HealthPanel.tsx` → **system**. A capped gauge with declared pins
+  beside it. Nothing in it names Health or Defense — `pins` does.
+- `DicePool.tsx` → **system**. The `dice` record is system data and this
+  draws it. *Known gap recorded in the file*: the special die is tinted
+  by a hardcoded `letter === "G"` — a mechanic hiding in a comparison;
+  the fix is a per-die accent in the record.
+- `SpendMenu.tsx` → **system**. The judgment call §M expected: the
+  header claimed the book (p. 32–34, Tenderfoot…Legend), but the tier
+  names, purchases, costs and words all arrive from `spends`, and the
+  arithmetic was already teller's. Unbranded code drawing a declared
+  ladder = function.
+- `LadderPanel.tsx` → **system**, same test. Rungs, modifiers and the
+  roster are all data; the parties and their write-ups stay pack-side in
+  `sections.json`.
+- `Cylinder.tsx` → **stays in the pack**. §M's named hard case, decided
+  as §M decided it: the six-slot reloading dial is function, drawing it
+  as a revolver is flavor.
+
+Next steps this leaves: (1) the *function* half of the dial doesn't
+exist yet — the system has no unbranded `Cylinder` for the pack to skin,
+so removing the pack's would fall through to teller's stepper floor
+rather than to a system dial; (2) `client/lib/presentations.ts`'s
+`FALLBACK_PRESENTATIONS` is still §L's transitional floor, and phase 3.5
+(emptying it) is now cheaper to argue for, since a *system* exists to
+own those files; (3) nothing yet exports a `.system` archive — Door 2/3
+above still stand, and the folder is the only serialization.
+
 **5 · Guard rails restated**, so the platform stays teller:
 
 - Everything computes; everything PROPOSES-or-is-overridable;

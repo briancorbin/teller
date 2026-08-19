@@ -1,17 +1,24 @@
 // The first exercise of the new pack format: convert an old-world pack
 // folder (fields/counters/tags) and its system row into the new shape
-// (lists + declarations) and write both as a new-world pack FOLDER.
+// (lists + declarations) and write both as new-world FOLDERS — one per
+// half, since §M split them.
 //
 //   node scripts/convert-pack.mjs --pack ~/.teller/packs/wiw-guidebook \
 //     --old-db ~/.teller/teller.db --data ~/.teller-next
 //
+// Two folders come out: `<data>/systems/<slug>/system.json` (the
+// FUNCTION half — declarations, kinds, dice; `--system <slug>` or
+// `--system-out <path>` to place it) and `<data>/packs/<name>/` (the
+// CONTENT half — bestiary, catalogue, sections, art). They were one
+// folder in §L phase 1, which merged function and content and made
+// "who may hand this on?" unanswerable per half; a re-export must not
+// resurrect that shape.
+//
 // §L phase 1 turned this from an install into an EXPORT. It used to
 // write `shelf.db` rows and nothing else, which made the old world's
 // pack the authoring copy forever — every WiW vocabulary edit was a
-// round trip through here. Now it writes
-// `<data>/packs/<name>/` in the folder format (`pack.json`,
-// `system.json`, a file per slot, `art/`), and THAT is the authoring
-// copy from the run after this one. Run it once per pack, then edit the
+// round trip through here. Now it writes the folders above, and THOSE
+// are the authoring copies from the run after this one. Run it once per pack, then edit the
 // folder and `POST /api/shelf/sweep`.
 //
 // It still installs the db rows too (`--skip-db` to not). They're
@@ -65,9 +72,13 @@ const untilde = (p) => resolve((p ?? '').replace(/^~/, homedir()));
 const packDir = untilde(args.pack ?? join(homedir(), '.teller/packs/wiw-guidebook'));
 const oldDb = untilde(args['old-db'] ?? join(homedir(), '.teller/teller.db'));
 const dataDir = untilde(args.data ?? join(homedir(), '.teller-next'));
-// Where the folder lands. Named for the source folder, because a name
-// is what a person types; identity is still the id inside (rule 4a).
+// Where the folders land — TWO of them since §M's split: the content
+// half under `packs/<name>/`, the function half under
+// `systems/<slug>/`. Both are named for a person to type; identity is
+// still the id inside (rule 4a).
 const outDir = untilde(args.out ?? join(dataDir, 'packs', basename(packDir)));
+const slug = (s) =>
+  String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'system';
 const skipDb = args['skip-db'] !== undefined;
 
 const readJson = (name) => {
@@ -433,6 +444,30 @@ const writeJson = (name, value) => {
 };
 
 mkdirSync(outDir, { recursive: true });
+
+// The SYSTEM half, in its own folder (§M · 4). It used to be written
+// beside `pack.json`, which merged function and content in one place and
+// made "who may hand this on?" unanswerable per half. A re-export must
+// never resurrect that shape, so the two writes are separate here — and
+// a system folder someone has since grown `presentations/` or `panels/`
+// in is left alone apart from its `system.json`.
+const systemDir = untilde(
+  args['system-out'] ?? join(dataDir, 'systems', slug(args.system ?? sysRow.name)),
+);
+mkdirSync(systemDir, { recursive: true });
+writeFileSync(
+  join(systemDir, 'system.json'),
+  `${JSON.stringify(
+    {
+      id: systemId,
+      name: String(sysRow.name),
+      version: Number(sysRow.version) || 1,
+      ...systemData,
+    },
+    null,
+    2,
+  )}\n`,
+);
 writeJson('pack.json', {
   id: String(pack.id),
   system: systemId,
@@ -440,12 +475,6 @@ writeJson('pack.json', {
   version: Number(pack.version) || 1,
   ...(pack.rights ? { rights: pack.rights } : {}),
   ...(pack.books ? { books: pack.books } : {}),
-});
-writeJson('system.json', {
-  id: systemId,
-  name: String(sysRow.name),
-  version: Number(sysRow.version) || 1,
-  ...systemData,
 });
 for (const [slot, held] of Object.entries(packData)) writeJson(`${slot}.json`, held);
 if (hasArt) cpSync(artDir, join(outDir, 'art'), { recursive: true });
@@ -497,7 +526,9 @@ if (hasArt) {
       `${Object.keys(portraits).length ? ` · ${Object.keys(portraits).length} portraits` : ''}`,
   );
 }
-console.log(`folder written to ${outDir}`);
+console.log(`system folder written to ${systemDir}`);
+console.log('  system.json');
+console.log(`pack folder written to ${outDir}`);
 console.log(`  ${written.join(' · ')}${hasArt ? ' · art/' : ''}`);
 console.log(
   skipDb

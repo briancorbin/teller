@@ -176,9 +176,23 @@ export function sweepPanels(
   dataDir: string,
   shelf?: Shelf,
 ): { panels: PanelDef[]; problems: PanelProblem[] } {
+  return sweepPanelsIn(join(dataDir, 'panels'), shelf);
+}
+
+/**
+ * The sweep itself, over ANY folder of panel folders. The table's own
+ * `<dataDir>/panels/` is one such root; a system folder's
+ * `systems/<name>/panels/` is another (§M — "a system ships PANELS,
+ * functional and unbranded"). Same format, same compile, same trust
+ * row, so it is one function with the root passed in rather than a
+ * second copy that drifts.
+ */
+export function sweepPanelsIn(
+  root: string,
+  shelf?: Shelf,
+): { panels: PanelDef[]; problems: PanelProblem[] } {
   const panels: PanelDef[] = [];
   const problems: PanelProblem[] = [];
-  const root = join(dataDir, 'panels');
   let names: string[];
   try {
     names = readdirSync(root);
@@ -219,7 +233,11 @@ export function sweepPanels(
  * `panel.json`s — the shelf holds a handful of panels, not thousands.
  */
 export function panelDir(dataDir: string, panelId: string): string | undefined {
-  const root = join(dataDir, 'panels');
+  return panelDirIn(join(dataDir, 'panels'), panelId);
+}
+
+/** The same lookup over any root of panel folders — a system's `panels/` too (§M). */
+export function panelDirIn(root: string, panelId: string): string | undefined {
   let names: string[];
   try {
     names = readdirSync(root);

@@ -25,6 +25,13 @@
 //     sections.json  ┘ — the pack's data blob, one key per file
 //     art/           the pictures, referenced relative from the slots
 //
+// **`system.json` in here is now the COMPATIBILITY path** (§M, 2026-08-19).
+// A system is its own folder on its own shelf — `systems-shelf.ts`, which
+// reads the same file with the same `systemFrom` — and it wins on a
+// collision. A pack that still carries its system loads exactly as it
+// always did, forever: that is what makes an export written before the
+// split keep working, and it costs one map lookup in `boot.ts`.
+//
 // One folder yields BOTH shelf entities, exactly as the converter
 // already produced both from one source: a system row and a pack row.
 // That is not a new coupling — a pack has always declared a `system`,
@@ -189,8 +196,41 @@ export function withInstalledArt(value: unknown, packId: string): unknown {
   return out;
 }
 
+/**
+ * One `system.json` object, read as the shelf's system entity — the
+ * reserved three off the top, everything else a slot.
+ *
+ * Exported because `systems-shelf.ts` reads the SAME file out of
+ * `~/.teller-next/systems/<name>/` (§M's split): a system.json is a
+ * system.json wherever it sits, and the reserved-keys rule is one rule
+ * with one implementation. `artOwner` is whose id an `art/…` string
+ * resolves against — the pack's, for one embedded in a pack folder; the
+ * system's own, for a folder that carries its own pictures.
+ */
+export function systemFrom(
+  record: Record<string, unknown>,
+  artOwner: string,
+): { system?: ShelfSystem; problem?: string } {
+  const id = typeof record.id === 'string' ? record.id.trim() : '';
+  if (!id) {
+    return { problem: 'system.json has no id — a system is named by its sys_ id' };
+  }
+  const data: Record<string, unknown> = {};
+  for (const [key, held] of Object.entries(record)) {
+    if (!SYSTEM_KEYS.has(key)) data[key] = withInstalledArt(held, artOwner);
+  }
+  return {
+    system: {
+      id,
+      name: typeof record.name === 'string' ? record.name : id,
+      version: Number(record.version) || 1,
+      data,
+    },
+  };
+}
+
 /** Copy one tree, skipping any file whose destination is already newer. */
-function copyNewer(from: string, to: string): void {
+export function copyNewer(from: string, to: string): void {
   for (const name of readdirSync(from)) {
     if (name.startsWith('.')) continue;
     const src = join(from, name);
@@ -368,22 +408,9 @@ export function sweepPacks(dataDir: string, shelf?: Shelf): PackSweep {
     }
 
     if (systemFile) {
-      const systemId =
-        typeof systemFile.id === 'string' ? systemFile.id.trim() : '';
-      if (!systemId) {
-        problems.push({ dir, problem: 'system.json has no id — a system is named by its sys_ id' });
-      } else {
-        const systemData: Record<string, unknown> = {};
-        for (const [key, held] of Object.entries(systemFile)) {
-          if (!SYSTEM_KEYS.has(key)) systemData[key] = withInstalledArt(held, id);
-        }
-        systems.push({
-          id: systemId,
-          name: typeof systemFile.name === 'string' ? systemFile.name : systemId,
-          version: Number(systemFile.version) || 1,
-          data: systemData,
-        });
-      }
+      const { system, problem } = systemFrom(systemFile, id);
+      if (problem) problems.push({ dir, problem });
+      if (system) systems.push(system);
     }
 
     // Anything unrecognised in `pack.json` rides along as a slot rather

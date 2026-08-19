@@ -22,7 +22,6 @@ The two forms are the same format for different jobs:
 ```
 wiw-guidebook/            ← or wiw-guidebook.pack, zipped
   pack.json               id, system, name, version, rights, books
-  system.json             the SYSTEM this pack speaks, when it brings one
   sections.json           the rulings
   statuses.json           conditions this pack adds
   bestiary.json           the foes
@@ -31,8 +30,31 @@ wiw-guidebook/            ← or wiw-guidebook.pack, zipped
   creation.json           the creation flow's own prose
   notes.json              the sheet's panel captions
   art/                    the pictures
-  presentations/          the system's own components — see below
+  presentations/          the book's own faces — see below
 ```
+
+**A system is no longer part of a pack.** It lives beside it, in its own
+shelf folder — `~/.teller/systems/<name>/` — because the two halves have
+different rights and different lives:
+
+```
+systems/wiw/
+  system.json             sys_ id, name, version, and the record slots
+  presentations/          functional, unbranded components
+  panels/                 the system's own `.panel` folders
+  art/                    only what function demands
+```
+
+A **system is pure function**: kinds, dice, effects, the vocabulary, the
+mechanics code. Mechanics aren't protectable expression, so a system
+with no prose and no book art is anyone's to hand on. A **pack is the
+book's stuff**: monsters, items, sections, pictures, and the faces that
+ape the printed page — rights follow the content, as they always have.
+
+A `system.json` sitting inside a pack folder still works and always
+will (it is how the first conversion wrote things). The system folder
+simply wins if both exist, per id: **`systems/<name>/` > a pack's
+embedded `system.json` > a `shelf.db` row.**
 
 Only `pack.json` is required. Everything else is optional and a pack
 declares itself by what it contains — a bestiary-only pack and a whole
@@ -120,13 +142,11 @@ the pack has an `upgrades` slot; the files above are simply the ones
 anything reads today. Two names are reserved, because they carry
 identity rather than content: `pack.json` and `system.json`.
 
-### `system.json` — the system this pack speaks
+### `system.json` — the system, in its own folder
 
-A folder yields up to two things: the pack, and — if it carries this
-file — the SYSTEM the pack is written in. That isn't a new coupling.
-A pack has always declared a `system`, and the system's vocabulary is
-what its content is written in; authoring them together is how a
-guidebook is actually written.
+Written in `systems/<name>/system.json`, beside the pack rather than
+inside it. (A copy inside a pack folder is still read, for packs
+exported before the split — the system folder wins where both exist.)
 
 ```json
 {
@@ -148,10 +168,14 @@ while a system's are a dozen small records read and edited together —
 `dials` is four lines. One file keeps the whole vocabulary in one
 editor buffer, which is what editing a system actually looks like.
 
-A folder may carry no `system.json` at all — a bestiary pack for a
-system that arrived some other way. A system whose id matches one
-already on the shelf REPLACES it while the folder is there: the folder
-is the authoring copy, so the folder wins.
+A system whose id matches one already on the shelf REPLACES it while the
+folder is there: the folder is the authoring copy, so the folder wins.
+Most packs carry no system of their own at all — a bestiary for a system
+that arrived some other way is the ordinary case.
+
+A system folder may also carry `presentations/` and `panels/`, on
+exactly the terms below: same sweep, same esbuild, same trust row —
+keyed by the `sys_` id instead of a `pak_` one.
 
 **The edit recipe**, which is the point of all of this:
 
@@ -216,18 +240,28 @@ is the exact check that route exists to make.
 A book does NOT travel with a pack. It's referenced by hash, because a
 book is something the recipient owns; a monster portrait isn't.
 
-### `presentations/` — the system's own components
+### `presentations/` — components, on either shelf
 
 A counter is a counter everywhere, but a *revolver* is not. teller ships
-the neutral floor — bars, steppers, chips, ledger rows — and a system
-that wants its own faces brings them, as code, in its pack:
+the neutral floor — bars, steppers, chips, ledger rows — and whatever
+wants its own face brings it, as code:
 
 ```
-presentations/
-  Cylinder.tsx            a revolver: six chambers, spend one, reload
-  HealthPanel.tsx         the printed health box, with pinned stats beside it
+systems/wiw/presentations/
   StatusPanel.tsx         severity boxes with a relief caption each
+  HealthPanel.tsx         a capped gauge with its declared pins beside it
+  DicePool.tsx            the declared dice, as a tappable grid
+
+packs/wiw-guidebook/presentations/
+  Cylinder.tsx            a revolver: six chambers, spend one, reload
 ```
+
+**Which shelf a file belongs on is one question: is anything about it
+branded?** A severity-boxed status plate is how the mechanic works, so
+it is the system's. Drawing a spend dial as a *revolver* is the book's
+picture, so it is the pack's — and a pack SKINS the system by restating
+the filename, because the merge puts the system's presentations first
+and the packs' after, later winning.
 
 **The file name is the summoning name, three times over**: it is the
 export name, it is what `import { Cylinder } from 'system'` gives a
@@ -247,8 +281,9 @@ Four rules, and each one is load-bearing:
   A compile error is a line in the load report, never a crash.
 - **A human enables it.** Code arriving from outside sits behind the
   trust gate (the plugins tool, same row a code-carrying `.panel`
-  rides). Until it's enabled the pack's DATA loads and its code does
-  not — the console says so rather than pretending the pack is inert.
+  rides — keyed by the `pak_` or `sys_` id whose folder carries the
+  file). Until it's enabled the DATA loads and the code does not — the
+  console says so rather than pretending the folder is inert.
 - **Three imports resolve, and `system` is not one of them.** `react`,
   `react/jsx-runtime` and `teller`. A presentation may not import
   `system`, because it *is* the system; the compiler refuses it out
@@ -257,8 +292,8 @@ Four rules, and each one is load-bearing:
   write door — all arrive as props. The folder owns look and behaviour;
   the campaign owns the numbers.
 
-A host whose system supplies no presentations still plays: teller falls
-back to the floor, and a counter with nobody's face on it is drawn as a
+A host whose system and packs supply no presentations still plays:
+teller falls back to the floor, and a counter with nobody's face on it is drawn as a
 bar you can still edit. A face is dressing; the stored value is the
 sheet.
 

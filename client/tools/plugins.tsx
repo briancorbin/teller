@@ -23,7 +23,10 @@ type PluginsOut =
   | { found: Found[]; problems: Problem[]; running: string[] }
   | { error: string };
 /** Only the half this tool reads — the campaign's resolved pack stack. */
-type CampaignOut = { packs: { id: string; name: string; codePending?: boolean }[] };
+type CampaignOut = {
+  system: { id: string; name: string; codePending?: boolean } | null;
+  packs: { id: string; name: string; codePending?: boolean }[];
+};
 
 function PluginRow({
   found,
@@ -233,7 +236,13 @@ function PendingPanelCode() {
  * carries — a second endpoint would only restate it. */
 function PendingPackCode() {
   const { data, reload } = useLive(() => api<CampaignOut>('/api/campaign'), []);
-  const pending = (data?.packs ?? []).filter((p) => p.codePending);
+  // The active SYSTEM rides this list too (§M): its folder carries
+  // presentations on exactly the same terms, and the toggle is the same
+  // one aimed at a `sys_` id.
+  const pending = [
+    ...(data?.system?.codePending ? [data.system] : []),
+    ...(data?.packs ?? []).filter((p) => p.codePending),
+  ];
   if (!pending.length) return null;
 
   return (
@@ -248,8 +257,8 @@ function PendingPackCode() {
         ))}
       </ul>
       <p className="text-[11px] text-stone-600">
-        a pack folder carries presentation code the sweep compiled but nobody's enabled
-        yet — its rules and bestiary loaded regardless; only the components wait.
+        a system or pack folder carries presentation code the sweep compiled but nobody's
+        enabled yet — its rules and bestiary loaded regardless; only the components wait.
       </p>
     </section>
   );

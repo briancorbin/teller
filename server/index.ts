@@ -46,6 +46,7 @@ import {
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
 import { panelDir, seedPanels } from '../core/panels-shelf.ts';
 import { packDir, systemIndexModule } from '../core/packs-shelf.ts';
+import { systemDir, systemPanelDir } from '../core/systems-shelf.ts';
 import { Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
@@ -413,10 +414,11 @@ export async function handleApi(
         return reply(400, { error: 'enabled must be true or false' });
       }
       session.shelf.setPluginEnabled(a, body.enabled);
-      if (a.startsWith('pan_') || a.startsWith('pak_')) {
-        // Panel and pack code aren't a plugin's `provides` — both are
-        // attached to their declaration by the sweep, so what needs
-        // re-running is the content stack, not the plugin load path.
+      if (a.startsWith('pan_') || a.startsWith('pak_') || a.startsWith('sys_')) {
+        // Panel, pack and system code aren't a plugin's `provides` —
+        // all three are attached to their declaration by the sweep, so
+        // what needs re-running is the content stack, not the plugin
+        // load path.
         session.reload();
       } else {
         await reloadPlugins();
@@ -617,7 +619,13 @@ export function serve(session: Session, port: number, key: string) {
       const dataDir = session.dataDir;
       const rel = decodeURIComponent(url.pathname.slice('/panel-code/'.length));
       const [panelId, ...fileParts] = rel.split('/').filter(Boolean);
-      const dir = dataDir && panelId ? panelDir(dataDir, panelId) : undefined;
+      // The table's own panels first, then the active system's own
+      // (§M — a system ships unbranded panels, and they are ordinary
+      // `.panel` folders with ordinary `pan_` ids).
+      const dir =
+        dataDir && panelId
+          ? (panelDir(dataDir, panelId) ?? systemPanelDir(dataDir, panelId))
+          : undefined;
       const buildRoot = dir ? join(dir, '.build') : undefined;
       const path = buildRoot && fileParts.length
         ? normalize(join(buildRoot, ...fileParts))
@@ -656,7 +664,12 @@ export function serve(session: Session, port: number, key: string) {
         return;
       }
       const [packId, ...fileParts] = rel.split('/').filter(Boolean);
-      const dir = dataDir && packId ? packDir(dataDir, packId) : undefined;
+      // One code door for the whole content shelf: a `pak_` id resolves
+      // to a pack folder, a `sys_` id to a system folder (§M).
+      const dir =
+        dataDir && packId
+          ? (packDir(dataDir, packId) ?? systemDir(dataDir, packId))
+          : undefined;
       const buildRoot = dir ? join(dir, '.build') : undefined;
       const path = buildRoot && fileParts.length
         ? normalize(join(buildRoot, ...fileParts))
