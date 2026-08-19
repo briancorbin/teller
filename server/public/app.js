@@ -575,13 +575,17 @@ async function panelView(name, entityId) {
 
 /** Everything an entity arrangement needs: reads, stored, stack, the doors. */
 async function entityCtx(id, rerender) {
-  const [storedEntity, reads, statuses, kinds, accents] = await Promise.all([
-    api('GET', `/api/entities/${id}`),
-    api('GET', `/api/entities/${id}?resolved=1`),
-    api('GET', '/api/stack/declarations/statuses'),
-    api('GET', '/api/stack/declarations/kinds'),
-    api('GET', '/api/stack/record/accents'),
-  ]);
+  const [storedEntity, reads, statuses, kinds, accents, dials, brand, portraits] =
+    await Promise.all([
+      api('GET', `/api/entities/${id}`),
+      api('GET', `/api/entities/${id}?resolved=1`),
+      api('GET', '/api/stack/declarations/statuses'),
+      api('GET', '/api/stack/declarations/kinds'),
+      api('GET', '/api/stack/record/accents'),
+      api('GET', '/api/stack/record/dials'),
+      api('GET', '/api/stack/record/brand'),
+      api('GET', '/api/stack/record/portraits'),
+    ]);
   if (storedEntity.error) {
     app.replaceChildren(el('p', { class: 'missing' }, storedEntity.error));
     return undefined;
@@ -593,7 +597,8 @@ async function entityCtx(id, rerender) {
   return {
     stored: storedEntity,
     reads,
-    stack: { statuses, kinds },
+    stack: { statuses, kinds, dials, brand, portraits },
+    fileUrl,
     // The system's own color for this type, when it declares one.
     accent: reads.type ? accents?.[reads.type] : undefined,
     writeEntry: async (edit) => {
@@ -827,11 +832,31 @@ function keyView(message) {
 // ------------------------------------------------------------------ stream
 
 let stream = null;
+let slipsPromise = null;
+
+/** The permission slips (stream + files), fetched once and shared. */
+function getSlips() {
+  slipsPromise ??= api('GET', '/api/ticket').then((slip) => {
+    if (slip.error) {
+      slipsPromise = null;
+      return undefined;
+    }
+    return slip;
+  });
+  return slipsPromise;
+}
+
+/** A data-dir file (pack art, board image) as a URL an <img> can open. */
+async function fileUrl(path) {
+  const slip = await getSlips();
+  if (!slip) return undefined;
+  return `/files/${path}?handle=${slip.handle}&ticket=${slip.files}`;
+}
 
 async function ensureStream() {
   if (stream) return;
-  const slip = await api('GET', '/api/ticket');
-  if (slip.error) return;
+  const slip = await getSlips();
+  if (!slip) return;
   stream = new EventSource(`/api/stream?handle=${slip.handle}&ticket=${slip.ticket}`);
   stream.onmessage = (msg) => {
     if (msg.data === 'identify') return flashIdentity();
@@ -843,6 +868,7 @@ async function ensureStream() {
   stream.onerror = () => {
     stream?.close();
     stream = null;
+    slipsPromise = null;
     setTimeout(ensureStream, 3000);
   };
 }

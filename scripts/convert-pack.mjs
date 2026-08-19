@@ -22,7 +22,7 @@
 //     clears, the cap presented never enforced; a per-status exception
 //     (uncapped) rides on that status's own declaration.
 
-import { readFileSync, existsSync } from 'node:fs';
+import { cpSync, readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import process from 'node:process';
@@ -177,7 +177,42 @@ const bestiary = (readJson('bestiary.json') ?? []).map(creatureOf);
 const oldCatalog = readJson('catalog.json') ?? {};
 const catalog = (oldCatalog.items ?? []).map(itemOf);
 
+// -- art: a pack carries its pictures (rule 4a). Copied under the
+// pack's own id so two packs can't name the same file, and every
+// reference is REWRITTEN to the installed key at install time — the
+// export path would reverse it.
+const artDir = join(packDir, 'art');
+const hasArt = existsSync(artDir);
+const installedArt = (rel) => `art/${pack.id}/${String(rel).replace(/^art\//, '')}`;
+
+const brand = {};
+const portraits = {};
+if (hasArt) {
+  cpSync(artDir, join(dataDir, 'art', String(pack.id)), { recursive: true });
+  // A file named logo.* anywhere in the pack's art is the brand mark.
+  const findLogo = (dir, rel = '') => {
+    for (const name of readdirSync(dir)) {
+      const path = join(dir, name);
+      const relPath = rel ? `${rel}/${name}` : name;
+      if (statSync(path).isDirectory()) {
+        const hit = findLogo(path, relPath);
+        if (hit) return hit;
+      } else if (/^logo\./i.test(name)) {
+        return relPath;
+      }
+    }
+    return undefined;
+  };
+  const logo = findLogo(artDir);
+  if (logo) brand.logo = `art/${pack.id}/${logo}`;
+  for (const trade of readJson('trades.json') ?? []) {
+    if (trade.name && trade.art) portraits[trade.name] = installedArt(trade.art);
+  }
+}
+
 const packData = { bestiary, catalog };
+if (Object.keys(brand).length) packData.brand = brand;
+if (Object.keys(portraits).length) packData.portraits = portraits;
 if (oldCatalog.upgrades) packData.upgrades = oldCatalog.upgrades;
 for (const [file, slot] of [
   ['sections.json', 'sections'],
@@ -215,7 +250,11 @@ for (const [slot, held] of Object.entries(packData)) {
   if (['bestiary', 'catalog'].includes(slot)) continue;
   console.log(`  rides along: ${slot} (${Array.isArray(held) ? held.length + ' items' : 'object'})`);
 }
-if (existsSync(join(packDir, 'art'))) {
-  console.log('  NOTE: art/ not converted — the new world has no art pipeline yet');
+if (hasArt) {
+  console.log(
+    `  art installed under art/${pack.id}/` +
+      `${brand.logo ? ' · brand logo found' : ''}` +
+      `${Object.keys(portraits).length ? ` · ${Object.keys(portraits).length} portraits` : ''}`,
+  );
 }
 console.log(`installed onto ${join(dataDir, 'shelf.db')}`);

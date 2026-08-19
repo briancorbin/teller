@@ -959,6 +959,23 @@ late — Brian pulled it forward the moment its precondition existed):
   reload the load path LIVE, so the enable gate and the running set
   cannot drift. §15's "enablement is a human act in the console" is now
   literally true; the CLI flags remain as the headless road.
+- **D's open edge closed by contact — the dial beats the arrangement's
+  generic word.** Control resolution is `dials[name]` → `block.as` →
+  value-shape auto: the system knows Grit is a cylinder; the panel only
+  knows it wanted something big. An unknown dial word falls through.
+  The cylinder control itself is teller furniture (a radial segmented
+  counter, animated), joined the `as` registry; `cards` awaits its
+  control the same way.
+- **The art pipeline landed** (rule 4a made real): a pack's `art/`
+  installs under `art/<pak_id>/…`, references are rewritten to the
+  installed key at install time, and bytes serve from `/files/…` behind
+  the same ticket law as the stream (an `<img>` can't send headers —
+  second subject, same key). The converter now writes `brand` and
+  `portraits` records from what the pack carries; the standard sheet
+  leads with a `brand` block that renders nothing when no pack brought
+  a mark. Verified live: the WiW logo, a Marshal portrait ringed in
+  Marshal blue, and Grit as a revolver that turns before the write
+  lands.
 - **The identity came back, split three ways** (Brian's question
   "does theming belong in the .panel?" — answered no, and the no is
   load-bearing): teller's IDENTITY is tokens in its own stylesheet

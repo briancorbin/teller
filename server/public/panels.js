@@ -142,15 +142,87 @@ function traitRow(list, entry) {
   return el('div', { class: 'trait' }, el('div', { class: 'trait-name' }, entry.name), String(entry.value ?? ''));
 }
 
+/**
+ * The revolver — `dials: { Grit: 'cylinder' }` made real. Chambers are
+ * the max, loaded ones are the value; spending one rotates the
+ * cylinder a step before the write lands. Pure presentation: the value
+ * is the same stored number every other control edits.
+ */
+function cylinder(list, entry, writeEntry, ctx) {
+  const max = Math.max(2, Math.min(12, typeof entry.max === 'number' ? entry.max : 6));
+  const value = Math.max(0, typeof entry.value === 'number' ? entry.value : 0);
+  const step = 360 / max;
+  const accent = ctx?.accent ?? '#f59e0b';
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 100 100');
+  svg.setAttribute('class', 'cylinder');
+  const group = document.createElementNS(NS, 'g');
+  group.setAttribute('class', 'cylinder-drum');
+  group.style.transform = `rotate(${(max - value) * step}deg)`;
+  const frame = document.createElementNS(NS, 'circle');
+  frame.setAttribute('cx', '50');
+  frame.setAttribute('cy', '50');
+  frame.setAttribute('r', '46');
+  frame.setAttribute('class', 'cylinder-frame');
+  svg.append(frame, group);
+  for (let i = 0; i < max; i++) {
+    const angle = ((i * step - 90) * Math.PI) / 180;
+    const chamber = document.createElementNS(NS, 'circle');
+    chamber.setAttribute('cx', String(50 + 30 * Math.cos(angle)));
+    chamber.setAttribute('cy', String(50 + 30 * Math.sin(angle)));
+    chamber.setAttribute('r', '10');
+    chamber.setAttribute('class', i < value ? 'chamber loaded' : 'chamber');
+    if (i < value) chamber.style.fill = accent;
+    group.append(chamber);
+  }
+  const pin = document.createElementNS(NS, 'circle');
+  pin.setAttribute('cx', '50');
+  pin.setAttribute('cy', '50');
+  pin.setAttribute('r', '7');
+  pin.setAttribute('class', 'cylinder-pin');
+  svg.append(pin);
+
+  const spend = (delta) => {
+    // Turn the drum first — the table hears the click — then write.
+    const next = value + delta;
+    group.style.transform = `rotate(${(max - next) * step}deg)`;
+    setTimeout(() => writeEntry({ list, name: entry.name, value: next }), 220);
+  };
+  return el(
+    'div',
+    { class: 'vital' },
+    el('div', { class: 'vital-name' }, entry.name),
+    el(
+      'div',
+      { class: 'vital-row' },
+      el('button', { class: 'big', title: 'spend one', onclick: () => spend(-1) }, '−'),
+      el(
+        'div',
+        { class: 'cylinder-box' },
+        svg,
+        el('div', { class: 'cylinder-count' }, `${value} / ${typeof entry.max === 'number' ? entry.max : max}`),
+      ),
+      el('button', { class: 'big', title: 'reload one', onclick: () => spend(+1) }, '+'),
+    ),
+  );
+}
+
 const AS = {
   auto: autoRow,
   chips: chipRow,
   rows: skillRow,
   big: bigCounter,
   ledger: ledgerRow,
+  cylinder,
 };
 
-function presentation(entry, as) {
+function presentation(entry, as, ctx) {
+  // The system's dial for this NAME beats the arrangement's generic
+  // word — the system knows Grit is a cylinder; the panel only knows
+  // it wanted something big. An unknown dial word falls through.
+  const dial = ctx?.stack?.dials?.[entry.name];
+  if (dial && AS[dial]) return AS[dial];
   if (as && AS[as]) return AS[as];
   // auto with one nicety: long prose values read as traits, not inputs.
   if (typeof entry.value === 'string' && entry.value.length > 40) return traitRow;
@@ -188,7 +260,7 @@ function listBlock(b, ctx, listName, entries) {
   });
   const out = [el('h2', {}, b.label ?? listName)];
   for (const entry of filtered) {
-    out.push(presentation(entry, b.as)(listName, entry, ctx.writeEntry, ctx));
+    out.push(presentation(entry, b.as, ctx)(listName, entry, ctx.writeEntry, ctx));
   }
   if (!b.filter) out.push(addEntry(listName, ctx.writeEntry));
   return out;
@@ -224,7 +296,29 @@ const BLOCKS = {
       const type = head.querySelector('.sheet-type');
       if (type) type.style.color = ctx.accent;
     }
+    // And its face, when the pack brought one (record 'portraits').
+    const portrait = reads.type ? ctx.stack?.portraits?.[reads.type] : undefined;
+    if (portrait && ctx.fileUrl) {
+      const img = el('img', { class: 'portrait', alt: '' });
+      if (ctx.accent) img.style.borderColor = `${ctx.accent}88`;
+      ctx.fileUrl(portrait).then((url) => {
+        if (url) img.src = url;
+      });
+      head.append(img);
+      head.classList.add('with-portrait');
+    }
     return [head];
+  },
+
+  /** The system's mark, when a pack brought one (record 'brand'). */
+  brand(b, ctx) {
+    const logo = ctx.stack?.brand?.logo;
+    if (!logo || !ctx.fileUrl) return [];
+    const img = el('img', { class: 'brand-logo', alt: '' });
+    ctx.fileUrl(logo).then((url) => {
+      if (url) img.src = url;
+    });
+    return [img];
   },
 
   columns(b, ctx) {

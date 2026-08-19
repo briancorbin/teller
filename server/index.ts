@@ -198,19 +198,17 @@ export async function handleApi(
   // The stream's permission slip. The DM's own device rides as 'dm';
   // an adopted screen gets a ticket for its own handle and nothing else.
   if (method === 'GET' && head === 'ticket' && !a) {
+    const slips = (handle: string) => ({
+      handle,
+      ticket: mintTicket(key, `stream:${handle}`, STREAM_MINUTES),
+      // Art and maps ride in <img> tags, which can't send headers
+      // either — same law, second subject.
+      files: mintTicket(key, `files:${handle}`, STREAM_MINUTES),
+    });
     if (adopted(auth.display)) {
-      const handle = displayHandle(auth.display.id);
-      return reply(200, {
-        handle,
-        ticket: mintTicket(key, `stream:${handle}`, STREAM_MINUTES),
-      });
+      return reply(200, slips(displayHandle(auth.display.id)));
     }
-    if (auth.key) {
-      return reply(200, {
-        handle: 'dm',
-        ticket: mintTicket(key, 'stream:dm', STREAM_MINUTES),
-      });
-    }
+    if (auth.key) return reply(200, slips('dm'));
     return notAtTable();
   }
 
@@ -537,6 +535,9 @@ const MIME: Record<string, string> = {
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
 };
 
 function serveStatic(pathname: string, res: ServerResponse): boolean {
@@ -559,6 +560,43 @@ function serveStatic(pathname: string, res: ServerResponse): boolean {
 export function serve(session: Session, port: number, key: string) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
+
+    // Bytes from the data dir — pack art and board images — behind the
+    // same ticket law as the stream (an <img> can't send headers).
+    // Only art/ and map/ are reachable, and only inside the data dir.
+    if (url.pathname.startsWith('/files/')) {
+      const handle = url.searchParams.get('handle') ?? '';
+      const ticket = url.searchParams.get('ticket');
+      let valid = Boolean(handle) && checkTicket(key, `files:${handle}`, ticket);
+      if (valid && handle !== 'dm') {
+        const display = session.shelf
+          .displays()
+          .find((d) => displayHandle(d.id) === handle);
+        valid = adopted(display);
+      }
+      const dataDir = session.dataDir;
+      if (!valid || !dataDir) {
+        res.writeHead(401, { 'Content-Type': 'text/plain' });
+        res.end('ticket required');
+        return;
+      }
+      const rel = decodeURIComponent(url.pathname.slice('/files/'.length));
+      const path = normalize(join(dataDir, rel));
+      const allowed = ['art', 'map'].some((root) =>
+        path.startsWith(join(dataDir, root) + '/'),
+      );
+      if (!allowed || !existsSync(path)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('not here');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': MIME[extname(path)] ?? 'application/octet-stream',
+        'Cache-Control': 'private, max-age=3600',
+      });
+      res.end(readFileSync(path));
+      return;
+    }
 
     // The stream can't send headers, so it presents a ticket instead —
     // signed by the one key over exactly this handle, and worthless for

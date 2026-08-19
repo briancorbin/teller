@@ -75,6 +75,7 @@ export const STANDARD_PANELS: PanelDef[] = [
     blurb: 'Arranged like the paper you already know.',
     subject: 'entity',
     mounted: [
+      { block: 'brand' },
       { block: 'header' },
       {
         block: 'columns',
@@ -96,6 +97,7 @@ export const STANDARD_PANELS: PanelDef[] = [
       },
     ],
     held: [
+      { block: 'brand' },
       { block: 'header' },
       { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
       { block: 'list', list: 'skills', as: 'rows' },
