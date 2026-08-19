@@ -19,7 +19,6 @@ import { renderPanel } from '/panel.js';
 import { renderSeat } from '/seat.js';
 
 const app = document.getElementById('app');
-const params = new URLSearchParams(location.search);
 
 const stored = {
   get key() { return localStorage.getItem('teller.key') ?? ''; },
@@ -80,7 +79,7 @@ async function consoleView() {
         el('span', { class: 'missing' }, `  MISSING ${m.slot}: ${m.ref.name}`),
       ),
       el('span', { class: 'dim' }, '  ·  '),
-      el('a', { href: '#', onclick: (e) => { e.preventDefault(); stored.key = ''; location.search = '?console'; } }, 'lock'),
+      el('a', { href: '#', onclick: (e) => { e.preventDefault(); stored.key = ''; location.hash = 'console'; current(); } }, 'lock'),
     ),
     el('h2', {}, 'roster'),
     el(
@@ -92,7 +91,7 @@ async function consoleView() {
           { class: 'row' },
           el(
             'button',
-            { class: 'open', onclick: () => (location.search = `?entity=${row.id}`) },
+            { class: 'open', onclick: () => (location.hash = `entity=${row.id}`) },
             `${row.name}${row.type ? ` · ${row.type}` : ''}`,
           ),
           el(
@@ -119,7 +118,7 @@ async function consoleView() {
             const made = await api('POST', '/api/entities', {
               draft: { name: name.trim() },
             });
-            location.search = `?entity=${made.id}`;
+            location.hash = `entity=${made.id}`;
           },
         },
         '+ new entity',
@@ -232,7 +231,7 @@ async function consoleView() {
     ),
     el('h2', {}, 'boards'),
     ...boards.map((b) =>
-      el('div', { class: 'row' }, el('a', { href: `/?board=${b.id}` }, b.name)),
+      el('div', { class: 'row' }, el('a', { href: `#board=${b.id}` }, b.name)),
     ),
     el('h2', {}, 'log'),
     el('div', { id: 'log', class: 'dim' }, 'loading…'),
@@ -452,7 +451,7 @@ async function entityView(id, seat) {
     app.replaceChildren(
       seat
         ? el('div', { class: 'crumb' }, `seat · ${entity.name}`)
-        : el('div', { class: 'crumb' }, el('a', { href: '/?console' }, '← console')),
+        : el('div', { class: 'crumb' }, el('a', { href: '#console' }, '← console')),
       renderPanel(entity, save),
       el(
         'details',
@@ -555,7 +554,7 @@ async function boardView(id, passive) {
   app.replaceChildren(
     passive
       ? el('div', { class: 'crumb' }, 'board')
-      : el('div', { class: 'crumb' }, el('a', { href: '/?console' }, '← console')),
+      : el('div', { class: 'crumb' }, el('a', { href: '#console' }, '← console')),
     el('h1', {}, board ? board.name : id),
     el('h2', {}, 'placements'),
     el(
@@ -633,7 +632,7 @@ async function screenView() {
       el('div', { class: 'pairing' },
         el('div', { class: 'dim' }, 'adopt this screen from the console'),
         el('div', { class: 'code' }, display.code),
-        el('div', {}, el('a', { href: '/?console', class: 'dim' }, 'this is the DM device — open the console')),
+        el('div', {}, el('a', { href: '/#console', class: 'dim' }, 'this is the DM device — open the console')),
       ),
     );
     setTimeout(screenView, 5000);
@@ -697,18 +696,36 @@ async function ensureStream() {
 
 // ---------------------------------------------------------------- boot
 
-const isConsole =
-  params.has('console') || params.has('entity') || params.has('board');
+/**
+ * Where to look is the URL's business: `#console`, `#entity=<id>`,
+ * `#board=<id>`. The HASH routes, so several panels of one browser can
+ * each hold their own view — navigating between them never reloads the
+ * page (the stream stays up) and never mints a paired screen. The old
+ * `?` spellings still work; a bare address is still a screen.
+ */
+function route() {
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ''));
+  const search = new URLSearchParams(location.search);
+  const pick = (k) => hash.get(k) ?? search.get(k);
+  const has = (k) => hash.has(k) || search.has(k);
+  return {
+    entity: pick('entity'),
+    board: pick('board'),
+    console: has('console') || has('entity') || has('board'),
+  };
+}
 
 function current() {
-  if (isConsole) {
+  const r = route();
+  if (r.console) {
     if (!stored.key) return keyView();
     ensureStream();
-    if (params.get('entity')) return entityView(params.get('entity'), false);
-    if (params.get('board')) return boardView(params.get('board'), false);
+    if (r.entity) return entityView(r.entity, false);
+    if (r.board) return boardView(r.board, false);
     return consoleView();
   }
   return screenView();
 }
 
+window.addEventListener('hashchange', current);
 current();
