@@ -2,6 +2,13 @@
 // against structured data (src/components/TurnStage.tsx, steps 1–3, and
 // the arithmetic its `/resolve` route did on the other end).
 //
+// It has no card of its own: it is drawn INSIDE the ✦ card at the foot
+// of the stage (`ProviderSlot`, as its children), which is where the old
+// app's flow lived too. The card and every step in it are teller's own
+// furniture and render with no plugin installed anywhere; the one row
+// that isn't is `ReadItOut`, which asks `propose.narrate` and is absent
+// when nothing provides it.
+//
 // Roll · target · defense · resolve. Each step appears only once the one
 // above it has something to hand down, and NOTHING in it applies itself:
 // the resolve row does the arithmetic the system's own numbers ask for
@@ -37,10 +44,13 @@ import {
   type ExchangeRecord,
   type RollRecord,
 } from '../../../core/exchange.ts';
+import type { NarrationProposal } from '../../../core/registry.ts';
 import { api } from '../../lib/api.ts';
 import { combinePools, isPool, rollPool, tallyFaces, type DiceRecord } from '../../lib/dice.ts';
 import { btn, btnPrimary } from '../../lib/ui.ts';
 import { DicePool } from '../DicePool.tsx';
+import { useProvided } from '../ProviderSlot.tsx';
+import { StatusChip } from './TemplateSheet.tsx';
 
 /** One touched entry — everything a surface may say about a list. */
 export type EntryWrite = {
@@ -69,6 +79,8 @@ export type Armed = {
   name: string;
   /** A frenzy pays in prose, and is treated differently below. */
   frenzy?: boolean;
+  /** The reach it's printed under, when the printing gives one. */
+  band?: string;
   /** The pool the damage rolls, when the printing gives one. */
   damage?: string;
   /** What the printed line costs, when it's a number and not a sentence. */
@@ -114,6 +126,46 @@ function readingLists(entity: Entity | undefined): Record<string, Entry[]> {
   );
 }
 
+/**
+ * The INTENT LINE — what was armed, spelled out as a sentence of parts:
+ * "Bark Slash — Melee, 3 Grit, 2G damage".
+ *
+ * It's the card's first row because it is the answer to "what am I
+ * looking at": everything under it is the arithmetic of THIS line, and
+ * a card whose steps start before it says what's being attempted is a
+ * card you have to look back up at the chips to read. Composed off the
+ * armed action's own profile — a frenzy composes off its own the same
+ * way, because by the time it's armed it is just an action with numbers.
+ */
+function IntentLine({ armed, costCounter }: { armed: Armed; costCounter?: string }) {
+  const parts: string[] = [];
+  if (armed.band) parts.push(armed.band);
+  if (armed.cost !== undefined) parts.push(`${armed.cost} ${costCounter ?? 'cost'}`);
+  if (armed.damage) parts.push(`${armed.damage} damage`);
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <span className="font-mono text-[12px] text-amber-200">{armed.name}</span>
+      {parts.length > 0 && (
+        <span className="font-mono text-[11px] text-stone-400">— {parts.join(', ')}</span>
+      )}
+      {armed.inflicts.map((s) => (
+        <StatusChip key={s.name} entry={s} />
+      ))}
+      {/* One line of it. A frenzy's note is a whole paragraph, and it is
+          already printed in full up on the stage — here it only has to
+          say WHICH thing is armed. */}
+      {armed.note && armed.note !== armed.band && (
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-[10px] text-stone-600"
+          title={armed.note}
+        >
+          {armed.note}
+        </span>
+      )}
+    </div>
+  );
+}
+
 const stepPip = (n: number, label: string) => (
   <div className="flex items-center gap-2">
     <span className="flex h-4 w-4 items-center justify-center rounded-full bg-amber-700 font-mono text-[9px] text-stone-950">
@@ -122,6 +174,79 @@ const stepPip = (n: number, label: string) => (
     <span className="text-[11px] text-stone-400">{label}</span>
   </div>
 );
+
+/**
+ * ③ — anything teller couldn't know, then the words.
+ *
+ * The one row in the exchange that is NOT teller's own: pressing it
+ * asks whatever provides `propose.narrate` for sentences to read out,
+ * so with nothing plugged in there is no row — the same absence rule
+ * the ask in the header follows. What it sends is the outcome teller
+ * already worked out plus whatever the Warden adds; what comes back is
+ * words on a screen and nothing else (rule 1).
+ */
+function ReadItOut({ summary }: { summary: () => string }) {
+  const provided = useProvided('propose.narrate');
+  const [said, setSaid] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [words, setWords] = useState<string[] | undefined>(undefined);
+  if (!provided) return null;
+
+  const line = () => [summary(), said.trim()].filter(Boolean).join('. ');
+
+  const tell = () => {
+    setBusy(true);
+    setError(undefined);
+    api<{ proposals: { proposal?: unknown; error?: string }[] }>('/api/propose/narrate', {
+      body: { payload: { outcome: line() } },
+    })
+      .then((out) =>
+        setWords(
+          out.proposals
+            .map((p) => (p.proposal as NarrationProposal | undefined)?.narration)
+            .filter((n): n is string => Boolean(n)),
+        ),
+      )
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="mt-3 border-t border-stone-800 pt-2.5">
+      {stepPip(3, 'anything else, then read it out')}
+      <div className="mt-2 flex gap-2">
+        <input
+          className="min-w-0 flex-1 rounded-md border border-stone-800 bg-stone-950 px-2.5 py-1.5 text-[12px] text-stone-200 placeholder:text-stone-600 focus:border-amber-700 focus:outline-none"
+          placeholder="knocked prone, dragged into the shallows…"
+          value={said}
+          disabled={busy}
+          onChange={(e) => setSaid(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && tell()}
+        />
+        <button
+          className={`${btnPrimary} shrink-0 text-xs ${busy ? 'animate-pulse' : ''}`}
+          disabled={busy}
+          onClick={tell}
+        >
+          tell it ⟶
+        </button>
+      </div>
+      <p className="mt-1.5 font-mono text-[10px] leading-snug text-stone-600">{line()}</p>
+      {error && <p className="mt-2 text-[11px] text-red-300">{error}</p>}
+      {/* The back bookend, in the serif the front one got: the part
+          meant to be SPOKEN looks like the part meant to be spoken. */}
+      {words?.map((narration, i) => (
+        <blockquote key={i} className="mt-3 border-l-2 border-amber-600 pl-3">
+          <span className="font-mono text-[9px] uppercase tracking-widest text-stone-600">
+            read aloud — what happened
+          </span>
+          <p className="font-serif text-[17px] leading-relaxed text-amber-50">{narration}</p>
+        </blockquote>
+      ))}
+    </div>
+  );
+}
 
 function Stepper({
   label,
@@ -171,7 +296,6 @@ export function Exchange({
   costCounter,
   round,
   onWrite,
-  onDisarm,
 }: {
   /** The acting entity, resolved. */
   actor: Entity;
@@ -192,7 +316,6 @@ export function Exchange({
   costCounter?: string;
   round: number;
   onWrite: (entityId: string, edit: EntryWrite) => Promise<unknown>;
-  onDisarm: () => void;
 }) {
   const [targetId, setTargetId] = useState<string | undefined>(undefined);
   const [faces, setFaces] = useState<(string | null)[] | undefined>(undefined);
@@ -406,29 +529,45 @@ export function Exchange({
     }
   };
 
+  /** What teller worked out, in one sentence somebody could read out. */
+  const summary = (): string => {
+    const parts: string[] = [];
+    const shown = (faces ?? []).filter(Boolean).join(', ');
+    if (armed.damage) {
+      parts.push(
+        `${armed.name} — ${actor.name} rolled ${armed.damage}: ${shown || 'not yet rolled'} = ${hits} ${dice?.unit ?? ''}`.trim(),
+      );
+    } else {
+      parts.push(`${actor.name} — ${armed.name}`);
+    }
+    if (target) {
+      const how = defenses.length ? defenses.join(' + ') : '';
+      parts.push(
+        how
+          ? `${target.name} defended with ${how}: ${blocked}`
+          : blocked > 0
+            ? `${target.name} stopped ${blocked}`
+            : `${target.name} had no defense`,
+      );
+      parts.push(
+        `${target.name} takes ${damage}${
+          landed ? ` (${targetVital?.entry.name} ${landed.from} → ${landed.to})` : ''
+        }`,
+      );
+      const hung = armed.inflicts
+        .map((inflict) => {
+          const { value } = severityOf(inflict);
+          return value === null || value <= 0 ? null : `${inflict.name} ${value}`;
+        })
+        .filter(Boolean);
+      if (hung.length) parts.push(`and is left ${hung.join(', ')}`);
+    }
+    return parts.join('. ');
+  };
+
   return (
-    <div className="mt-3 rounded-xl border border-amber-800/60 bg-stone-900/70 p-3.5">
-      <div className="flex items-center gap-2">
-        <span className="font-mono text-[11px] text-amber-200">{armed.name}</span>
-        {/* One line of it. A frenzy's note is a whole paragraph, and it
-            is already printed in full further down the stage — here it
-            only has to say WHICH thing is armed. */}
-        {armed.note && (
-          <span
-            className="min-w-0 flex-1 truncate font-mono text-[10px] text-stone-600"
-            title={armed.note}
-          >
-            {armed.note}
-          </span>
-        )}
-        <button
-          className="ml-auto rounded-md px-1.5 py-1 text-[11px] text-stone-500 transition-colors hover:text-red-300"
-          title="put it back"
-          onClick={onDisarm}
-        >
-          ✕
-        </button>
-      </div>
+    <div className="mt-3 border-t border-stone-800 pt-2.5">
+      <IntentLine armed={armed} costCounter={costCounter} />
 
       {/* 1 — the dice the action calls for */}
       {armed.damage && dice && (
@@ -543,7 +682,12 @@ export function Exchange({
               {/* 3 — what it hangs on them, against what they tolerate */}
               {armed.inflicts.length > 0 && (
                 <div className="space-y-1.5 border-t border-stone-800/70 pt-2">
-                  {stepPip(3, 'what it hangs on them')}
+                  {/* Part of step 2, not a step of its own: what a hit
+                      hangs on somebody is decided against the same
+                      defense, in the same breath. */}
+                  <span className="text-[10px] uppercase tracking-widest text-stone-600">
+                    what it hangs on them
+                  </span>
                   {armed.inflicts.map((inflict) => {
                     const printedPool =
                       typeof inflict.value === 'string' && isPool(inflict.value)
@@ -738,6 +882,10 @@ export function Exchange({
           )}
 
           {error && <p className="mt-2 text-[11px] text-red-300">{error}</p>}
+
+          {/* 3 — anything teller couldn't know, then the words. Absent
+              unless something provides them. */}
+          <ReadItOut summary={summary} />
         </div>
       )}
     </div>

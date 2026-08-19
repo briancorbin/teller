@@ -3,10 +3,19 @@
 // The contract, and the whole point of the file: a surface names a
 // POINT — 'propose.turn' — and never learns who provides it. The server
 // says how many providers a point has (`GET /api/points`); no provider
-// means this renders NOTHING, not a disabled box and not a nag. An
-// unconfigured host has never heard of any of this.
+// means the ask renders NOTHING, not a disabled box and not a nag — and
+// with nothing of teller's own to hold either, neither does the card.
+// An unconfigured host has never heard of any of this.
 //
-// The box is TELLER's, not the plugin's. A plugin returns the point's
+// The box is TELLER's, not the plugin's — and that is now literal: the
+// card takes `children`, and what it holds is teller's own furniture
+// (the exchange: the intent line, the numbered steps, the resolve row).
+// Those render whether or not anybody provides the point; the ASK is
+// the only thing that comes and goes with a plugin. Unplug the
+// assistant and the button and its freeform line disappear, the header
+// says something honest instead, and the fight is untouched.
+//
+// A plugin returns the point's
 // declared shape (`core/registry.ts`) and gets no say in how it's drawn,
 // which is what makes two providers of the same point interchangeable
 // and what keeps the runner from importing an assistant it must not know
@@ -95,15 +104,27 @@ function ProposalWords({ proposal }: { proposal: unknown }) {
 export function ProviderSlot({
   point,
   label = '✦ teller',
+  plain,
+  offer = true,
   ask,
   again,
   placeholder,
   payload,
+  onDismiss,
+  children,
 }: {
   /** A name in `core/registry.ts`. Nothing else is a point. */
   point: string;
   /** What the box calls itself. teller's own word — never a plugin's name. */
   label?: string;
+  /**
+   * What it calls itself with NOBODY to ask — the honest header for a
+   * card that is still teller's furniture and still has a job. Absent
+   * and unprovided, the card is only drawn if it was given `children`.
+   */
+  plain?: string;
+  /** Is the point askable HERE at all? A player's turn is nobody's to propose. */
+  offer?: boolean;
   /** The affordance: "what would they do?" */
   ask: string;
   /** The same affordance once something has come back. */
@@ -112,15 +133,26 @@ export function ProviderSlot({
   placeholder?: string;
   /** Whatever this surface knows that the host's snapshot won't carry. */
   payload?: () => Record<string, unknown>;
+  /** The ✕. Clearing a proposal is this box's; putting the action back is the caller's. */
+  onDismiss?: () => void;
+  /**
+   * teller's OWN half of the card — the mechanical flow that has
+   * nothing to do with any plugin. It renders whether or not the point
+   * has a provider, which is the line the whole file turns on: the
+   * BOX is teller's, the ASK is the plugin's, and unplugging the
+   * assistant takes the button away and leaves the fight alone.
+   */
+  children?: React.ReactNode;
 }) {
-  const provided = useProvided(point);
+  const provided = useProvided(point) && offer;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const [answers, setAnswers] = useState<Answer[] | undefined>(undefined);
   const [intent, setIntent] = useState('');
 
-  // No provider, no box. Not disabled, not explained — absent.
-  if (!provided) return null;
+  // No provider and nothing of teller's own to hold: no box. Not
+  // disabled, not explained — absent.
+  if (!provided && !children) return null;
 
   const invoke = (said?: string) => {
     setBusy(true);
@@ -136,27 +168,34 @@ export function ProviderSlot({
   return (
     <div className="rounded-xl border border-amber-800/60 bg-stone-900/70 p-3.5">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-amber-400">
-          {label}
-        </span>
-        <button
-          className={`ml-auto rounded-md px-2 py-1 text-[11px] transition-colors ${
-            busy
-              ? 'animate-pulse text-amber-300'
-              : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100'
+        <span
+          className={`font-mono text-[10px] uppercase tracking-widest ${
+            provided ? 'text-amber-400' : 'text-stone-500'
           }`}
-          disabled={busy}
-          onClick={() => invoke(intent.trim() || undefined)}
         >
-          {busy ? 'thinking…' : answers ? (again ?? `${ask} ↻`) : ask}
-        </button>
-        {answers && (
+          {provided ? label : plain}
+        </span>
+        {provided && (
           <button
-            className="rounded-md px-1.5 py-1 text-[11px] text-stone-500 transition-colors hover:text-red-300"
-            title="clear it"
+            className={`ml-auto rounded-md px-2 py-1 text-[11px] transition-colors ${
+              busy
+                ? 'animate-pulse text-amber-300'
+                : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100'
+            }`}
+            disabled={busy}
+            onClick={() => invoke(intent.trim() || undefined)}
+          >
+            {busy ? 'thinking…' : answers ? (again ?? `${ask} ↻`) : ask}
+          </button>
+        )}
+        {(answers || onDismiss) && (
+          <button
+            className="ml-auto rounded-md px-1.5 py-1 text-[11px] text-stone-500 transition-colors hover:text-red-300"
+            title="put it back"
             onClick={() => {
               setAnswers(undefined);
               setError(undefined);
+              onDismiss?.();
             }}
           >
             ✕
@@ -164,7 +203,7 @@ export function ProviderSlot({
         )}
       </div>
 
-      {placeholder && (
+      {provided && placeholder && (
         <input
           className="mt-2 w-full rounded-md border border-stone-800 bg-stone-950 px-2.5 py-1.5 text-[12px] text-stone-200 placeholder:text-stone-600 focus:border-amber-700 focus:outline-none"
           placeholder={placeholder}
@@ -198,6 +237,8 @@ export function ProviderSlot({
           )}
         </div>
       ))}
+
+      {children}
     </div>
   );
 }

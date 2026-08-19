@@ -11,12 +11,15 @@
 //   * the controls under it: back, next turn, end;
 //   * and setup folded to one line the moment a fight is running.
 //
-// One thing the old panel had is deliberately elsewhere: the ✦ box is a
-// `ProviderSlot` — this file names a POINT ('propose.turn') and cannot
-// learn what provides it, so a host with no plugin renders no box at
-// all. The target/dice/resolve flow that used to live inside that box
-// does NOT depend on it: arming an action is a tap on the stage, and the
-// exchange runs identically with every plugin turned off. What the
+// The old panel's ✦ card is back, in one piece, under the stage — and
+// it is assembled HERE, out of two things that know nothing about each
+// other: a `ProviderSlot` (this file names a POINT, 'propose.turn', and
+// cannot learn what provides it) holding an `Exchange` (teller's own
+// roll/target/defense/resolve flow). The card and every step in it draw
+// with every plugin turned off; the ask in its header, and the freeform
+// line under it, are the only parts that come and go with a provider.
+// Arming an action is a tap on the stage, and the exchange runs
+// identically either way. What the
 // runner hands down is what the fight needs and this file doesn't know —
 // the order, the sheets, and the system's own records (dice, pins, use).
 //
@@ -34,11 +37,12 @@ import { registerBlock, type BlockCtx } from '../panels/render.tsx';
 import { ProviderSlot } from '../components/ProviderSlot.tsx';
 import { VitalBar } from '../components/Vitals.tsx';
 import {
-  TurnStage,
+  Exchange,
   type Armed,
   type EntryWrite,
   type StatusDecl,
-} from '../components/encounters/TurnStage.tsx';
+} from '../components/encounters/Exchange.tsx';
+import { TurnStage } from '../components/encounters/TurnStage.tsx';
 import { registerTool } from './index.ts';
 
 // The `initiative` stack record (docs/CORE-NEXT.md §J, same shallow-merge
@@ -603,21 +607,67 @@ function RunnerTool() {
                   onWrite={(edit) => writeEntry(actingSheet.id, edit)}
                   armed={armed}
                   onArm={setArmed}
-                  order={order
-                    .filter((e) => e.entityId)
-                    .map((e) => ({
-                      id: e.entityId!,
-                      label: e.label ?? names.get(e.entityId!) ?? '?',
-                    }))}
-                  sheetOf={(id) => sheets.data?.[id]}
-                  dice={dice.data}
-                  icons={icons.data}
-                  pins={pins.data}
-                  conditionsList={CONDITIONS}
-                  conditionCap={conditionCap}
                   costCounter={use.data?.costCounter}
-                  onWriteTo={writeEntry}
                 />
+
+                {/*
+                  The ✦ card, at the foot of the stage. `ProviderSlot`
+                  draws it and owns the ask; the exchange inside it is
+                  teller's own and is what makes the card render at all
+                  when nothing provides the point — an armed action has
+                  to have somewhere to be resolved, plugin or no plugin.
+                  `offer` is the one gate that isn't about providers:
+                  teller does not play player characters, so a posse
+                  member's turn is nobody's to propose, and the same card
+                  still hosts the flow that records what they swung.
+                */}
+                <ProviderSlot
+                  point="propose.turn"
+                  plain="the exchange"
+                  offer={actingSheet.type === 'foe'}
+                  ask="what would they do?"
+                  placeholder="…or tell it what they do, and press enter"
+                  // Arming something IS a decision, so it goes over as
+                  // the thing to work around rather than a hint — the
+                  // old app's own move ("if I want to just say that I
+                  // think it would use the frenzy attack now because I
+                  // decided, but I still want the rest"). The flow below
+                  // never reads this back.
+                  payload={() =>
+                    armed
+                      ? { intent: [armed.name, armed.note].filter(Boolean).join(' — ') }
+                      : {}
+                  }
+                  {...(armed ? { onDismiss: () => setArmed(undefined) } : {})}
+                >
+                  {armed && (
+                    // Keyed on what was armed, so arming something else
+                    // starts a clean exchange rather than inheriting the
+                    // last one's dice.
+                    <Exchange
+                      key={armed.id}
+                      actor={actingSheet}
+                      armed={armed}
+                      order={order
+                        .filter((e) => e.entityId)
+                        .map((e) => ({
+                          id: e.entityId!,
+                          label: e.label ?? names.get(e.entityId!) ?? '?',
+                        }))}
+                      sheetOf={(id) => sheets.data?.[id]}
+                      dice={dice.data}
+                      icons={icons.data}
+                      pins={pins.data}
+                      statuses={statuses.data ?? []}
+                      conditionsList={CONDITIONS}
+                      conditionCap={conditionCap}
+                      costCounter={use.data?.costCounter}
+                      round={turn.data!.round}
+                      onWrite={writeEntry}
+                    />
+                  )}
+                </ProviderSlot>
+
                 {/* A player's turn gets no proposal, and the stage says
                     why rather than going blank. teller does not play
                     player characters. */}
@@ -640,33 +690,6 @@ function RunnerTool() {
             )}
 
             {turnControls}
-
-            {/*
-              The slot. This file names a POINT and nothing else: with no
-              plugin providing it, nothing below renders — no button, no
-              box, no nag (rule 7's posture, §15's contract). What comes
-              back is words on the Warden's screen; playing any of it is
-              the Warden's act (rule 1).
-            */}
-            {running && acting && actingSheet?.type === 'foe' && (
-              <ProviderSlot
-                point="propose.turn"
-                ask="what would they do?"
-                placeholder="…or tell it what they do, and press enter"
-                // Arming something IS a decision, so it goes over as the
-                // thing to work around rather than a hint — the old app's
-                // own move ("if I want to just say that I think it would
-                // use the frenzy attack now because I decided, but I
-                // still want the rest"). The flow above never reads this
-                // back: with no plugin there is no box, and the exchange
-                // runs exactly the same.
-                payload={() =>
-                  armed
-                    ? { intent: [armed.name, armed.note].filter(Boolean).join(' — ') }
-                    : {}
-                }
-              />
-            )}
           </div>
         </div>
       </div>

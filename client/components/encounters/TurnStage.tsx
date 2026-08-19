@@ -8,12 +8,13 @@
 // is no selection to get lost in and no way to be looking at the wrong
 // sheet.
 //
-// The old ✦ card split in two on the way over, and both halves are here
-// now. The PROPOSAL half lives in `ProviderSlot` — the runner asks for a
-// POINT and never learns what answers it — and the roll/target/defense/
-// resolve half is `Exchange.tsx`, armed from the chips below. Arming is
-// the step the old app didn't need and this one does: it read an
-// attack's dice out of prose, and here you tap the attack.
+// The old ✦ card is one card again, and it is NOT here: it sits under
+// the stage, composed by the runner out of `ProviderSlot` (the box, and
+// the ask nobody may assume exists) holding `Exchange` (the roll /
+// target / defense / resolve flow, which is teller's own and renders
+// with no plugin installed). This file's job in that arrangement is
+// ARMING — the step the old app didn't need and this one does: it read
+// an attack's dice out of prose, and here you tap the attack.
 //
 // Everything printed is drawn by the SHARED statblock (`TemplateSheet`):
 // one statblock, rendered the same in both places, which is the law this
@@ -34,15 +35,10 @@ import {
 } from '../../../core/frenzy.ts';
 import { readGate } from '../../../core/gate.ts';
 import type { Template } from '../../../core/stamp.ts';
-import type { DiceRecord } from '../../lib/dice.ts';
 import { sectionLabel } from '../../lib/ui.ts';
 import { CounterStepper } from '../Vitals.tsx';
-import { Exchange, type Armed, type Combatant, type EntryWrite, type StatusDecl } from './Exchange.tsx';
+import type { Armed, EntryWrite, StatusDecl } from './Exchange.tsx';
 import { StatPools, StatblockProse, StatusChip, attackProfile } from './TemplateSheet.tsx';
-
-// The two shapes the runner hands in live with the flow that consumes
-// them, and pass through here so a tool imports one file, not three.
-export type { Armed, Combatant, EntryWrite, StatusDecl };
 
 /** Clamp a bump the way every stepper in teller does: floor at 0, ceiling if declared. */
 function bumped(entry: Entry, delta: number): number {
@@ -112,6 +108,7 @@ function DoesRow({
             : {
                 id: action.id,
                 name: action.name,
+                ...(p.band ? { band: p.band } : {}),
                 ...(typeof p.damage?.value === 'string' ? { damage: p.damage.value } : {}),
                 ...(typeof p.cost?.value === 'number' ? { cost: p.cost.value } : {}),
                 inflicts: p.inflicts,
@@ -233,6 +230,7 @@ function DoesRow({
                           id: frenzy.id,
                           name: frenzy.name,
                           frenzy: true,
+                          ...(p.band ? { band: p.band } : {}),
                           ...(typeof p.damage?.value === 'string' ? { damage: p.damage.value } : {}),
                           ...(typeof cost?.value === 'number' ? { cost: cost.value } : {}),
                           inflicts: p.inflicts,
@@ -284,15 +282,7 @@ export function TurnStage({
   onWrite,
   armed,
   onArm,
-  order,
-  sheetOf,
-  dice,
-  icons,
-  pins,
-  conditionsList = 'conditions',
-  conditionCap,
   costCounter,
-  onWriteTo,
 }: {
   /** The acting entity, RESOLVED — a thin stamp's template values are facts. */
   acting: Template;
@@ -306,16 +296,7 @@ export function TurnStage({
   /** What's armed, held by the caller so it survives this component. */
   armed?: Armed;
   onArm: (armed: Armed | undefined) => void;
-  /** Everyone in the order — who the armed action can land on. */
-  order: Combatant[];
-  sheetOf: (id: string) => Entity | undefined;
-  dice: DiceRecord | undefined;
-  icons?: Record<string, string>;
-  pins?: Record<string, string[]>;
-  conditionsList?: string;
-  conditionCap?: number;
   costCounter?: string;
-  onWriteTo: (entityId: string, edit: EntryWrite) => Promise<unknown>;
 }) {
   const foe = acting.type === 'foe';
   const conditions = acting.lists?.conditions ?? [];
@@ -430,40 +411,19 @@ export function TurnStage({
           onWrite={onWrite}
         />
 
-        {/* Armed: the exchange opens under the chips, keyed on what was
-            armed so arming something else starts a clean one rather than
-            inheriting the last turn's dice. */}
-        {armed && (
-          <Exchange
-            key={armed.id}
-            actor={acting as Entity}
-            armed={armed}
-            order={order}
-            sheetOf={sheetOf}
-            dice={dice}
-            icons={icons}
-            pins={pins}
-            statuses={statuses}
-            conditionsList={conditionsList}
-            conditionCap={conditionCap}
-            costCounter={costCounter}
-            round={round}
-            onWrite={onWriteTo}
-            onDisarm={() => onArm(undefined)}
-          />
-        )}
-
         {/* And what it IS, right here. Same renderer the bestiary dialog
             uses — one statblock, two places, no chance of them drifting
-            apart. `resources` is skipped: it's the bars above. */}
-        <div className="mt-3 space-y-4 border-t border-stone-800 pt-3">
-          <StatPools template={reading} skip={['resources', 'conditions', FRENZY]} />
+            apart, at the stage's own density: small tiles, and the prose
+            two-up once the stage is wide enough for it. `resources` is
+            skipped: it's the bars above. */}
+        <div className="mt-3 space-y-3 border-t border-stone-800 pt-3">
+          <StatPools template={reading} skip={['resources', 'conditions', FRENZY]} dense />
           {/* The prose half reads the same way — a tolerance a frenzy
               moved has to move HERE too, or the sheet and the exchange's
               arithmetic say different numbers about the same creature.
               The words themselves are untouched: they're `notes` on the
               children, which no override can reach. */}
-          <StatblockProse template={reading} />
+          <StatblockProse template={reading} dense />
         </div>
 
         {acting.notes && (

@@ -21,17 +21,23 @@
 // It's a DIALOG, same as the old app, for the same reason: looking a
 // printing up mid-fight is a detour, and a detour should announce
 // itself and end.
+//
+// The pieces it's built from render at two DENSITIES (`dense`, the old
+// app's own prop): roomy in the dialog you opened to read, tight on the
+// stage you're deciding a turn from — small tiles, and the prose in two
+// columns once the container is wide enough for it. One statblock, one
+// renderer, two densities; not two renderers.
 
 import { useEffect } from 'react';
 import { findEntry, type Entry } from '../../../core/entity.ts';
 import type { Template } from '../../../core/stamp.ts';
 import { btn, btnGhost, sectionLabel } from '../../lib/ui.ts';
 
-function EntryCell({ entry }: { entry: Entry }) {
+function EntryCell({ entry, dense = false }: { entry: Entry; dense?: boolean }) {
   return (
-    <div className="rounded-lg bg-stone-950/60 px-3 py-2">
+    <div className={`rounded-lg bg-stone-950/60 ${dense ? 'px-2 py-1.5' : 'px-3 py-2'}`}>
       {entry.value !== undefined && (
-        <div className="font-mono text-sm text-amber-200">
+        <div className={`font-mono text-amber-200 ${dense ? 'text-[13px]' : 'text-sm'}`}>
           {entry.value}
           {typeof entry.max === 'number' && <span className="text-stone-600">/{entry.max}</span>}
         </div>
@@ -145,18 +151,47 @@ export function AttacksSection({ template }: { template: Template }) {
   );
 }
 
+/**
+ * A section of the printed prose, at one of two densities: roomy in the
+ * dialog you opened to read, tight on the stage you're deciding a turn
+ * from. `break-inside-avoid` is what keeps a section whole when the
+ * stage runs it in two columns — half a trait at the foot of a column
+ * is worse than a longer column (the old app's own call).
+ */
+function Section({
+  label,
+  dense,
+  children,
+}: {
+  label: string;
+  dense: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={dense ? 'mb-3 break-inside-avoid' : undefined}>
+      <span className={sectionLabel}>{label}</span>
+      <div className={dense ? 'mt-1 space-y-1' : 'mt-2 space-y-2'}>{children}</div>
+    </div>
+  );
+}
+
+/** One paragraph of printed prose, at the density the caller asked for. */
+const proseLine = (dense: boolean) =>
+  dense
+    ? 'text-[11px] leading-snug text-stone-400'
+    : 'text-[13px] leading-relaxed text-stone-300';
+
 /** `tolerances` — a plain list on the foe itself (§I) — as status chips. */
-function TolerancesSection({ entries }: { entries: Entry[] }) {
+function TolerancesSection({ entries, dense }: { entries: Entry[]; dense: boolean }) {
   if (!entries.length) return null;
   return (
-    <div>
-      <span className={sectionLabel}>Tolerances</span>
-      <div className="mt-2 flex flex-wrap gap-1.5">
+    <Section label="Tolerances" dense={dense}>
+      <div className="flex flex-wrap gap-1.5">
         {entries.map((e) => (
           <StatusChip key={e.name} entry={e} />
         ))}
       </div>
-    </div>
+    </Section>
   );
 }
 
@@ -165,15 +200,14 @@ function TolerancesSection({ entries }: { entries: Entry[] }) {
  * under the heading the book gave it. No lead-in, because there is no
  * name to lead in with: the entry's name IS the heading.
  */
-function AboutSections({ entries }: { entries: Entry[] }) {
+function AboutSections({ entries, dense }: { entries: Entry[]; dense: boolean }) {
   if (!entries.length) return null;
   return (
     <>
       {entries.map((e) => (
-        <div key={e.name}>
-          <span className={sectionLabel}>{e.name}</span>
-          <p className="mt-2 text-[13px] leading-relaxed text-stone-300">{e.value}</p>
-        </div>
+        <Section key={e.name} label={e.name} dense={dense}>
+          <p className={proseLine(dense)}>{e.value}</p>
+        </Section>
       ))}
     </>
   );
@@ -184,20 +218,25 @@ function AboutSections({ entries }: { entries: Entry[] }) {
  * the name in accent, a full stop, then its words. That lead-in is the
  * whole reason this isn't one grey wall (`src/components/Statblock.tsx`).
  */
-function NamedSection({ label, entries }: { label: string; entries: Entry[] }) {
+function NamedSection({
+  label,
+  entries,
+  dense,
+}: {
+  label: string;
+  entries: Entry[];
+  dense: boolean;
+}) {
   if (!entries.length) return null;
   return (
-    <div>
-      <span className={sectionLabel}>{label}</span>
-      <div className="mt-2 space-y-2">
-        {entries.map((e) => (
-          <p key={e.name} className="text-[13px] leading-relaxed text-stone-300">
-            <span className="text-amber-200">{e.name}. </span>
-            {e.value}
-          </p>
-        ))}
-      </div>
-    </div>
+    <Section label={label} dense={dense}>
+      {entries.map((e) => (
+        <p key={e.name} className={proseLine(dense)}>
+          <span className="text-amber-200">{e.name}. </span>
+          {e.value}
+        </p>
+      ))}
+    </Section>
   );
 }
 
@@ -207,26 +246,23 @@ function NamedSection({ label, entries }: { label: string; entries: Entry[] }) {
  * entry, so the counter is the pack's word and not a game concept
  * spelled here (rule 2).
  */
-function FrenzySection({ frenzies }: { frenzies: Template[] }) {
+function FrenzySection({ frenzies, dense }: { frenzies: Template[]; dense: boolean }) {
   if (!frenzies.length) return null;
   return (
-    <div>
-      <span className={sectionLabel}>Frenzy</span>
-      <div className="mt-2 space-y-2">
-        {frenzies.map((f) => {
-          const gate = (f.lists?.gate ?? [])[0];
-          return (
-            <p key={f.id} className="text-[13px] leading-relaxed text-stone-300">
-              <span className="text-amber-200">
-                {f.name}
-                {gate && ` (${gate.value} ${gate.name})`}.{' '}
-              </span>
-              {f.notes}
-            </p>
-          );
-        })}
-      </div>
-    </div>
+    <Section label="Frenzy" dense={dense}>
+      {frenzies.map((f) => {
+        const gate = (f.lists?.gate ?? [])[0];
+        return (
+          <p key={f.id} className={proseLine(dense)}>
+            <span className="text-amber-200">
+              {f.name}
+              {gate && ` (${gate.value} ${gate.name})`}.{' '}
+            </span>
+            {f.notes}
+          </p>
+        );
+      })}
+    </Section>
   );
 }
 
@@ -238,27 +274,24 @@ function FrenzySection({ frenzies }: { frenzies: Template[] }) {
  * the floor under an unmigrated one. It splits on newlines and leaves
  * the names inside the prose, exactly as it always did.
  */
-function TraitsSection({ entries }: { entries: Entry[] }) {
+function TraitsSection({ entries, dense }: { entries: Entry[]; dense: boolean }) {
   if (!entries.length) return null;
   return (
-    <div className="space-y-4">
+    <>
       {entries.map((e) => (
-        <div key={e.name}>
-          <span className={sectionLabel}>{e.name}</span>
-          <div className="mt-2 space-y-2">
-            {String(e.value ?? '')
-              .split('\n')
-              .map((line) => line.trim())
-              .filter(Boolean)
-              .map((line, i) => (
-                <p key={i} className="text-[13px] leading-relaxed text-stone-300">
-                  {line}
-                </p>
-              ))}
-          </div>
-        </div>
+        <Section key={e.name} label={e.name} dense={dense}>
+          {String(e.value ?? '')
+            .split('\n')
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .map((line, i) => (
+              <p key={i} className={proseLine(dense)}>
+                {line}
+              </p>
+            ))}
+        </Section>
       ))}
-    </div>
+    </>
   );
 }
 
@@ -277,9 +310,17 @@ function TraitsSection({ entries }: { entries: Entry[] }) {
 export function StatPools({
   template,
   skip = [],
+  dense = false,
 }: {
   template: Template;
   skip?: string[];
+  /**
+   * The stage's density: a row of small tiles rather than a grid of
+   * roomy ones. Mid-fight the pools are a thing you GLANCE at, and a
+   * tile twice as tall as it needs to be is a scroll between the chips
+   * you tap and the prose you read (the old app's `dense`, kept).
+   */
+  dense?: boolean;
 }) {
   const hidden = new Set([...SPOKEN, ...skip.map((s) => s.toLowerCase())]);
   const lists = Object.entries(template.lists ?? {}).filter(
@@ -291,9 +332,15 @@ export function StatPools({
       {lists.map(([key, entries]) => (
         <div key={key}>
           <span className={sectionLabel}>{key}</span>
-          <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          <div
+            className={`mt-2 grid gap-1.5 ${
+              dense
+                ? 'grid-cols-3 @lg:grid-cols-4 @2xl:grid-cols-7'
+                : 'grid-cols-2 gap-2 sm:grid-cols-4'
+            }`}
+          >
             {entries.map((e) => (
-              <EntryCell key={e.name} entry={e} />
+              <EntryCell key={e.name} entry={e} dense={dense} />
             ))}
           </div>
         </div>
@@ -312,17 +359,31 @@ export function StatPools({
  * you have to open a dialog to make is a turn you make worse (Brian,
  * 2026-08-15), so the stage inlines exactly this.
  */
-export function StatblockProse({ template }: { template: Template }) {
+export function StatblockProse({
+  template,
+  dense = false,
+}: {
+  template: Template;
+  /**
+   * The stage's density — and, once the stage is wide enough for it,
+   * TWO COLUMNS: Description/Behavior/Features fall down the left and
+   * Trophies/Tolerances/Frenzy up the right, which is the split the old
+   * app drew and the shape a printed statblock has. It's the container's
+   * width that decides, so held glass and the dialog keep stacking
+   * without either of them being asked which device they are.
+   */
+  dense?: boolean;
+}) {
   const frenzies = (template.children ?? []).filter((c) => c.type === 'frenzy');
   return (
-    <>
-      <AboutSections entries={template.lists?.about ?? []} />
-      <NamedSection label="Features" entries={template.lists?.features ?? []} />
-      <NamedSection label="Trophies" entries={template.lists?.trophies ?? []} />
-      <TolerancesSection entries={template.lists?.tolerances ?? []} />
-      <FrenzySection frenzies={frenzies} />
-      <TraitsSection entries={template.lists?.traits ?? []} />
-    </>
+    <div className={dense ? 'gap-x-6 @2xl:columns-2' : 'space-y-5'}>
+      <AboutSections entries={template.lists?.about ?? []} dense={dense} />
+      <NamedSection label="Features" entries={template.lists?.features ?? []} dense={dense} />
+      <NamedSection label="Trophies" entries={template.lists?.trophies ?? []} dense={dense} />
+      <TolerancesSection entries={template.lists?.tolerances ?? []} dense={dense} />
+      <FrenzySection frenzies={frenzies} dense={dense} />
+      <TraitsSection entries={template.lists?.traits ?? []} dense={dense} />
+    </div>
   );
 }
 
