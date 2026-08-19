@@ -261,6 +261,15 @@ function convertCharacter(row) {
   let type = row.kind === 'npc' ? 'foe' : undefined;
   for (const f of d.fields ?? []) {
     const value = typeof f.value === 'string' ? f.value.trim() : f.value;
+    // An EMPTY field survives as a bare held entry — the printed sheet
+    // has a Defense box whether or not anything is written in it, and
+    // dropping the empty one un-pins Health's whole panel (the sheet
+    // renders MAX/stepper/DEFENSE only for an entry that exists).
+    // core/entity.ts's own contract: absent value = a plain held thing.
+    if (value === '' && !titleKeys.has(f.key) && !playerKeys.has(f.key) && !PROSE_FIELDS.has(f.key) && !LONG_FIELDS.has(f.key)) {
+      stats.push({ name: f.label });
+      continue;
+    }
     if (value === '' || value === undefined) continue;
     if (titleKeys.has(f.key)) type = String(value);
     else if (playerKeys.has(f.key)) meta.push({ name: f.label, value });
