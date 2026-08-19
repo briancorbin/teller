@@ -218,3 +218,57 @@ describe('a grant nothing accounts for', () => {
     expect((await api('GET', '/api/plugins')).body.unresolved).toEqual([]);
   });
 });
+
+describe('a panel switched off (the trust row as an on/off switch)', () => {
+  // Disabling used to gate code and nothing else, so a data-only panel
+  // stayed in the merge with its tab intact and no way back. These pin
+  // the round trip: out of the merge, still on the screen, reversible.
+
+  const panelsIn = async (): Promise<string[]> =>
+    (await api('GET', '/api/stack/declarations/panels')).body.map((p: any) => p.name);
+
+  it('leaves the merged declarations, through the same POST, without a restart', async () => {
+    expect(await panelsIn()).toContain('runner');
+    await api('POST', '/api/plugins/pan_runner00000001', { enabled: false });
+    expect(await panelsIn()).not.toContain('runner');
+    await api('POST', '/api/plugins/pan_runner00000001', { enabled: true });
+    expect(await panelsIn()).toContain('runner');
+  });
+
+  it('still lists under its container, marked off, with the switch to bring it back', async () => {
+    await api('POST', '/api/plugins/pan_runner00000001', { enabled: false });
+    const { body } = await api('GET', '/api/plugins');
+    const runner = containerOf(body, 'sys_wiw').panels.find((p: any) => p.name === 'runner');
+    expect(runner).toMatchObject({ id: 'pan_runner00000001', disabled: true, trusted: false });
+    // And it is not an orphan grant — the stack accounts for it.
+    expect(body.unresolved).toEqual([]);
+  });
+
+  it("switches off one of teller's five, and only that one", async () => {
+    const { body } = await api('GET', '/api/plugins');
+    const teller = body.containers.find((c: any) => c.kind === 'teller');
+    const log = teller.panels.find((p: any) => p.name === 'log');
+    expect(log.disabled).toBe(false);
+
+    await api('POST', `/api/plugins/${log.id}`, { enabled: false });
+    expect((await panelsIn()).sort()).not.toContain('log');
+    const after = await api('GET', '/api/plugins');
+    const tellerAfter = after.body.containers.find((c: any) => c.kind === 'teller');
+    expect(tellerAfter.panels.find((p: any) => p.name === 'log').disabled).toBe(true);
+    expect(tellerAfter.panels.filter((p: any) => p.disabled).length).toBe(1);
+  });
+
+  it("a switched-off system panel doesn't take the table's restatement with it", async () => {
+    json(join(dir, 'panels', 'mine', 'panel.json'), {
+      id: 'pan_mine00000001',
+      name: 'runner',
+      label: 'Our Runner',
+    });
+    await api('POST', '/api/shelf/sweep');
+    await api('POST', '/api/plugins/pan_runner00000001', { enabled: false });
+
+    const panels = (await api('GET', '/api/stack/declarations/panels')).body;
+    const runner = panels.find((p: any) => p.name === 'runner');
+    expect(runner).toMatchObject({ id: 'pan_mine00000001', label: 'Our Runner' });
+  });
+});

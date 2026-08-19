@@ -20,6 +20,16 @@
 // last word, because a grant you can't see is a grant you can't take
 // back.
 //
+// A PANEL's toggle is its on/off switch (2026-08-19), not a code permit
+// — switching one off takes its declaration out of the merge, tab and
+// all, and every panel with an id has one, teller's five defaults
+// included. A CONTAINER's toggle is still code-only, because that is
+// all a `sys_`/`pak_` grant ever decided, so the two buttons are two
+// components saying two different words. Switched-off panels keep
+// listing, marked off: this screen is the registry of what exists, and
+// a switch that vanished with the thing it switched is the one-way door
+// this rewrite closed.
+//
 // Config stays a raw JSON textarea, same posture the vanilla client
 // took (`server/public/app.js`'s `prompt('config (JSON)?')`) but inline,
 // so a bad parse can say so without an alert().
@@ -41,6 +51,8 @@ type PanelRow = {
   label?: string;
   code: CodeState;
   trusted: boolean;
+  /** Switched off: it exists, it is listed here, and it is not in the merge. */
+  disabled?: boolean;
 };
 type Container = {
   kind: 'system' | 'pack' | 'campaign' | 'table' | 'teller';
@@ -72,21 +84,29 @@ function grant(id: string, enabled: boolean): Promise<unknown> {
 }
 
 /**
- * The enable/disable control for one `sys_`/`pak_`/`pan_` id, wherever
- * it appears. `code` says what the folder holds; `trusted` says what
- * the shelf row holds, and they are separate on purpose — a grant can
- * outlive the code it was given for, and the button that takes it back
- * has to keep rendering when it does.
+ * A CONTAINER's code toggle — a `sys_` or `pak_` id, where the only
+ * thing the grant decides is whether the presentations run. Its rules,
+ * bestiary and catalogue load either way, which is why this says "code"
+ * out loud: the panel switch below reads the same row and means
+ * something bigger, and two buttons that spell the same word would be
+ * lying about one of them.
+ *
+ * `code` says what the folder holds; `trusted` says what the shelf row
+ * holds, and they are separate on purpose — a grant can outlive the code
+ * it was given for, and the button that takes it back has to keep
+ * rendering when it does.
  */
-function TrustToggle({
+function CodeToggle({
   id,
   code,
   trusted,
+  off = 'stop code',
   onChanged,
 }: {
   id?: string;
   code: CodeState;
   trusted: boolean;
+  off?: string;
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -114,11 +134,60 @@ function TrustToggle({
   if (code === 'pending') {
     return (
       <button className={btnPrimary} disabled={busy} onClick={() => set(true)}>
-        enable
+        run code
       </button>
     );
   }
   return (
+    <button className={btnGhost} disabled={busy} onClick={() => set(false)}>
+      {off}
+    </button>
+  );
+}
+
+/**
+ * A PANEL's on/off switch — the trust row read as what it now is: the
+ * answer to "is this panel on?". Off means the declaration leaves the
+ * merge: no tab, and a seat pointed at it gets the ordinary
+ * missing-panel refusal. On (or no row at all) means it's in, with its
+ * code following the same row fail-closed.
+ *
+ * Every panel with an id gets one, teller's own five included — that is
+ * the sanctioned way to reject a default, and it is why disabling one
+ * has to stay reversible from this screen.
+ */
+function PanelSwitch({
+  id,
+  disabled,
+  onChanged,
+}: {
+  id?: string;
+  disabled: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (!id) return <span className={dim}>no id — nothing to switch</span>;
+
+  const set = async (enabled: boolean) => {
+    if (
+      !enabled &&
+      !window.confirm('Switch this panel off? Its tab goes and seats stop reaching it. Nothing is deleted.')
+    )
+      return;
+    setBusy(true);
+    try {
+      await grant(id, enabled);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return disabled ? (
+    <button className={btnPrimary} disabled={busy} onClick={() => set(true)}>
+      enable
+    </button>
+  ) : (
     <button className={btnGhost} disabled={busy} onClick={() => set(false)}>
       disable
     </button>
@@ -135,18 +204,27 @@ function PanelLine({
   from?: string;
   onChanged: () => void;
 }) {
+  const off = panel.disabled === true;
   return (
-    <li className={`flex flex-wrap items-center gap-2 px-3 py-1.5 ${rowClass}`}>
-      <span className="text-sm text-stone-200">{panel.label ?? panel.name}</span>
+    <li className={`flex flex-wrap items-center gap-2 px-3 py-1.5 ${rowClass} ${off ? 'opacity-50' : ''}`}>
+      <span className={`text-sm ${off ? 'text-stone-400 line-through' : 'text-stone-200'}`}>
+        {panel.label ?? panel.name}
+      </span>
       <span className={dim}>{panel.name}</span>
       {from && <span className={chip}>{from}</span>}
-      {panel.code === 'pending' && (
+      {off && (
+        <span className="rounded bg-stone-800 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-stone-400">
+          off
+        </span>
+      )}
+      {!off && panel.code === 'pending' && (
         <span className="rounded bg-amber-900/60 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-amber-300">
           code pending
         </span>
       )}
+      {!off && panel.code === 'none' && <span className={dim}>data only</span>}
       <span className="ml-auto">
-        <TrustToggle id={panel.id} code={panel.code} trusted={panel.trusted} onChanged={onChanged} />
+        <PanelSwitch id={panel.id} disabled={off} onChanged={onChanged} />
       </span>
     </li>
   );
@@ -193,7 +271,7 @@ function ContainerCard({ container, onChanged }: { container: Container; onChang
         {container.id && <span className={dim}>{container.id}</span>}
         <span className="ml-auto flex items-center gap-2">
           <span className={dim}>{container.panels.length || 'no'} panels</span>
-          <TrustToggle
+          <CodeToggle
             id={container.id}
             code={container.code}
             trusted={container.trusted}
@@ -399,7 +477,11 @@ function PluginsTool() {
         )}
       </TypeSection>
 
-      <TypeSection label="Packs" count={`${packs.length} in the stack`}>
+      <TypeSection
+        label="Packs"
+        count={`${packs.length} in the stack`}
+        note="a pack's own toggle is its code and nothing else — its panels switch one at a time, below their name."
+      >
         {packs.length === 0 ? (
           <p className="text-sm text-stone-600">no packs in this campaign's stack</p>
         ) : (
@@ -414,7 +496,7 @@ function PluginsTool() {
       <TypeSection
         label="Panels"
         count={`${standalone.reduce((n, c) => n + c.panels.length, 0)} standalone`}
-        note="teller's five are the floor — a table overrides one by restating its name in <data>/panels/."
+        note="teller's five are the floor — a table overrides one by restating its name in <data>/panels/, or switches it off here."
       >
         {standalone.every((c) => c.panels.length === 0) ? (
           <p className="text-sm text-stone-600">nothing of your own yet</p>
@@ -445,7 +527,7 @@ function PluginsTool() {
               <li key={id} className={`flex flex-wrap items-center gap-2 px-3 py-1.5 ${rowClass}`}>
                 <span className={dim}>{id}</span>
                 <span className="ml-auto">
-                  <TrustToggle id={id} code="none" trusted onChanged={reload} />
+                  <CodeToggle id={id} code="none" trusted off="revoke" onChanged={reload} />
                 </span>
               </li>
             ))}

@@ -155,6 +155,14 @@ type PanelRow = {
   code: CodeState;
   /** The shelf row, read straight — what the disable button acts on. */
   trusted: boolean;
+  /**
+   * An `enabled: 0` row names this panel, so its declaration is OUT of
+   * the merge (`core/boot.ts`) — no tab, nothing to assign a seat to.
+   * It still LISTS here, marked off, because the accordion is the
+   * registry of what exists and the merge is what's on: a panel that
+   * vanished from both would be a switch nobody could flip back.
+   */
+  disabled: boolean;
 };
 
 type Container = {
@@ -190,6 +198,9 @@ function toPanelRow(raw: unknown, trusts: Map<string, boolean>): PanelRow | unde
     name,
     code: codeStateOf(p),
     trusted: p.id ? (trusts.get(p.id) ?? false) : false,
+    // No row and `enabled: 0` are different answers — `?? false` would
+    // have flattened them into one and switched every panel off.
+    disabled: p.id ? trusts.get(p.id) === false : false,
   };
   if (p.id) row.id = p.id;
   if (p.label) row.label = p.label;

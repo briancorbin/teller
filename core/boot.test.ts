@@ -493,3 +493,99 @@ describe('the record stack (visual vocabulary)', () => {
     campaign.close();
   });
 });
+
+describe('a panel switched off (§15 — a trust row is a switch)', () => {
+  // The row means "is this thing on?", not "may its code run". These
+  // pin the truth table, because the bug that produced it was a
+  // disabled panel whose tab never went anywhere.
+
+  function tablePanel(name: string, id: string): void {
+    const folder = join(dir, 'panels', name);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, 'panel.json'), JSON.stringify({ id, name, subject: 'none' }));
+  }
+
+  it('leaves the merge entirely — and no row at all leaves it in', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_off', name: 'Off', data: {} });
+    const campaign = createCampaign(dir, 'off1', 'Off One');
+    campaign.save({ ...campaign.root(), refs: { system: { id: 'sys_off', name: 'Off' } } }, 't');
+    tablePanel('ledger', 'pan_off1');
+
+    expect(
+      loadCampaign(shelf, campaign, dir).declarations('panels').map((p: any) => p.name),
+    ).toContain('ledger');
+
+    shelf.setPluginEnabled('pan_off1', false);
+    expect(
+      loadCampaign(shelf, campaign, dir).declarations('panels').map((p: any) => p.name),
+    ).not.toContain('ledger');
+
+    // …and back on, because the console has to be able to undo it.
+    shelf.setPluginEnabled('pan_off1', true);
+    expect(
+      loadCampaign(shelf, campaign, dir).declarations('panels').map((p: any) => p.name),
+    ).toContain('ledger');
+    campaign.close();
+  });
+
+  it('still LISTS in the stack reading — the registry keeps what the merge drops', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_off2', name: 'Off2', data: {} });
+    const campaign = createCampaign(dir, 'off2', 'Off Two');
+    campaign.save({ ...campaign.root(), refs: { system: { id: 'sys_off2', name: 'Off2' } } }, 't');
+    tablePanel('ledger', 'pan_off2');
+    shelf.setPluginEnabled('pan_off2', false);
+
+    const loaded = loadCampaign(shelf, campaign, dir);
+    const fromTable = loaded.sourced('panels').find((s) => s.source === 'table')!;
+    expect(fromTable.items.map((p: any) => p.name)).toEqual(['ledger']);
+    expect(loaded.declarations('panels').map((p: any) => p.name)).not.toContain('ledger');
+    campaign.close();
+  });
+
+  it("a switched-off SYSTEM panel doesn't shadow-kill a table's own of the same name", () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({
+      id: 'sys_off3',
+      name: 'Off3',
+      data: { panels: [{ id: 'pan_sysbest', name: 'bestiary', label: "The System's" }] },
+    });
+    const campaign = createCampaign(dir, 'off3', 'Off Three');
+    campaign.save({ ...campaign.root(), refs: { system: { id: 'sys_off3', name: 'Off3' } } }, 't');
+
+    const folder = join(dir, 'panels', 'bestiary');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, 'panel.json'),
+      JSON.stringify({ id: 'pan_tblbest', name: 'bestiary', label: 'Ours', subject: 'none' }),
+    );
+    shelf.setPluginEnabled('pan_sysbest', false);
+
+    const loaded = loadCampaign(shelf, campaign, dir);
+    const best: any = loaded.declarations('panels').find((p: any) => p.name === 'bestiary');
+    expect(best.id).toBe('pan_tblbest');
+    expect(best.label).toBe('Ours');
+    expect(loaded.sourceOf('panels', 'bestiary')).toBe('table');
+    campaign.close();
+  });
+
+  it("rejects one of teller's own five — the console tombstone, across a fresh load", () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_off4', name: 'Off4', data: {} });
+    const campaign = createCampaign(dir, 'off4', 'Off Four');
+    campaign.save({ ...campaign.root(), refs: { system: { id: 'sys_off4', name: 'Off4' } } }, 't');
+
+    const before = loadCampaign(shelf, campaign, dir).declarations('panels');
+    const log: any = before.find((p: any) => p.name === 'log');
+    expect(log.id).toBeTruthy();
+
+    shelf.setPluginEnabled(log.id, false);
+    const names = loadCampaign(shelf, campaign, dir)
+      .declarations('panels')
+      .map((p: any) => p.name)
+      .sort();
+    expect(names).toEqual(['boards', 'plugins', 'screens', 'shelf']);
+    campaign.close();
+  });
+});

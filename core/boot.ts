@@ -88,6 +88,26 @@ export class Loaded {
   /** The table's own `panels/` folder — the topmost layer, above the campaign. */
   #table: Layer;
   #campaign: Campaign;
+  /**
+   * Ids a human switched OFF — the `enabled: 0` rows of the trust table
+   * (§15's, the same one code enablement rides). A declaration carrying
+   * one of these ids leaves the merge entirely: no tab, no panel to
+   * assign a seat to, nothing left of it but the console row that can
+   * switch it back on.
+   *
+   * **A trust row is a switch, not a code permit** (2026-08-19). It used
+   * to gate only `code`, so disabling a panel did nothing you could see
+   * — the declaration and its tab survived, and a data-only panel had no
+   * button at all. Now the row answers the prior question (is this thing
+   * on?), and code follows the same answer fail-closed as before: no row
+   * means the declaration is IN and its code PENDING; `enabled: 1` means
+   * in and running; `enabled: 0` means gone.
+   *
+   * This is also the sanctioned way to reject one of teller's five
+   * defaults: their ids are baked into the files they ship in, so a row
+   * naming one is a tombstone the console can write and take back.
+   */
+  #disabled: Set<string>;
 
   constructor(
     manifest: Entity,
@@ -100,6 +120,7 @@ export class Loaded {
     panelProblems: { dir: string; problem: string }[] = [],
     packProblems: PackProblem[] = [],
     tablePanels: PanelDef[] = [],
+    disabled: Set<string> = new Set(),
   ) {
     this.manifest = manifest;
     this.system = system;
@@ -121,6 +142,7 @@ export class Loaded {
     // rule 1 pointing the way it points everywhere else in teller.
     this.#table = { source: 'table', data: { panels: tablePanels } };
     this.#campaign = campaign;
+    this.#disabled = disabled;
   }
 
   /**
@@ -149,7 +171,7 @@ export class Loaded {
   declarations(slot: string): unknown[] {
     return mergeBy(
       (item: unknown) => String(asRecord(item).name ?? '').trim().toLowerCase(),
-      ...this.#stack(slot),
+      ...this.#live(slot).map((s) => s.items),
     ).filter((item) => String(asRecord(item).name ?? '').trim());
   }
 
@@ -201,7 +223,7 @@ export class Loaded {
    */
   sourceOf(slot: string, name: string): string | undefined {
     let from: string | undefined;
-    for (const { source, items } of this.#sourced(slot)) {
+    for (const { source, items } of this.#live(slot)) {
       if (
         items.some((item) => {
           const itemName = String(asRecord(item).name ?? '');
@@ -253,9 +275,34 @@ export class Loaded {
    * restates a name appears in both its own group and the earlier one —
    * that IS the stack, and hiding the shadowed copy would hide the
    * override.
+   *
+   * Switched-OFF declarations are here too, for the same reason: this is
+   * the REGISTRY of everything that exists on this machine, and the
+   * merge is what's on. A panel you can't see listed is a panel you
+   * can't switch back on — the one-way door this reading exists to keep
+   * shut.
    */
   sourced(slot: string): { source: string; items: unknown[] }[] {
     return this.#sourced(slot);
+  }
+
+  /**
+   * The same stack with the switched-off declarations dropped — PER ID,
+   * layer by layer, BEFORE anything merges by name. The order matters:
+   * a system panel someone switched off must not shadow-kill a table's
+   * own restatement of the same name, and it doesn't, because it never
+   * reaches the merge to be restated. The table's is simply the only
+   * one left.
+   */
+  #live(slot: string): { source: string; items: unknown[] }[] {
+    if (this.#disabled.size === 0) return this.#sourced(slot);
+    return this.#sourced(slot).map(({ source, items }) => ({
+      source,
+      items: items.filter((item) => {
+        const id = asRecord(item).id;
+        return !(typeof id === 'string' && this.#disabled.has(id));
+      }),
+    }));
   }
 
   /**
@@ -373,6 +420,14 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
   // and is empty until a human writes something there.
   const swept = dataDir ? sweepPanels(dataDir, shelf) : undefined;
 
+  // Every id a human switched OFF, read once per load. `enabled: 0` is
+  // an explicit act — the sweep never writes here (§15) — so an absent
+  // row and a false one are different answers, and only the false one
+  // takes a declaration out of the merge.
+  const disabled = new Set(
+    shelf.pluginTrusts().filter((t) => !t.enabled).map((t) => t.id),
+  );
+
   return new Loaded(
     manifest,
     layers,
@@ -384,5 +439,6 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
     swept?.problems ?? [],
     [...(sweptSystems?.problems ?? []), ...(sweptPacks?.problems ?? [])],
     swept?.panels ?? [],
+    disabled,
   );
 }
