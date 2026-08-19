@@ -26,7 +26,7 @@ import {
   type Entry,
   type Ref,
 } from './entity.ts';
-import { mergeNamed } from './merge.ts';
+import { mergeById, mergeNamed } from './merge.ts';
 import { newId } from './id.ts';
 
 /**
@@ -40,6 +40,13 @@ export type Template = {
   type?: string;
   lists?: Record<string, Entry[]>;
   notes?: string;
+  /**
+   * Content inside content — a foe's attacks, a shop's stock as
+   * written. Templates all the way down, so a thin stamp's `children`
+   * resolves them through the same link (§9, §I): an attack is a
+   * child of the FOE TEMPLATE, never authored on the instance.
+   */
+  children?: Template[];
 };
 
 /** Where resolution looks templates up — the caller brings the merge. */
@@ -67,7 +74,24 @@ export function stamp(
   if (opts.thick) {
     out.lists = structuredClone(template.lists ?? {});
     if (template.notes) out.notes = template.notes;
+    if (template.children?.length) {
+      out.children = structuredClone(template.children).map(templateChildToEntity);
+    }
   }
+  return out;
+}
+
+/**
+ * A template's child, read as the entity it would resolve to with no
+ * override — used both for a thick stamp's birth copy and for a thin
+ * stamp's read-through (`resolve`). Not itself stamped: an attack has
+ * no `from` of its own to derive through, it's already the content.
+ */
+function templateChildToEntity(child: Template): Entity {
+  const out: Entity = { id: child.id, name: child.name, lists: child.lists ?? {} };
+  if (child.type) out.type = child.type;
+  if (child.notes) out.notes = child.notes;
+  if (child.children?.length) out.children = child.children.map(templateChildToEntity);
   return out;
 }
 
@@ -95,8 +119,16 @@ export function resolve(entity: Entity, templateOf: TemplateOf): Entity {
     out.lists = lists;
     if (out.notes === undefined && template.notes) out.notes = template.notes;
   }
-  if (entity.children?.length) {
-    out.children = entity.children.map((child) => resolve(child, templateOf));
+  // A thin stamp copied no children — they read through the link, same
+  // as lists. Own children (stored, or a thick stamp's birth copy) win
+  // over the template's by id, the same stored-wins-by-identity rule
+  // every stamped collection follows.
+  const templateChildren = (template?.children ?? []).map(templateChildToEntity);
+  const merged = mergeById(templateChildren, entity.children ?? []);
+  if (merged.length) {
+    out.children = merged.map((child) => resolve(child, templateOf));
+  } else {
+    delete out.children;
   }
   return out;
 }
@@ -105,9 +137,15 @@ export function resolve(entity: Entity, templateOf: TemplateOf): Entity {
 export function toTemplate(raw: unknown): Template | undefined {
   const entity = toEntity(raw);
   if (!entity) return undefined;
+  return templateFromEntity(entity);
+}
+
+/** `toTemplate`'s recursive step — an already-coerced entity, never re-parsed. */
+function templateFromEntity(entity: Entity): Template {
   const out: Template = { id: entity.id, name: entity.name };
   if (entity.type) out.type = entity.type;
   if (Object.keys(entity.lists).length) out.lists = entity.lists;
   if (entity.notes) out.notes = entity.notes;
+  if (entity.children?.length) out.children = entity.children.map(templateFromEntity);
   return out;
 }

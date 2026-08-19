@@ -133,4 +133,70 @@ describe('toTemplate', () => {
     });
     expect(toTemplate({ lists: {} })).toBeUndefined();
   });
+
+  it('round-trips children — a foe template carries its attacks (§I)', () => {
+    expect(
+      toTemplate({
+        id: 'npc_x',
+        name: 'Bark Watcher',
+        lists: {},
+        children: [
+          {
+            id: 'atk_1',
+            name: 'Bark Slash',
+            type: 'attack',
+            lists: { profile: [{ name: 'Band', value: 'Melee' }] },
+          },
+        ],
+      }),
+    ).toEqual({
+      id: 'npc_x',
+      name: 'Bark Watcher',
+      children: [
+        {
+          id: 'atk_1',
+          name: 'Bark Slash',
+          type: 'attack',
+          lists: { profile: [{ name: 'Band', value: 'Melee' }] },
+        },
+      ],
+    });
+  });
+});
+
+describe('resolve — template children (§I: attacks are entities)', () => {
+  const attack: Template = {
+    id: 'atk_bark_slash',
+    name: 'Bark Slash',
+    type: 'attack',
+    lists: {
+      profile: [
+        { name: 'Band', value: 'Melee' },
+        { name: 'Cost', value: 3 },
+        { name: 'Damage', value: '2G' },
+      ],
+      inflicts: [],
+    },
+  };
+  const foeWithAttacks: Template = { ...barkWatcher, id: 'npc_with_attacks', children: [attack] };
+
+  it('a thin stamp reads its template attacks through resolve()', () => {
+    const foe = stamp(foeWithAttacks);
+    const read = resolve(foe, (id) => (id === foeWithAttacks.id ? foeWithAttacks : undefined));
+    expect(read.children).toEqual([
+      {
+        id: 'atk_bark_slash',
+        name: 'Bark Slash',
+        type: 'attack',
+        lists: attack.lists,
+      },
+    ]);
+  });
+
+  it('a thick stamp copies the attacks at birth, same shape', () => {
+    const character = stamp(foeWithAttacks, { thick: true });
+    expect(character.children).toEqual([
+      { id: 'atk_bark_slash', name: 'Bark Slash', type: 'attack', lists: attack.lists },
+    ]);
+  });
 });
