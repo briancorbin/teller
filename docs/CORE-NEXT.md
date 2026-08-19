@@ -700,6 +700,88 @@ assignable and overridable like everything else, while their behavior
 stays code. §15's "enablement is a human act in the console" finally
 has its room: the `plugins` tool panel.
 
+**E extended — the ladder (2026-08-18, with Brian): a `.panel` may
+carry code, and the client goes React.**
+
+The vanilla client failed the visual bar (Brian, end of the porting
+day: "all of the visual shit so far since this rework is pretty bad
+and not at all like how it was before" — the old `src/` components are
+the REFERENCE, not inspiration). Post-morteming WHY settled more than
+styling. The buildless client was guarding hackability of the
+customization surface — but the customization surface is the
+DECLARATION, which never involved a toolchain anyway. Two different
+audiences were conflated in one word, "the client": the panel author,
+who touches data, and teller's own renderer, whose implementation no
+author ever sees. Brian: "I don't care about buildless purity. I love
+React. We should be using it." Pulling the audiences apart gives the
+format its real shape:
+
+**A `.panel` is an escalation ladder, and every rung is optional.**
+The file is exactly as complicated as what it's trying to do (the
+single-file-component move — Svelte, MDX — applied to arrangement):
+
+1. **Arrangement** — blocks as nouns, `subject`, mounted/held. Pure
+   data. The default, forever. Built.
+2. **Vocabulary** — the records layer (`accents`, `dials`, …): a
+   system recolors and re-skins with no code. Built; the Grit
+   revolver is the proof a record beats a generic rendering.
+3. **Style** — a `.panel` carries CSS scoped to itself.
+4. **Custom blocks** — a `.panel` ships a React component for ONE
+   noun, slotted into a declared arrangement. The arrangement stays
+   the spine; you replaced a word in the sentence, not the sentence.
+5. **Takeover** — the panel IS a component. Pixel-level, on your own.
+
+The property that keeps this a ladder and not a cliff: **each rung
+keeps everything below it for free** — data plumbing, subject
+resolution, theming, glass handling — and gives up only what it
+overrides. A rung-4 block receives its data as props; it does not
+reimplement SSE.
+
+Three decisions that came with it, each load-bearing:
+
+- **The props contract becomes public API the day rung 4 exists.**
+  What a custom block receives — resolved subject, loaded records, a
+  sparse-write function, mounted/held — can never casually break once
+  one person has written a panel against it. Corollary for the visual
+  port: the old components come across as *the component library
+  custom panels will compose from* (`Vitals`, `DicePool`,
+  `Statblock` as importable primitives is what makes "full
+  customization" mean "rearrange good parts" rather than "start from
+  a blank div"). Port for fidelity first; PROMOTE to public API
+  deliberately, later — but keep every block's props boundary clean
+  (subject + records + write fn in, no reaching into globals) so
+  promotion stays possible.
+- **Code needs the trust gate; data doesn't.** A declaration-only
+  panel is inert and auto-applies by name, as designed. Rung 3 and up
+  is code running on every screen at the table — it sits behind §15's
+  line: the sweep discovers, only a human enables. CSS counts as code
+  (exfiltration via `url(…)` is real); the gate starts at rung 3.
+  Custom blocks are a CLIENT-side extension point — §15's registry
+  enforces its boundary with `structuredClone`, which a live component
+  can't cross, so this is a sibling extension point, not a new
+  provide.
+- **The host compiles at sweep time.** JSX doesn't run raw; esbuild
+  becomes a dependency and the ten-second sweep rebuilds a `.panel`
+  edited in place. The pack precedent applies whole: a `.panel` is an
+  archive and equally a folder (`panel.json` beside optional
+  `style.css` and `blocks/*.tsx`), same sweep, no toolchain for the
+  AUTHOR either. The person installing still just copies a file and
+  enables it.
+
+**This settles the client build story.** teller's own client is
+React, bundled — Vite back in `server/`'s world, the standard blocks
+are the old components ported at full fidelity, and a released teller
+serves `dist/` exactly as the old world did. "View-source is the
+source" is retired for teller's internals; it was only ever
+load-bearing for the authoring surface, which stays data. The bare
+panel's derivation (§7) survives as a React component — the floor is
+a renderer, not a runtime commitment.
+
+**Rungs 3–5 are NOT built now.** The settlement exists so the visual
+port doesn't paint the format into a corner. First real customer for
+rung 4 is likely the Aces `cards` fan — design the contract against
+that concrete case when it arrives, not in the abstract.
+
 ### F · `Field`'s key/label split
 
 `Field` is `{key, label, value}`; Entry is `{name, …}`. §10's coupling
