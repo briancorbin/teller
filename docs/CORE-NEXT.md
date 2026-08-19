@@ -1091,7 +1091,9 @@ late — Brian pulled it forward the moment its precondition existed):
   collection is a base layer BELOW the system (`core/panels.ts`) — the
   one slot teller declares for itself — and `sourceOf('panels', …)`
   says `teller` until a layer restates the word. Ten panels: two
-  arrangements (`sheet`, `bare`) and eight tools.
+  arrangements (`sheet`, `bare`) and eight tools. *(Superseded by
+  §M-6 the next day: teller now seeds only the five host tools;
+  the play screens ride the system layer.)*
 - **The console is a directory of the merged collection**, `#panel=`
   routes each panel, and the Screens tool offers the same list when
   assigning — one list, three consumers, the `panes.ts` law kept.
@@ -1549,6 +1551,45 @@ above still stand, and the folder is the only serialization.
 - The one-table test: none of this platform shape may cost the
   actual Wednesday table. Build single-table-first; the platform is
   what falls out.
+
+**6 · The play screens are the system's** (2026-08-19, Brian, the
+first cut made under this section — "when you load a system, it adds
+the extra console screens it needs").
+
+teller seeds ONLY the host-level tools — **boards, log, plugins,
+screens, shelf**: the screens about the HOST (its glass, its files,
+its layers, its history), which are meaningful on a bare install and
+say nothing about any game. Everything that's about PLAY — roster,
+runner, encounters, bestiary, rules, and the entity arrangements
+(`sheet`, `bare`) — is a **system-layer declaration**: a system ships
+them as `panels/<name>/` folders on its own shelf (§15-adjacent
+machinery that already existed in `core/systems-shelf.ts`), and the
+console's tab bar is still nothing but the merged `panels` slot
+filtered by subject. The tool IMPLEMENTATIONS stay in teller's client
+registry — a system's roster declaration is one small file naming a
+teller tool — and a system wanting a different runner restates the
+name and wins, as ever.
+
+This sharpens where point 1's floor ATTACHES, without touching its
+capacity/requirement language: **the manual floor is per-block
+degradation within a resolved system, not a systemless play path.** A
+host with no system is a host mid-setup — five tabs, a shelf that
+says so, nowhere to put a fight — and that's correct, because "sit
+down and play with nothing" was never a real table; every table has
+a system, even if that system is one json file of pure vocabulary.
+Which is the escape hatch, and it's already sanctioned: a zero-IP
+"starter" system that declares the generic screens and nothing else
+is freely distributable BY CONSTRUCTION (point 3), so the fully
+generic manual table still exists — as a file on the shelf, not as a
+hardcode in the kernel. The floor lives one layer up now, and it
+lives there as data.
+
+What was found the same day, and survives the move: teller's default
+`sheet` declaration renders no identity block — a card is skills,
+resources and statuses, and never the NAME — and offers no way to
+hand-add an entry. That's now the shipping system-layer sheet's bug
+to fix (WiW's, and the starter's when it exists), not the kernel's;
+noted here so it doesn't get lost in the handoff between layers.
 
 ### Still open from `ARCHITECTURE.md`
 
