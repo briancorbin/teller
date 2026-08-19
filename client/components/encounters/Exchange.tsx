@@ -25,6 +25,7 @@
 
 import { useRef, useState } from 'react';
 import { findEntry, numberOf, type Entity, type Entry } from '../../../core/entity.ts';
+import { effectiveList } from '../../../core/frenzy.ts';
 import {
   afterDamage,
   damageFrom,
@@ -90,6 +91,27 @@ const TOLERANCES = 'tolerances';
 function listOf(entity: Entity | undefined, list: string): Entry[] {
   const key = Object.keys(entity?.lists ?? {}).find((k) => k.toLowerCase() === list.toLowerCase());
   return key ? entity!.lists[key] : [];
+}
+
+/**
+ * The same, as a RUNNING frenzy leaves it.
+ *
+ * A creature mid-frenzy tolerates what the frenzy says it tolerates, and
+ * the arithmetic here is the one place that would otherwise quietly use
+ * the printed number instead — the stage would show one figure and the
+ * proposal would use another, which is the exact split `core/exchange.ts`
+ * exists to have ended.
+ */
+function readingOf(entity: Entity | undefined, list: string): Entry[] {
+  const key = Object.keys(entity?.lists ?? {}).find((k) => k.toLowerCase() === list.toLowerCase());
+  return effectiveList(entity, key ?? list);
+}
+
+/** Every list of a sheet, read the same way — what a defense is looked up in. */
+function readingLists(entity: Entity | undefined): Record<string, Entry[]> {
+  return Object.fromEntries(
+    Object.keys(entity?.lists ?? {}).map((key) => [key, effectiveList(entity, key)]),
+  );
 }
 
 const stepPip = (n: number, label: string) => (
@@ -194,7 +216,8 @@ export function Exchange({
   const target = targetId ? sheetOf(targetId) : undefined;
   const targetFoe = target?.type === 'foe';
   const targetVital = vitalIn(target?.lists);
-  const offered = defensesOf(target?.lists, pins, targetVital?.entry);
+  // A frenzied target defends with what the frenzy leaves it.
+  const offered = defensesOf(readingLists(target), pins, targetVital?.entry);
 
   /** Anything changed after a press means the press no longer describes it. */
   const touched = () => {
@@ -256,7 +279,7 @@ export function Exchange({
         : typeof inflict.value === 'string' && isPool(inflict.value)
           ? tallyFaces(tolFaces[`printed:${inflict.name}`] ?? [], dice).total
           : 0;
-    const tol = toleranceFor(listOf(target, TOLERANCES), inflict.name);
+    const tol = toleranceFor(readingOf(target, TOLERANCES), inflict.name);
     const relief =
       tol?.flat !== undefined
         ? tol.flat
@@ -526,7 +549,7 @@ export function Exchange({
                       typeof inflict.value === 'string' && isPool(inflict.value)
                         ? inflict.value
                         : undefined;
-                    const tol = toleranceFor(listOf(target, TOLERANCES), inflict.name);
+                    const tol = toleranceFor(readingOf(target, TOLERANCES), inflict.name);
                     const { value, note } = severityOf(inflict);
                     return (
                       <div key={inflict.name} className="flex flex-wrap items-center gap-2">

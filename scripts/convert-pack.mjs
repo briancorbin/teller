@@ -203,6 +203,8 @@ const parseStats = {
   tolerances: { parsed: 0, fellBack: 0 },
   named: { parsed: 0, fellBack: 0 },
   frenzy: { parsed: 0, fellBack: 0 },
+  /** Frenzies whose paragraph said nothing this can structure — prose, out loud. */
+  frenzyBare: 0,
   marks: 0,
 };
 
@@ -221,6 +223,8 @@ function creatureOf(old) {
   const traits = [];
   const children = [];
   const marks = [];
+  /** Held back until the rest of the creature is read — see below. */
+  let frenzyField;
   for (const t of old.tags ?? []) {
     const name = typeof t.name === 'string' ? t.name : undefined;
     if (marksPrefix && name?.startsWith(marksPrefix)) {
@@ -256,15 +260,11 @@ function creatureOf(old) {
         traits.push({ name: f.label, value });
       }
     } else if (f.key === 'frenzy') {
-      const frenzies = frenzyChildren(value, () => newId('frz'));
-      if (frenzies) {
-        parseStats.frenzy.parsed++;
-        children.push(...frenzies);
-      } else {
-        parseStats.frenzy.fellBack++;
-        console.log(`  frenzy didn't parse cleanly for ${old.name} — kept as prose`);
-        traits.push({ name: f.label, value });
-      }
+      // Read LAST, whatever order the fields arrive in: what a frenzy
+      // does is written against the creature's own attacks, stats and
+      // tolerances, and it can't point at a list that hasn't been read
+      // yet. See the deferred parse below.
+      frenzyField = { label: f.label, value };
     } else if (NAMED_FIELDS.has(f.key)) {
       const entries = namedEntries(value);
       if (entries) {
@@ -282,6 +282,32 @@ function creatureOf(old) {
   if (about.length) lists.about = about;
   if (skills.length) lists.skills = skills;
   if (stats.length) lists.stats = stats;
+
+  // The frenzy, now that there's a creature to read it against: its own
+  // attacks (so a rewrite points at one with a REF rather than copying
+  // a name the book spells differently), its stat and tolerance names
+  // (so an override can only ever name something real), and the
+  // system's statuses (so a bracketed name is known to be one, or known
+  // not to be). Nothing in that list is a word this file spells.
+  if (frenzyField) {
+    const frenzies = frenzyChildren(frenzyField.value, () => newId('frz'), {
+      attacks: children.filter((c) => c.type === 'attack').map((c) => ({ id: c.id, name: c.name })),
+      stats: stats.map((s) => s.name),
+      tolerances: (lists.tolerances ?? []).map((t) => t.name),
+      statuses: statuses.map((s) => s.name),
+    });
+    if (frenzies) {
+      parseStats.frenzy.parsed++;
+      parseStats.frenzyBare += frenzies.filter(
+        (f) => !f.children && Object.keys(f.lists).every((k) => k === 'gate'),
+      ).length;
+      children.push(...frenzies);
+    } else {
+      parseStats.frenzy.fellBack++;
+      console.log(`  frenzy didn't parse cleanly for ${old.name} — kept as prose`);
+      traits.push({ name: frenzyField.label, value: frenzyField.value });
+    }
+  }
   if (traits.length) lists.traits = traits;
   const resources = (old.counters ?? []).map((c) => {
     const entry = { name: c.name };
@@ -450,6 +476,9 @@ for (const field of ['attacks', 'tolerances', 'named', 'frenzy']) {
       (fellBack ? ` (${fellBack} fell back to prose, see above)` : ''),
   );
 }
+console.log(
+  `  frenzies left as prose (nothing structurable in the paragraph): ${parseStats.frenzyBare}`,
+);
 console.log(`  Talent tags converted to marks: ${parseStats.marks}`);
 for (const [slot, held] of Object.entries(packData)) {
   if (['bestiary', 'catalog'].includes(slot)) continue;

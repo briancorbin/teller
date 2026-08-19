@@ -26,37 +26,13 @@ export type DiceRecord = {
   banks?: { face: string; counter: string }[];
 };
 
-/** "3B2G" → ['B','B','B','G','G'] — a printed pool as individual dice. */
-export function expandPool(pool: string): string[] {
-  const out: string[] = [];
-  for (const [, n, letter] of pool.matchAll(/(\d+)([A-Za-z])/g)) {
-    for (let i = 0; i < Number(n); i++) out.push(letter.toUpperCase());
-  }
-  return out;
-}
-
-/**
- * Several pools as one — ported unchanged from the old app. Defense is
- * additive wherever a system says it is, and a target holding two of
- * them rolls one handful, not two.
- */
-export function combinePools(pools: string[]): string {
-  const counts = new Map<string, number>();
-  for (const pool of pools) {
-    for (const letter of expandPool(pool)) {
-      counts.set(letter, (counts.get(letter) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([letter, n]) => `${n}${letter}`)
-    .join('');
-}
-
-/** Whether a string is a pool at all — "2B1G" yes, "Normal" no. */
-export function isPool(text: string): boolean {
-  return /^(?:\d+[A-Za-z])+$/.test(text.replace(/\s+/g, ''));
-}
+// Reading the NOTATION moved to `core/pool.ts` — a frenzy that says
+// "all attacks by 1G" is pool arithmetic with nobody rolling, so the
+// shape of a pool stopped being the roller's business. Re-exported here
+// so every caller keeps importing one file, and so there stays exactly
+// one parser for the printing.
+import { expandPool } from '../../core/pool.ts';
+export { combinePools, expandPool, isPool, subtractPools } from '../../core/pool.ts';
 
 /**
  * Roll a pool digitally — for FOES only, and the result lands in the

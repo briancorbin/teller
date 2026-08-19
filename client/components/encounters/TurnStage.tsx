@@ -22,6 +22,16 @@
 // statuses you hang, and the gate that has opened.
 
 import { numberOf, type Entity, type Entry } from '../../../core/entity.ts';
+import {
+  FRENZY,
+  costOf,
+  durationOf,
+  effectiveList,
+  grantsOf,
+  isActive,
+  modificationsFor,
+  modifiedAttack,
+} from '../../../core/frenzy.ts';
 import { readGate } from '../../../core/gate.ts';
 import type { Template } from '../../../core/stamp.ts';
 import type { DiceRecord } from '../../lib/dice.ts';
@@ -56,6 +66,7 @@ function DoesRow({
   armed,
   onArm,
   costCounter,
+  onWrite,
 }: {
   acting: Template;
   armed?: Armed;
@@ -63,102 +74,199 @@ function DoesRow({
   costCounter?: string;
   /** Tap to arm, tap the armed one to put it back. */
   onArm: (armed: Armed | undefined) => void;
+  /** How the running mark is stored — an ordinary entry, like everything. */
+  onWrite: (edit: EntryWrite) => void;
 }) {
-  const attacks = (acting.children ?? []).filter((c) => c.type === 'attack');
-  const frenzies = (acting.children ?? []).filter((c) => c.type === 'frenzy');
+  const sheet = acting as Entity;
+  const printed = (acting.children ?? []).filter((c) => c.type === 'attack');
+  const frenzies = (acting.children ?? []).filter((c) => c.type === FRENZY);
+  // What a RUNNING frenzy hands the creature: an attack it didn't have.
+  // A grant is an ordinary attack child, so it draws as an ordinary chip
+  // and nothing below needs to know where it came from.
+  const granted = frenzies
+    .filter((f) => isActive(sheet, f))
+    .flatMap((f) => grantsOf(f as Entity));
+  const attacks = [...printed, ...granted];
   if (!attacks.length && !frenzies.length) return null;
+
+  /** One chip's worth of action, armable. */
+  const chip = (
+    action: Template,
+    p: ReturnType<typeof attackProfile>,
+    { on, changed, tone }: { on: boolean; changed?: boolean; tone?: string },
+  ) => (
+    <button
+      key={action.id}
+      className={`rounded-md px-2 py-1 text-left font-mono text-[11px] transition-colors ${
+        on
+          ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
+          : changed
+            ? 'bg-stone-800 text-stone-300 ring-1 ring-rose-800/70 hover:bg-stone-700'
+            : (tone ?? 'bg-stone-800 text-stone-300 hover:bg-stone-700')
+      }`}
+      title={changed ? 'a frenzy is rewriting this one' : undefined}
+      onClick={() =>
+        onArm(
+          on
+            ? undefined
+            : {
+                id: action.id,
+                name: action.name,
+                ...(typeof p.damage?.value === 'string' ? { damage: p.damage.value } : {}),
+                ...(typeof p.cost?.value === 'number' ? { cost: p.cost.value } : {}),
+                inflicts: p.inflicts,
+                ...(p.band ? { note: p.band } : {}),
+              },
+        )
+      }
+    >
+      {/* A chip a frenzy is rewriting says so before it says anything
+          else: the numbers to its right are not the ones on the page. */}
+      {changed && <span className="mr-1 text-rose-400">✦</span>}
+      {action.name}
+      {/* The band, because one weapon prints a pool per reach and
+          two identical chips are otherwise indistinguishable. */}
+      {p.band && <span className="ml-1.5 text-[10px] text-stone-500">{p.band}</span>}
+      {p.aoe && <span className="ml-1.5 text-[10px] text-stone-500">AOE</span>}
+      {p.damage && (
+        <span className={`ml-1.5 ${changed ? 'text-rose-300' : 'text-amber-300'}`}>
+          {p.damage.value}
+        </span>
+      )}
+      {/* Spelled out, because "4G" beside a "2G" pool reads as
+          four gold dice and it is four of the counter the system
+          says actions are paid out of — whose NAME is the
+          system's, never a word spelled here. */}
+      {p.cost !== undefined && (
+        <span className="ml-1.5 text-[10px] text-stone-500">
+          {p.cost.value} {(costCounter ?? 'cost').toLowerCase()}
+        </span>
+      )}
+      {p.piercing && (
+        <span className="ml-1.5 text-[10px] text-stone-500">
+          piercing {p.piercing.value ?? ''}
+        </span>
+      )}
+      {p.inflicts.map((s) => (
+        <span key={s.name} className="ml-1.5">
+          <StatusChip entry={s} />
+        </span>
+      ))}
+    </button>
+  );
+
   return (
     <div className="mt-3 border-t border-stone-800 pt-2.5">
       <span className="text-[10px] uppercase tracking-widest text-stone-600">What it does</span>
       <div className="mt-1.5 flex flex-wrap gap-1.5">
         {attacks.map((attack) => {
-          const p = attackProfile(attack);
-          const on = armed?.id === attack.id;
-          return (
-            <button
-              key={attack.id}
-              className={`rounded-md px-2 py-1 text-left font-mono text-[11px] transition-colors ${
-                on
-                  ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
-                  : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
-              }`}
-              onClick={() =>
-                onArm(
-                  on
-                    ? undefined
-                    : {
-                        id: attack.id,
-                        name: attack.name,
-                        ...(typeof p.damage?.value === 'string' ? { damage: p.damage.value } : {}),
-                        ...(typeof p.cost?.value === 'number' ? { cost: p.cost.value } : {}),
-                        inflicts: p.inflicts,
-                        ...(p.band ? { note: p.band } : {}),
-                      },
-                )
-              }
-            >
-              {attack.name}
-              {/* The band, because one weapon prints a pool per reach and
-                  two identical chips are otherwise indistinguishable. */}
-              {p.band && <span className="ml-1.5 text-[10px] text-stone-500">{p.band}</span>}
-              {p.aoe && <span className="ml-1.5 text-[10px] text-stone-500">AOE</span>}
-              {p.damage && <span className="ml-1.5 text-amber-300">{p.damage.value}</span>}
-              {/* Spelled out, because "4G" beside a "2G" pool reads as
-                  four gold dice and it is four of the counter the system
-                  says actions are paid out of — whose NAME is the
-                  system's, never a word spelled here. */}
-              {p.cost !== undefined && (
-                <span className="ml-1.5 text-[10px] text-stone-500">
-                  {p.cost.value} {(costCounter ?? 'cost').toLowerCase()}
-                </span>
-              )}
-              {p.inflicts.map((s) => (
-                <span key={s.name} className="ml-1.5">
-                  <StatusChip entry={s} />
-                </span>
-              ))}
-            </button>
-          );
+          // The chip is drawn from the attack AS THE RUNNING FRENZIES
+          // LEAVE IT — same lists, rewritten in place, so arming it arms
+          // the modified numbers and nothing downstream branches.
+          const mods = modificationsFor(sheet, attack as Entity);
+          const { profile, inflicts, changed } = modifiedAttack(attack as Entity, mods);
+          const p = attackProfile({ ...attack, lists: { ...attack.lists, profile, inflicts } });
+          return chip(attack, p, { on: armed?.id === attack.id, changed });
         })}
+
         {frenzies.map((frenzy) => {
           const gate = readGate(frenzy, acting.lists);
           const open = gate?.met ?? false;
+          const running = isActive(sheet, frenzy);
           const on = armed?.id === frenzy.id;
+          // A frenzy IS an action when the book gave it numbers of its
+          // own — a pool, a reach, a status on everyone in it. Read off
+          // the same profile an attack keeps, so the chip is the chip.
+          const p = attackProfile(frenzy);
+          const cost = costOf(frenzy);
+          const duration = durationOf(frenzy);
           return (
-            <button
+            <span
               key={frenzy.id}
-              className={`rounded-md px-2 py-1 text-left font-mono text-[11px] transition-colors ${
-                on
-                  ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
-                  : open
-                    ? 'bg-rose-950/70 text-rose-200 hover:bg-rose-900/70'
-                    : 'bg-stone-900 text-stone-600 hover:bg-stone-800'
+              className={`inline-flex items-stretch overflow-hidden rounded-md ${
+                running ? 'ring-1 ring-rose-600' : ''
               }`}
-              title={frenzy.notes ?? undefined}
-              // An unmet gate still arms. teller shows the Warden where
-              // the line is and lets them cross it (rule 1) — a chip that
-              // dims is a warning, never a lock.
-              onClick={() =>
-                onArm(
-                  on
-                    ? undefined
-                    : {
-                        id: frenzy.id,
-                        name: frenzy.name,
-                        frenzy: true,
-                        inflicts: frenzy.lists?.inflicts ?? [],
-                        ...(frenzy.notes ? { note: frenzy.notes } : {}),
-                      },
-                )
-              }
             >
-              {frenzy.name}
-              {gate && (
-                <span className={`ml-1.5 text-[10px] ${open ? 'text-rose-300' : 'text-stone-600'}`}>
-                  {open ? 'ready' : `at ${gate.at} ${gate.counter.toLowerCase()}`}
-                </span>
-              )}
-            </button>
+              {/* The MARK — stored, toggleable, and proposed the moment
+                  the gate opens. teller never crosses the line itself:
+                  it lights the switch up and waits (rule 1), and the
+                  Warden may throw it early, or back off. */}
+              <button
+                className={`px-1.5 font-mono text-[11px] transition-colors ${
+                  running
+                    ? 'bg-rose-800 text-rose-50'
+                    : open
+                      ? 'animate-pulse bg-rose-950 text-rose-300 hover:bg-rose-900'
+                      : 'bg-stone-900 text-stone-700 hover:bg-stone-800'
+                }`}
+                title={
+                  running
+                    ? `${frenzy.name} is running — tap to stop it`
+                    : open
+                      ? `${frenzy.name} can start — tap to start it`
+                      : `start ${frenzy.name} early`
+                }
+                aria-pressed={running}
+                onClick={() =>
+                  onWrite({ list: FRENZY, name: frenzy.name, ...(running ? { remove: true } : {}) })
+                }
+              >
+                {running ? '◆' : '◇'}
+              </button>
+              <button
+                className={`px-2 py-1 text-left font-mono text-[11px] transition-colors ${
+                  on
+                    ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
+                    : open || running
+                      ? 'bg-rose-950/70 text-rose-200 hover:bg-rose-900/70'
+                      : 'bg-stone-900 text-stone-600 hover:bg-stone-800'
+                }`}
+                title={frenzy.notes ?? undefined}
+                // An unmet gate still arms. teller shows the Warden where
+                // the line is and lets them cross it (rule 1) — a chip that
+                // dims is a warning, never a lock.
+                onClick={() =>
+                  onArm(
+                    on
+                      ? undefined
+                      : {
+                          id: frenzy.id,
+                          name: frenzy.name,
+                          frenzy: true,
+                          ...(typeof p.damage?.value === 'string' ? { damage: p.damage.value } : {}),
+                          ...(typeof cost?.value === 'number' ? { cost: cost.value } : {}),
+                          inflicts: p.inflicts,
+                          ...(frenzy.notes ? { note: frenzy.notes } : {}),
+                        },
+                  )
+                }
+              >
+                {frenzy.name}
+                {gate && (
+                  <span
+                    className={`ml-1.5 text-[10px] ${open ? 'text-rose-300' : 'text-stone-600'}`}
+                  >
+                    {running ? 'running' : open ? 'ready' : `at ${gate.at} ${gate.counter.toLowerCase()}`}
+                  </span>
+                )}
+                {p.band && <span className="ml-1.5 text-[10px] text-stone-500">{p.band}</span>}
+                {p.aoe && <span className="ml-1.5 text-[10px] text-stone-500">AOE</span>}
+                {p.damage && <span className="ml-1.5 text-amber-300">{p.damage.value}</span>}
+                {cost?.value !== undefined && (
+                  <span className="ml-1.5 text-[10px] text-stone-500">
+                    {cost.value} {(costCounter ?? cost.name).toLowerCase()}
+                  </span>
+                )}
+                {p.inflicts.map((s) => (
+                  <span key={s.name} className="ml-1.5">
+                    <StatusChip entry={s} />
+                  </span>
+                ))}
+                {duration && (
+                  <span className="ml-1.5 text-[10px] italic text-stone-600">{duration}</span>
+                )}
+              </button>
+            </span>
           );
         })}
       </div>
@@ -223,6 +331,20 @@ export function TurnStage({
   const loose = conditions.filter(
     (c) => !statuses.some((s) => s.name.trim().toLowerCase() === c.name.trim().toLowerCase()),
   );
+
+  /**
+   * The printed lists as a RUNNING frenzy leaves them — what the grid
+   * below reads. Only the read moves: what's STORED stays the printed
+   * value, so turning a frenzy off restores the page without an undo,
+   * and the bars above stay on the stored numbers because those are the
+   * ones a stepper writes.
+   */
+  const reading: Template = {
+    ...acting,
+    lists: Object.fromEntries(
+      Object.keys(acting.lists ?? {}).map((key) => [key, effectiveList(acting as Entity, key)]),
+    ),
+  };
 
   return (
     <div className="@container space-y-2.5">
@@ -300,7 +422,13 @@ export function TurnStage({
           </div>
         )}
 
-        <DoesRow acting={acting} armed={armed} onArm={onArm} costCounter={costCounter} />
+        <DoesRow
+          acting={acting}
+          armed={armed}
+          onArm={onArm}
+          costCounter={costCounter}
+          onWrite={onWrite}
+        />
 
         {/* Armed: the exchange opens under the chips, keyed on what was
             armed so arming something else starts a clean one rather than
@@ -329,8 +457,13 @@ export function TurnStage({
             uses — one statblock, two places, no chance of them drifting
             apart. `resources` is skipped: it's the bars above. */}
         <div className="mt-3 space-y-4 border-t border-stone-800 pt-3">
-          <StatPools template={acting} skip={['resources', 'conditions']} />
-          <StatblockProse template={acting} />
+          <StatPools template={reading} skip={['resources', 'conditions', FRENZY]} />
+          {/* The prose half reads the same way — a tolerance a frenzy
+              moved has to move HERE too, or the sheet and the exchange's
+              arithmetic say different numbers about the same creature.
+              The words themselves are untouched: they're `notes` on the
+              children, which no override can reach. */}
+          <StatblockProse template={reading} />
         </div>
 
         {acting.notes && (
