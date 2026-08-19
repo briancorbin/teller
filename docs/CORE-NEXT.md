@@ -1119,6 +1119,23 @@ the statblock renderer learning attack children; design the attack
 shape against SYSTEMS.md's actual WiW attack grammar before writing
 it.
 
+**The shape (designed 2026-08-18 against the full live bestiary —
+every fact fits the existing leaf, nothing new is invented):** an
+attack is a child of the foe template, `type: 'attack'`, two lists —
+`profile` ({Band (steps: Melee·Short·Long), Cost (count, Grit),
+Damage (pool string), AOE (bare), Piercing (count)}) and `inflicts`
+(status name → severity, where `Entry.value: number | string` already
+carries both `Dazed [2]` and `Afraid [4B]`). The system declares the
+kinds; the statblock groups bands by the declared step order. Found
+alongside: **Tolerances is mechanics-in-text too** (`Afraid [3G],
+Burned [2B]`) and becomes a plain `tolerances` list of entries — no
+children needed; Features/Trophies/Frenzy are genuinely words and
+stay prose. Prerequisite: `Template`/`toTemplate` (core/stamp.ts)
+currently DROP children while `resolve()` already recurses them —
+the template learns to carry what resolution already honors. The
+parse happens ONCE, in the converter, at the boundary — never at
+render.
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
