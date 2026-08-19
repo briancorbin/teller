@@ -782,6 +782,36 @@ port doesn't paint the format into a corner. First real customer for
 rung 4 is likely the Aces `cards` fan — design the contract against
 that concrete case when it arrives, not in the abstract.
 
+**UN-DEFERRED (Brian, 2026-08-19): the first customer arrived, and it
+is the WiW player sheet itself** — "everything it needs should be
+self contained in its .panel file." The rungs build now, against that
+concrete case: a `wiw-sheet.panel` folder carrying arrangement + its
+own compiled blocks + its own style + its own art, edited in place on
+the shelf. The contract, settled here so the machinery and the client
+build to the same seam:
+
+- **Compile at sweep**: esbuild (a dependency now) builds a panel
+  folder's `blocks/*.tsx` / `panel.tsx` (takeover) / `style.css` into
+  `<folder>/.build/`; rebuilt when sources are newer. A compile error
+  is a load-report problem, out loud, never a crash.
+- **Served plain** at `/panel-code/<pan_id>/…` — panel code is app
+  code, not player-secret content; only `.build` outputs are
+  reachable.
+- **Declared to the client**: a code-carrying panel's `PanelDef`
+  gains `code: { style?, blocks?: {name → url}, takeover? }` — added
+  at load, and ONLY once the panel is trusted; untrusted code-panels
+  surface as needing enablement instead.
+- **Trust rides the plugins table** (§15's own line): the sweep
+  discovers, only a human enables — one toggle, remembered, in the
+  plugins tool. Teller's own seeded defaults arrive trusted.
+- **The import contract is the rung-4 public API**: panel code
+  imports `react`, `react/jsx-runtime`, and `teller` (the component
+  library — the ported blocks and primitives, the ui grammar, the
+  BlockCtx seam) via an import map the client serves; a custom block
+  default-exports a component receiving the BlockCtx props. This is
+  the promotion §E said would happen "deliberately, later" — later is
+  now, and the seam freezes as it stands.
+
 **E extended again (2026-08-18, Brian): the defaults are `.panel`
 files too, and a panel owns its assets.**
 
