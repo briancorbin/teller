@@ -206,6 +206,7 @@ export const STANDARD_PANELS: PanelDef[] = [
   tool('roster', 'Roster', 'Everyone at the table; open a sheet, stamp a foe.'),
   tool('runner', 'Runner', 'The turn order — round, rolling, next, assist.'),
   tool('encounters', 'Encounters', 'Prep: author a fight against the merged bestiary.'),
+  tool('bestiary', 'Bestiary', 'Everything you could put in front of the party.'),
   tool('screens', 'Screens', 'The room: adopt by code, assign roles, identify.'),
   tool('shelf', 'Shelf', "This machine's systems, packs and what the campaign runs on."),
   tool('plugins', 'Plugins', 'Discovered on disk; enabled only by you, here.'),

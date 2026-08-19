@@ -457,6 +457,150 @@ registerBlock('children', (_block, ctx) => {
   );
 });
 
+// ---- floor (§7 — every stored value, one control each) ----------------
+// The `bare` panel's block, and the port of `server/public/panel.js`'s
+// `renderPanel` (vanilla, view-source-is-the-source) — the complete,
+// ugly, fully-operable sheet a table still has with zero declarations.
+// The control follows the value's SHAPE, not a declaration: this is
+// `AutoEntry`'s own grammar (chip / inline text / stepper), applied to
+// EVERY list rather than the one `rest` was handed, plus the vanilla
+// panel's add-entry and add-list affordances neither `rest` nor `list`
+// ever needed — a declared block places specific lists by name, so it
+// never had to invent one.
+//
+// Name/type edits are old scope, noted in the task: `ctx.write` is the
+// seat's one door (`POST /entities/:id/entry`) and only ever touches an
+// entry inside a list — renaming the entity or its type needs a whole-
+// entity PUT that isn't part of `BlockCtx`. The `header` block already
+// draws name/type read-only, so the floor reuses it rather than doing a
+// half job of its own.
+//
+// `ctx.entity` arrives already resolved (every caller fetches with
+// `?resolved=1` — `App.tsx`, `SeatChrome.tsx`) — fine for the read-only
+// header/notes/children below, but the floor's OWN editable grid has to
+// show what's actually STORED, the same distinction the vanilla panel
+// drew between `renderPanel` (stored, editable) and its "reads as"
+// aside (resolved, read-only) — so this fetches the stored entity
+// itself rather than trusting the ambient one.
+
+function FloorAddEntry({ onAdd }: { onAdd: (name: string, value: number | string | undefined, max: number | undefined) => void }) {
+  return (
+    <button
+      className="text-[11px] text-stone-500 hover:text-stone-300"
+      onClick={() => {
+        const name = window.prompt('name?')?.trim();
+        if (!name) return;
+        const raw = window.prompt('value? (blank = held, number = count, words = text)')?.trim() ?? '';
+        if (!raw) return onAdd(name, undefined, undefined);
+        const asNumber = Number(raw);
+        if (!Number.isFinite(asNumber)) return onAdd(name, raw, undefined);
+        const cap = window.prompt('max? (blank = none)')?.trim() ?? '';
+        const max = cap && Number.isFinite(Number(cap)) ? Number(cap) : undefined;
+        onAdd(name, asNumber, max);
+      }}
+    >
+      + add
+    </button>
+  );
+}
+
+function FloorBlock({ ctx }: { ctx: BlockCtx }) {
+  const id = subject(ctx)?.id;
+  const [stored, setStored] = useState<Entity | undefined>(undefined);
+  const [resolved, setResolved] = useState<Entity | undefined>(undefined);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!id) {
+      setStored(undefined);
+      setResolved(undefined);
+      return;
+    }
+    let cancelled = false;
+    Promise.all([
+      api<Entity>(`/api/entities/${id}`),
+      api<Entity>(`/api/entities/${id}?resolved=1`),
+    ]).then(([s, r]) => {
+      if (!cancelled) {
+        setStored(s);
+        setResolved(r);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [id, tick]);
+
+  if (!id || !stored) return <Refusal>no entity to show</Refusal>;
+
+  const write = (list: string, entryName: string, edit: Record<string, unknown>) => {
+    ctx.write?.({ list, name: entryName, ...edit })?.then(() => setTick((t) => t + 1));
+  };
+
+  const addEntry = (list: string, name: string, value: number | string | undefined, max: number | undefined) =>
+    write(list, name, max !== undefined ? { value, max } : { value });
+
+  const addList = () => {
+    const name = window.prompt('list name? (skills, resources, conditions, …)')?.trim();
+    if (!name) return;
+    // A list needs a first entry to exist at all — `writeEntry` vivifies
+    // the list on the entry write, there's no bare "create an empty
+    // list" door without a whole-entity PUT (see the note above).
+    const entryName = window.prompt('its first entry — name?')?.trim();
+    if (!entryName) return;
+    const raw = window.prompt('value? (blank = held, number = count, words = text)')?.trim() ?? '';
+    if (!raw) return addEntry(name, entryName, undefined, undefined);
+    const asNumber = Number(raw);
+    if (!Number.isFinite(asNumber)) return addEntry(name, entryName, raw, undefined);
+    const cap = window.prompt('max? (blank = none)')?.trim() ?? '';
+    const max = cap && Number.isFinite(Number(cap)) ? Number(cap) : undefined;
+    addEntry(name, entryName, asNumber, max);
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <RenderBlock block={{ block: 'header' }} ctx={ctx} />
+
+      {Object.entries(stored.lists).map(([listName, entries]) => (
+        <section key={listName} className={`${card} flex flex-col gap-2`}>
+          <div className="flex items-center justify-between">
+            <p className={sectionLabel}>{listName}</p>
+            <FloorAddEntry onAdd={(name, value, max) => addEntry(listName, name, value, max)} />
+          </div>
+          {entries.length === 0 && <Refusal>nothing here yet</Refusal>}
+          {entries.map((entry) => (
+            <AutoEntry
+              key={entry.name}
+              entry={entry}
+              onWrite={(edit) => write(listName, entry.name, edit)}
+            />
+          ))}
+        </section>
+      ))}
+
+      <button className="w-fit text-[11px] text-stone-500 hover:text-stone-300" onClick={addList}>
+        + add list
+      </button>
+
+      <RenderBlock block={{ block: 'notes' }} ctx={ctx} />
+      <RenderBlock block={{ block: 'children' }} ctx={ctx} />
+
+      {resolved && (
+        <details className={card}>
+          <summary className={`${sectionLabel} cursor-pointer`}>
+            reads as (resolved through templates)
+          </summary>
+          <pre className="mt-2 overflow-x-auto text-xs text-stone-400">
+            {JSON.stringify(resolved, null, 2)}
+          </pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+registerBlock('floor', (_block, ctx) => <FloorBlock ctx={ctx} />);
+
 // ---- rest (strays surface — the degradation contract, arranged) -------
 
 registerBlock('rest', (block, ctx) => {
@@ -536,6 +680,7 @@ import { toolOf } from '../tools/index.ts';
 import '../tools/roster.tsx';
 import '../tools/runner.tsx';
 import '../tools/encounters.tsx';
+import '../tools/bestiary.tsx';
 import '../tools/screens.tsx';
 import '../tools/shelf.tsx';
 import '../tools/plugins.tsx';
