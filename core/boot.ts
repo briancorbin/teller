@@ -24,6 +24,7 @@ import { refIn, refsIn, sameName, type Entity, type Ref } from './entity.ts';
 import { mergeBy } from './merge.ts';
 import { STANDARD_PANELS, type PanelDef } from './panels.ts';
 import { sweepPanels } from './panels-shelf.ts';
+import { sweepPacks, type PackProblem } from './packs-shelf.ts';
 import { toTemplate, type Template, type TemplateOf } from './stamp.ts';
 import type { Campaign, Shelf } from './store.ts';
 
@@ -52,6 +53,8 @@ export class Loaded {
   readonly missing: Missing[];
   /** A `panels/*\/panel.json` that failed to parse. Reported, never a crash. */
   readonly panelProblems: { dir: string; problem: string }[];
+  /** A `packs/*\/…json` that failed to parse. Same posture — the pack loads what parses. */
+  readonly packProblems: PackProblem[];
   #layers: Layer[];
   #campaign: Campaign;
 
@@ -64,12 +67,14 @@ export class Loaded {
     packs: { id: string; name: string; version: number }[] = [],
     panels: PanelDef[] = STANDARD_PANELS,
     panelProblems: { dir: string; problem: string }[] = [],
+    packProblems: PackProblem[] = [],
   ) {
     this.manifest = manifest;
     this.system = system;
     this.packs = packs;
     this.missing = missing;
     this.panelProblems = panelProblems;
+    this.packProblems = packProblems;
     // teller's own furniture sits BELOW everything: the standard panel
     // collection, overridable by any layer above restating the name
     // (§E). The one slot teller ships declarations for — swept from the
@@ -177,21 +182,33 @@ export class Loaded {
  * applies, in arrival order — a host with one pack must never make
  * anyone tick a box.
  *
- * `dataDir`, when given, is where the panel sweep looks
- * (`<dataDir>/panels/*\/panel.json` — §E). No dir, or a sweep that finds
- * nothing there yet (a fresh shelf, a test's scratch dir), falls back to
+ * `dataDir`, when given, is where the two sweeps look —
+ * `<dataDir>/panels/*\/panel.json` (§E) and `<dataDir>/packs/*\/`
+ * (§L phase 1). No dir, or a panel sweep that finds nothing there yet
+ * (a fresh shelf, a test's scratch dir), falls back to
  * `STANDARD_PANELS` in memory — the same seed source `seedPanels` writes
  * from, so a host that hasn't booted once yet still has its furniture.
+ *
+ * **A folder beats a row.** A system or pack the pack sweep found is
+ * used INSTEAD of the `shelf.db` row of the same id — the file on disk
+ * is the authoring copy (rule 4a), so it wins, exactly the way a
+ * swept `panel.json` beats the in-memory seed. The rows stay put and
+ * stay readable, which is what makes the migration safe one pack at a
+ * time: anything not yet folder-ized still loads from the database.
  */
 export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string): Loaded {
   const manifest = campaign.root();
   const missing: Missing[] = [];
   const layers: Layer[] = [];
 
+  const sweptPacks = dataDir ? sweepPacks(dataDir) : undefined;
+  const folderSystems = new Map((sweptPacks?.systems ?? []).map((s) => [s.id, s]));
+  const folderPacks = new Map((sweptPacks?.packs ?? []).map((p) => [p.id, p]));
+
   const systemRef = refIn(manifest.refs, 'system');
   let system: { id: string; name: string; version: number } | undefined;
   if (systemRef) {
-    const row = shelf.system(systemRef.id);
+    const row = folderSystems.get(systemRef.id) ?? shelf.system(systemRef.id);
     if (row) {
       system = { id: row.id, name: row.name, version: row.version };
       layers.push({ source: `system:${row.id}`, data: asRecord(row.data) });
@@ -201,14 +218,21 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
   }
 
   const declared = refsIn(manifest.refs, 'packs');
-  const packRefs: Ref[] = declared.length
-    ? declared
-    : system
-      ? shelf.packsFor(system.id).map((id) => ({ id, name: id }))
-      : [];
+  // No declared list means every pack for the system applies, in
+  // arrival order — from the shelf AND from the folders, which is where
+  // a pack that only ever existed as a folder joins in.
+  const undeclared = () => {
+    if (!system) return [];
+    const ids = shelf.packsFor(system.id);
+    for (const pack of folderPacks.values()) {
+      if (pack.system === system.id && !ids.includes(pack.id)) ids.push(pack.id);
+    }
+    return ids.map((id) => ({ id, name: id }));
+  };
+  const packRefs: Ref[] = declared.length ? declared : undeclared();
   const packs: { id: string; name: string; version: number }[] = [];
   for (const ref of packRefs) {
-    const row = shelf.pack(ref.id);
+    const row = folderPacks.get(ref.id) ?? shelf.pack(ref.id);
     if (row) {
       packs.push({ id: row.id, name: row.name, version: row.version });
       layers.push({ source: `pack:${row.id}`, data: asRecord(row.data) });
@@ -221,5 +245,15 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
   const panels = swept?.panels.length ? swept.panels : STANDARD_PANELS;
   const panelProblems = swept?.problems ?? [];
 
-  return new Loaded(manifest, layers, missing, campaign, system, packs, panels, panelProblems);
+  return new Loaded(
+    manifest,
+    layers,
+    missing,
+    campaign,
+    system,
+    packs,
+    panels,
+    panelProblems,
+    sweptPacks?.problems ?? [],
+  );
 }

@@ -22,6 +22,7 @@ The two forms are the same format for different jobs:
 ```
 wiw-guidebook/            ← or wiw-guidebook.pack, zipped
   pack.json               id, system, name, version, rights, books
+  system.json             the SYSTEM this pack speaks, when it brings one
   sections.json           the rulings
   statuses.json           conditions this pack adds
   bestiary.json           the foes
@@ -112,6 +113,55 @@ Each part file holds a bare array or object — no wrapper key, because
 the file name already said what it is. `catalog.json`, `trades.json`,
 `creation.json` and `notes.json` follow the same rule.
 
+**The file name IS the slot name**, and that's the whole rule — there is
+no list of permitted files. Drop `upgrades.json` beside the others and
+the pack has an `upgrades` slot; the files above are simply the ones
+anything reads today. Two names are reserved, because they carry
+identity rather than content: `pack.json` and `system.json`.
+
+### `system.json` — the system this pack speaks
+
+A folder yields up to two things: the pack, and — if it carries this
+file — the SYSTEM the pack is written in. That isn't a new coupling.
+A pack has always declared a `system`, and the system's vocabulary is
+what its content is written in; authoring them together is how a
+guidebook is actually written.
+
+```json
+{
+  "id": "sys_example",
+  "name": "Example System",
+  "version": 3,
+
+  "vocabulary": { "conditions": "Afflictions" },
+  "dials": { "Grit": "cylinder" },
+  "kinds": [{ "name": "conditions", "domain": { "kind": "count", "zero": "clears" } }]
+}
+```
+
+`id`, `name` and `version` are the system's identity and are reserved;
+**every other key is a record slot, inline**. That's the one place this
+format differs from the pack half, and deliberately: a pack's slots are
+long lists that each want a file (65 foes do not belong beside an id),
+while a system's are a dozen small records read and edited together —
+`dials` is four lines. One file keeps the whole vocabulary in one
+editor buffer, which is what editing a system actually looks like.
+
+A folder may carry no `system.json` at all — a bestiary pack for a
+system that arrived some other way. A system whose id matches one
+already on the shelf REPLACES it while the folder is there: the folder
+is the authoring copy, so the folder wins.
+
+**The edit recipe**, which is the point of all of this:
+
+1. edit `~/.teller/packs/<name>/<file>.json`
+2. `POST /api/shelf/sweep`
+3. it's live
+
+A file that doesn't parse is reported in the sweep's answer and costs
+exactly that slot — the rest of the pack loads. Broken loudly beats
+missing quietly.
+
 ### `statuses.json` — conditions this pack adds
 
 Usually absent, and that's correct. **Statuses belong to the SYSTEM**,
@@ -153,6 +203,14 @@ object store when the pack is installed, and turns it back into a
 relative path on export. That's what lets two packs both carry an
 `art/logo.png` without meeting, and lets the same file install on any
 host and still find its own pictures.
+
+For a folder that means the sweep COPIES `art/` into the host's own
+`art/<pak_id>/`, file by file, skipping anything already newer than its
+source — so the picture is served from the one place the file route
+looks, and an untouched folder costs nothing on the next sweep. Not a
+symlink: a symlink survives neither a zip nor a copy to a stick, and it
+would ask the serving route to follow a path out of the data dir, which
+is the exact check that route exists to make.
 
 A book does NOT travel with a pack. It's referenced by hash, because a
 book is something the recipient owns; a monster portrait isn't.

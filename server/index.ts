@@ -357,6 +357,27 @@ export async function handleApi(
     });
   }
 
+  // -- the sweep door (§L phase 1). "Edit the folder, sweep, live" needs
+  // somewhere to say sweep, and until this existed the panel work was
+  // saying it through the plugin-enable POST — which was doing double
+  // duty as a rebuild and lying about what it meant. This re-runs the
+  // resolution law over whatever is on disk now and answers with the
+  // load report, so a folder that didn't parse says so out loud instead
+  // of quietly not being there.
+  if (method === 'POST' && head === 'shelf' && a === 'sweep' && !b) {
+    if (!canDm(auth)) return denied();
+    session.reload();
+    const { loaded } = session;
+    return reply(200, {
+      ok: true,
+      system: loaded.system ?? null,
+      packs: loaded.packs,
+      missing: loaded.missing,
+      packProblems: loaded.packProblems,
+      panelProblems: loaded.panelProblems,
+    });
+  }
+
   // -- plugins over HTTP: §15's "enablement is a human act in the
   // console", finally in the console. Toggle and config reload the
   // load path live, so the enable gate and the running set never drift.

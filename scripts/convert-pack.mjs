@@ -1,9 +1,23 @@
 // The first exercise of the new pack format: convert an old-world pack
 // folder (fields/counters/tags) and its system row into the new shape
-// (lists + declarations) and install both on a new-world shelf.
+// (lists + declarations) and write both as a new-world pack FOLDER.
 //
 //   node scripts/convert-pack.mjs --pack ~/.teller/packs/wiw-guidebook \
 //     --old-db ~/.teller/teller.db --data ~/.teller-next
+//
+// §L phase 1 turned this from an install into an EXPORT. It used to
+// write `shelf.db` rows and nothing else, which made the old world's
+// pack the authoring copy forever — every WiW vocabulary edit was a
+// round trip through here. Now it writes
+// `<data>/packs/<name>/` in the folder format (`pack.json`,
+// `system.json`, a file per slot, `art/`), and THAT is the authoring
+// copy from the run after this one. Run it once per pack, then edit the
+// folder and `POST /api/shelf/sweep`.
+//
+// It still installs the db rows too (`--skip-db` to not). They're
+// harmless: `loadCampaign` prefers a folder over a row of the same id,
+// so the rows sit shadowed as a fallback for a host that hasn't got the
+// folder yet. Nothing reads them once the folder exists.
 //
 // The script carries ZERO content (rule 4): everything it writes comes
 // from files already on this host. Conversion is a port, not a
@@ -22,13 +36,22 @@
 //     clears, the cap presented never enforced; a per-status exception
 //     (uncapped) rides on that status's own declaration.
 
-import { cpSync, readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  existsSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import process from 'node:process';
 import { DatabaseSync } from 'node:sqlite';
 import { openShelf } from '../core/store.ts';
 import { newId } from '../core/id.ts';
+import { withInstalledArt } from '../core/packs-shelf.ts';
 
 function parseArgs(argv) {
   const out = {};
@@ -42,6 +65,10 @@ const untilde = (p) => resolve((p ?? '').replace(/^~/, homedir()));
 const packDir = untilde(args.pack ?? join(homedir(), '.teller/packs/wiw-guidebook'));
 const oldDb = untilde(args['old-db'] ?? join(homedir(), '.teller/teller.db'));
 const dataDir = untilde(args.data ?? join(homedir(), '.teller-next'));
+// Where the folder lands. Named for the source folder, because a name
+// is what a person types; identity is still the id inside (rule 4a).
+const outDir = untilde(args.out ?? join(dataDir, 'packs', basename(packDir)));
+const skipDb = args['skip-db'] !== undefined;
 
 const readJson = (name) => {
   const path = join(packDir, name);
@@ -336,18 +363,17 @@ const bestiary = (readJson('bestiary.json') ?? []).map(creatureOf);
 const oldCatalog = readJson('catalog.json') ?? {};
 const catalog = (oldCatalog.items ?? []).map(itemOf);
 
-// -- art: a pack carries its pictures (rule 4a). Copied under the
-// pack's own id so two packs can't name the same file, and every
-// reference is REWRITTEN to the installed key at install time — the
-// export path would reverse it.
+// -- art: a pack carries its pictures (rule 4a). The blob assembled
+// here keeps art RELATIVE (`art/logo.png`), because that is what a
+// pack folder holds; the sweep rewrites it to `art/<pak_id>/…` at
+// install, and the db path below does the same rewrite by hand.
 const artDir = join(packDir, 'art');
 const hasArt = existsSync(artDir);
-const installedArt = (rel) => `art/${pack.id}/${String(rel).replace(/^art\//, '')}`;
+const installedArt = (rel) => `art/${String(rel).replace(/^art\//, '')}`;
 
 const brand = {};
 const portraits = {};
 if (hasArt) {
-  cpSync(artDir, join(dataDir, 'art', String(pack.id)), { recursive: true });
   // A file named logo.* anywhere in the pack's art is the brand mark.
   const findLogo = (dir, rel = '') => {
     for (const name of readdirSync(dir)) {
@@ -363,7 +389,7 @@ if (hasArt) {
     return undefined;
   };
   const logo = findLogo(artDir);
-  if (logo) brand.logo = `art/${pack.id}/${logo}`;
+  if (logo) brand.logo = `art/${logo}`;
   for (const trade of readJson('trades.json') ?? []) {
     if (trade.name && trade.art) portraits[trade.name] = installedArt(trade.art);
   }
@@ -393,23 +419,59 @@ for (const [file, slot] of [
   if (held !== undefined) packData[slot] = held;
 }
 
-// ---------------------------------------------------------------- install
+// ----------------------------------------------------------- export folder
+//
+// The serialization rule, and the whole of it: `pack.json` and
+// `system.json` carry identity, and every other key of the blob becomes
+// `<slot>.json`. The system's records stay INLINE in `system.json`
+// because they're read and edited together (see `core/packs-shelf.ts`).
 
-const shelf = openShelf(dataDir);
-shelf.putSystem({
-  id: systemId,
-  name: String(sysRow.name),
-  version: Number(sysRow.version) || 1,
-  data: systemData,
-});
-shelf.putPack({
+const written = [];
+const writeJson = (name, value) => {
+  writeFileSync(join(outDir, name), `${JSON.stringify(value, null, 2)}\n`);
+  written.push(name);
+};
+
+mkdirSync(outDir, { recursive: true });
+writeJson('pack.json', {
   id: String(pack.id),
   system: systemId,
   name: String(pack.name),
   version: Number(pack.version) || 1,
-  data: packData,
+  ...(pack.rights ? { rights: pack.rights } : {}),
+  ...(pack.books ? { books: pack.books } : {}),
 });
-shelf.close();
+writeJson('system.json', {
+  id: systemId,
+  name: String(sysRow.name),
+  version: Number(sysRow.version) || 1,
+  ...systemData,
+});
+for (const [slot, held] of Object.entries(packData)) writeJson(`${slot}.json`, held);
+if (hasArt) cpSync(artDir, join(outDir, 'art'), { recursive: true });
+
+// ------------------------------------------------------- install (shadowed)
+
+if (!skipDb) {
+  // The rows the folder now supersedes. Art references have to be the
+  // INSTALLED keys here, because a row has no folder to be relative to.
+  if (hasArt) cpSync(artDir, join(dataDir, 'art', String(pack.id)), { recursive: true });
+  const shelf = openShelf(dataDir);
+  shelf.putSystem({
+    id: systemId,
+    name: String(sysRow.name),
+    version: Number(sysRow.version) || 1,
+    data: withInstalledArt(systemData, String(pack.id)),
+  });
+  shelf.putPack({
+    id: String(pack.id),
+    system: systemId,
+    name: String(pack.name),
+    version: Number(pack.version) || 1,
+    data: withInstalledArt(packData, String(pack.id)),
+  });
+  shelf.close();
+}
 
 console.log(`system ${systemId} · ${sysRow.name} v${sysRow.version}`);
 console.log(`  statuses: ${statuses.length} · kinds: ${kinds.map((k) => k.name).join(', ')}`);
@@ -430,9 +492,16 @@ for (const [slot, held] of Object.entries(packData)) {
 }
 if (hasArt) {
   console.log(
-    `  art installed under art/${pack.id}/` +
+    `  art copied into the folder, relative` +
       `${brand.logo ? ' · brand logo found' : ''}` +
       `${Object.keys(portraits).length ? ` · ${Object.keys(portraits).length} portraits` : ''}`,
   );
 }
-console.log(`installed onto ${join(dataDir, 'shelf.db')}`);
+console.log(`folder written to ${outDir}`);
+console.log(`  ${written.join(' · ')}${hasArt ? ' · art/' : ''}`);
+console.log(
+  skipDb
+    ? '  (db rows not written — the folder is the only copy)'
+    : `  shadow rows also written to ${join(dataDir, 'shelf.db')} — the folder wins`,
+);
+console.log('edit the folder, then POST /api/shelf/sweep');

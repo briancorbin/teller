@@ -1267,6 +1267,31 @@ precedent — the boundary question ("is this primitive neutral, or
 WiW wearing teller's badge?") gets asked every time the library
 grows.
 
+**Step 0 landed (2026-08-19): a pack is a FOLDER again.** Before packs
+can carry code they have to be somewhere a person can put code, and in
+the new world they weren't — pack and system content existed only as
+converter-written `shelf.db` rows, so every WiW vocabulary edit was a
+round trip through `scripts/convert-pack.mjs` and a restart. Now
+`~/.teller-next/packs/<name>/` is swept by `core/packs-shelf.ts` and a
+folder BEATS a row of the same id, which is what makes the migration
+safe one pack at a time: anything not yet folder-ized still loads from
+the database, and the shadowed rows cost nothing.
+
+The format is rule 4a's, extended by exactly one file: **`system.json`**
+beside `pack.json`, carrying the `sys_` id and the record slots inline,
+so one folder yields both shelf entities the way the converter always
+produced both from one source. Every other `*.json` is a slot named by
+its file — the file split stays a serialization, and `boot.ts` never
+learned it happened. `POST /api/shelf/sweep` is the door (DM only,
+answers with the load report); the plugin-enable POST stops doing double
+duty as a rebuild.
+
+What the later phases inherit: the folder is now the obvious home for a
+system's presentation CODE — `packs/<name>/blocks/*.tsx` compiled by the
+same esbuild pass and gated by the same trust row `panels-shelf.ts`
+already reuses, one sweep, no second machinery. Nothing about that was
+built here, and the seam is the sweep itself.
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
