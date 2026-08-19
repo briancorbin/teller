@@ -17,6 +17,7 @@ import { btnPrimary, card, input, sectionLabel } from './lib/ui.ts';
 import type { PanelDef } from '../core/panels.ts';
 import { PanelSurface, type BlockCtx, type Glass } from './panels/render.tsx';
 import { SeatChrome } from './components/seat/SeatChrome.tsx';
+import { CampaignScreen } from './views/campaigns.tsx';
 
 function useHash(): string {
   return useSyncExternalStore(
@@ -218,6 +219,16 @@ function PanelRoute({
 // console points somewhere.
 
 function Console() {
+  // Which campaign is at the table, asked FIRST: a host with none has
+  // no content stack, so there are no panels to render and the console
+  // is the campaign screen until the DM picks one. This endpoint
+  // answers on a bare host too (slug: null) precisely so this check
+  // isn't an error path.
+  const campaign = useLive(
+    () => api<{ slug: string | null; manifest: { name: string } | null }>('/api/campaign'),
+    [],
+  );
+  const [picking, setPicking] = useState(false);
   const panels = useLive(
     () => api<PanelDef[]>('/api/stack/declarations/panels'),
     [],
@@ -241,6 +252,12 @@ function Console() {
   const tools = (panels.data ?? []).filter((p) => p.subject !== 'entity');
   const current = tools.find((p) => p.name === pane) ?? tools[0];
 
+  // In-place view state, never a route: the console is ONE stable url
+  // (rule 6), and a bookmark into "the campaign screen" would be a
+  // bookmark into a state that stops existing the moment someone picks.
+  if (campaign.data && !campaign.data.slug) return <CampaignScreen />;
+  if (picking) return <CampaignScreen onBack={() => setPicking(false)} />;
+
   if (!panels.data) return null;
   const ctx: BlockCtx = {
     glass: 'held',
@@ -263,6 +280,16 @@ function Console() {
             {(p.label ?? p.name).toLowerCase()}
           </button>
         ))}
+        {/* Which story this is, and the way to another one. Far right,
+            quiet: it's the room's title bar, not a tool. */}
+        <button
+          type="button"
+          onClick={() => setPicking(true)}
+          title="switch campaign"
+          className="ml-auto rounded-full px-3 py-1 font-mono text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
+        >
+          {(campaign.data?.manifest?.name ?? campaign.data?.slug ?? '—').toLowerCase()}
+        </button>
       </nav>
       {current ? (
         <PanelSurface

@@ -9,10 +9,11 @@
 // it this table actually runs on, and in what precedence order — the
 // "runs #N" chip and the missing-ref lines mirror the vanilla tool.
 
+import { useState } from 'react';
 import { registerTool } from './index.ts';
 import { api } from '../lib/api.ts';
 import { useLive } from '../lib/use-session.ts';
-import { card, sectionLabel } from '../lib/ui.ts';
+import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui.ts';
 
 type ShelfSystem = { id: string; name: string; version: number };
 type ShelfPack = { id: string; system?: string; name: string; version: number };
@@ -21,13 +22,193 @@ type ShelfOut = { systems: ShelfSystem[]; packs: ShelfPack[]; boards: ShelfBoard
 
 type CampaignOut = {
   slug: string;
+  /** The manifest itself — its `refs` are what says DECLARED vs default. */
+  manifest: { refs?: Record<string, { id: string; name: string } | { id: string; name: string }[]> } | null;
   system: { id: string; name: string; version: number } | null;
   packs: { id: string; name: string; version: number }[];
   missing: { slot: 'system' | 'pack'; ref: { id: string; name: string } }[];
 };
 
+/**
+ * Which system and packs this table runs on — the manifest's refs, and
+ * the one place they're editable.
+ *
+ * The DECLARED list is precedence order and later wins, so the arrows
+ * are the whole feature (same reindex-on-move shape as the screens
+ * tool). An empty declaration is not "no packs": it's the DEFAULT —
+ * every pack for the system, in arrival order — which is why "use all"
+ * is a first-class button and not a trick. A host with one pack must
+ * never make anyone tick a box.
+ */
+function ThisCampaign({
+  shelf,
+  campaign,
+  onChanged,
+}: {
+  shelf: ShelfOut;
+  campaign: CampaignOut;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState('');
+  const declared = campaign.packs.map((p) => p.id);
+  // No declared list is the default reading; the endpoint answers with
+  // what actually LOADED either way, so telling them apart needs the
+  // manifest's own refs — which `/api/campaign` carries.
+  const explicit = ((campaign.manifest?.refs?.packs ?? []) as { id: string }[]).map(
+    (r) => r.id,
+  );
+  const usingDefault = explicit.length === 0;
+  const forSystem = shelf.packs.filter(
+    (p) => !campaign.system || p.system === campaign.system.id,
+  );
+  const available = forSystem.filter((p) => !declared.includes(p.id));
+
+  const write = (body: Record<string, unknown>) => {
+    setBusy(true);
+    api('/api/campaign/refs', { method: 'PUT', body })
+      .then(onChanged)
+      .catch(onChanged)
+      .finally(() => setBusy(false));
+  };
+
+  const nudge = (index: number, delta: -1 | 1) => {
+    const list = usingDefault ? declared : explicit;
+    if (!list[index] || !list[index + delta]) return;
+    const next = [...list];
+    const [moved] = next.splice(index, 1);
+    next.splice(index + delta, 0, moved);
+    write({ packs: next });
+  };
+
+  return (
+    <section className={`${card} space-y-3`}>
+      <span className={sectionLabel}>This campaign</span>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm text-stone-400">system</span>
+        <select
+          className={input}
+          disabled={busy}
+          value={campaign.system?.id ?? ''}
+          onChange={(e) => write({ system: e.target.value || null })}
+        >
+          <option value="">(none)</option>
+          {shelf.systems.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} v{s.version}
+            </option>
+          ))}
+        </select>
+        {campaign.system && (
+          <span className="font-mono text-[11px] text-stone-600">
+            {campaign.system.id}
+          </span>
+        )}
+      </div>
+
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-stone-400">
+            packs, in precedence order — later wins
+          </span>
+          {usingDefault ? (
+            <span className="font-mono text-[11px] text-stone-600">
+              default: all for the system
+            </span>
+          ) : (
+            <button className={btnGhost} disabled={busy} onClick={() => write({ packs: null })}>
+              use all (default)
+            </button>
+          )}
+        </div>
+        <ul className="space-y-1">
+          {campaign.packs.map((p, i) => (
+            <li
+              key={p.id}
+              className="flex items-center gap-1 rounded-md bg-stone-900 px-2 py-1.5"
+            >
+              <span className="font-mono text-[11px] text-stone-600">#{i + 1}</span>
+              <span className="min-w-0 flex-1 truncate text-sm text-stone-100" title={p.id}>
+                {p.name}
+              </span>
+              <button
+                className="rounded-md px-1.5 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200 disabled:opacity-30"
+                title="earlier — loses to what's below it"
+                disabled={busy || i === 0}
+                onClick={() => nudge(i, -1)}
+              >
+                ▲
+              </button>
+              <button
+                className="rounded-md px-1.5 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200 disabled:opacity-30"
+                title="later — wins over what's above it"
+                disabled={busy || i === campaign.packs.length - 1}
+                onClick={() => nudge(i, 1)}
+              >
+                ▼
+              </button>
+              <button
+                className="rounded-md px-2 py-1 text-sm text-stone-600 transition-colors hover:bg-red-950 hover:text-red-300"
+                title="stop running this pack at this table"
+                disabled={busy}
+                onClick={() =>
+                  write({
+                    packs: (usingDefault ? declared : explicit).filter((id) => id !== p.id),
+                  })
+                }
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+          {campaign.packs.length === 0 && (
+            <li className="text-sm text-stone-600">no packs load for this campaign</li>
+          )}
+        </ul>
+        {available.length > 0 && (
+          <div className="flex flex-wrap gap-2 pt-1">
+            <select
+              className={input}
+              value={adding}
+              onChange={(e) => setAdding(e.target.value)}
+            >
+              <option value="">add a pack…</option>
+              {available.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className={btn}
+              disabled={busy || !adding}
+              onClick={() => {
+                write({ packs: [...(usingDefault ? declared : explicit), adding] });
+                setAdding('');
+              }}
+            >
+              add
+            </button>
+          </div>
+        )}
+      </div>
+
+      {campaign.missing.map((m, i) => (
+        <p key={i} className="font-mono text-[11px] text-amber-500/80">
+          missing {m.slot}: {m.ref.name} ({m.ref.id})
+        </p>
+      ))}
+      <p className="text-[11px] text-stone-600">
+        installing is still the sweep's job — drop a system or pack in the data dir and it
+        shows up here on its own. there is no upload from the console.
+      </p>
+    </section>
+  );
+}
+
 function ShelfTool() {
-  const { data } = useLive(
+  const { data, reload } = useLive(
     () => Promise.all([api<ShelfOut>('/api/shelf'), api<CampaignOut>('/api/campaign')]),
     [],
   );
@@ -107,26 +288,7 @@ function ShelfTool() {
         </ul>
       </section>
 
-      <section className={`${card} space-y-2`}>
-        <span className={sectionLabel}>This campaign</span>
-        {campaign.system ? (
-          <p className="text-sm text-stone-300">
-            {campaign.system.name} v{campaign.system.version} · packs in precedence:{' '}
-            {campaign.packs.length ? campaign.packs.map((p) => p.name).join(' → ') : '(all for the system)'}
-          </p>
-        ) : (
-          <p className="text-sm text-stone-600">no system resolved</p>
-        )}
-        {campaign.missing.map((m, i) => (
-          <p key={i} className="font-mono text-[11px] text-amber-500/80">
-            missing {m.slot}: {m.ref.name} ({m.ref.id})
-          </p>
-        ))}
-        <p className="text-[11px] text-stone-600">
-          installing is still the sweep's job — drop a system or pack in the data dir and it
-          shows up here on its own. there is no upload from the console.
-        </p>
-      </section>
+      <ThisCampaign shelf={shelf} campaign={campaign} onChanged={reload} />
     </div>
   );
 }

@@ -19,8 +19,9 @@ import type { PanelDef } from '../../core/panels.ts';
 type PluginManifest = { id: string; name: string; version: number; provides: string[]; needs: string[] };
 type Found = { dir: string; manifest: PluginManifest; enabled: boolean };
 type Problem = { dir: string; problem: string };
+type Trusted = { id: string; name: string; kind: 'system' | 'pack' | 'panel' };
 type PluginsOut =
-  | { found: Found[]; problems: Problem[]; running: string[] }
+  | { found: Found[]; problems: Problem[]; running: string[]; trusted?: Trusted[] }
   | { error: string };
 /** Only the half this tool reads — the campaign's resolved pack stack. */
 type CampaignOut = {
@@ -294,10 +295,77 @@ function PendingPackRow({
   );
 }
 
+/**
+ * Content code this table has already said yes to — and the way to take
+ * it back. Trust was a one-way door until this existed: the pending
+ * sections above are the ONLY surfaces that offer the toggle, and they
+ * render on `codePending`, which goes false the moment you enable. So
+ * the answer became unreachable the instant it was given.
+ *
+ * Same table, same endpoint, same posture — only the direction differs.
+ * Disabling takes nothing away but the CODE: the system's or pack's
+ * rules and bestiary are data, always loaded, never gated (§L phase 2).
+ */
+function TrustedCode() {
+  const { data, reload } = useLive(() => api<PluginsOut>('/api/plugins'), []);
+  const [busy, setBusy] = useState('');
+  const trusted = data && !('error' in data) ? (data.trusted ?? []) : [];
+  if (!trusted.length) return null;
+
+  const revoke = async (id: string) => {
+    if (
+      !window.confirm(
+        'Stop running this code? Its rules and bestiary stay; only the presentations go.',
+      )
+    )
+      return;
+    setBusy(id);
+    try {
+      await api(`/api/plugins/${id}`, { method: 'POST', body: { enabled: false } });
+      reload();
+    } finally {
+      setBusy('');
+    }
+  };
+
+  return (
+    <section className={`${card} space-y-3`}>
+      <div className="flex items-center justify-between">
+        <span className={sectionLabel}>Code you've trusted</span>
+        <span className="font-mono text-[11px] text-stone-600">{trusted.length}</span>
+      </div>
+      <ul className="space-y-2">
+        {trusted.map((t) => (
+          <li
+            key={t.id}
+            className="flex flex-wrap items-center gap-2 rounded-md border border-stone-800 bg-stone-900/60 px-3 py-2"
+          >
+            <span className="text-sm text-stone-100">{t.name}</span>
+            <span className="rounded bg-stone-800 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-stone-400">
+              {t.kind}
+            </span>
+            <span className="font-mono text-[11px] text-stone-600">{t.id}</span>
+            <span className="ml-auto">
+              <button className={btnGhost} disabled={busy === t.id} onClick={() => revoke(t.id)}>
+                stop running this
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] text-stone-600">
+        revoking stops the compiled presentations from loading — the rules, statuses and
+        bestiary that came with them are data and never went through this gate.
+      </p>
+    </section>
+  );
+}
+
 registerTool('plugins', () => (
   <div className="space-y-4">
     <PluginsSection />
     <PendingPanelCode />
     <PendingPackCode />
+    <TrustedCode />
   </div>
 ));
