@@ -51,6 +51,19 @@ export type PanelDef = {
    * merge key stays `name`, exactly as `pak_` doesn't touch a pack's.
    */
   id?: string;
+  /**
+   * The ladder's rungs 3-5 (§E UN-DEFERRED, 2026-08-19). Attached at
+   * LOAD, by the sweep, and only once the panel is TRUSTED — never
+   * carried in `panel.json` itself. URLs point at
+   * `/panel-code/<pan_id>/…`, serving `<folder>/.build/` output only.
+   */
+  code?: { style?: string; blocks?: Record<string, string>; takeover?: string };
+  /**
+   * Set instead of `code` when a folder carries compiled code but no
+   * human has enabled it yet — the client's cue to say "this panel
+   * carries code awaiting enablement" rather than pretend it's inert.
+   */
+  codePending?: boolean;
 };
 
 /** Forgiving read for a panel arriving in pack JSON — keep what parses. */

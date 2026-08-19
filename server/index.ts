@@ -44,7 +44,7 @@ import {
   type Auth,
 } from './auth.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
-import { seedPanels } from '../core/panels-shelf.ts';
+import { panelDir, seedPanels } from '../core/panels-shelf.ts';
 import { Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
@@ -360,6 +360,12 @@ export async function handleApi(
   // -- plugins over HTTP: §15's "enablement is a human act in the
   // console", finally in the console. Toggle and config reload the
   // load path live, so the enable gate and the running set never drift.
+  //
+  // The trust table this reads and writes is the same one a code-
+  // carrying `.panel` rides (§E: "trust rides the plugins table") — so
+  // this route doubles as the panel-code enablement endpoint. A `pan_`
+  // id reloads the CONTENT stack (panel code is attached there, at
+  // sweep); anything else reloads the PLUGIN load path, as before.
   if (head === 'plugins') {
     if (!canDm(auth)) return denied();
     const dataDir = session.dataDir;
@@ -384,7 +390,14 @@ export async function handleApi(
         return reply(400, { error: 'enabled must be true or false' });
       }
       session.shelf.setPluginEnabled(a, body.enabled);
-      await reloadPlugins();
+      if (a.startsWith('pan_')) {
+        // Panel code isn't a plugin's `provides` — it's attached to the
+        // panel's declaration by the sweep, so what needs re-running is
+        // the content stack, not the plugin load path.
+        session.reload();
+      } else {
+        await reloadPlugins();
+      }
       return reply(200, { ok: true, running: session.plugins.map((p) => p.manifest.id) });
     }
     if (method === 'PUT' && a && b === 'config') {
@@ -571,6 +584,33 @@ export function serve(session: Session, port: number, key: string) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
+    // A `.panel`'s compiled code (§E UN-DEFERRED) — served PLAIN, no
+    // ticket: "panel code is app code, not player-secret content." Only
+    // `.build` outputs are reachable, and only for a panel the sweep
+    // actually found — trust decides whether the DECLARATION carries
+    // this url in the first place, not whether the byte is fetchable
+    // once someone has it.
+    if (url.pathname.startsWith('/panel-code/')) {
+      const dataDir = session.dataDir;
+      const rel = decodeURIComponent(url.pathname.slice('/panel-code/'.length));
+      const [panelId, ...fileParts] = rel.split('/').filter(Boolean);
+      const dir = dataDir && panelId ? panelDir(dataDir, panelId) : undefined;
+      const buildRoot = dir ? join(dir, '.build') : undefined;
+      const path = buildRoot && fileParts.length
+        ? normalize(join(buildRoot, ...fileParts))
+        : undefined;
+      if (!path || !buildRoot || !path.startsWith(buildRoot) || !existsSync(path)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('not here');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': MIME[extname(path)] ?? 'application/octet-stream',
+      });
+      res.end(readFileSync(path));
+      return;
+    }
+
     // Bytes from the data dir — pack art and board images — behind the
     // same ticket law as the stream (an <img> can't send headers).
     // Only art/ and map/ are reachable, and only inside the data dir.
@@ -698,16 +738,22 @@ if (import.meta.main) {
   const port = Number(args.port ?? 4526);
   const slug = args.campaign;
 
+  // Opened once, up front — seeding a default's trust row (below) and
+  // every mode after it shares this one connection.
+  const shelf = openShelf(dataDir);
+
   // The standard panels ship as files (§E): seed-if-absent, every boot,
   // regardless of which mode below runs — cheap, and it's what makes a
-  // fresh `~/.teller-next/panels/` exist before anything reads it.
-  seedPanels(dataDir);
+  // fresh `~/.teller-next/panels/` exist before anything reads it. The
+  // shelf rides along so a freshly-minted default's code, if it carries
+  // any, is trusted the moment it's seeded (§E: "not a ceremony for
+  // your own hands").
+  seedPanels(dataDir, shelf);
 
   // Plugin management — the CLI is where a HUMAN enables (§15). These
   // are commands, not server modes: they act on the shelf and exit,
   // campaign or no campaign.
   if ('plugins' in args || args.enable || args.disable || args.configure) {
-    const shelf = openShelf(dataDir);
     if ('plugins' in args) {
       const { found, problems } = discoverPlugins(dataDir, shelf);
       if (!found.length && !problems.length) {
@@ -746,8 +792,6 @@ if (import.meta.main) {
     );
     process.exit(1);
   }
-
-  const shelf = openShelf(dataDir);
 
   const key = loadDmKey(dataDir);
   const campaign = args.new

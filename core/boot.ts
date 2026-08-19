@@ -217,7 +217,7 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
     }
   }
 
-  const swept = dataDir ? sweepPanels(dataDir) : undefined;
+  const swept = dataDir ? sweepPanels(dataDir, shelf) : undefined;
   const panels = swept?.panels.length ? swept.panels : STANDARD_PANELS;
   const panelProblems = swept?.problems ?? [];
 

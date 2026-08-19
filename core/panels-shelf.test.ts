@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, statSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { seedPanels, sweepPanels } from './panels-shelf.ts';
+import { openShelf, type Shelf } from './store.ts';
+import { panelDir, seedPanels, sweepPanels } from './panels-shelf.ts';
 import { STANDARD_PANELS } from './panels.ts';
 
 let dir: string;
@@ -116,5 +117,136 @@ describe('sweepPanels — reads and reports, writes nothing (like discoverPlugin
       'panel.json is not a panel (needs a name)',
     ]);
     expect(problems.map((p) => p.dir).sort()).toEqual([brokenDir, emptyNameDir].sort());
+  });
+});
+
+describe('sweepPanels — the code ladder (§E UN-DEFERRED, rungs 3-5)', () => {
+  let shelf: Shelf;
+
+  beforeEach(() => {
+    shelf = openShelf(dir);
+  });
+
+  afterEach(() => {
+    shelf.close();
+  });
+
+  function writeBlockPanel(name: string, id: string, source: string) {
+    const panelDirPath = join(dir, 'panels', name);
+    mkdirSync(join(panelDirPath, 'blocks'), { recursive: true });
+    writeFileSync(
+      join(panelDirPath, 'panel.json'),
+      JSON.stringify({ name, id, subject: 'none', mounted: [], held: [] }),
+    );
+    writeFileSync(join(panelDirPath, 'blocks', 'Widget.tsx'), source);
+    return panelDirPath;
+  }
+
+  const VALID_BLOCK = `export default function Widget() { return null; }\n`;
+
+  it('compiles a block to .build and the loaded PanelDef carries code.blocks once trusted', () => {
+    writeBlockPanel('my-widget', 'pan_widget1', VALID_BLOCK);
+    shelf.setPluginEnabled('pan_widget1', true);
+
+    const { panels, problems } = sweepPanels(dir, shelf);
+    expect(problems).toEqual([]);
+    const panel = panels.find((p) => p.name === 'my-widget');
+    expect(panel?.codePending).toBeUndefined();
+    expect(panel?.code?.blocks?.Widget).toBe('/panel-code/pan_widget1/blocks/Widget.js');
+
+    const built = readFileSync(
+      join(dir, 'panels', 'my-widget', '.build', 'blocks', 'Widget.js'),
+      'utf8',
+    );
+    expect(built).toContain('Widget');
+  });
+
+  it('an untrusted code-carrying panel gets codePending instead of code', () => {
+    writeBlockPanel('untrusted-widget', 'pan_widget2', VALID_BLOCK);
+    // No trust row written — the sweep discovers, only a human enables.
+
+    const { panels } = sweepPanels(dir, shelf);
+    const panel = panels.find((p) => p.name === 'untrusted-widget');
+    expect(panel?.code).toBeUndefined();
+    expect(panel?.codePending).toBe(true);
+  });
+
+  it('a syntax-error block lands in problems, and the declaration still loads', () => {
+    writeBlockPanel('broken-widget', 'pan_widget3', 'export default function( {{{ broken');
+    shelf.setPluginEnabled('pan_widget3', true);
+
+    const { panels, problems } = sweepPanels(dir, shelf);
+    expect(problems.length).toBeGreaterThan(0);
+    expect(problems[0].dir).toBe(join(dir, 'panels', 'broken-widget'));
+    const panel = panels.find((p) => p.name === 'broken-widget');
+    expect(panel).toBeDefined();
+    expect(panel?.code).toBeUndefined();
+  });
+
+  it('mtime skip — a second sweep does not recompile an unchanged source', () => {
+    writeBlockPanel('cached-widget', 'pan_widget4', VALID_BLOCK);
+    shelf.setPluginEnabled('pan_widget4', true);
+
+    sweepPanels(dir, shelf);
+    const outPath = join(dir, 'panels', 'cached-widget', '.build', 'blocks', 'Widget.js');
+    const firstBuild = statSync(outPath).mtimeMs;
+
+    // Push the output's mtime into the future — if the sweep rebuilds
+    // unconditionally, it will stomp this back down to "now".
+    const future = new Date(Date.now() + 60_000);
+    utimesSync(outPath, future, future);
+
+    sweepPanels(dir, shelf);
+    const secondBuild = statSync(outPath).mtimeMs;
+    expect(secondBuild).toBe(future.getTime());
+    expect(secondBuild).not.toBe(firstBuild);
+  });
+
+  it('style.css passes through untouched', () => {
+    const name = 'styled-widget';
+    const id = 'pan_widget5';
+    const panelDirPath = join(dir, 'panels', name);
+    mkdirSync(panelDirPath, { recursive: true });
+    writeFileSync(
+      join(panelDirPath, 'panel.json'),
+      JSON.stringify({ name, id, subject: 'none', mounted: [], held: [] }),
+    );
+    writeFileSync(join(panelDirPath, 'style.css'), '.widget { color: red; }\n');
+    shelf.setPluginEnabled(id, true);
+
+    const { panels } = sweepPanels(dir, shelf);
+    const panel = panels.find((p) => p.name === name);
+    expect(panel?.code?.style).toBe(`/panel-code/${id}/style.css`);
+    const copied = readFileSync(join(panelDirPath, '.build', 'style.css'), 'utf8');
+    expect(copied).toBe('.widget { color: red; }\n');
+  });
+
+  it("seedPanels-origin panels are trusted implicitly, if they carry code", () => {
+    // Simulate a standard panel authored WITH a block, as if teller
+    // shipped one, and confirm the seed-time trust write lets its code
+    // through with no separate enable step.
+    const seedDir = join(dir, 'panels', 'sheet');
+    seedPanels(dir, shelf);
+    mkdirSync(join(seedDir, 'blocks'), { recursive: true });
+    writeFileSync(join(seedDir, 'blocks', 'Widget.tsx'), VALID_BLOCK);
+    const seededId = JSON.parse(readFileSync(join(seedDir, 'panel.json'), 'utf8')).id;
+
+    const { panels } = sweepPanels(dir, shelf);
+    const sheet = panels.find((p) => p.name === 'sheet');
+    expect(sheet?.code?.blocks?.Widget).toBe(`/panel-code/${seededId}/blocks/Widget.js`);
+  });
+});
+
+describe('panelDir — resolving a pan_ id back to its folder', () => {
+  it('finds the folder whose panel.json carries this id', () => {
+    seedPanels(dir);
+    const path = join(dir, 'panels', 'bare', 'panel.json');
+    const id = JSON.parse(readFileSync(path, 'utf8')).id;
+    expect(panelDir(dir, id)).toBe(join(dir, 'panels', 'bare'));
+  });
+
+  it('an unknown id resolves to nothing', () => {
+    seedPanels(dir);
+    expect(panelDir(dir, 'pan_nope')).toBeUndefined();
   });
 });
