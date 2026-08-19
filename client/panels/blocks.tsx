@@ -203,18 +203,31 @@ function RowsBlock({
   entries,
   accent,
   dice,
+  markedNames,
+  markTitle,
 }: {
   title: string;
   entries: Entry[];
   accent?: string;
   dice?: DiceRecord;
+  /** Lowercased skill names whose Talent is bought (the `marks` list — see the `marks` record). */
+  markedNames?: Set<string>;
+  markTitle?: string;
 }) {
   const lookup = useRuleLookup();
   return (
     <SheetPanel title={title} className="w-full">
       <div className="divide-y divide-stone-800/80">
         {entries.map((entry) => (
-          <SkillRow key={entry.name} entry={entry} accent={accent} dice={dice} lookup={lookup} />
+          <SkillRow
+            key={entry.name}
+            entry={entry}
+            accent={accent}
+            dice={dice}
+            marked={markedNames?.has(entry.name.toLowerCase())}
+            markTitle={markTitle}
+            lookup={lookup}
+          />
         ))}
       </div>
     </SheetPanel>
@@ -263,12 +276,18 @@ registerBlock('list', (block, ctx) => {
 
   if (as === 'rows') {
     if (!entries.length) return null;
+    const markedNames = new Set(
+      entriesOf(e, 'marks').map((m) => m.name.toLowerCase()),
+    );
+    const marksRecord = ctx.records.marks as { text?: string } | undefined;
     return (
       <RowsBlock
         title={titleCase(name)}
         entries={entries}
         accent={accent}
         dice={ctx.records.dice as DiceRecord | undefined}
+        markedNames={markedNames}
+        markTitle={marksRecord?.text}
       />
     );
   }

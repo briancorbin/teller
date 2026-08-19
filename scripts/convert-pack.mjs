@@ -244,7 +244,18 @@ function parseTolerances(field) {
   return out;
 }
 
-const parseStats = { attacks: { parsed: 0, fellBack: 0 }, tolerances: { parsed: 0, fellBack: 0 } };
+const parseStats = {
+  attacks: { parsed: 0, fellBack: 0 },
+  tolerances: { parsed: 0, fellBack: 0 },
+  marks: 0,
+};
+
+// A Talent used to hide behind a prefix on a tag string ("Talent:
+// Rifles") — the recurring bug rule 4 names. The prefix itself is
+// system data (`oldSys.marks.prefix`), never hardcoded here; a tag
+// wearing it becomes a bare `marks` entry (name = category, no value)
+// and the prefixed tag is dropped, not carried forward alongside it.
+const marksPrefix = oldSys.marks?.prefix;
 
 function creatureOf(old) {
   const lists = {};
@@ -253,6 +264,18 @@ function creatureOf(old) {
   const stats = [];
   const traits = [];
   const children = [];
+  const marks = [];
+  for (const t of old.tags ?? []) {
+    const name = typeof t.name === 'string' ? t.name : undefined;
+    if (marksPrefix && name?.startsWith(marksPrefix)) {
+      marks.push({ name: name.slice(marksPrefix.length).trim() });
+      parseStats.marks++;
+    }
+    // Non-Talent tags have no consumer yet and stay unconverted, same
+    // as before this change — only the Talent-prefixed shape hid a
+    // mechanic (rule 4) and needed a structured home.
+  }
+  if (marks.length) lists.marks = marks;
   for (const f of old.fields ?? []) {
     const value = typeof f.value === 'string' ? f.value.trim() : f.value;
     if (value === '' || value === undefined) continue;
@@ -400,6 +423,7 @@ console.log(
   `  tolerances parsed: ${parseStats.tolerances.parsed}/${parseStats.tolerances.parsed + parseStats.tolerances.fellBack}` +
     (parseStats.tolerances.fellBack ? ` (${parseStats.tolerances.fellBack} fell back to prose, see above)` : ''),
 );
+console.log(`  Talent tags converted to marks: ${parseStats.marks}`);
 for (const [slot, held] of Object.entries(packData)) {
   if (['bestiary', 'catalog'].includes(slot)) continue;
   console.log(`  rides along: ${slot} (${Array.isArray(held) ? held.length + ' items' : 'object'})`);

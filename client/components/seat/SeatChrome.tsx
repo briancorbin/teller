@@ -28,7 +28,7 @@ import { PanelSurface, type BlockCtx, type Glass } from '../../panels/render.tsx
 
 type Records = Record<string, Record<string, unknown>>;
 
-const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'groups', 'dice'];
+const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'groups', 'dice', 'marks'];
 
 function numberOf(entry: { value?: number | string } | undefined): number {
   return typeof entry?.value === 'number' ? entry.value : 0;

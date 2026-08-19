@@ -23,7 +23,7 @@ import { useLive } from '../../lib/use-session.ts';
 import { card } from '../../lib/ui.ts';
 import { PanelSurface, Refusal, type BlockCtx } from '../../panels/render.tsx';
 
-const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'dice'];
+const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'dice', 'marks'];
 
 /** The identity-layer records every card needs — fetched once, shared. */
 export function usePanelRecords() {
