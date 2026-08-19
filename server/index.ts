@@ -45,8 +45,8 @@ import {
 } from './auth.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
 import { defaultPanelDir, panelDir } from '../core/panels-shelf.ts';
-import { packDir, packPanelDir, systemIndexModule } from '../core/packs-shelf.ts';
-import { systemDir, systemPanelDir } from '../core/systems-shelf.ts';
+import { packDir, packPanelDir, sweepPacks, systemIndexModule } from '../core/packs-shelf.ts';
+import { sweepSystems, systemDir, systemPanelDir } from '../core/systems-shelf.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
@@ -125,6 +125,73 @@ function trustedCode(
     }
   }
   return out;
+}
+
+/**
+ * What this machine holds, resolved the way the LOADER resolves it:
+ * **a folder beats a row**, per id (`loadCampaign` in `core/boot.ts`).
+ * A `shelf.db` row that a `systems/<name>/` or `packs/<name>/` folder
+ * shadows lends only its place in the order; the folder's name and
+ * version are what the table actually runs, so they are what the
+ * console is told. A folder with no row at all still lists — it loads,
+ * so it exists.
+ *
+ * For a SYSTEM the order is §M's three places: its own folder, then a
+ * `system.json` embedded in a pack folder, then the row.
+ *
+ * This SWEEPS per request rather than reading what boot already found.
+ * The session's `loaded` only knows the campaign's OWN system and its
+ * declared packs — it isn't a shelf listing, and reusing it would leave
+ * every other folder unlisted. The sweep is cheap enough for a
+ * console-only read: JSON reads, `copyNewer` art installs and an
+ * mtime-gated compile that no-ops when nothing changed.
+ */
+function shelfListing(host: Host): {
+  systems: { id: string; name: string; version: number }[];
+  packs: { id: string; system?: string; name: string; version: number }[];
+} {
+  const rows = { systems: host.shelf.systems(), packs: host.shelf.packs() };
+  const dataDir = host.dataDir;
+  if (!dataDir) return rows;
+
+  const sweptPacks = sweepPacks(dataDir, host.shelf);
+  const sweptSystems = sweepSystems(dataDir, host.shelf);
+  const systemFolders = new Map(
+    [...sweptPacks.systems, ...sweptSystems.systems].map((s) => [s.id, s]),
+  );
+  const packFolders = new Map(sweptPacks.packs.map((p) => [p.id, p]));
+
+  // Rows first, in their own order (a shadowed row keeps its place —
+  // only its name and version come from the folder), then whatever only
+  // a folder knows about.
+  const systems = rows.systems.map((row) => {
+    const folder = systemFolders.get(row.id);
+    return folder ? { id: folder.id, name: folder.name, version: folder.version } : row;
+  });
+  for (const folder of systemFolders.values()) {
+    if (!rows.systems.some((row) => row.id === folder.id)) {
+      systems.push({ id: folder.id, name: folder.name, version: folder.version });
+    }
+  }
+
+  const asPack = (p: { id: string; system?: string; name: string; version: number }) => {
+    const out: { id: string; system?: string; name: string; version: number } = {
+      id: p.id,
+      name: p.name,
+      version: p.version,
+    };
+    if (p.system) out.system = p.system;
+    return out;
+  };
+  const packs = rows.packs.map((row) => {
+    const folder = packFolders.get(row.id);
+    return folder ? asPack(folder) : row;
+  });
+  for (const folder of packFolders.values()) {
+    if (!rows.packs.some((row) => row.id === folder.id)) packs.push(asPack(folder));
+  }
+
+  return { systems, packs };
 }
 
 /**
@@ -526,11 +593,17 @@ export async function handleApi(
   }
 
   // -- the shelf, read whole — what this machine holds (DM's business).
+  //
+  // Folder-first, because the LOAD path is: a swept `systems/<name>/`
+  // or `packs/<name>/` folder is used INSTEAD of the `shelf.db` row of
+  // the same id (`loadCampaign`, "a folder beats a row"). A listing
+  // that read only the rows told a different story than the loader
+  // lived — the console said "Wild Imaginary West v21" while the folder
+  // it was actually running said 22.
   if (method === 'GET' && head === 'shelf' && !a) {
     if (!canDm(auth)) return denied();
     return reply(200, {
-      systems: shelf.systems(),
-      packs: shelf.packs(),
+      ...shelfListing(host),
       boards: shelf.boards().map(({ id, name }) => ({ id, name })),
     });
   }

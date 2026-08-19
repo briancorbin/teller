@@ -1,10 +1,10 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createCampaign, openShelf } from '../core/store.ts';
+import { createCampaign, openCampaign, openShelf } from '../core/store.ts';
 import { serve } from './index.ts';
 import { Session } from './session.ts';
 
@@ -296,5 +296,69 @@ describe('/pack-code — the `system` specifier and the bytes behind it', () => 
   it('an unknown pack id is 404, and so is a path climbing out of .build', async () => {
     expect((await fetch(`${base}/pack-code/pak_nope/presentations/X.js`)).status).toBe(404);
     expect((await fetch(`${base}/pack-code/pak_guide/../../pack.json`)).status).toBe(404);
+  });
+});
+
+describe('the shelf listing', () => {
+  /**
+   * The listing has to tell the same story the loader lives: a folder
+   * beats a row, per id (`loadCampaign`). It didn't, and the console
+   * spent a session announcing a version nothing was running.
+   */
+  it('reads a folder over the row of the same id, and lists a folder with no row', async () => {
+    mkdirSync(join(dir, 'systems', 'wiw'), { recursive: true });
+    writeFileSync(
+      join(dir, 'systems', 'wiw', 'system.json'),
+      JSON.stringify({ id: 'sys_wiw', name: 'Wild Imaginary West', version: 22 }),
+    );
+    mkdirSync(join(dir, 'packs', 'guidebook'), { recursive: true });
+    writeFileSync(
+      join(dir, 'packs', 'guidebook', 'pack.json'),
+      JSON.stringify({ id: 'pak_guide', system: 'sys_wiw', name: 'WiW Guidebook', version: 7 }),
+    );
+    mkdirSync(join(dir, 'packs', 'homebrew'), { recursive: true });
+    writeFileSync(
+      join(dir, 'packs', 'homebrew', 'pack.json'),
+      JSON.stringify({ id: 'pak_brew', system: 'sys_wiw', name: 'Brew', version: 1 }),
+    );
+
+    // A session that knows its data dir is the only one with folders to
+    // sweep — the shared one above deliberately has none.
+    const rooted = new Session(openShelf(dir), openCampaign(dir, 'duo'), dir);
+    const server2 = serve(rooted, 0, KEY);
+    await new Promise((r) => server2.on('listening', r));
+    const port = (server2.address() as AddressInfo).port;
+    try {
+      const res = await fetch(`http://localhost:${port}/api/shelf`, {
+        headers: { 'x-teller-key': KEY },
+      });
+      const body: any = await res.json();
+      expect(res.status).toBe(200);
+      // The rows say v1; the folders say otherwise, and the folders win.
+      expect(body.systems).toContainEqual({
+        id: 'sys_wiw',
+        name: 'Wild Imaginary West',
+        version: 22,
+      });
+      expect(body.packs).toContainEqual({
+        id: 'pak_guide',
+        system: 'sys_wiw',
+        name: 'WiW Guidebook',
+        version: 7,
+      });
+      // Folder-only, no row at all — it loads, so it lists.
+      expect(body.packs).toContainEqual({
+        id: 'pak_brew',
+        system: 'sys_wiw',
+        name: 'Brew',
+        version: 1,
+      });
+      // Shadowing, not duplicating.
+      expect(body.systems.filter((s: any) => s.id === 'sys_wiw')).toHaveLength(1);
+      expect(body.packs.filter((p: any) => p.id === 'pak_guide')).toHaveLength(1);
+    } finally {
+      await new Promise((r) => server2.close(r));
+      rooted.close();
+    }
   });
 });
