@@ -6,6 +6,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   api,
+  displaySlot,
   hello,
   stored,
   forgetSlips,
@@ -321,6 +322,10 @@ export default function App() {
       />
     );
   else if (hash === 'console') view = <Home />;
+  // Bare url on a key-holding browser is the console, as it always was.
+  // A named slot (`#warden_left`) is its OWN screen — even here — so a
+  // DM's machine can host the console AND any number of paired panels.
+  else if (!hash && !displaySlot() && unlocked) view = <Home />;
   else view = <PairScreen />;
 
   return (

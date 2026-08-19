@@ -6,6 +6,31 @@
 const KEY = 'teller.key';
 const DISPLAY = 'teller.display';
 
+/**
+ * The hash can NAME a screen — `#warden_left` — so one browser hosts
+ * several independent screens, each with its own identity, pairing
+ * code and assignment (the old app's `displaySlot`, ported; same
+ * grammar, `console` reserved). Captured once at load: identity,
+ * slips and the stream are all slot-scoped, so landing on a
+ * DIFFERENT slot reloads rather than half-switching.
+ */
+function slotOf(hash: string): string {
+  const s = hash.replace(/^#/, '').trim();
+  return /^[A-Za-z0-9_-]{1,16}$/.test(s) && s !== 'console' ? s : '';
+}
+
+const SLOT = slotOf(window.location.hash);
+
+export function displaySlot(): string {
+  return SLOT;
+}
+
+window.addEventListener('hashchange', () => {
+  if (slotOf(window.location.hash) !== SLOT) window.location.reload();
+});
+
+const displayKey = () => (SLOT ? `${DISPLAY}.${SLOT}` : DISPLAY);
+
 export const stored = {
   get key(): string | null {
     return localStorage.getItem(KEY);
@@ -15,11 +40,11 @@ export const stored = {
     else localStorage.removeItem(KEY);
   },
   get display(): string | null {
-    return localStorage.getItem(DISPLAY);
+    return localStorage.getItem(displayKey());
   },
   set display(v: string | null) {
-    if (v) localStorage.setItem(DISPLAY, v);
-    else localStorage.removeItem(DISPLAY);
+    if (v) localStorage.setItem(displayKey(), v);
+    else localStorage.removeItem(displayKey());
   },
 };
 
