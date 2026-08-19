@@ -110,84 +110,17 @@ const tool = (
 export const PLACED = ['skills', 'resources', 'conditions', 'meta'];
 
 /**
- * The six seat layouts (`src/lib/seat-layouts.ts`), reborn as panel
- * declarations — the SEAT tabs derive from the entity-subject panels in
- * this file, in this order, and the seat chrome (client-owned) is what
- * cycles between them. Identity (name, trade, player, spend chips) moved
- * OUT of every one of these and into the chrome's own top bar, because a
- * screen switching layouts shouldn't repaint who it belongs to.
+ * teller ships exactly TWO arrangements: `sheet` (the one generic
+ * default — the roster and runner render entities through this name)
+ * and `bare` (the floor, the degradation contract's landing pad). The
+ * five style variants that used to live here (gauges/dials/ledger/
+ * focus/classic) were the old app's seat experiments wearing teller's
+ * badge — pruned 2026-08-19 (Brian): a table that wants one authors a
+ * `.panel` for it, which is what the machinery is FOR. Identity
+ * (name, trade, spend chips) lives in the seat chrome's top bar, not
+ * in any arrangement.
  */
 export const STANDARD_PANELS: PanelDef[] = [
-  {
-    name: 'gauges',
-    label: 'Gauges',
-    blurb: 'Bars for anything with a ceiling; the rest tucked underneath.',
-    subject: 'entity',
-    mounted: [
-      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
-      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-    held: [
-      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
-      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-  },
-  {
-    name: 'dials',
-    label: 'Dials',
-    blurb: 'Round faces you fill and empty. Big targets, no reading.',
-    subject: 'entity',
-    mounted: [
-      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
-      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-    held: [
-      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
-      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-  },
-  {
-    name: 'ledger',
-    label: 'Ledger',
-    blurb: 'One tight line each. Everything visible, nothing shouting.',
-    subject: 'entity',
-    mounted: [
-      { block: 'list', list: 'resources', as: 'ledger' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-    held: [
-      { block: 'list', list: 'resources', as: 'ledger' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-  },
-  {
-    name: 'focus',
-    label: 'Focus',
-    blurb: 'The two you spend in a fight, huge. Everything else one tap away.',
-    subject: 'entity',
-    mounted: [
-      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
-      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-    held: [
-      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
-      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-  },
   {
     name: 'sheet',
     label: 'Sheet',
@@ -221,22 +154,6 @@ export const STANDARD_PANELS: PanelDef[] = [
     held: [
       { block: 'list', list: 'skills', as: 'rows' },
       { block: 'list', list: 'resources', filter: 'capped', as: 'sheet' },
-      { block: 'statuses' },
-    ],
-  },
-  {
-    name: 'classic',
-    label: 'Classic',
-    blurb: 'What teller shipped first — the one to beat.',
-    subject: 'entity',
-    mounted: [
-      { block: 'list', list: 'resources', as: 'bars' },
-      { block: 'list', list: 'skills', as: 'strip' },
-      { block: 'statuses' },
-    ],
-    held: [
-      { block: 'list', list: 'resources', as: 'bars' },
-      { block: 'list', list: 'skills', as: 'strip' },
       { block: 'statuses' },
     ],
   },
