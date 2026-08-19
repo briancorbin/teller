@@ -5,7 +5,11 @@
 // per-request. What comes back is the campaign's whole content stack,
 // pre-stacked in precedence order:
 //
-//   system → packs (declared order) → the campaign's own template half
+//   teller's defaults → system → packs (declared order) → the
+//   campaign's own template half → the TABLE's own folder
+//
+// Later wins, all the way up: the install's furniture is the floor, and
+// what a human wrote on THIS machine's shelf is the ceiling.
 //
 // A ref that resolves joins the stack; a ref that doesn't is REPORTED,
 // never silently dropped — "you don't have this" beats forgetting it
@@ -22,8 +26,8 @@
 
 import { refIn, refsIn, sameName, type Entity, type Ref } from './entity.ts';
 import { mergeBy } from './merge.ts';
-import { STANDARD_PANELS, type PanelDef } from './panels.ts';
-import { sweepPanels } from './panels-shelf.ts';
+import { type PanelDef } from './panels.ts';
+import { defaultPanels, sweepPanels } from './panels-shelf.ts';
 import { sweepPacks, type PackProblem } from './packs-shelf.ts';
 import { sweepSystems } from './systems-shelf.ts';
 import { toTemplate, type Template, type TemplateOf } from './stamp.ts';
@@ -81,6 +85,8 @@ export class Loaded {
   /** A `packs/*\/…json` that failed to parse. Same posture — the pack loads what parses. */
   readonly packProblems: PackProblem[];
   #layers: Layer[];
+  /** The table's own `panels/` folder — the topmost layer, above the campaign. */
+  #table: Layer;
   #campaign: Campaign;
 
   constructor(
@@ -90,9 +96,10 @@ export class Loaded {
     campaign: Campaign,
     system?: Loaded['system'],
     packs: Loaded['packs'] = [],
-    panels: PanelDef[] = STANDARD_PANELS,
+    panels: PanelDef[] = [],
     panelProblems: { dir: string; problem: string }[] = [],
     packProblems: PackProblem[] = [],
+    tablePanels: PanelDef[] = [],
   ) {
     this.manifest = manifest;
     this.system = system;
@@ -100,15 +107,19 @@ export class Loaded {
     this.missing = missing;
     this.panelProblems = panelProblems;
     this.packProblems = packProblems;
-    // teller's own furniture sits BELOW everything: the standard panel
-    // collection, overridable by any layer above restating the name
-    // (§E). The one slot teller ships declarations for — swept from the
-    // shelf's `panels/` folder when a data dir was given, the in-memory
-    // seed source otherwise (tests, or a sweep that found nothing yet).
+    // teller's own furniture is the FLOOR: the panels that ship with
+    // the install (`defaults/panels/`), overridable by any layer above
+    // restating the name (§E). The one slot teller ships declarations
+    // for.
     this.#layers = [
       { source: 'teller', data: { panels } },
       ...layers,
     ];
+    // …and the TABLE's own `panels/` folder is the CEILING, above the
+    // campaign (§M-6's first wrinkle, fixed 2026-08-19): a table that
+    // restates a default's, a system's or a pack's panel wins, which is
+    // rule 1 pointing the way it points everywhere else in teller.
+    this.#table = { source: 'table', data: { panels: tablePanels } };
     this.#campaign = campaign;
   }
 
@@ -203,7 +214,14 @@ export class Loaded {
     return from;
   }
 
-  /** The full stack for one slot: shelf layers in precedence order, the campaign's own last. */
+  /**
+   * The full stack for one slot, bottom to top:
+   *
+   *   teller (the install's defaults) → system → packs → campaign → table
+   *
+   * The table's own folder is LAST because the table's ruling beats
+   * everyone's, including its own campaign's stored declarations.
+   */
   #sourced(slot: string): { source: string; items: unknown[] }[] {
     return [
       ...this.#layers.map((layer) => ({
@@ -211,6 +229,7 @@ export class Loaded {
         items: slotOf(layer, slot),
       })),
       { source: 'campaign', items: this.#campaign.templatesIn(slot) },
+      { source: this.#table.source, items: slotOf(this.#table, slot) },
     ];
   }
 
@@ -225,12 +244,11 @@ export class Loaded {
  * applies, in arrival order — a host with one pack must never make
  * anyone tick a box.
  *
- * `dataDir`, when given, is where the two sweeps look —
- * `<dataDir>/panels/*\/panel.json` (§E) and `<dataDir>/packs/*\/`
- * (§L phase 1). No dir, or a panel sweep that finds nothing there yet
- * (a fresh shelf, a test's scratch dir), falls back to
- * `STANDARD_PANELS` in memory — the same seed source `seedPanels` writes
- * from, so a host that hasn't booted once yet still has its furniture.
+ * `dataDir`, when given, is where the sweeps look —
+ * `<dataDir>/panels/*\/panel.json` (§E, the TABLE's own layer) and
+ * `<dataDir>/packs/*\/` (§L phase 1). teller's five defaults come from
+ * the INSTALL either way, so a host with no data dir at all — and every
+ * test that passes none — still has its furniture.
  *
  * **A folder beats a row.** A system or pack a sweep found is used
  * INSTEAD of the `shelf.db` row of the same id — the file on disk is
@@ -306,9 +324,10 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
     }
   }
 
+  // teller's own five, from the INSTALL — always, data dir or not.
+  // The table's `panels/` folder is a separate layer that sits on top,
+  // and is empty until a human writes something there.
   const swept = dataDir ? sweepPanels(dataDir, shelf) : undefined;
-  const panels = swept?.panels.length ? swept.panels : STANDARD_PANELS;
-  const panelProblems = swept?.problems ?? [];
 
   return new Loaded(
     manifest,
@@ -317,8 +336,9 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
     campaign,
     system,
     packs,
-    panels,
-    panelProblems,
+    defaultPanels(),
+    swept?.problems ?? [],
     [...(sweptSystems?.problems ?? []), ...(sweptPacks?.problems ?? [])],
+    swept?.panels ?? [],
   );
 }

@@ -1,9 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadCampaign } from './boot.ts';
-import { seedPanels } from './panels-shelf.ts';
 import { resolve, stamp } from './stamp.ts';
 import {
   createCampaign,
@@ -238,7 +237,7 @@ describe("teller's own furniture (§E)", () => {
     campaign.close();
   });
 
-  it('sweeps the shelf\'s panels/ folder as the teller layer, when a data dir is given', () => {
+  it("the table's own panels/ folder is the TOP layer — it beats a default by name", () => {
     const shelf = openShelf(dir);
     shelf.putSystem({ id: 'sys_y', name: 'Y', data: {} });
     const campaign = createCampaign(dir, 'furn2', 'Furniture Two');
@@ -247,19 +246,67 @@ describe("teller's own furniture (§E)", () => {
       't',
     );
 
-    seedPanels(dir);
-    // An edit on the shelf survives — the sweep reads it back, not the
-    // in-memory STANDARD_PANELS.
-    const shelfPath = join(dir, 'panels', 'shelf', 'panel.json');
-    const before = JSON.parse(readFileSync(shelfPath, 'utf8'));
-    writeFileSync(shelfPath, JSON.stringify({ ...before, label: 'Edited On Disk' }));
+    // Nothing seeded this — a human wrote it, which is the only way
+    // anything gets into `<dataDir>/panels/` now.
+    const tablePanel = join(dir, 'panels', 'shelf');
+    mkdirSync(tablePanel, { recursive: true });
+    writeFileSync(
+      join(tablePanel, 'panel.json'),
+      JSON.stringify({ id: 'pan_table1', name: 'shelf', label: 'House Shelf', subject: 'none' }),
+    );
 
     const loaded = loadCampaign(shelf, campaign, dir);
     const names = loaded.declarations('panels').map((p: any) => p.name);
-    expect(names).toContain('shelf');
-    expect(loaded.sourceOf('panels', 'shelf')).toBe('teller');
-    const swept: any = loaded.declarations('panels').find((p: any) => p.name === 'shelf');
-    expect(swept.label).toBe('Edited On Disk');
+    // The other four defaults still come from the install, unshadowed.
+    expect(names).toContain('boards');
+    expect(loaded.sourceOf('panels', 'boards')).toBe('teller');
+    const shelfPanel: any = loaded.declarations('panels').find((p: any) => p.name === 'shelf');
+    expect(shelfPanel.label).toBe('House Shelf');
+    expect(loaded.sourceOf('panels', 'shelf')).toBe('table');
+    campaign.close();
+  });
+
+  it("the table beats the SYSTEM too — §M-6's wrinkle, the merge pointing the right way", () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({
+      id: 'sys_t',
+      name: 'T',
+      data: { panels: [{ name: 'roster', label: "The System's Roster", subject: 'none' }] },
+    });
+    const campaign = createCampaign(dir, 'furn5', 'Furniture Five');
+    campaign.save(
+      { ...campaign.root(), refs: { system: { id: 'sys_t', name: 'T' } } },
+      't',
+    );
+
+    const tablePanel = join(dir, 'panels', 'roster');
+    mkdirSync(tablePanel, { recursive: true });
+    writeFileSync(
+      join(tablePanel, 'panel.json'),
+      JSON.stringify({ id: 'pan_table2', name: 'roster', label: 'Our Roster', subject: 'none' }),
+    );
+
+    const loaded = loadCampaign(shelf, campaign, dir);
+    const roster: any = loaded.declarations('panels').find((p: any) => p.name === 'roster');
+    expect(roster.label).toBe('Our Roster');
+    expect(roster.id).toBe('pan_table2');
+    expect(loaded.sourceOf('panels', 'roster')).toBe('table');
+    campaign.close();
+  });
+
+  it('the defaults load with no data dir at all — they ship with teller', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_n', name: 'N', data: {} });
+    const campaign = createCampaign(dir, 'furn6', 'Furniture Six');
+    campaign.save(
+      { ...campaign.root(), refs: { system: { id: 'sys_n', name: 'N' } } },
+      't',
+    );
+
+    const loaded = loadCampaign(shelf, campaign); // no dataDir
+    const names = loaded.declarations('panels').map((p: any) => p.name).sort();
+    expect(names).toEqual(['boards', 'log', 'plugins', 'screens', 'shelf']);
+    for (const name of names) expect(loaded.sourceOf('panels', name)).toBe('teller');
     campaign.close();
   });
 
@@ -272,7 +319,6 @@ describe("teller's own furniture (§E)", () => {
       't',
     );
 
-    seedPanels(dir);
     const brokenDir = join(dir, 'panels', 'broken');
     mkdirSync(brokenDir, { recursive: true });
     writeFileSync(join(brokenDir, 'panel.json'), '{ not json');

@@ -1,0 +1,19 @@
+{
+  "name": "screens",
+  "label": "Screens",
+  "blurb": "The room: adopt by code, assign roles, identify.",
+  "subject": "none",
+  "mounted": [
+    {
+      "block": "tool",
+      "tool": "screens"
+    }
+  ],
+  "held": [
+    {
+      "block": "tool",
+      "tool": "screens"
+    }
+  ],
+  "id": "pan_598c81e69ab5"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "boards",
+  "label": "Boards",
+  "blurb": "The maps and their live placements.",
+  "subject": "none",
+  "mounted": [
+    {
+      "block": "tool",
+      "tool": "boards"
+    }
+  ],
+  "held": [
+    {
+      "block": "tool",
+      "tool": "boards"
+    }
+  ],
+  "id": "pan_079a4d98930c"
+}

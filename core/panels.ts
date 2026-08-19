@@ -4,33 +4,32 @@
 // A `.panel` is a named declaration that arranges components on a
 // surface. It rides the same stack as every other declaration —
 // vocabulary-coupled, merged by NAME, later wins — under a `panels`
-// slot on any layer. THIS file is the layer below everything: the
-// arrangements teller ships so a fresh host has a console at all —
-// the HOST's own tools only, since a play screen without a system has
-// nothing to arrange (2026-08-19; see `STANDARD_PANELS` below). A
-// system, pack or campaign adds its own or overrides one by restating
-// its word; a human's layer always wins (rule 1 for UI). Furniture, not
-// content — a panel gates nothing and grants nothing; the ROLE decides
-// what a screen may do, the panel only decides how it looks.
+// slot on any layer. THIS file is the TYPES only. The arrangements
+// teller ships — the HOST's own tools, since a play screen without a
+// system has nothing to arrange — are files in the install's
+// `defaults/panels/`, and they are the layer below everything. A
+// system, pack, campaign or the TABLE itself adds its own or overrides
+// one by restating its word; the table's is topmost and wins (rule 1
+// for UI). Furniture, not content — a panel gates nothing and grants
+// nothing; the ROLE decides what a screen may do, the panel only
+// decides how it looks.
 //
 // Two authored arrangements, never one responsive layout: `mounted`
 // (fixed height, never scrolls, columns) and `held` (a hand's glass,
 // scrolls down, one column). Blocks are nouns — layout + components
 // only, never control flow.
 //
-// "E extended again" (2026-08-18): nothing here is gatekept. `STANDARD_PANELS`
-// below is the SEED SOURCE, not the collection itself — `panels-shelf.ts`
-// seeds each one to `<dataDir>/panels/<name>/panel.json` (seed-if-absent,
-// the `seedSystems` posture, rule 1 for files: a folder that already
-// exists is never overwritten, so an edit survives every boot) and sweeps
-// whatever's on the shelf back as the teller base layer boot.ts stacks
-// under everything else. A duplicated folder — copy `sheet/` to
-// `my-sheet/`, edit `name` inside — is just another file in the
-// collection; the NAME is still the merge key, the minted `pan_` id only
-// names the file. The fs-touching half lives in that sibling module and
-// not here: THIS file is type-imported straight from `client/` (the
-// panel renderer wants `PanelDef`/`PanelBlock`), so it must stay import-
-// safe for a browser build — no `node:fs`, no `node:path`.
+// "E extended again" (2026-08-18): nothing here is gatekept. teller's
+// defaults ship as `.panel` folders in the INSTALL (`defaults/panels/`)
+// and the data dir's `panels/` belongs to the table alone — teller never
+// writes into it (2026-08-19, §M-6's first wrinkle). A duplicated folder
+// — copy `sheet/` to `my-sheet/`, edit `name` inside — is just another
+// file in the collection; the NAME is still the merge key, the minted
+// `pan_` id only names the file. The fs-touching half lives in the
+// sibling `panels-shelf.ts` and not here: THIS file is type-imported
+// straight from `client/` (the panel renderer wants
+// `PanelDef`/`PanelBlock`), so it must stay import-safe for a browser
+// build — no `node:fs`, no `node:path`.
 //
 // Art-in-panel (`art/` beside `panel.json`, refs rewritten to a
 // namespaced key at install, same as a pack) is specced in §E but not
@@ -92,45 +91,16 @@ export function toPanel(raw: unknown): PanelDef | undefined {
   return out;
 }
 
-const tool = (
-  name: string,
-  label: string,
-  blurb: string,
-): PanelDef => ({
-  name,
-  label,
-  blurb,
-  subject: 'none',
-  mounted: [{ block: 'tool', tool: name }],
-  held: [{ block: 'tool', tool: name }],
-});
-
 /** Every list a sheet places by hand, so `rest` can catch the strays.
  * Exported for the seat chrome's synthesized 'More' screen
  * (`client/components/seat/SeatChrome.tsx`, fix 1/6) — the same strays
  * that used to spill onto held-glass Sheet now spill there instead. */
 export const PLACED = ['skills', 'resources', 'conditions', 'meta'];
 
-/**
- * teller seeds the HOST's own tools and nothing else (Brian,
- * 2026-08-19): boards, log, plugins, screens, shelf — the five panels
- * that are about this machine and the room around it, which mean the
- * same thing whether a system is loaded or not.
- *
- * Everything that arranges the GAME moved to the system layer —
- * `sheet`, `bare`, `roster`, `bestiary`, `encounters`, `runner`,
- * `rules` now ship as `panels/<name>/panel.json` folders inside a
- * system's own directory (§M, "a system ships PANELS"). Only the
- * DECLARATIONS moved: the tool blocks they name are still registered in
- * teller's client, so a system declares `roster` and teller draws it.
- * A bare host — no system yet — therefore has a console of host tools
- * and no play screens, which is the honest thing to show: there is no
- * game to arrange.
- */
-export const STANDARD_PANELS: PanelDef[] = [
-  tool('screens', 'Screens', 'The room: adopt by code, assign roles, identify.'),
-  tool('shelf', 'Shelf', "This machine's systems, packs and what the campaign runs on."),
-  tool('plugins', 'Plugins', 'Discovered on disk; enabled only by you, here.'),
-  tool('boards', 'Boards', 'The maps and their live placements.'),
-  tool('log', 'Log', 'Everything that happened, newest first (rule 3, readable).'),
-];
+// The five panels teller SHIPS — boards, log, plugins, screens, shelf,
+// the ones about this machine and the room around it — used to live
+// here as an in-code array. They are files now:
+// `defaults/panels/<name>/panel.json` in the install, loaded by
+// `defaultPanels()` in `panels-shelf.ts`. Nothing about a panel is a
+// special case any more; teller's own are read by the same sweep that
+// reads a system's, a pack's and the table's.

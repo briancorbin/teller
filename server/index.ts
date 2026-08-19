@@ -44,7 +44,7 @@ import {
   type Auth,
 } from './auth.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
-import { panelDir, seedPanels } from '../core/panels-shelf.ts';
+import { defaultPanelDir, panelDir } from '../core/panels-shelf.ts';
 import { packDir, packPanelDir, systemIndexModule } from '../core/packs-shelf.ts';
 import { systemDir, systemPanelDir } from '../core/systems-shelf.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
@@ -804,18 +804,20 @@ export function serve(what: Session | Host, port: number, key: string) {
       const dataDir = host.dataDir;
       const rel = decodeURIComponent(url.pathname.slice('/panel-code/'.length));
       const [panelId, ...fileParts] = rel.split('/').filter(Boolean);
-      // The table's own panels first, then the systems', then the packs'
+      // The table's own panels first, then the systems', then the packs',
+      // then teller's own shipped defaults
       // (§M — a system ships unbranded panels and a pack ships the
       // book's branded ones; both are ordinary `.panel` folders with
       // ordinary `pan_` ids, so this is one more place to look, never a
       // second scheme). Order here is only lookup order — precedence at
       // the table is the merge's business, not this route's.
-      const dir =
-        dataDir && panelId
-          ? (panelDir(dataDir, panelId) ??
-            systemPanelDir(dataDir, panelId) ??
-            packPanelDir(dataDir, panelId))
-          : undefined;
+      const dir = panelId
+        ? ((dataDir
+            ? (panelDir(dataDir, panelId) ??
+              systemPanelDir(dataDir, panelId) ??
+              packPanelDir(dataDir, panelId))
+            : undefined) ?? defaultPanelDir(panelId))
+        : undefined;
       const buildRoot = dir ? join(dir, '.build') : undefined;
       const path = buildRoot && fileParts.length
         ? normalize(join(buildRoot, ...fileParts))
@@ -1007,13 +1009,10 @@ if (import.meta.main) {
   // every mode after it shares this one connection.
   const shelf = openShelf(dataDir);
 
-  // The standard panels ship as files (§E): seed-if-absent, every boot,
-  // regardless of which mode below runs — cheap, and it's what makes a
-  // fresh `~/.teller-next/panels/` exist before anything reads it. The
-  // shelf rides along so a freshly-minted default's code, if it carries
-  // any, is trusted the moment it's seeded (§E: "not a ceremony for
-  // your own hands").
-  seedPanels(dataDir, shelf);
+  // Nothing seeds panels any more (2026-08-19): teller's five ship in
+  // the install's `defaults/panels/` and are read where they lie, so
+  // `<dataDir>/panels/` is the TABLE's own folder — empty unless a
+  // human puts something in it, and never written to by teller.
 
   // Plugin management — the CLI is where a HUMAN enables (§15). These
   // are commands, not server modes: they act on the shelf and exit,

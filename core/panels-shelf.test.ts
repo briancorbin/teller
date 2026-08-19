@@ -1,12 +1,30 @@
-import { mkdirSync, mkdtempSync, readFileSync, statSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  statSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+  existsSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openShelf, type Shelf } from './store.ts';
-import { panelDir, seedPanels, sweepPanels } from './panels-shelf.ts';
-import { STANDARD_PANELS } from './panels.ts';
+import { defaultPanelDir, defaultPanels, defaultsRoot, panelDir, sweepPanels } from './panels-shelf.ts';
 
 let dir: string;
+
+/** Teller's five, copied onto a scratch table's shelf — what a table
+ * that wants to override every default would do by hand, and the
+ * fixture the sweep tests below need. NOTHING in teller does this. */
+function copyDefaultsOntoShelf(): void {
+  cpSync(defaultsRoot(), join(dir, 'panels'), { recursive: true });
+}
+
+const DEFAULT_NAMES = ['boards', 'log', 'plugins', 'screens', 'shelf'];
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'teller-panels-'));
@@ -16,41 +34,37 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('seedPanels — seed-if-absent, the seedSystems posture for files', () => {
-  it('writes every standard panel to its own folder, each with a minted pan_ id', () => {
-    seedPanels(dir);
-    for (const panel of STANDARD_PANELS) {
-      const path = join(dir, 'panels', panel.name, 'panel.json');
-      const written = JSON.parse(readFileSync(path, 'utf8'));
-      expect(written.name).toBe(panel.name);
-      expect(written.id).toMatch(/^pan_[0-9a-f]{12}$/);
+describe('defaultPanels — teller\'s own, shipped with the install', () => {
+  it('reads the five host tools from defaults/panels, with ids baked into the files', () => {
+    const panels = defaultPanels();
+    expect(panels.map((p) => p.name).sort()).toEqual(DEFAULT_NAMES);
+    for (const panel of panels) {
+      expect(panel.id).toMatch(/^pan_[0-9a-f]{12}$/);
+      expect(panel.subject).toBe('none');
     }
   });
 
-  it('never touches a folder that already exists — an edit survives every boot', () => {
-    seedPanels(dir);
-    const path = join(dir, 'panels', 'shelf', 'panel.json');
-    const before = JSON.parse(readFileSync(path, 'utf8'));
-    const edited = { ...before, label: 'House Shelf' };
-    writeFileSync(path, JSON.stringify(edited));
-
-    seedPanels(dir); // a second boot
-
-    const after = JSON.parse(readFileSync(path, 'utf8'));
-    expect(after.label).toBe('House Shelf');
-    expect(after.id).toBe(before.id);
+  it('needs no data dir at all — the install is where they live', () => {
+    // Nothing under `dir` exists yet, and the defaults load anyway.
+    expect(defaultPanels().length).toBe(DEFAULT_NAMES.length);
+    expect(existsSync(join(dir, 'panels'))).toBe(false);
   });
 
-  it('mints a stable id once — reseeding a fresh host does not remint an existing panel', () => {
-    seedPanels(dir);
-    const id1 = JSON.parse(
-      readFileSync(join(dir, 'panels', 'boards', 'panel.json'), 'utf8'),
-    ).id;
-    seedPanels(dir);
-    const id2 = JSON.parse(
-      readFileSync(join(dir, 'panels', 'boards', 'panel.json'), 'utf8'),
-    ).id;
-    expect(id2).toBe(id1);
+  it('ids are stable across reads — nothing is minted at boot any more', () => {
+    const first = defaultPanels().map((p) => p.id);
+    const second = defaultPanels().map((p) => p.id);
+    expect(second).toEqual(first);
+  });
+
+  it('writes nothing into the data dir — the table\'s panels/ is the table\'s', () => {
+    defaultPanels();
+    expect(existsSync(join(dir, 'panels'))).toBe(false);
+  });
+
+  it('defaultPanelDir resolves a shipped id back to its folder in the install', () => {
+    const boards = defaultPanels().find((p) => p.name === 'boards')!;
+    expect(defaultPanelDir(boards.id!)).toBe(join(defaultsRoot(), 'boards'));
+    expect(defaultPanelDir('pan_nope')).toBeUndefined();
   });
 });
 
@@ -59,17 +73,15 @@ describe('sweepPanels — reads and reports, writes nothing (like discoverPlugin
     expect(sweepPanels(dir)).toEqual({ panels: [], problems: [] });
   });
 
-  it('reads every panel folder seeded, whole', () => {
-    seedPanels(dir);
+  it('reads every panel folder on the shelf, whole', () => {
+    copyDefaultsOntoShelf();
     const { panels, problems } = sweepPanels(dir);
     expect(problems).toEqual([]);
-    expect(panels.map((p) => p.name).sort()).toEqual(
-      [...STANDARD_PANELS.map((p) => p.name)].sort(),
-    );
+    expect(panels.map((p) => p.name).sort()).toEqual(DEFAULT_NAMES);
   });
 
   it('a swept panel carries the edit — the file on disk wins', () => {
-    seedPanels(dir);
+    copyDefaultsOntoShelf();
     const path = join(dir, 'panels', 'shelf', 'panel.json');
     const before = JSON.parse(readFileSync(path, 'utf8'));
     writeFileSync(path, JSON.stringify({ ...before, label: 'House Shelf' }));
@@ -80,7 +92,7 @@ describe('sweepPanels — reads and reports, writes nothing (like discoverPlugin
   });
 
   it('a duplicated folder just works — another file in the collection', () => {
-    seedPanels(dir);
+    copyDefaultsOntoShelf();
     const boards = JSON.parse(
       readFileSync(join(dir, 'panels', 'boards', 'panel.json'), 'utf8'),
     );
@@ -100,7 +112,7 @@ describe('sweepPanels — reads and reports, writes nothing (like discoverPlugin
   });
 
   it('a broken panel.json degrades — reported, never a crash, rest of the shelf loads', () => {
-    seedPanels(dir);
+    copyDefaultsOntoShelf();
     const brokenDir = join(dir, 'panels', 'broken');
     mkdirSync(brokenDir, { recursive: true });
     writeFileSync(join(brokenDir, 'panel.json'), '{ not json');
@@ -110,7 +122,7 @@ describe('sweepPanels — reads and reports, writes nothing (like discoverPlugin
     writeFileSync(join(emptyNameDir, 'panel.json'), JSON.stringify({ label: 'No name' }));
 
     const { panels, problems } = sweepPanels(dir);
-    expect(panels.length).toBe(STANDARD_PANELS.length);
+    expect(panels.length).toBe(DEFAULT_NAMES.length);
     expect(problems).toHaveLength(2);
     expect(problems.map((p) => p.problem)).toEqual([
       'panel.json is not a panel (needs a name)',
@@ -221,32 +233,36 @@ describe('sweepPanels — the code ladder (§E UN-DEFERRED, rungs 3-5)', () => {
     expect(copied).toBe('.widget { color: red; }\n');
   });
 
-  it("seedPanels-origin panels are trusted implicitly, if they carry code", () => {
-    // Simulate a standard panel authored WITH a block, as if teller
-    // shipped one, and confirm the seed-time trust write lets its code
-    // through with no separate enable step.
-    const seedDir = join(dir, 'panels', 'boards');
-    seedPanels(dir, shelf);
-    mkdirSync(join(seedDir, 'blocks'), { recursive: true });
-    writeFileSync(join(seedDir, 'blocks', 'Widget.tsx'), VALID_BLOCK);
-    const seededId = JSON.parse(readFileSync(join(seedDir, 'panel.json'), 'utf8')).id;
+  it("a table's own copy of a default is an ordinary panel — its code waits for a human", () => {
+    // Nothing is trusted by provenance any more: teller seeds nothing,
+    // so there is no seed-time trust write, and a panel on the table's
+    // shelf carrying code is gated exactly like any other (fail-closed).
+    const tableDir = join(dir, 'panels', 'boards');
+    copyDefaultsOntoShelf();
+    mkdirSync(join(tableDir, 'blocks'), { recursive: true });
+    writeFileSync(join(tableDir, 'blocks', 'Widget.tsx'), VALID_BLOCK);
+    const id = JSON.parse(readFileSync(join(tableDir, 'panel.json'), 'utf8')).id;
 
-    const { panels } = sweepPanels(dir, shelf);
-    const boards = panels.find((p) => p.name === 'boards');
-    expect(boards?.code?.blocks?.Widget).toBe(`/panel-code/${seededId}/blocks/Widget.js`);
+    let boards = sweepPanels(dir, shelf).panels.find((p) => p.name === 'boards');
+    expect(boards?.code).toBeUndefined();
+    expect(boards?.codePending).toBe(true);
+
+    shelf.setPluginEnabled(id, true);
+    boards = sweepPanels(dir, shelf).panels.find((p) => p.name === 'boards');
+    expect(boards?.code?.blocks?.Widget).toBe(`/panel-code/${id}/blocks/Widget.js`);
   });
 });
 
 describe('panelDir — resolving a pan_ id back to its folder', () => {
   it('finds the folder whose panel.json carries this id', () => {
-    seedPanels(dir);
+    copyDefaultsOntoShelf();
     const path = join(dir, 'panels', 'boards', 'panel.json');
     const id = JSON.parse(readFileSync(path, 'utf8')).id;
     expect(panelDir(dir, id)).toBe(join(dir, 'panels', 'boards'));
   });
 
   it('an unknown id resolves to nothing', () => {
-    seedPanels(dir);
+    copyDefaultsOntoShelf();
     expect(panelDir(dir, 'pan_nope')).toBeUndefined();
   });
 });
