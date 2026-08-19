@@ -557,7 +557,8 @@ CREATE TABLE IF NOT EXISTS displays (
   ppi             REAL,
   ppi_y           REAL,
   vw              INTEGER,
-  vh              INTEGER
+  vh              INTEGER,
+  position        INTEGER
 );
 `;
 
@@ -605,6 +606,8 @@ export type Display = {
   ppi?: number;
   ppiY?: number;
   viewport?: { w: number; h: number };
+  /** The DM's own ordering of the room — assigned at adoption, moved by arrows. */
+  position?: number;
 };
 
 const DISPLAY_ROLES: DisplayRole[] = [
@@ -651,6 +654,7 @@ function rowToDisplay(row: Row): Display {
   if (typeof row.vw === 'number' && typeof row.vh === 'number') {
     out.viewport = { w: row.vw, h: row.vh };
   }
+  if (typeof row.position === 'number') out.position = row.position;
   return out;
 }
 
@@ -896,8 +900,13 @@ export class Shelf {
   }
 
   displays(): Display[] {
+    // The DM's own order first; screens without one (unclaimed) trail
+    // by recency. Never order the room by who spoke last — rows must
+    // not leap out from under the hand about to touch them.
     const rows = this.#db
-      .prepare('SELECT * FROM displays ORDER BY last_seen_at IS NULL, last_seen_at DESC, id')
+      .prepare(
+        'SELECT * FROM displays ORDER BY position IS NULL, position, last_seen_at IS NULL, last_seen_at DESC, id',
+      )
       .all() as Row[];
     return rows.map(rowToDisplay);
   }
@@ -924,10 +933,14 @@ export class Shelf {
     return this.display(display.id)!;
   }
 
-  /** Adoption consumes the code — a display with no code is the room's. */
+  /** Adoption consumes the code — a display with no code is the room's.
+   * A newly adopted screen lands at the END of the room's order; the
+   * arrows move it from there (the DM's arrangement, rule 1 for UI). */
   claimDisplay(id: string, name: string): Display {
     this.#db
-      .prepare('UPDATE displays SET name = ?, code = NULL, code_expires_at = NULL WHERE id = ?')
+      .prepare(
+        'UPDATE displays SET name = ?, code = NULL, code_expires_at = NULL, position = (SELECT COALESCE(MAX(position), 0) + 1 FROM displays) WHERE id = ?',
+      )
       .run(name, id);
     return this.display(id)!;
   }
@@ -941,13 +954,14 @@ export class Shelf {
       params?: Record<string, unknown>;
       ppi?: number | null;
       ppiY?: number | null;
+      position?: number;
     },
   ): Display {
     const have = this.display(id);
     if (!have) throw new Error(`no display ${id}`);
     this.#db
       .prepare(
-        'UPDATE displays SET name = ?, color = ?, role = ?, params = ?, ppi = ?, ppi_y = ? WHERE id = ?',
+        'UPDATE displays SET name = ?, color = ?, role = ?, params = ?, ppi = ?, ppi_y = ?, position = ? WHERE id = ?',
       )
       .run(
         patch.name?.trim() ?? have.name ?? null,
@@ -956,6 +970,7 @@ export class Shelf {
         JSON.stringify(patch.params ?? have.params),
         patch.ppi === undefined ? (have.ppi ?? null) : patch.ppi,
         patch.ppiY === undefined ? (have.ppiY ?? null) : patch.ppiY,
+        patch.position === undefined ? (have.position ?? null) : patch.position,
         id,
       );
     return this.display(id)!;
@@ -996,5 +1011,13 @@ export function openShelf(dataDir: string): Shelf {
   mkdirSync(dataDir, { recursive: true });
   const db = open(join(dataDir, 'shelf.db'));
   db.exec(SHELF_SCHEMA);
+  // Columns added after a table shipped: CREATE IF NOT EXISTS won't
+  // grow an existing db, so each addition is one idempotent ALTER —
+  // the error when it already exists is the only signal SQLite gives.
+  try {
+    db.exec('ALTER TABLE displays ADD COLUMN position INTEGER');
+  } catch {
+    // already there
+  }
   return new Shelf(db);
 }

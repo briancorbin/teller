@@ -196,6 +196,7 @@ export async function handleApi(
       }
       if (body.ppi === null || typeof body.ppi === 'number') patch.ppi = body.ppi;
       if (body.ppiY === null || typeof body.ppiY === 'number') patch.ppiY = body.ppiY;
+      if (typeof body.position === 'number') patch.position = body.position;
       const updated = session.shelf.updateDisplay(a, patch);
       session.notify(displayHandle(a), 'assign');
       session.changed('displays');

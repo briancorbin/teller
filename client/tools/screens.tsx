@@ -32,6 +32,7 @@ type Display = {
   role: DisplayRole;
   params: Record<string, unknown>;
   code?: string;
+  position?: number;
   lastSeenAt?: string;
 };
 
@@ -78,16 +79,34 @@ function ScreensTool() {
   // waiting ones just mirrors every open tab back at the console. A dim
   // count keeps them discoverable without giving them furniture.
   const all = displays.data ?? [];
-  // Stable order, or the room rearranges itself: the server sorts by
-  // last-seen, and heartbeats re-shuffle that every few seconds — a
-  // row must never leap out from under the hand about to touch it.
+  // The DM's own order (position, assigned at adoption, moved by the
+  // arrows) — never by who spoke last: a row must not leap out from
+  // under the hand about to touch it. Id breaks ties for stability.
   const list = all
     .filter((d) => !d.code)
     .sort(
       (a, b) =>
-        (a.name ?? '').localeCompare(b.name ?? '') || a.id.localeCompare(b.id),
+        (a.position ?? Number.MAX_SAFE_INTEGER) -
+          (b.position ?? Number.MAX_SAFE_INTEGER) || a.id.localeCompare(b.id),
     );
   const waiting = all.length - list.length;
+
+  /** Swap this row with its neighbor — two positions trade places. */
+  const nudgeRow = (index: number, delta: -1 | 1) => {
+    const a = list[index];
+    const b = list[index + delta];
+    if (!a || !b) return;
+    // Positions may be absent on rows adopted before ordering existed —
+    // fall back to their current list indices so the swap still lands.
+    const pa = a.position ?? index;
+    const pb = b.position ?? index + delta;
+    Promise.all([
+      api(`/api/displays/${a.id}`, { method: 'PATCH', body: { position: pb } }),
+      api(`/api/displays/${b.id}`, { method: 'PATCH', body: { position: pa } }),
+    ])
+      .then(displays.reload)
+      .catch(displays.reload);
+  };
   const panes = (panels.data ?? []).filter((p) => p.subject !== 'entity');
   const layouts = (panels.data ?? []).filter((p) => p.subject === 'entity');
   // core-next has no reliable PC/NPC signal left on an entity (rule 2 —
@@ -157,7 +176,7 @@ function ScreensTool() {
         )}
       </section>
 
-      {list.map((d) => {
+      {list.map((d, i) => {
         const role = ROLES.find((r) => r.value === d.role);
         const params = d.params ?? {};
         return (
@@ -178,6 +197,22 @@ function ScreensTool() {
                 }}
                 onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               />
+              <button
+                className="rounded-md px-1.5 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200 disabled:opacity-30"
+                title="move up"
+                disabled={i === 0}
+                onClick={() => nudgeRow(i, -1)}
+              >
+                ▲
+              </button>
+              <button
+                className="rounded-md px-1.5 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200 disabled:opacity-30"
+                title="move down"
+                disabled={i === list.length - 1}
+                onClick={() => nudgeRow(i, 1)}
+              >
+                ▼
+              </button>
               <button
                 className="rounded-md px-2 py-1 text-sm text-stone-500 transition-colors hover:bg-stone-800 hover:text-stone-200"
                 title="flash this screen so you can tell which one it is"

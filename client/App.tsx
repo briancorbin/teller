@@ -210,41 +210,69 @@ function PanelRoute({
   );
 }
 
-// ---- home (console directory) -----------------------------------------
+// ---- the console -------------------------------------------------------
+// One stable URL, a pane bar that swaps content IN PLACE — the old
+// DmView's shape. The hash never changes while the DM clicks around:
+// with slots, the URL is the screen's IDENTITY, so navigation must not
+// rewrite it. `#panel=` remains the ASSIGNMENT route for screens the
+// console points somewhere.
 
-function Home() {
+function Console() {
   const panels = useLive(
     () => api<PanelDef[]>('/api/stack/declarations/panels'),
     [],
   );
+  const records = useLive(
+    () =>
+      Promise.all(
+        ['accents', 'dials', 'brand', 'portraits', 'dice', 'marks'].map((slot) =>
+          api<Record<string, unknown>>(`/api/stack/record/${slot}`).then(
+            (r) => [slot, r] as const,
+          ),
+        ),
+      ).then(Object.fromEntries),
+    [],
+  );
+  const [pane, setPane] = useState('roster');
+  const tools = (panels.data ?? []).filter((p) => p.subject !== 'entity');
+  const current = tools.find((p) => p.name === pane) ?? tools[0];
+
   if (!panels.data) return null;
-  const arrangements = panels.data.filter((p) => p.subject === 'entity');
-  const tools = panels.data.filter((p) => p.subject !== 'entity');
+  const ctx: BlockCtx = {
+    glass: 'held',
+    records: (records.data ?? {}) as BlockCtx['records'],
+  };
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-8 p-8">
-      <h1 className="font-serif text-2xl text-stone-100">teller</h1>
-      {[
-        ['tools', tools],
-        ['arrangements', arrangements],
-      ].map(([label, list]) => (
-        <section key={label as string} className="flex flex-col gap-3">
-          <p className={sectionLabel}>{label as string}</p>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {(list as PanelDef[]).map((p) => (
-              <a
-                key={p.name}
-                className={`${card} transition-colors hover:border-stone-600`}
-                href={`#panel=${p.name}`}
-              >
-                <p className="text-stone-100">{p.label ?? p.name}</p>
-                {p.blurb && (
-                  <p className="mt-1 text-sm text-stone-500">{p.blurb}</p>
-                )}
-              </a>
-            ))}
-          </div>
-        </section>
-      ))}
+    <div className="min-h-dvh p-4">
+      <nav className="mb-4 flex flex-wrap items-center gap-1.5">
+        {tools.map((p) => (
+          <button
+            key={p.name}
+            type="button"
+            onClick={() => setPane(p.name)}
+            className={`rounded-full px-3 py-1 font-mono text-sm transition-colors ${
+              current?.name === p.name
+                ? 'bg-amber-700 text-stone-50'
+                : 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
+            }`}
+          >
+            {(p.label ?? p.name).toLowerCase()}
+          </button>
+        ))}
+      </nav>
+      {current ? (
+        <PanelSurface
+          panel={current}
+          ctx={ctx}
+          fallback={
+            <p className="p-8 text-sm text-stone-500">
+              '{current.name}' failed to render
+            </p>
+          }
+        />
+      ) : (
+        <p className="p-8 text-sm text-stone-500">no tools declared</p>
+      )}
     </div>
   );
 }
@@ -300,7 +328,7 @@ function PairScreen() {
     return typeof params.pane === 'string' ? (
       <PanelRoute name={params.pane} />
     ) : (
-      <Home />
+      <Console />
     );
   return (
     <div className="flex min-h-dvh items-center justify-center">
@@ -335,11 +363,11 @@ export default function App() {
         seatName={me.data?.display?.name}
       />
     );
-  else if (hash === 'console') view = <Home />;
+  else if (hash === 'console') view = <Console />;
   // Bare url on a key-holding browser is the console, as it always was.
   // A named slot (`#warden_left`) is its OWN screen — even here — so a
   // DM's machine can host the console AND any number of paired panels.
-  else if (!hash && !displaySlot() && unlocked) view = <Home />;
+  else if (!hash && !displaySlot() && unlocked) view = <Console />;
   else view = <PairScreen />;
 
   return (
