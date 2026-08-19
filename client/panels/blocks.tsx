@@ -438,8 +438,5 @@ registerBlock('tool', (block, ctx) => {
   return <>{render(block, ctx)}</>;
 });
 
-// ---- placeholders that the port will fill -----------------------------
-
-registerBlock('turn', () => (
-  <Refusal>'turn' isn't ported to the new client yet</Refusal>
-));
+// The 'turn' block registers in tools/runner.tsx — it and the runner
+// tool are one port and share their pieces.
