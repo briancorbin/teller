@@ -1160,6 +1160,44 @@ a `marks` record, the ✶-box rendering, `banks` wiring Ace faces to
 the Aces counter. Blocked only on the converter being free
 (builder-attacks owns it today).
 
+### K · Carried things — SETTLED (2026-08-19, with Brian): items are flat children; containment is always refs
+
+The catalog already converted entity-shaped (301 templates —
+weapon/ammo/ability/gear/trap/service, stats as entries), so "what is
+an item" was answered before the question was asked. What K settles is
+how CARRIED items behave:
+
+- **A carried item is a child entity of the character, stamped from
+  the catalog** — §14's stamp, applied to children: thin, `refs.from`
+  → the template, stats read through `resolve()`, the instance's own
+  lists carrying only what is the instance's own (rounds loaded, uses
+  left, notes). Buying or picking = stamping a child; homebrew = a
+  thick child. Attacks proved the machinery; items reuse it whole.
+- **Items are FLAT children — containment is always refs, never
+  nesting** (Brian, 2026-08-19). §9's inline criterion cuts this way
+  itself: the outside world addresses upgrades (inventory lists them,
+  kitbash moves them), so they are not inline. A weapon's chambered
+  ammo is `refs.chambered` → the ammo child; its fittings are
+  `refs.upgrades` → an ordered ref list. Fit/unfit and chambering are
+  the SAME kind of edit — a ref flip — and an upgrade never teleports
+  between containers; the Inventory screen shows the complete asset
+  roster, fitted pieces wearing a "fitted to …" chip. A dangling ref
+  renders as missing, never silently dropped.
+- **Ammo counts live on the ammo item** ("Items merely counts the
+  rounds" — the old design's own words): an ammo child's value/max,
+  fired from any compatible weapon.
+- **Stamped thin, stored-wins on touch**: a catalog correction
+  reaches every carried Used Pistol until an edit copies down — then
+  the table's copy is authoritative (rule 1; identical to foes).
+- **The fire button is flow, not shape**: read Grit + range pool
+  through resolve, PROPOSE the Grit spend and the ammo decrement into
+  ordinary slots, a human confirms. One-slot-per-upgrade-type is
+  presented, never enforced.
+- **Deferred, noted**: the mounted-weapon crewed Grit DEBT ("operator
+  2 pays from their NEXT turn" — nothing models a deferred spend, and
+  the old world punted too) and dual-pistol slot pooling (two items;
+  probably fine forever).
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
