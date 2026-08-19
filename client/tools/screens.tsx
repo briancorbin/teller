@@ -91,19 +91,28 @@ function ScreensTool() {
     );
   const waiting = all.length - list.length;
 
-  /** Swap this row with its neighbor — two positions trade places. */
+  /**
+   * Move a row and REINDEX the whole room, 1..n. Swapping raw values
+   * broke on rows adopted before ordering existed (their missing
+   * position could collide with a neighbor's real one and the swap
+   * became a no-op) — writing every row its own index is idempotent,
+   * and heals the legacy rows the first time anything moves.
+   */
   const nudgeRow = (index: number, delta: -1 | 1) => {
-    const a = list[index];
-    const b = list[index + delta];
-    if (!a || !b) return;
-    // Positions may be absent on rows adopted before ordering existed —
-    // fall back to their current list indices so the swap still lands.
-    const pa = a.position ?? index;
-    const pb = b.position ?? index + delta;
-    Promise.all([
-      api(`/api/displays/${a.id}`, { method: 'PATCH', body: { position: pb } }),
-      api(`/api/displays/${b.id}`, { method: 'PATCH', body: { position: pa } }),
-    ])
+    if (!list[index] || !list[index + delta]) return;
+    const next = [...list];
+    const [moved] = next.splice(index, 1);
+    next.splice(index + delta, 0, moved);
+    Promise.all(
+      next.map((d, i) =>
+        d.position === i + 1
+          ? Promise.resolve()
+          : api(`/api/displays/${d.id}`, {
+              method: 'PATCH',
+              body: { position: i + 1 },
+            }),
+      ),
+    )
       .then(displays.reload)
       .catch(displays.reload);
   };
