@@ -99,10 +99,11 @@ beforeEach(async () => {
   });
 
   shelf = openShelf(dir);
-  // Creating a campaign picks its system off the SHELF's rows, so the
-  // folder needs a row to be pickable. The folder then shadows it —
-  // "a folder beats a row" (§11) — which is why the name and version
-  // the endpoint answers with are the folder's, not these.
+  // A row UNDER the folder, on purpose: the folder shadows it — "a
+  // folder beats a row" (§11) — which is why the name and version the
+  // endpoint answers with are the folder's, not these. (It used to be
+  // here because creation could only pick a system off the rows; that
+  // was the bug, and creation now reads the shelf the loader reads.)
   shelf.putSystem({ id: 'sys_wiw', name: 'stale row', version: 1, data: {} });
   host = new Host(shelf, dir);
   server = serve(host, 0, KEY);

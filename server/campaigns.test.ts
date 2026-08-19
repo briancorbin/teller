@@ -7,7 +7,7 @@
 // swap (they live on the Room, not the Session), and that an emptied
 // pack list restores the default rather than meaning "no packs".
 
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
@@ -227,6 +227,69 @@ describe('the campaign stack', () => {
     expect(put.body.missing).toEqual([
       { slot: 'pack', ref: { id: 'pak_ghost', name: 'pak_ghost' } },
     ]);
+  });
+});
+
+describe('a system that exists only as a folder', () => {
+  // §M's normal case: `systems/<name>/`, no `shelf.db` row behind it at
+  // all. The LOADER resolves one, and `/api/shelf` lists one, so the
+  // dropdown offers it — but creation used to validate against the rows
+  // alone and refused the system the console had just been shown.
+  beforeEach(() => {
+    const folder = join(dir, 'systems', 'folded');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(
+      join(folder, 'system.json'),
+      JSON.stringify({ id: 'sys_folded', name: 'Folded', version: 2, kinds: [{ name: 'counter' }] }),
+    );
+  });
+
+  it('is on the shelf the dropdown reads', async () => {
+    // `/api/shelf` is a table route, so something has to be running for
+    // it to answer at all — a campaign on no system will do.
+    await api('POST', '/api/campaigns', { name: 'Systemless' });
+    const { body } = await api('GET', '/api/shelf');
+    expect(body.systems).toContainEqual({ id: 'sys_folded', name: 'Folded', version: 2 });
+  });
+
+  it('is accepted at creation, and is what the new campaign loads', async () => {
+    const made = await api('POST', '/api/campaigns', {
+      name: 'Folded Tale',
+      system: 'sys_folded',
+    });
+    expect(made.status).toBe(201);
+
+    const campaign = await api('GET', '/api/campaign');
+    expect(campaign.body.manifest.refs.system).toEqual({ id: 'sys_folded', name: 'Folded' });
+    // Loading resolves the FOLDER — its version, not a row's.
+    expect(campaign.body.system).toMatchObject({ id: 'sys_folded', name: 'Folded', version: 2 });
+    expect(campaign.body.missing).toEqual([]);
+  });
+
+  it('reads as installed in the listing, not as a system nobody has', async () => {
+    await api('POST', '/api/campaigns', { name: 'Folded Tale', system: 'sys_folded' });
+    const listed = await api('GET', '/api/campaigns');
+    expect(listed.body.campaigns.find((c: any) => c.slug === 'folded-tale').system).toEqual({
+      id: 'sys_folded',
+      name: 'Folded',
+      installed: true,
+    });
+  });
+
+  it('can be switched onto, the same reading the refs screen uses', async () => {
+    await api('POST', '/api/campaigns', { name: 'Rowed', system: 'sys_wiw' });
+    const put = await api('PUT', '/api/campaign/refs', { system: 'sys_folded' });
+    expect(put.status).toBe(200);
+    expect(put.body.system).toMatchObject({ id: 'sys_folded', version: 2 });
+  });
+
+  it('a system nobody has at all is still a 400 naming it', async () => {
+    const { status, body } = await api('POST', '/api/campaigns', {
+      name: 'Ghosted',
+      system: 'sys_ghost',
+    });
+    expect(status).toBe(400);
+    expect(body.error).toMatch(/sys_ghost/);
   });
 });
 

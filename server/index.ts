@@ -372,6 +372,25 @@ function shelfListing(host: Host): {
 }
 
 /**
+ * The system a DM just picked, resolved the way it will be LOADED.
+ *
+ * Validating against `shelf.system()` alone refused a system that only
+ * exists as a `systems/<name>/` folder — the normal case in the §M
+ * world, and the one the dropdown was already offering, since the
+ * dropdown reads `/api/shelf` and that lists folder-first. The console
+ * could see a system it was then told it didn't have.
+ *
+ * So the answer comes from the same listing: what creation accepts is
+ * exactly what the shelf says this machine holds, which is exactly what
+ * `loadCampaign` will resolve. One reading, three places it can come
+ * from, and none of them re-implemented here.
+ */
+function shelfSystem(host: Host, id: string): Ref | undefined {
+  const found = shelfListing(host).systems.find((s) => s.id === id);
+  return found ? { id: found.id, name: found.name } : undefined;
+}
+
+/**
  * The API, as one function — testable without a socket, servable with
  * one. Returns undefined for paths that aren't the API's.
  */
@@ -526,6 +545,10 @@ export async function handleApi(
     if (!host.dataDir) return reply(501, { error: 'this host has no data dir' });
 
     if (method === 'GET' && !a) {
+      // One reading of the shelf for the whole list — folder-first, so
+      // a system that only ever existed as a folder reads as installed
+      // rather than as a campaign whose system went missing.
+      const held = new Map(shelfListing(host).systems.map((s) => [s.id, s]));
       return reply(200, {
         active: host.session?.campaign.slug ?? null,
         campaigns: host.list().map((c) => ({
@@ -538,8 +561,8 @@ export async function handleApi(
           system: c.system
             ? {
                 id: c.system.id,
-                name: shelf.system(c.system.id)?.name ?? c.system.name,
-                installed: Boolean(shelf.system(c.system.id)),
+                name: held.get(c.system.id)?.name ?? c.system.name,
+                installed: held.has(c.system.id),
               }
             : null,
         })),
@@ -552,9 +575,8 @@ export async function handleApi(
       if (!name) return reply(400, { error: 'a campaign needs a name' });
       let system: Ref | undefined;
       if (typeof body.system === 'string' && body.system.trim()) {
-        const row = shelf.system(body.system.trim());
-        if (!row) return reply(400, { error: `no system ${body.system} on this shelf` });
-        system = { id: row.id, name: row.name };
+        system = shelfSystem(host, body.system.trim());
+        if (!system) return reply(400, { error: `no system ${body.system} on this shelf` });
       }
       try {
         const started = host.start(name, system);
@@ -624,9 +646,12 @@ export async function handleApi(
     if ('system' in body) {
       if (body.system === null || body.system === '') delete refs.system;
       else if (typeof body.system === 'string') {
-        const row = shelf.system(body.system);
-        if (!row) return reply(400, { error: `no system ${body.system} on this shelf` });
-        refs.system = { id: row.id, name: row.name };
+        // Same reading as creation's — a folder-only system is pickable
+        // here too, or the refs screen would refuse what the campaign
+        // screen just allowed.
+        const found = shelfSystem(host, body.system);
+        if (!found) return reply(400, { error: `no system ${body.system} on this shelf` });
+        refs.system = found;
       } else {
         return reply(400, { error: 'system must be a sys_ id or null' });
       }
