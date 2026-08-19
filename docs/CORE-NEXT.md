@@ -1136,6 +1136,30 @@ the template learns to carry what resolution already honors. The
 parse happens ONCE, in the converter, at the boundary — never at
 render.
 
+### J · Dice are a record — designed 2026-08-18, not yet built
+
+The old world already settled where dice live (rule 4: in the system
+row, as data) and the shape is proven — port it, don't redesign it.
+`worker/templates.ts` (old, reference): `dice: { faces: {B: [...6
+face names], G: [...]}, values: {hit: 1, ace: 2, blank: 0, spur: 0},
+unit: 'Hits', track: 6, trackBonus: 1, banks: [{face: 'ace', counter:
+'Aces'}] }` — plus the documented subtlety that Spurs are NOT in a
+reroll list because teller rolls for foes and foes have no Talents; a
+player reading their own Talent simply rolls again.
+
+In the new world this is a **`dice` record on the system layer** —
+shallow-merged, later wins, like accents and dials. The generic
+`/api/stack/record/<type>` endpoint already serves any slot, so the
+server needs NOTHING. The work is: the converter writes the record
+from the old system row; the client consumes it — interactive
+DicePool (die art, tap-to-cycle faces, tally in `unit`), SkillRow
+face-awareness, and the runner ROLLING for foes (crypto-random over
+`faces`, sum by `values`, written into turn scores as proposals a
+human can drag past — rule 1). `marks` (Talents) ports the same way:
+a `marks` record, the ✶-box rendering, `banks` wiring Ace faces to
+the Aces counter. Blocked only on the converter being free
+(builder-attacks owns it today).
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
