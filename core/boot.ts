@@ -22,7 +22,8 @@
 
 import { refIn, refsIn, sameName, type Entity, type Ref } from './entity.ts';
 import { mergeBy } from './merge.ts';
-import { STANDARD_PANELS } from './panels.ts';
+import { STANDARD_PANELS, type PanelDef } from './panels.ts';
+import { sweepPanels } from './panels-shelf.ts';
 import { toTemplate, type Template, type TemplateOf } from './stamp.ts';
 import type { Campaign, Shelf } from './store.ts';
 
@@ -49,6 +50,8 @@ export class Loaded {
   readonly packs: { id: string; name: string; version: number }[];
   /** Every ref that didn't resolve. The console's business to say out loud. */
   readonly missing: Missing[];
+  /** A `panels/*\/panel.json` that failed to parse. Reported, never a crash. */
+  readonly panelProblems: { dir: string; problem: string }[];
   #layers: Layer[];
   #campaign: Campaign;
 
@@ -59,16 +62,21 @@ export class Loaded {
     campaign: Campaign,
     system?: { id: string; name: string; version: number },
     packs: { id: string; name: string; version: number }[] = [],
+    panels: PanelDef[] = STANDARD_PANELS,
+    panelProblems: { dir: string; problem: string }[] = [],
   ) {
     this.manifest = manifest;
     this.system = system;
     this.packs = packs;
     this.missing = missing;
+    this.panelProblems = panelProblems;
     // teller's own furniture sits BELOW everything: the standard panel
     // collection, overridable by any layer above restating the name
-    // (§E). The one slot teller ships declarations for.
+    // (§E). The one slot teller ships declarations for — swept from the
+    // shelf's `panels/` folder when a data dir was given, the in-memory
+    // seed source otherwise (tests, or a sweep that found nothing yet).
     this.#layers = [
-      { source: 'teller', data: { panels: STANDARD_PANELS } },
+      { source: 'teller', data: { panels } },
       ...layers,
     ];
     this.#campaign = campaign;
@@ -168,8 +176,14 @@ export class Loaded {
  * list is precedence order; NO list means every pack for the system
  * applies, in arrival order — a host with one pack must never make
  * anyone tick a box.
+ *
+ * `dataDir`, when given, is where the panel sweep looks
+ * (`<dataDir>/panels/*\/panel.json` — §E). No dir, or a sweep that finds
+ * nothing there yet (a fresh shelf, a test's scratch dir), falls back to
+ * `STANDARD_PANELS` in memory — the same seed source `seedPanels` writes
+ * from, so a host that hasn't booted once yet still has its furniture.
  */
-export function loadCampaign(shelf: Shelf, campaign: Campaign): Loaded {
+export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string): Loaded {
   const manifest = campaign.root();
   const missing: Missing[] = [];
   const layers: Layer[] = [];
@@ -203,5 +217,9 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign): Loaded {
     }
   }
 
-  return new Loaded(manifest, layers, missing, campaign, system, packs);
+  const swept = dataDir ? sweepPanels(dataDir) : undefined;
+  const panels = swept?.panels.length ? swept.panels : STANDARD_PANELS;
+  const panelProblems = swept?.problems ?? [];
+
+  return new Loaded(manifest, layers, missing, campaign, system, packs, panels, panelProblems);
 }

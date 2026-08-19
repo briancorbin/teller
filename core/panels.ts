@@ -15,6 +15,24 @@
 // (fixed height, never scrolls, columns) and `held` (a hand's glass,
 // scrolls down, one column). Blocks are nouns — layout + components
 // only, never control flow.
+//
+// "E extended again" (2026-08-18): nothing here is gatekept. `STANDARD_PANELS`
+// below is the SEED SOURCE, not the collection itself — `panels-shelf.ts`
+// seeds each one to `<dataDir>/panels/<name>/panel.json` (seed-if-absent,
+// the `seedSystems` posture, rule 1 for files: a folder that already
+// exists is never overwritten, so an edit survives every boot) and sweeps
+// whatever's on the shelf back as the teller base layer boot.ts stacks
+// under everything else. A duplicated folder — copy `sheet/` to
+// `my-sheet/`, edit `name` inside — is just another file in the
+// collection; the NAME is still the merge key, the minted `pan_` id only
+// names the file. The fs-touching half lives in that sibling module and
+// not here: THIS file is type-imported straight from `client/` (the
+// panel renderer wants `PanelDef`/`PanelBlock`), so it must stay import-
+// safe for a browser build — no `node:fs`, no `node:path`.
+//
+// Art-in-panel (`art/` beside `panel.json`, refs rewritten to a
+// namespaced key at install, same as a pack) is specced in §E but not
+// built here — TODO(§E, "a panel carries its art") when that lands.
 
 export type PanelBlock = { block: string } & Record<string, unknown>;
 
@@ -27,6 +45,12 @@ export type PanelDef = {
   subject?: 'entity' | 'none';
   mounted?: PanelBlock[];
   held?: PanelBlock[];
+  /**
+   * `pan_…`, minted once at seed/authoring and baked into the file.
+   * Identity for the FILE (namespaces its art, names it on disk) — the
+   * merge key stays `name`, exactly as `pak_` doesn't touch a pack's.
+   */
+  id?: string;
 };
 
 /** Forgiving read for a panel arriving in pack JSON — keep what parses. */
@@ -49,6 +73,7 @@ export function toPanel(raw: unknown): PanelDef | undefined {
   const held = blocks(r.held);
   if (mounted) out.mounted = mounted;
   if (held) out.held = held;
+  if (typeof r.id === 'string' && r.id.trim()) out.id = r.id;
   return out;
 }
 

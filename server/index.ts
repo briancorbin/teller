@@ -44,6 +44,7 @@ import {
   type Auth,
 } from './auth.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
+import { seedPanels } from '../core/panels-shelf.ts';
 import { Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
@@ -692,6 +693,11 @@ if (import.meta.main) {
   const port = Number(args.port ?? 4526);
   const slug = args.campaign;
 
+  // The standard panels ship as files (§E): seed-if-absent, every boot,
+  // regardless of which mode below runs — cheap, and it's what makes a
+  // fresh `~/.teller-next/panels/` exist before anything reads it.
+  seedPanels(dataDir);
+
   // Plugin management — the CLI is where a HUMAN enables (§15). These
   // are commands, not server modes: they act on the shelf and exit,
   // campaign or no campaign.
@@ -748,7 +754,7 @@ if (import.meta.main) {
   session.pluginProblems = plugins.problems;
   serve(session, port, key);
 
-  const { system, packs, missing } = session.loaded;
+  const { system, packs, missing, panelProblems } = session.loaded;
   console.log(`teller-next · ${campaign.slug} · http://localhost:${port}`);
   console.log(
     `  system: ${system ? `${system.name} v${system.version}` : '(none)'}` +
@@ -757,6 +763,7 @@ if (import.meta.main) {
   for (const miss of missing) {
     console.log(`  MISSING ${miss.slot}: ${miss.ref.name} (${miss.ref.id})`);
   }
+  for (const p of panelProblems) console.log(`  PANEL PROBLEM ${p.dir}: ${p.problem}`);
   if (plugins.loaded.length) {
     console.log(
       `  plugins: ${plugins.loaded.map((p) => p.manifest.name).join(', ')}`,

@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadCampaign } from './boot.ts';
+import { seedPanels } from './panels-shelf.ts';
 import { resolve, stamp } from './stamp.ts';
 import {
   createCampaign,
@@ -225,6 +226,54 @@ describe("teller's own furniture (§E)", () => {
       .find((p: any) => p.name === 'sheet');
     expect(sheet.label).toBe('House Sheet');
     expect(loaded.sourceOf('panels', 'sheet')).toBe('campaign');
+    campaign.close();
+  });
+
+  it('sweeps the shelf\'s panels/ folder as the teller layer, when a data dir is given', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_y', name: 'Y', data: {} });
+    const campaign = createCampaign(dir, 'furn2', 'Furniture Two');
+    campaign.save(
+      { ...campaign.root(), refs: { system: { id: 'sys_y', name: 'Y' } } },
+      't',
+    );
+
+    seedPanels(dir);
+    // An edit on the shelf survives — the sweep reads it back, not the
+    // in-memory STANDARD_PANELS.
+    const sheetPath = join(dir, 'panels', 'sheet', 'panel.json');
+    const before = JSON.parse(readFileSync(sheetPath, 'utf8'));
+    writeFileSync(sheetPath, JSON.stringify({ ...before, label: 'Edited On Disk' }));
+
+    const loaded = loadCampaign(shelf, campaign, dir);
+    const names = loaded.declarations('panels').map((p: any) => p.name);
+    expect(names).toContain('sheet');
+    expect(loaded.sourceOf('panels', 'sheet')).toBe('teller');
+    const sheet: any = loaded.declarations('panels').find((p: any) => p.name === 'sheet');
+    expect(sheet.label).toBe('Edited On Disk');
+    campaign.close();
+  });
+
+  it('a broken panel.json is reported, never a crash — the rest of the shelf loads', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_z', name: 'Z', data: {} });
+    const campaign = createCampaign(dir, 'furn3', 'Furniture Three');
+    campaign.save(
+      { ...campaign.root(), refs: { system: { id: 'sys_z', name: 'Z' } } },
+      't',
+    );
+
+    seedPanels(dir);
+    const brokenDir = join(dir, 'panels', 'broken');
+    mkdirSync(brokenDir, { recursive: true });
+    writeFileSync(join(brokenDir, 'panel.json'), '{ not json');
+
+    const loaded = loadCampaign(shelf, campaign, dir);
+    const names = loaded.declarations('panels').map((p: any) => p.name);
+    expect(names).toContain('sheet');
+    expect(names).toContain('bare');
+    expect(loaded.panelProblems).toHaveLength(1);
+    expect(loaded.panelProblems[0].dir).toBe(brokenDir);
     campaign.close();
   });
 });

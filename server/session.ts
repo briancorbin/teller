@@ -50,12 +50,12 @@ export class Session {
     this.shelf = shelf;
     this.campaign = campaign;
     this.dataDir = dataDir;
-    this.loaded = loadCampaign(shelf, campaign);
+    this.loaded = loadCampaign(shelf, campaign, dataDir);
   }
 
   /** Re-run the resolution law — after a pack upgrade, on the sweep's signal. */
   reload(): void {
-    this.loaded = loadCampaign(this.shelf, this.campaign);
+    this.loaded = loadCampaign(this.shelf, this.campaign, this.dataDir);
     this.changed('reload');
   }
 
