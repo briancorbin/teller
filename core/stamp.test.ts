@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mergeNamed } from './merge.ts';
-import { resolve, stamp, toTemplate, type Template } from './stamp.ts';
+import { resolve, stamp, toTemplate, type Template, type TemplateOf } from './stamp.ts';
 import type { Entity } from './entity.ts';
 
 describe('mergeNamed — the one merge shape', () => {
@@ -115,6 +115,60 @@ describe('resolve', () => {
       id === gun.id ? gun : lookup(id),
     );
     expect(read.children?.[0].lists.stats).toEqual([{ name: 'Range', value: 3 }]);
+  });
+
+  it('carried items (§K): flat siblings on a plain character, chambering intact, catalog stats flowing through both', () => {
+    const pistol: Template = {
+      id: 'wpn_usedpistol',
+      name: 'Used Pistol',
+      type: 'weapon',
+      lists: { stats: [{ name: 'Damage', value: '2B' }] },
+    };
+    const rounds: Template = {
+      id: 'amo_knockback',
+      name: 'Knockback Rounds',
+      type: 'ammo',
+      lists: { stats: [{ name: 'Effect', value: 'Knockback' }] },
+    };
+    const catalogOf: TemplateOf = (id) =>
+      id === pistol.id ? pistol : id === rounds.id ? rounds : undefined;
+
+    // A character has no template of its own (invented at the table) —
+    // exactly a ported PC — with two flat item children, converted the
+    // way `scripts/port-campaign.mjs` writes them: thin stamps, the
+    // weapon's own instance-own ammo count on the ammo child, chambering
+    // as a sibling ref rather than nesting one item inside the other.
+    const character: Entity = {
+      id: 'ent_barrett',
+      name: 'Barrett Vargas',
+      lists: {},
+      children: [
+        {
+          id: 'itm_pistol1',
+          name: 'Used Pistol',
+          type: 'weapon',
+          lists: {},
+          refs: {
+            from: { id: pistol.id, name: pistol.name },
+            chambered: { id: 'itm_rounds1', name: rounds.name },
+          },
+        },
+        {
+          id: 'itm_rounds1',
+          name: 'Knockback Rounds',
+          type: 'ammo',
+          lists: { resources: [{ name: 'Rounds', value: 5 }] },
+          refs: { from: { id: rounds.id, name: rounds.name } },
+        },
+      ],
+    };
+
+    const read = resolve(character, catalogOf);
+    const [weapon, ammo] = read.children!;
+    expect(weapon.lists.stats).toEqual([{ name: 'Damage', value: '2B' }]);
+    expect(weapon.refs?.chambered).toEqual({ id: 'itm_rounds1', name: 'Knockback Rounds' });
+    expect(ammo.lists.stats).toEqual([{ name: 'Effect', value: 'Knockback' }]);
+    expect(ammo.lists.resources).toEqual([{ name: 'Rounds', value: 5 }]);
   });
 });
 
