@@ -19,12 +19,9 @@ export function toolOf(name: string): ToolRenderer | undefined {
   return tools.get(name);
 }
 
-// One import per tool — a tool that isn't imported doesn't exist.
-import './roster.tsx';
-import './runner.tsx';
-import './encounters.tsx';
-import './screens.tsx';
-import './shelf.tsx';
-import './plugins.tsx';
-import './boards.tsx';
-import './log.tsx';
+// The tool FILES are imported by the consumer (panels/blocks.tsx),
+// never from here: a tool file imports registerTool from this module,
+// so importing the tools back would make a cycle — and ES evaluation
+// runs a module's dependencies before its own body, which put the
+// registry Map in its temporal dead zone when the first tool called
+// registerTool. This file stays pure so the graph stays a tree.

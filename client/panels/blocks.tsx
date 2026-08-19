@@ -427,8 +427,20 @@ function RenderInColumn({ block, ctx }: { block: PanelBlock; ctx: BlockCtx }) {
 }
 
 // ---- tool (dispatch into the registry) --------------------------------
+// The tool files are imported HERE, not from the registry: they import
+// registerTool from tools/index.ts, so the registry importing them back
+// was a cycle — and the first tool evaluated before the registry's Map
+// existed (TDZ). The consumer imports both sides; the graph is a tree.
 
 import { toolOf } from '../tools/index.ts';
+import '../tools/roster.tsx';
+import '../tools/runner.tsx';
+import '../tools/encounters.tsx';
+import '../tools/screens.tsx';
+import '../tools/shelf.tsx';
+import '../tools/plugins.tsx';
+import '../tools/boards.tsx';
+import '../tools/log.tsx';
 
 registerBlock('tool', (block, ctx) => {
   const name = typeof block.tool === 'string' ? block.tool : '';
