@@ -66,7 +66,14 @@ function ScreensTool() {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
 
-  const list = displays.data ?? [];
+  // Only ADOPTED screens get a card. An unclaimed screen is showing its
+  // code across the room and the adopt box above is how it arrives
+  // (rule 6: the screen shows the code, the DM types it) — listing the
+  // waiting ones just mirrors every open tab back at the console. A dim
+  // count keeps them discoverable without giving them furniture.
+  const all = displays.data ?? [];
+  const list = all.filter((d) => !d.code);
+  const waiting = all.length - list.length;
   const panes = (panels.data ?? []).filter((p) => p.subject !== 'entity');
   const layouts = (panels.data ?? []).filter((p) => p.subject === 'entity');
   // core-next has no reliable PC/NPC signal left on an entity (rule 2 —
@@ -129,6 +136,11 @@ function ScreensTool() {
           ))}
           <span className="text-stone-600">— any name works, and each one is its own screen</span>
         </div>
+        {waiting > 0 && (
+          <p className="mt-2 text-xs text-stone-600">
+            {waiting} screen{waiting === 1 ? '' : 's'} showing a code, waiting to be adopted
+          </p>
+        )}
       </section>
 
       {list.map((d) => {

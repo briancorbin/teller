@@ -138,7 +138,11 @@ export async function handleApi(
     // Everything below is the DM arranging the room.
     if (!canDm(auth)) return denied();
 
-    if (method === 'GET' && !a) return reply(200, session.shelf.displays());
+    if (method === 'GET' && !a) {
+      // Listing is the moment truth matters — sweep the ghosts first.
+      session.shelf.expireUnclaimedDisplays();
+      return reply(200, session.shelf.displays());
+    }
 
     // Adopt a waiting screen by the code it's showing.
     if (method === 'POST' && a === 'claim' && !b) {

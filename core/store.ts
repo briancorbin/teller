@@ -965,6 +965,24 @@ export class Shelf {
     this.#db.prepare('DELETE FROM displays WHERE id = ?').run(id);
   }
 
+  /**
+   * Forget unclaimed screens that stopped heartbeating. A screen that
+   * was never adopted was never real (rule 6: the DM types the code) —
+   * every open tab mints a row, and closed tabs would pile up forever
+   * otherwise. Adopted screens are NEVER expired: an assignment is the
+   * DM's act and only the DM's ✕ undoes it. Ten minutes of silence is
+   * generous — an unclaimed pairing screen announces every few seconds.
+   */
+  expireUnclaimedDisplays(maxSilenceMs = 10 * 60 * 1000): number {
+    const cutoff = new Date(Date.now() - maxSilenceMs).toISOString();
+    const { changes } = this.#db
+      .prepare(
+        'DELETE FROM displays WHERE code IS NOT NULL AND (last_seen_at IS NULL OR last_seen_at < ?)',
+      )
+      .run(cutoff);
+    return Number(changes);
+  }
+
   setDisplayViewport(id: string, w: number, h: number): void {
     this.#db.prepare('UPDATE displays SET vw = ?, vh = ? WHERE id = ?').run(w, h, id);
   }
