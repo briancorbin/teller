@@ -14,7 +14,16 @@ import { CounterStepper } from '../components/Vitals.tsx';
 import { TagSection } from '../components/TagSection.tsx';
 import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters.tsx';
 import { Cylinder, dialable } from '../components/sheet/Cylinder.tsx';
+import { HealthPanel } from '../components/sheet/HealthPanel.tsx';
+import { SheetGauge } from '../components/sheet/SheetGauge.tsx';
+import { SheetPanel } from '../components/sheet/SheetPanel.tsx';
+import { StatusPanel, type StatusDecl } from '../components/sheet/StatusPanel.tsx';
 import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
+
+/** 'skills' → 'Skills'. The one heading this file supplies rather than reads off a pack. */
+function titleCase(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
 
 function subject(ctx: BlockCtx): Entity | undefined {
   return ctx.entity as Entity | undefined;
@@ -34,6 +43,26 @@ function accentOf(ctx: BlockCtx, e: Entity | undefined): string | undefined {
 
 function dialOf(ctx: BlockCtx, entry: Entry): string | undefined {
   return ctx.records.dials?.[entry.name] as string | undefined;
+}
+
+/** An entry by name, wherever it lives — the `pins` record names an
+ * entry, never a list, so a pinned field could be under `stats`,
+ * `meta`, anywhere. */
+export function entryNamed(e: Entity | undefined, name: string): Entry | undefined {
+  if (!e) return undefined;
+  for (const entries of Object.values(e.lists)) {
+    const hit = entries.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
+/** The entries the system pinned to this counter — Defense, for WiW Health. */
+function pinsOf(ctx: BlockCtx, e: Entity | undefined, entry: Entry): Entry[] {
+  const names = (ctx.records.pins?.[entry.name] as string[] | undefined) ?? [];
+  return names
+    .map((n) => entryNamed(e, n))
+    .filter((x): x is Entry => x !== undefined);
 }
 
 function filterEntries(entries: Entry[], filter: unknown): Entry[] {
@@ -183,13 +212,80 @@ registerBlock('list', (block, ctx) => {
     );
   }
 
+  // A read-only glance strip — the generic stat chips the old app drew
+  // under a seat layout that doesn't place its own fields (every layout
+  // but Sheet). Not `chips` (TagSection): these are fixed named values,
+  // not a removable tag list, and offering a ✕ on "Charm" made no sense.
+  if (as === 'strip') {
+    if (!entries.length) return null;
+    return (
+      <div className="flex flex-wrap gap-1">
+        {entries.map((entry) => (
+          <span key={entry.name} className="rounded-md bg-stone-900 px-2 py-1 text-xs">
+            <span className="font-mono text-stone-100">{entry.value ?? '—'}</span>
+            <span className="ml-1 uppercase tracking-wider text-stone-500">{entry.name}</span>
+          </span>
+        ))}
+      </div>
+    );
+  }
+
   if (as === 'rows') {
     if (!entries.length) return null;
     return (
-      <div className="divide-y divide-stone-800/80">
-        {entries.map((entry) => (
-          <SkillRow key={entry.name} entry={entry} accent={accent} />
-        ))}
+      <SheetPanel title={titleCase(name)} className="w-full">
+        <div className="divide-y divide-stone-800/80">
+          {entries.map((entry) => (
+            <SkillRow key={entry.name} entry={entry} accent={accent} />
+          ))}
+        </div>
+      </SheetPanel>
+    );
+  }
+
+  // The `sheet` layout's own gauge treatment — a pinned counter (Health,
+  // with Defense beside it) gets `HealthPanel`; a counter dialled a
+  // cylinder (Grit) gets `Cylinder`; anything else falls to `SheetGauge`,
+  // a ring for a small ceiling or a bar-and-steppers otherwise. Every one
+  // of the three wears the same ruled `SheetPanel` chrome, which is the
+  // whole difference from the plain `big` tile the other five layouts use.
+  if (as === 'sheet') {
+    if (!entries.length) return null;
+    return (
+      <div
+        className="grid gap-3"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))' }}
+      >
+        {entries.map((entry) => {
+          const pinned = pinsOf(ctx, e, entry);
+          if (pinned.length) {
+            return (
+              <HealthPanel
+                key={entry.name}
+                entry={entry}
+                pinned={pinned}
+                onSet={(v) => write(entry.name, { value: v })}
+              />
+            );
+          }
+          if (dialOf(ctx, entry) === 'cylinder' && dialable(entry)) {
+            return (
+              <Cylinder
+                key={entry.name}
+                entry={entry}
+                onSet={(v) => write(entry.name, { value: v })}
+                accent={accent}
+              />
+            );
+          }
+          return (
+            <SheetGauge
+              key={entry.name}
+              entry={entry}
+              onSet={(v) => write(entry.name, { value: v })}
+            />
+          );
+        })}
       </div>
     );
   }
@@ -268,12 +364,12 @@ registerBlock('list', (block, ctx) => {
 });
 
 // ---- statuses ----------------------------------------------------------
-// The system's statuses (`/api/stack/declarations/statuses`), drawn with
-// TagSection's chip grammar — bare-or-numbered, ⓘ opens the relieving
-// skill. The entity's own `conditions` list is the stored truth; the
-// declaration only supplies the lookup.
-
-type StatusDecl = { name: string; relief?: string; effect?: string };
+// The system's statuses (`/api/stack/declarations/statuses`), drawn the
+// way the printed sheet does — the WHOLE declared list, always, each row
+// a Severity box and the relieving Skill underneath the name (ported
+// `StatusPanel`, not a chip strip). The entity's own `conditions` list
+// is the stored truth; the declaration only supplies the row and the
+// relief/effect text.
 
 function StatusesBlock({ ctx }: { ctx: BlockCtx }) {
   const e = subject(ctx);
@@ -292,23 +388,14 @@ function StatusesBlock({ ctx }: { ctx: BlockCtx }) {
     };
   }, []);
 
-  if (!e) return null;
+  if (!e || !decls) return null;
   const entries = entriesOf(e, 'conditions');
-  if (!entries.length && !ctx.write) return null;
-
-  const lookup = decls
-    ? (name: string) => {
-        const d = decls.find((s) => s.name.toLowerCase() === name.toLowerCase());
-        return d ? { meta: d.relief, text: d.effect, section: 'Statuses' } : undefined;
-      }
-    : undefined;
 
   return (
-    <TagSection
+    <StatusPanel
+      declared={decls}
       entries={entries}
       onWrite={(edit) => ctx.write?.({ list: 'conditions', ...edit })}
-      label="Statuses"
-      lookup={lookup}
     />
   );
 }
@@ -380,16 +467,29 @@ registerBlock('rest', (block, ctx) => {
       String(n).toLowerCase(),
     ),
   );
-  const strays = Object.keys(e.lists).filter(
-    (k) => !placed.has(k.toLowerCase()),
+  // Every entry name a `pins` declaration already drew somewhere else
+  // (Defense, pinned into Health's own panel) — excluded per-ENTRY
+  // rather than dropping its whole list, so a sibling stat the system
+  // never pinned (Speed, beside Defense in `stats`) still surfaces here.
+  const pinned = new Set(
+    Object.values((ctx.records.pins as Record<string, string[]> | undefined) ?? {})
+      .flat()
+      .map((n) => n.toLowerCase()),
   );
-  if (!strays.length) return null;
+  const strays = Object.keys(e.lists).filter((k) => !placed.has(k.toLowerCase()));
+  const sections = strays
+    .map((name) => ({
+      name,
+      entries: e.lists[name].filter((entry) => !pinned.has(entry.name.toLowerCase())),
+    }))
+    .filter((s) => s.entries.length > 0);
+  if (!sections.length) return null;
   return (
     <>
-      {strays.map((name) => (
+      {sections.map(({ name, entries }) => (
         <section key={name} className={`${card} flex flex-col gap-2`}>
           <p className={sectionLabel}>{name}</p>
-          {e.lists[name].map((entry) => (
+          {entries.map((entry) => (
             <AutoEntry
               key={entry.name}
               entry={entry}

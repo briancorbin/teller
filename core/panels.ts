@@ -68,44 +68,131 @@ const tool = (
 /** Every list a sheet places by hand, so `rest` can catch the strays. */
 const PLACED = ['skills', 'resources', 'conditions', 'meta'];
 
+/**
+ * The six seat layouts (`src/lib/seat-layouts.ts`), reborn as panel
+ * declarations — the SEAT tabs derive from the entity-subject panels in
+ * this file, in this order, and the seat chrome (client-owned) is what
+ * cycles between them. Identity (name, trade, player, spend chips) moved
+ * OUT of every one of these and into the chrome's own top bar, because a
+ * screen switching layouts shouldn't repaint who it belongs to.
+ */
 export const STANDARD_PANELS: PanelDef[] = [
+  {
+    name: 'gauges',
+    label: 'Gauges',
+    blurb: 'Bars for anything with a ceiling; the rest tucked underneath.',
+    subject: 'entity',
+    mounted: [
+      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
+      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+    held: [
+      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
+      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+  },
+  {
+    name: 'dials',
+    label: 'Dials',
+    blurb: 'Round faces you fill and empty. Big targets, no reading.',
+    subject: 'entity',
+    mounted: [
+      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
+      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+    held: [
+      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
+      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+  },
+  {
+    name: 'ledger',
+    label: 'Ledger',
+    blurb: 'One tight line each. Everything visible, nothing shouting.',
+    subject: 'entity',
+    mounted: [
+      { block: 'list', list: 'resources', as: 'ledger' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+    held: [
+      { block: 'list', list: 'resources', as: 'ledger' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+  },
+  {
+    name: 'focus',
+    label: 'Focus',
+    blurb: 'The two you spend in a fight, huge. Everything else one tap away.',
+    subject: 'entity',
+    mounted: [
+      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
+      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+    held: [
+      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
+      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+  },
   {
     name: 'sheet',
     label: 'Sheet',
     blurb: 'Arranged like the paper you already know.',
     subject: 'entity',
+    // Mounted glass draws exactly what the printed page's Sheet screen
+    // does — Skills, Health+Grit, Statuses, three columns, nothing more
+    // (the old app kept everything else on a 'More' screen this rebuild
+    // hasn't grown yet; the Ledger/Gauges/Classic tabs already surface
+    // every counter, so nothing here is actually lost — see `bare` for
+    // the literal floor). Held glass has room to scroll, so it keeps
+    // showing the rest underneath.
     mounted: [
-      { block: 'brand' },
-      { block: 'header' },
       {
         block: 'columns',
         columns: [
-          [
-            { block: 'list', list: 'skills', as: 'rows' },
-            { block: 'statuses' },
-          ],
-          [
-            { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
-            { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
-          ],
-          [
-            { block: 'rest', except: PLACED },
-            { block: 'children' },
-            { block: 'notes' },
-          ],
+          [{ block: 'list', list: 'skills', as: 'rows' }],
+          [{ block: 'list', list: 'resources', filter: 'capped', as: 'sheet' }],
+          [{ block: 'statuses' }],
         ],
       },
     ],
     held: [
-      { block: 'brand' },
-      { block: 'header' },
-      { block: 'list', list: 'resources', filter: 'capped', as: 'big' },
       { block: 'list', list: 'skills', as: 'rows' },
+      { block: 'list', list: 'resources', filter: 'capped', as: 'sheet' },
       { block: 'statuses' },
       { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
       { block: 'rest', except: PLACED },
       { block: 'children' },
       { block: 'notes' },
+    ],
+  },
+  {
+    name: 'classic',
+    label: 'Classic',
+    blurb: 'What teller shipped first — the one to beat.',
+    subject: 'entity',
+    mounted: [
+      { block: 'list', list: 'resources', as: 'bars' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
+    ],
+    held: [
+      { block: 'list', list: 'resources', as: 'bars' },
+      { block: 'list', list: 'skills', as: 'strip' },
+      { block: 'statuses' },
     ],
   },
   {
