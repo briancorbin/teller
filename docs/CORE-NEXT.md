@@ -941,6 +941,25 @@ seat, runner, plugin №1, and the old world moving in):
   severity 1 through the conditions kind; easing to nothing cleared it
   by the declaration, not by the UI.
 
+Sixth pass — **E settles: the collection is the console** (2026-08-18,
+late — Brian pulled it forward the moment its precondition existed):
+
+- **`.panel` is real** (§E above for the format). teller's standard
+  collection is a base layer BELOW the system (`core/panels.ts`) — the
+  one slot teller declares for itself — and `sourceOf('panels', …)`
+  says `teller` until a layer restates the word. Ten panels: two
+  arrangements (`sheet`, `bare`) and eight tools.
+- **The console is a directory of the merged collection**, `#panel=`
+  routes each panel, and the Screens tool offers the same list when
+  assigning — one list, three consumers, the `panes.ts` law kept.
+- **The media query is repealed**: `mounted` and `held` are authored
+  separately in the declaration, the assignment (or aspect) picks, and
+  mounted glass CLIPS overflow — the FitBox law, now in CSS.
+- **Plugins management left the CLI**: toggle and config over HTTP
+  reload the load path LIVE, so the enable gate and the running set
+  cannot drift. §15's "enablement is a human act in the console" is now
+  literally true; the CLI flags remain as the headless road.
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
