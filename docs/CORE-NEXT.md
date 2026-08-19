@@ -1672,6 +1672,23 @@ box), and the plugins tab lists ENABLED content code (`sys_`/`pak_`/
 same door, opposite direction. Creating a campaign takes a name and
 a system off the shelf, and activates — the DM made it to play it.
 
+**8 · Absent is zero** (2026-08-19, Brian, ruled while structuring
+frenzies: "absent should always be zero, for all npcs and characters.
+0 is the default").
+
+A delta applied to a stat, tolerance or counter that doesn't exist
+treats the base as ZERO — for every entity, every layer, everywhere
+the arithmetic runs. This came from a real foe (Lurking Moss gains
+"+1 Sweep Tolerance" over a base that lists no Sweep tolerance at
+all), but it's stated as a convention because the alternative — every
+consumer inventing its own reading of absence — is the recurring bug
+class this codebase keeps paying for. Absence is not "untracked,
+N/A"; absence is the number zero, and a delta lands on it normally.
+The result is a stored value like any other (rule 1): if zero was the
+wrong base, the Warden types over the outcome.
+
+### Still open from `ARCHITECTURE.md`
+
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
 - **Door 3** — don't serialise `.system` until the kind declaration
   exists, or two prefixes get frozen into a public format.
