@@ -72,7 +72,15 @@ function ScreensTool() {
   // waiting ones just mirrors every open tab back at the console. A dim
   // count keeps them discoverable without giving them furniture.
   const all = displays.data ?? [];
-  const list = all.filter((d) => !d.code);
+  // Stable order, or the room rearranges itself: the server sorts by
+  // last-seen, and heartbeats re-shuffle that every few seconds — a
+  // row must never leap out from under the hand about to touch it.
+  const list = all
+    .filter((d) => !d.code)
+    .sort(
+      (a, b) =>
+        (a.name ?? '').localeCompare(b.name ?? '') || a.id.localeCompare(b.id),
+    );
   const waiting = all.length - list.length;
   const panes = (panels.data ?? []).filter((p) => p.subject !== 'entity');
   const layouts = (panels.data ?? []).filter((p) => p.subject === 'entity');
