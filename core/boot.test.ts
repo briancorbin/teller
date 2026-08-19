@@ -229,6 +229,52 @@ describe("teller's own furniture (§E)", () => {
   });
 });
 
+describe('sections — declarations, merged by name (§J)', () => {
+  it('a pack section loads, and the campaign overrides one by restating its name', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_s', name: 'S', data: {} });
+    shelf.putPack({
+      id: 'pak_s',
+      system: 'sys_s',
+      name: 'Guidebook',
+      data: {
+        sections: [
+          {
+            name: 'Skills',
+            entries: [{ name: 'Charm', meta: 'convince, barter', text: 'Roll with Charm…', page: 26 }],
+          },
+          { name: 'Task Difficulty', entries: [{ name: 'Very Easy', text: '1 Hit', page: 26 }] },
+        ],
+      },
+    });
+    const campaign = createCampaign(dir, 'sec', 'Sections');
+    campaign.save(
+      {
+        ...campaign.root(),
+        refs: { system: { id: 'sys_s', name: 'S' }, packs: [{ id: 'pak_s', name: 'Guidebook' }] },
+      },
+      't',
+    );
+    let loaded = loadCampaign(shelf, campaign);
+    const names = loaded.declarations('sections').map((s: any) => s.name);
+    expect(names).toEqual(['Skills', 'Task Difficulty']);
+    expect(loaded.sourceOf('sections', 'Skills')).toBe('pack:pak_s');
+
+    // The campaign restates a section's name wholesale and wins — the
+    // table's own note beats the book's (rule 1).
+    campaign.putTemplate(
+      'sections',
+      { name: 'Skills', entries: [{ name: 'Charm', text: 'House ruling: also covers haggling.' }] },
+      't',
+    );
+    loaded = loadCampaign(shelf, campaign);
+    const skills: any = loaded.declarations('sections').find((s: any) => s.name === 'Skills');
+    expect(skills.entries).toEqual([{ name: 'Charm', text: 'House ruling: also covers haggling.' }]);
+    expect(loaded.sourceOf('sections', 'Skills')).toBe('campaign');
+    campaign.close();
+  });
+});
+
 describe('the record stack (visual vocabulary)', () => {
   it('shallow-merges records, later layer winning per key', () => {
     const shelf = openShelf(dir);
@@ -254,6 +300,46 @@ describe('the record stack (visual vocabulary)', () => {
       Marshal: '#123456', // the pack restated the key and won
     });
     expect(loaded.record('nothing')).toEqual({});
+    campaign.close();
+  });
+
+  it('carries dice and marks straight through — a system-layer record, same as accents (§J)', () => {
+    const shelf = openShelf(dir);
+    shelf.putSystem({
+      id: 'sys_d',
+      name: 'D',
+      data: {
+        dice: {
+          faces: { B: ['hit', 'hit', 'ace', 'blank', 'blank', 'spur'] },
+          values: { hit: 1, ace: 2, blank: 0, spur: 0 },
+          unit: 'Hits',
+          track: 6,
+          trackBonus: 1,
+          banks: [{ face: 'ace', counter: 'Aces' }],
+        },
+        marks: { kind: 'mark', text: 'rerolls Spurs', label: 'Talents', categories: ['Charm'] },
+      },
+    });
+    const campaign = createCampaign(dir, 'dice', 'Dice');
+    campaign.save(
+      { ...campaign.root(), refs: { system: { id: 'sys_d', name: 'D' } } },
+      't',
+    );
+    const loaded = loadCampaign(shelf, campaign);
+    expect(loaded.record('dice')).toEqual({
+      faces: { B: ['hit', 'hit', 'ace', 'blank', 'blank', 'spur'] },
+      values: { hit: 1, ace: 2, blank: 0, spur: 0 },
+      unit: 'Hits',
+      track: 6,
+      trackBonus: 1,
+      banks: [{ face: 'ace', counter: 'Aces' }],
+    });
+    expect(loaded.record('marks')).toEqual({
+      kind: 'mark',
+      text: 'rerolls Spurs',
+      label: 'Talents',
+      categories: ['Charm'],
+    });
     campaign.close();
   });
 });

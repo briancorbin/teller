@@ -350,8 +350,18 @@ const packData = { bestiary, catalog };
 if (Object.keys(brand).length) packData.brand = brand;
 if (Object.keys(portraits).length) packData.portraits = portraits;
 if (oldCatalog.upgrades) packData.upgrades = oldCatalog.upgrades;
+
+// `sections` is the mid-game lookup text — a declarations-style slot
+// (merged by NAME, later wins, same as `statuses`), so a campaign can
+// override one section wholesale by restating its title. The old file
+// keys each section by `title`; the new shape wants `name`, the field
+// every declaration merges on (`Loaded#declarations`).
+const oldSections = readJson('sections.json');
+if (Array.isArray(oldSections)) {
+  packData.sections = oldSections.map(({ title, ...rest }) => ({ name: title, ...rest }));
+}
+
 for (const [file, slot] of [
-  ['sections.json', 'sections'],
   ['trades.json', 'trades'],
   ['creation.json', 'creation'],
   ['notes.json', 'notes'],
