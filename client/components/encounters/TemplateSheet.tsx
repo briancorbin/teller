@@ -41,8 +41,34 @@ function EntryCell({ entry }: { entry: Entry }) {
   );
 }
 
+/**
+ * One attack's printed line, read semantically — the numbers, not the
+ * prose. Exported because the runner's stage draws the same attack as a
+ * CHIP rather than a line, and both must read the same profile: one
+ * statblock, rendered the same everywhere, means one reading of it too.
+ */
+export function attackProfile(attack: Template): {
+  band?: string;
+  cost?: Entry;
+  damage?: Entry;
+  aoe: boolean;
+  piercing?: Entry;
+  inflicts: Entry[];
+} {
+  const profile = attack.lists?.profile ?? [];
+  const band = findEntry(profile, 'Band')?.value;
+  return {
+    ...(typeof band === 'string' ? { band } : {}),
+    cost: findEntry(profile, 'Cost'),
+    damage: findEntry(profile, 'Damage'),
+    aoe: findEntry(profile, 'AOE') !== undefined,
+    piercing: findEntry(profile, 'Piercing'),
+    inflicts: attack.lists?.inflicts ?? [],
+  };
+}
+
 /** A status chip — an inflicted or tolerated condition, severity riding the name. */
-function StatusChip({ entry }: { entry: Entry }) {
+export function StatusChip({ entry }: { entry: Entry }) {
   return (
     <span className="rounded bg-sky-950 px-1.5 py-0.5 font-mono text-[10px] text-sky-300">
       {entry.name}
@@ -88,7 +114,7 @@ function AttackLine({ attack }: { attack: Template }) {
 /** Attack children, band by band, in declared order — Melee, Short, Long. */
 const BAND_ORDER = ['Melee', 'Short', 'Long'];
 
-function AttacksSection({ template }: { template: Template }) {
+export function AttacksSection({ template }: { template: Template }) {
   const attacks = (template.children ?? []).filter((c) => c.type === 'attack');
   if (!attacks.length) return null;
   const bandOf = (a: Template) => String(findEntry(a.lists?.profile ?? [], 'Band')?.value ?? '');
@@ -236,6 +262,75 @@ function TraitsSection({ entries }: { entries: Entry[] }) {
   );
 }
 
+/**
+ * The lists with no rendering of their own — the pool grid that's the
+ * bare-panel floor for anything teller doesn't recognise (§7).
+ *
+ * ORDER is presentation, not knowledge, and it's the old app's order
+ * (`PROSE_ORDER` in `src/components/Statblock.tsx`): the pools first,
+ * then what it does, then what it is, then what it becomes.
+ *
+ * `skip` is the caller's: the runner's stage draws `resources` as bars
+ * with steppers above this grid, so it says so rather than printing
+ * Health twice.
+ */
+export function StatPools({
+  template,
+  skip = [],
+}: {
+  template: Template;
+  skip?: string[];
+}) {
+  const hidden = new Set([...SPOKEN, ...skip.map((s) => s.toLowerCase())]);
+  const lists = Object.entries(template.lists ?? {}).filter(
+    ([key, entries]) => entries.length && !hidden.has(key.toLowerCase()),
+  );
+  if (!lists.length) return null;
+  return (
+    <>
+      {lists.map(([key, entries]) => (
+        <div key={key}>
+          <span className={sectionLabel}>{key}</span>
+          <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {entries.map((e) => (
+              <EntryCell key={e.name} entry={e} />
+            ))}
+          </div>
+        </div>
+      ))}
+    </>
+  );
+}
+
+/**
+ * Everything the book SAYS about a creature — Description, Behavior,
+ * Features, Trophies, Tolerances, Frenzy, and the unmigrated blob.
+ *
+ * The whole reason it's one exported component: the dialog and the
+ * runner's stage are two places you read the same statblock, and the
+ * day they diverge is the day one of them starts lying. Deciding a turn
+ * you have to open a dialog to make is a turn you make worse (Brian,
+ * 2026-08-15), so the stage inlines exactly this.
+ */
+export function StatblockProse({ template }: { template: Template }) {
+  const frenzies = (template.children ?? []).filter((c) => c.type === 'frenzy');
+  return (
+    <>
+      <AboutSections entries={template.lists?.about ?? []} />
+      <NamedSection label="Features" entries={template.lists?.features ?? []} />
+      <NamedSection label="Trophies" entries={template.lists?.trophies ?? []} />
+      <TolerancesSection entries={template.lists?.tolerances ?? []} />
+      <FrenzySection frenzies={frenzies} />
+      <TraitsSection entries={template.lists?.traits ?? []} />
+    </>
+  );
+}
+
+// The lists that have a rendering of their own above — status chips,
+// named prose, plain prose. Everything else falls through to the grid.
+// Attack and frenzy children never rode in `lists`.
+const SPOKEN = ['about', 'features', 'trophies', 'tolerances', 'traits'];
+
 export function TemplateSheet({
   template,
   onClose,
@@ -254,15 +349,6 @@ export function TemplateSheet({
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  // The lists with a rendering of their own — status chips, named
-  // prose, plain prose. Everything else still falls through to the pool
-  // grid that's the bare-panel floor for anything teller doesn't
-  // recognise (§7). Attack and frenzy children never rode in `lists`.
-  //
-  // ORDER is presentation, not knowledge, and it's the old app's order
-  // (`PROSE_ORDER` in `src/components/Statblock.tsx`): the pools first,
-  // then what it does, then what it is, then what it becomes.
-  const SPOKEN = ['about', 'features', 'trophies', 'tolerances', 'traits'];
   const lists = Object.entries(template.lists ?? {}).filter(
     ([key, entries]) => entries.length && !SPOKEN.includes(key),
   );
@@ -306,24 +392,9 @@ export function TemplateSheet({
             traits.length === 0 && (
               <p className="text-sm text-stone-600">nothing printed for this foe</p>
             )}
-          {lists.map(([key, entries]) => (
-            <div key={key}>
-              <span className={sectionLabel}>{key}</span>
-              <div className="mt-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                {entries.map((e) => (
-                  <EntryCell key={e.name} entry={e} />
-                ))}
-              </div>
-            </div>
-          ))}
-
+          <StatPools template={template} />
           <AttacksSection template={template} />
-          <AboutSections entries={about} />
-          <NamedSection label="Features" entries={features} />
-          <NamedSection label="Trophies" entries={trophies} />
-          <TolerancesSection entries={tolerances} />
-          <FrenzySection frenzies={frenzies} />
-          <TraitsSection entries={traits} />
+          <StatblockProse template={template} />
 
           {template.notes && (
             <div>

@@ -131,6 +131,57 @@ describe('propose.turn over HTTP', () => {
       (await call('POST', '/api/propose/decide', { key: true, body: {} })).status,
     ).toBe(404);
   });
+
+  it('is one door for the whole family — a point nobody provides answers with nobody', async () => {
+    // The echo plugin provides only propose.turn. `narrate` is a real
+    // point, so it routes; it just has no providers, which is a 200 with
+    // zero proposals and never a 404.
+    const { status, body } = await call('POST', '/api/propose/narrate', {
+      key: true,
+      body: { payload: { outcome: 'the Peril let go' } },
+    });
+    expect(status).toBe(200);
+    expect(body).toEqual({ point: 'propose.narrate', providers: 0, proposals: [] });
+  });
+
+  it('carries what the surface knows into the snapshot — the DM\'s own call included', async () => {
+    const { body } = await call('POST', '/api/propose/turn', {
+      key: true,
+      body: { payload: { intent: 'it dives and flings sludge' } },
+    });
+    expect(body.proposals[0].proposal.saw.intent).toBe('it dives and flings sludge');
+  });
+});
+
+// The question a surface asks before it draws a box: is this point
+// provided by anything running? Never "is the assistant installed" —
+// a tool must not be able to learn what answers it (§15).
+describe('GET /api/points — what this build can be asked', () => {
+  it('lists every registry point with its live provider count', async () => {
+    const { status, body } = await call('GET', '/api/points', { key: true });
+    expect(status).toBe(200);
+    const byPoint = Object.fromEntries(body.map((p: any) => [p.point, p]));
+    expect(byPoint['propose.turn'].providers).toBe(1);
+    expect(byPoint['propose.turn'].blurb).toBeTruthy();
+    // Declared but unprovided — the point exists, nobody answers it, and
+    // the surface that would draw a box for it draws nothing.
+    expect(byPoint['propose.narrate'].providers).toBe(0);
+    // And it never names who provides anything.
+    expect(JSON.stringify(body)).not.toContain('plg_');
+  });
+
+  it('follows the enable gate: disabling the plugin empties the point', async () => {
+    await call('POST', '/api/plugins/plg_echo00000001', {
+      key: true,
+      body: { enabled: false },
+    });
+    const { body } = await call('GET', '/api/points', { key: true });
+    expect(body.find((p: any) => p.point === 'propose.turn').providers).toBe(0);
+  });
+
+  it('is the DM\'s to ask', async () => {
+    expect((await call('GET', '/api/points')).status).toBe(401);
+  });
 });
 
 describe('plugin management over HTTP (§15 in the console)', () => {

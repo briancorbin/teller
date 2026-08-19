@@ -28,3 +28,29 @@ export type Point = keyof typeof POINTS;
 export function isPoint(name: string): name is Point {
   return name in POINTS;
 }
+
+/**
+ * What a `propose.turn` provider hands back.
+ *
+ * The point owns this shape, not any plugin: it's the contract a
+ * provider implements and the thing teller's own proposal UI draws.
+ * That separation is what lets a surface render a proposal without
+ * knowing what produced it — the runner asks for a POINT and gets
+ * words, and a second provider tomorrow renders identically.
+ *
+ * Every field is optional and none of it is load-bearing: a provider
+ * that answers with less renders less, and a surface must degrade to
+ * showing whatever came back rather than refusing it. `premises` is the
+ * honesty mechanism — the assumptions the proposal leans on, surfaced
+ * so the DM can check them at a glance before believing any of it.
+ */
+export type TurnProposal = {
+  premises?: string[];
+  action?: string;
+  rationale?: string;
+  /** The pool the action calls for, and what it's for. Rolled by a human. */
+  roll?: { dice?: string; for?: string };
+};
+
+/** What a `propose.narrate` provider hands back — words, and only words. */
+export type NarrationProposal = { narration?: string };

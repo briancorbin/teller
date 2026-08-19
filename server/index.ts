@@ -44,6 +44,7 @@ import {
   type Auth,
 } from './auth.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
+import { isPoint, POINTS, type Point } from '../core/registry.ts';
 import { defaultPanelDir, panelDir } from '../core/panels-shelf.ts';
 import { packDir, packPanelDir, sweepPacks, systemIndexModule } from '../core/packs-shelf.ts';
 import { sweepSystems, systemDir, systemPanelDir } from '../core/systems-shelf.ts';
@@ -915,13 +916,39 @@ export async function handleApi(
     }
   }
 
+  // -- what this build can be ASKED for, and whether anybody answers.
+  //
+  // The registry is the list of points; the running plugins are who
+  // implements them. A surface asks THIS, never "is the assistant
+  // installed": a tool that renders a proposal box wants to know a point
+  // is provided, and must never learn the name of what provides it. No
+  // provider, no box — the same shape as `panes.ts` (a pane nobody can
+  // be assigned to is a pane that doesn't exist).
+  if (method === 'GET' && head === 'points' && !a) {
+    if (!canDm(auth)) return denied();
+    return reply(
+      200,
+      Object.entries(POINTS).map(([point, blurb]) => ({
+        point,
+        blurb,
+        providers: providersOf(session.plugins, point as Point).length,
+      })),
+    );
+  }
+
   // -- proposals (§15). The host assembles the snapshot, fans it out to
   // every enabled provider, and returns words. Playing any of it is the
   // DM's act — a proposal lands nowhere a human didn't put it (rule 1).
+  //
+  // One door for the whole `propose.*` family: the path segment IS the
+  // point's second half, checked against the registry. A point added
+  // there is callable here the same day, and a name that isn't one 404s
+  // by its own name rather than by a missing branch of an if.
   if (method === 'POST' && head === 'propose' && a && !b) {
     if (!canDm(auth)) return denied();
-    const point = a === 'turn' ? 'propose.turn' : a === 'narrate' ? 'propose.narrate' : undefined;
-    if (!point) return reply(404, { error: `no such point: ${a}` });
+    const named = `propose.${a}`;
+    const point = isPoint(named) ? named : undefined;
+    if (!point) return reply(404, { error: `no such point: ${named}` });
     const body = await bodyOf(req);
     let payload: unknown = body.payload ?? {};
     if (point === 'propose.turn') {

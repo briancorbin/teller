@@ -119,12 +119,20 @@ async function ask(config, system, user) {
 }
 
 export const provides = {
-  /** Snapshot: { round, order: [{name, score, acting}], acting: entity|null, style? } */
+  /** Snapshot: { round, order: [{name, score, acting}], acting: entity|null, intent?, style? } */
   'propose.turn': async (snapshot, config) => {
     const style = config?.style || snapshot?.style || '';
+    // The DM may have already decided WHAT happens and be asking for
+    // everything else — the premises, the dice off the printed line, the
+    // words to read out. Rule 1 reading forwards: instead of the human
+    // overruling the machine afterwards, they go first.
+    const intent = String(snapshot?.intent ?? '').trim();
     const system = [
       'You propose ONE turn for the creature currently acting in a tabletop fight.',
       'You decide nothing: the human at the table plays or ignores your words.',
+      intent
+        ? 'The DM has ALREADY DECIDED what this creature does. Do not second-guess it: work out the premises, the dice and the words for that decision.'
+        : '',
       'State every assumption you rely on as a premise — the snapshot may be stale.',
       'Reply with bare JSON, no fences: {"premises": string[], "action": string, "rationale": string, "roll"?: {"dice": string, "for": string}}',
       'Use ONLY facts present in the snapshot; if a fact is missing, say so in premises rather than inventing it.',
@@ -140,6 +148,7 @@ export const provides = {
       '',
       'The acting creature, as its sheet reads right now:',
       sheet(snapshot?.acting),
+      ...(intent ? ['', `The DM has decided: ${intent}`] : []),
     ].join('\n');
     return ask(config, system, user);
   },
