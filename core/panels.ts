@@ -90,8 +90,11 @@ const tool = (
   held: [{ block: 'tool', tool: name }],
 });
 
-/** Every list a sheet places by hand, so `rest` can catch the strays. */
-const PLACED = ['skills', 'resources', 'conditions', 'meta'];
+/** Every list a sheet places by hand, so `rest` can catch the strays.
+ * Exported for the seat chrome's synthesized 'More' screen
+ * (`client/components/seat/SeatChrome.tsx`, fix 1/6) — the same strays
+ * that used to spill onto held-glass Sheet now spill there instead. */
+export const PLACED = ['skills', 'resources', 'conditions', 'meta'];
 
 /**
  * The six seat layouts (`src/lib/seat-layouts.ts`), reborn as panel
@@ -194,14 +197,18 @@ export const STANDARD_PANELS: PanelDef[] = [
         ],
       },
     ],
+    // Held glass used to keep scrolling to the rest of the character
+    // below the fold — every uncapped resource, every stray field, notes
+    // and children. That's gone (Brian, fix 6): the old app's printed
+    // Sheet screen was exactly Skills/Health+Grit/Statuses too, and
+    // everything else moved to a screen of its own (the seat chrome's
+    // declared-screens tabs, `client/components/seat/SeatChrome.tsx`) —
+    // the holding pen the old app called "More". Duplicating that
+    // spillover here would show it twice.
     held: [
       { block: 'list', list: 'skills', as: 'rows' },
       { block: 'list', list: 'resources', filter: 'capped', as: 'sheet' },
       { block: 'statuses' },
-      { block: 'list', list: 'resources', filter: 'uncapped', as: 'ledger' },
-      { block: 'rest', except: PLACED },
-      { block: 'children' },
-      { block: 'notes' },
     ],
   },
   {

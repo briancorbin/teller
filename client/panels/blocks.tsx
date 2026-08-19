@@ -11,13 +11,12 @@ import type { PanelBlock } from '../../core/panels.ts';
 import { api, fileUrl } from '../lib/api.ts';
 import { card, sectionLabel } from '../lib/ui.ts';
 import type { DiceRecord } from '../lib/dice.ts';
-import { useRuleLookup } from '../lib/rules.ts';
+import { useRuleLookup, usePanelNote } from '../lib/rules.ts';
 import { CounterStepper } from '../components/Vitals.tsx';
 import { TagSection } from '../components/TagSection.tsx';
 import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters.tsx';
 import { Cylinder, dialable } from '../components/sheet/Cylinder.tsx';
 import { HealthPanel } from '../components/sheet/HealthPanel.tsx';
-import { SheetGauge } from '../components/sheet/SheetGauge.tsx';
 import { SheetPanel } from '../components/sheet/SheetPanel.tsx';
 import { StatusPanel, type StatusDecl } from '../components/sheet/StatusPanel.tsx';
 import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
@@ -31,7 +30,7 @@ function subject(ctx: BlockCtx): Entity | undefined {
   return ctx.entity as Entity | undefined;
 }
 
-function entriesOf(e: Entity | undefined, list: string): Entry[] {
+export function entriesOf(e: Entity | undefined, list: string): Entry[] {
   if (!e) return [];
   const key = Object.keys(e.lists).find(
     (k) => k.toLowerCase() === list.toLowerCase(),
@@ -39,11 +38,11 @@ function entriesOf(e: Entity | undefined, list: string): Entry[] {
   return key ? e.lists[key] : [];
 }
 
-function accentOf(ctx: BlockCtx, e: Entity | undefined): string | undefined {
+export function accentOf(ctx: BlockCtx, e: Entity | undefined): string | undefined {
   return e?.type ? (ctx.records.accents?.[e.type] as string | undefined) : undefined;
 }
 
-function dialOf(ctx: BlockCtx, entry: Entry): string | undefined {
+export function dialOf(ctx: BlockCtx, entry: Entry): string | undefined {
   return ctx.records.dials?.[entry.name] as string | undefined;
 }
 
@@ -60,17 +59,35 @@ export function entryNamed(e: Entity | undefined, name: string): Entry | undefin
 }
 
 /** The entries the system pinned to this counter — Defense, for WiW Health. */
-function pinsOf(ctx: BlockCtx, e: Entity | undefined, entry: Entry): Entry[] {
+export function pinsOf(ctx: BlockCtx, e: Entity | undefined, entry: Entry): Entry[] {
   const names = (ctx.records.pins?.[entry.name] as string[] | undefined) ?? [];
   return names
     .map((n) => entryNamed(e, n))
     .filter((x): x is Entry => x !== undefined);
 }
 
-function filterEntries(entries: Entry[], filter: unknown): Entry[] {
+/**
+ * Does this entry get its own face on a 'sheet'-shaped panel — a
+ * `HealthPanel` (something's pinned to it) or a `Cylinder` (dialled
+ * that way and small enough)? The generic rule (rule 2) behind "Sheet
+ * shows Health + Grit" (fix 6): nothing here names either counter, it's
+ * a fact about the DECLARATION, so it's also how the seat chrome knows
+ * what the Sheet screen already claims when it builds the 'More' screen
+ * (`SeatChrome.tsx`).
+ */
+export function shaped(ctx: BlockCtx, e: Entity | undefined, entry: Entry): boolean {
+  return pinsOf(ctx, e, entry).length > 0 || (dialOf(ctx, entry) === 'cylinder' && dialable(entry));
+}
+
+function filterEntries(entries: Entry[], filter: unknown, names?: unknown): Entry[] {
   const capped = (e: Entry) => typeof e.max === 'number' && e.max > 0;
   if (filter === 'capped') return entries.filter(capped);
   if (filter === 'uncapped') return entries.filter((e) => !capped(e));
+  const wanted = new Set(
+    Array.isArray(names) ? names.map((n) => String(n).toLowerCase()) : [],
+  );
+  if (filter === 'named') return entries.filter((e) => wanted.has(e.name.toLowerCase()));
+  if (filter === 'except-named') return entries.filter((e) => !wanted.has(e.name.toLowerCase()));
   return entries;
 }
 
@@ -215,8 +232,9 @@ function RowsBlock({
   markTitle?: string;
 }) {
   const lookup = useRuleLookup();
+  const note = usePanelNote();
   return (
-    <SheetPanel title={title} className="w-full">
+    <SheetPanel title={title} note={note(title)} className="w-full">
       <div className="divide-y divide-stone-800/80">
         {entries.map((entry) => (
           <SkillRow
@@ -234,13 +252,70 @@ function RowsBlock({
   );
 }
 
+/**
+ * The `sheet` layout's own gauge treatment, wrapped so it can call
+ * `usePanelNote` — a pinned counter (Health, with Defense beside it)
+ * gets `HealthPanel`; a counter dialled a cylinder (Grit) gets
+ * `Cylinder`; anything else is not this shape and sits out (fix 6 —
+ * "Sheet shows Health + Grit", not every capped resource; the rest
+ * surface on the seat chrome's declared-screens tabs instead, see
+ * `SeatChrome.tsx`'s 'More').
+ */
+function SheetListBlock({
+  entries,
+  ctx,
+  e,
+  accent,
+  write,
+}: {
+  entries: Entry[];
+  ctx: BlockCtx;
+  e: Entity | undefined;
+  accent?: string;
+  write: (entryName: string, edit: Record<string, unknown>) => void;
+}) {
+  const note = usePanelNote();
+  const shown = entries.filter((entry) => shaped(ctx, e, entry));
+  if (!shown.length) return null;
+  return (
+    <div
+      className="grid gap-3"
+      style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))' }}
+    >
+      {shown.map((entry) => {
+        const pinned = pinsOf(ctx, e, entry);
+        if (pinned.length) {
+          return (
+            <HealthPanel
+              key={entry.name}
+              entry={entry}
+              pinned={pinned}
+              note={note(entry.name)}
+              onSet={(v) => write(entry.name, { value: v })}
+            />
+          );
+        }
+        return (
+          <Cylinder
+            key={entry.name}
+            entry={entry}
+            note={note(entry.name)}
+            onSet={(v) => write(entry.name, { value: v })}
+            accent={accent}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 registerBlock('list', (block, ctx) => {
   const e = subject(ctx);
   const name = typeof block.list === 'string' ? block.list : '';
   if (!name) return <Refusal>a list block with no list</Refusal>;
   const as = typeof block.as === 'string' ? block.as : 'auto';
   const accent = accentOf(ctx, e);
-  const entries = filterEntries(entriesOf(e, name), block.filter);
+  const entries = filterEntries(entriesOf(e, name), block.filter, block.names);
 
   const write = (entryName: string, edit: Record<string, unknown>) =>
     ctx.write?.({ list: name, name: entryName, ...edit });
@@ -292,51 +367,9 @@ registerBlock('list', (block, ctx) => {
     );
   }
 
-  // The `sheet` layout's own gauge treatment — a pinned counter (Health,
-  // with Defense beside it) gets `HealthPanel`; a counter dialled a
-  // cylinder (Grit) gets `Cylinder`; anything else falls to `SheetGauge`,
-  // a ring for a small ceiling or a bar-and-steppers otherwise. Every one
-  // of the three wears the same ruled `SheetPanel` chrome, which is the
-  // whole difference from the plain `big` tile the other five layouts use.
   if (as === 'sheet') {
     if (!entries.length) return null;
-    return (
-      <div
-        className="grid gap-3"
-        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))' }}
-      >
-        {entries.map((entry) => {
-          const pinned = pinsOf(ctx, e, entry);
-          if (pinned.length) {
-            return (
-              <HealthPanel
-                key={entry.name}
-                entry={entry}
-                pinned={pinned}
-                onSet={(v) => write(entry.name, { value: v })}
-              />
-            );
-          }
-          if (dialOf(ctx, entry) === 'cylinder' && dialable(entry)) {
-            return (
-              <Cylinder
-                key={entry.name}
-                entry={entry}
-                onSet={(v) => write(entry.name, { value: v })}
-                accent={accent}
-              />
-            );
-          }
-          return (
-            <SheetGauge
-              key={entry.name}
-              entry={entry}
-              onSet={(v) => write(entry.name, { value: v })}
-            />
-          );
-        })}
-      </div>
-    );
+    return <SheetListBlock entries={entries} ctx={ctx} e={e} accent={accent} write={write} />;
   }
 
   if (as === 'big') {
@@ -420,9 +453,10 @@ registerBlock('list', (block, ctx) => {
 // is the stored truth; the declaration only supplies the row and the
 // relief/effect text.
 
-function StatusesBlock({ ctx }: { ctx: BlockCtx }) {
+function StatusesBlock({ ctx, title = 'Statuses' }: { ctx: BlockCtx; title?: string }) {
   const e = subject(ctx);
   const lookup = useRuleLookup();
+  const note = usePanelNote();
   const [decls, setDecls] = useState<StatusDecl[] | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
@@ -447,11 +481,24 @@ function StatusesBlock({ ctx }: { ctx: BlockCtx }) {
       entries={entries}
       onWrite={(edit) => ctx.write?.({ list: 'conditions', ...edit })}
       lookup={lookup}
+      title={title}
+      note={note(title)}
     />
   );
 }
 
 registerBlock('statuses', (_block, ctx) => <StatusesBlock ctx={ctx} />);
+
+// ---- aside ---------------------------------------------------------------
+// A plain, teller-authored line — never pack content (rule 4), so this
+// is the one text block that's safe to write straight into a panel's
+// `blurb`/`text`. The seat chrome uses it for the honest "no items yet"
+// note on a screen whose subsystem hasn't landed (fix 1).
+
+registerBlock('aside', (block, _ctx) => {
+  const text = typeof block.text === 'string' ? block.text : '';
+  return text ? <Refusal>{text}</Refusal> : null;
+});
 
 // ---- notes -------------------------------------------------------------
 

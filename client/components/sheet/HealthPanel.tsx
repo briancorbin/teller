@@ -193,7 +193,7 @@ export function HealthPanel({
         {pinned.map((field) => (
           <StatBox
             key={field.name}
-            value={field.value !== undefined ? String(field.value) : '—'}
+            value={field.value !== undefined && field.value !== '' ? String(field.value) : '—'}
             label={field.name}
           />
         ))}

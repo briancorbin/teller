@@ -39,3 +39,26 @@ export function useRuleLookup(): (name: string) => RuleHit | undefined {
     return (name: string) => map.get(name.trim().toLowerCase());
   }, [sections]);
 }
+
+/**
+ * The caption a pack sets under a panel heading — "practice & master
+ * with Prestige" — ported from the old app's `usePanelNote`
+ * (`src/lib/rules.ts`), which read `pack.notes[title]`. The merge
+ * already happened server-side, the same way `sections` does: the
+ * merged system+pack `notes` record (`/api/stack/record/notes`) is
+ * title → caption, later layer wins. Publisher prose (rule 4), so this
+ * never invents a caption — a title with none renders none.
+ */
+export function usePanelNote(): (title: string) => string | undefined {
+  const { data } = useLive(
+    () => api<Record<string, string>>('/api/stack/record/notes'),
+    [],
+  );
+  return useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [title, note] of Object.entries(data ?? {})) {
+      map.set(title.trim().toLowerCase(), note);
+    }
+    return (title: string) => map.get(title.trim().toLowerCase());
+  }, [data]);
+}

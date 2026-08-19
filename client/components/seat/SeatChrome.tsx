@@ -20,15 +20,66 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Entity } from '../../../core/entity.ts';
-import type { PanelDef } from '../../../core/panels.ts';
+import type { PanelBlock, PanelDef } from '../../../core/panels.ts';
+import { PLACED } from '../../../core/panels.ts';
 import { api } from '../../lib/api.ts';
 import { onNudge } from '../../lib/use-session.ts';
-import { entryNamed } from '../../panels/blocks.tsx';
+import { entriesOf, entryNamed, shaped } from '../../panels/blocks.tsx';
+import { Glyph } from '../sheet/glyphs.tsx';
 import { PanelSurface, type BlockCtx, type Glass } from '../../panels/render.tsx';
 
 type Records = Record<string, Record<string, unknown>>;
 
 const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'groups', 'dice', 'marks'];
+
+/** The system's own carried-things screens (`SystemTemplate.screens`,
+ * ported) — Weapons, Abilities, Inventory for WiW. `/api/stack/declarations/screens`,
+ * not `record/screens`: the record endpoint doesn't resolve this slot
+ * yet (it comes back `{}`), while the merged declaration does — same
+ * gap class as `notes` almost had. */
+type ScreenDecl = {
+  name: string;
+  icon?: string;
+  kinds?: string[];
+  counters?: string[];
+  arms?: boolean;
+  rest?: boolean;
+};
+
+/** Every declared screen's own claimed counters, lower-cased, in one set. */
+function screenClaims(screens: ScreenDecl[]): Set<string> {
+  return new Set(screens.flatMap((s) => s.counters ?? []).map((n) => n.toLowerCase()));
+}
+
+/** The `items arrive with the inventory port` note (fix 1) — teller's
+ * own honest word about what isn't built yet, never pack content, so
+ * it's safe to author here rather than reading it off a declaration. */
+const NO_ITEMS_YET = 'items arrive with the inventory port';
+
+/** A synthetic PanelDef for one declared screen — its claimed counters
+ * (drawn the same way the Sheet screen's ledger rows are) plus the
+ * honest note, since the items subsystem behind `kinds` isn't built. */
+function carriedPanel(screen: ScreenDecl): PanelDef {
+  const blocks: PanelBlock[] = [
+    { block: 'list', list: 'resources', filter: 'named', names: screen.counters ?? [], as: 'ledger' },
+    { block: 'aside', text: NO_ITEMS_YET },
+  ];
+  return { name: screen.name, subject: 'entity', mounted: blocks, held: blocks };
+}
+
+/** The old app's holding pen ('More'): every resource the Sheet screen
+ * and every declared carried-screen didn't claim, plus the strays the
+ * `rest` block already knows how to surface, plus notes/children — the
+ * same blocks held-glass Sheet used to carry before fix 6 trimmed it. */
+function morePanel(claimed: Set<string>): PanelDef {
+  const blocks: PanelBlock[] = [
+    { block: 'list', list: 'resources', filter: 'except-named', names: [...claimed], as: 'ledger' },
+    { block: 'rest', except: PLACED },
+    { block: 'children' },
+    { block: 'notes' },
+  ];
+  return { name: 'More', subject: 'entity', mounted: blocks, held: blocks };
+}
 
 function numberOf(entry: { value?: number | string } | undefined): number {
   return typeof entry?.value === 'number' ? entry.value : 0;
@@ -224,40 +275,48 @@ function TopBar({
   );
 }
 
-/** The segmented bar — one button per declared entity layout. Ported
- * from `Screens` (src/components/sheet/Screens.tsx), minus the icon
- * collapse: these six tabs never existed as an old-app `Screens` bar
- * (they were a per-DISPLAY assignment, chosen from the console), so
- * there's no historical glyph mapping to port for them — plain words. */
+/** One tab: the tab bar's own key/label/icon, decoupled from whichever
+ * PanelDef it renders (fix 1 — the first tab is always labelled
+ * 'Sheet' whatever layout `params.layout` names underneath it, exactly
+ * as the old app's `Screens` array hardcoded `{ name: 'Sheet', … }`
+ * regardless of which `COUNTER_VIEWS` arrangement was picked). */
+type Tab = { name: string; icon?: string; panel: PanelDef };
+
+/** The segmented bar — one button per SCREEN the system declares, not
+ * per entity-subject panel (fix 1: those six were the DM's own layout
+ * roster, `params.layout`, never a player tab). Ported from `Screens`
+ * (src/components/sheet/Screens.tsx): each tab wears the icon the old
+ * app's `icons` record gave it (sixgun/star/satchel/…), same glyph set. */
 function TabBar({
-  panels,
+  tabs,
   current,
   onGo,
 }: {
-  panels: PanelDef[];
+  tabs: Tab[];
   current: string;
   onGo: (name: string) => void;
 }) {
-  if (panels.length <= 1) return null;
+  if (tabs.length <= 1) return null;
   return (
     <nav
       aria-label="screens"
       className="flex shrink-0 gap-1 rounded-lg bg-stone-950/85 p-1 backdrop-blur-sm"
     >
-      {panels.map((p) => (
+      {tabs.map((t) => (
         <button
-          key={p.name}
+          key={t.name}
           type="button"
-          onClick={() => onGo(p.name)}
-          aria-current={p.name === current}
-          className={`flex-1 rounded-md px-2 py-1.5 text-[0.7rem] uppercase tracking-[0.18em] transition-colors ${
-            p.name === current
+          onClick={() => onGo(t.name)}
+          aria-current={t.name === current}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[0.7rem] uppercase tracking-[0.18em] transition-colors ${
+            t.name === current
               ? 'text-stone-950'
               : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100'
           }`}
-          style={p.name === current ? { background: 'var(--sheet-accent, #f59e0b)' } : undefined}
+          style={t.name === current ? { background: 'var(--sheet-accent, #f59e0b)' } : undefined}
         >
-          {p.label ?? p.name}
+          {t.icon && <Glyph name={t.icon} className="h-[1.15rem] w-[1.15rem] shrink-0" />}
+          <span className="min-w-0 break-words">{t.name}</span>
         </button>
       ))}
     </nav>
@@ -271,17 +330,22 @@ export function SeatChrome({
   glass,
 }: {
   entityId: string;
+  /** `params.layout` — the DM's own arrangement choice for the FIRST
+   * tab's content (fix 1: this is not a tab name any more, only which
+   * of the six layouts 'Sheet' renders — defaults to 'sheet'). */
   initialPanel: string;
   seatName?: string;
   glass: Glass;
 }) {
   const [panels, setPanels] = useState<PanelDef[] | undefined>(undefined);
+  const [screenDecls, setScreenDecls] = useState<ScreenDecl[]>([]);
   const [records, setRecords] = useState<Records>({});
   const [entity, setEntity] = useState<Entity | undefined>(undefined);
-  const [current, setCurrent] = useState(initialPanel);
+  const [current, setCurrent] = useState('Sheet');
 
   const load = useCallback(() => {
     api<PanelDef[]>('/api/stack/declarations/panels').then(setPanels).catch(() => setPanels([]));
+    api<ScreenDecl[]>('/api/stack/declarations/screens').then(setScreenDecls).catch(() => setScreenDecls([]));
     Promise.all(
       RECORD_SLOTS.map((slot) =>
         api<Record<string, unknown>>(`/api/stack/record/${slot}`).then((r) => [slot, r] as const),
@@ -297,8 +361,7 @@ export function SeatChrome({
   useEffect(load, [load]);
   useEffect(() => onNudge(load), [load]);
 
-  const screens = (panels ?? []).filter((p) => p.subject === 'entity');
-  const panel = screens.find((p) => p.name === current) ?? screens[0];
+  const accent = entity?.type ? ((records.accents?.[entity.type] as string | undefined) ?? undefined) : undefined;
 
   const ctx: BlockCtx = {
     glass,
@@ -307,9 +370,48 @@ export function SeatChrome({
     write: (edit) => api(`/api/entities/${entityId}/entry`, { body: edit }).then(() => {}),
   };
 
+  // The FIRST tab: always labelled 'Sheet', but its CONTENT is whichever
+  // layout the DM assigned (`params.layout` — Gauges, Dials, Classic,
+  // Bare, … `core/panels.ts`'s STANDARD_PANELS), defaulting to 'sheet'.
+  // That roster is a DM-side arrangement choice now, never a player tab
+  // (fix 1) — this is the one place it still matters.
+  const layoutPanels = (panels ?? []).filter((p) => p.subject === 'entity');
+  const sheetPanel =
+    layoutPanels.find((p) => p.name === initialPanel) ??
+    layoutPanels.find((p) => p.name === 'sheet');
+
+  // What the Sheet screen itself draws for `resources` — Health + Grit,
+  // whatever's pinned-to or dialled a cylinder (fix 6's generic rule,
+  // `shaped()`, ported from the 'sheet' block's own selection). Anything
+  // else is either claimed by a declared carried-screen (Aces on
+  // Abilities, Dollars/Supplies on Inventory) or falls to 'More' —
+  // nothing silently drops (the old app's holding-pen promise).
+  const resourceEntries = entriesOf(entity, 'resources');
+  const claimedBySheet = new Set(
+    resourceEntries.filter((en) => shaped(ctx, entity, en)).map((en) => en.name.toLowerCase()),
+  );
+  const claimedByScreens = screenClaims(screenDecls);
+  const allClaimed = new Set([...claimedBySheet, ...claimedByScreens]);
+  const spareResources = resourceEntries.filter((en) => !allClaimed.has(en.name.toLowerCase()));
+  const strayLists = Object.keys(entity?.lists ?? {}).some(
+    (l) => !PLACED.includes(l.toLowerCase()) && entriesOf(entity, l).length > 0,
+  );
+  const hasSpare =
+    spareResources.length > 0 || strayLists || Boolean(entity?.notes) || Boolean(entity?.children?.length);
+
+  const tabs: Tab[] = sheetPanel
+    ? [
+        { name: 'Sheet', icon: 'sheet', panel: sheetPanel },
+        ...screenDecls.map((s) => ({ name: s.name, icon: s.icon, panel: carriedPanel(s) })),
+        ...(hasSpare ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed) }] : []),
+      ]
+    : [];
+  const tab = tabs.find((t) => t.name === current) ?? tabs[0];
+
   return (
     <div
       className={`flex min-h-0 flex-col gap-2 ${glass === 'mounted' ? 'h-full' : 'min-h-full'}`}
+      style={{ '--sheet-accent': accent ?? '#f59e0b' } as React.CSSProperties}
     >
       <TopBar
         entity={entity}
@@ -320,13 +422,13 @@ export function SeatChrome({
       />
 
       <div className={`flex min-h-0 flex-1 flex-col ${glass === 'mounted' ? 'overflow-hidden' : ''}`}>
-        {panel ? (
+        {tab ? (
           <PanelSurface
-            panel={panel}
+            panel={tab.panel}
             ctx={ctx}
             fallback={
               <p className="p-8 text-sm text-stone-500">
-                '{panel.name}' failed to render — the floor has it
+                '{tab.name}' failed to render — the floor has it
               </p>
             }
           />
@@ -339,7 +441,7 @@ export function SeatChrome({
           never scrolls (rule 6), so there is nothing for the bar to
           stick to. */}
       <div className={`z-10 shrink-0 ${glass === 'mounted' ? '' : 'sticky bottom-0'}`}>
-        <TabBar panels={screens} current={panel?.name ?? current} onGo={setCurrent} />
+        <TabBar tabs={tabs} current={tab?.name ?? current} onGo={setCurrent} />
       </div>
     </div>
   );
