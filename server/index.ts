@@ -48,6 +48,9 @@ import { Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
+// The bundled client (client/ → vite → here). Preferred over PUBLIC
+// when built, so the vanilla files remain the fallback until they die.
+const DIST = join(dirname(fileURLToPath(import.meta.url)), 'dist');
 
 type Reply = { status: number; body: unknown };
 
@@ -542,8 +545,9 @@ const MIME: Record<string, string> = {
 
 function serveStatic(pathname: string, res: ServerResponse): boolean {
   const rel = pathname === '/' ? '/index.html' : pathname;
-  const path = normalize(join(PUBLIC, rel));
-  if (!path.startsWith(PUBLIC) || !existsSync(path)) return false;
+  const root = existsSync(join(DIST, 'index.html')) ? DIST : PUBLIC;
+  const path = normalize(join(root, rel));
+  if (!path.startsWith(root) || !existsSync(path)) return false;
   try {
     const body = readFileSync(path);
     res.writeHead(200, {

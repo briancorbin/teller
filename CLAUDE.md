@@ -37,11 +37,15 @@ change.
 ## CORE-NEXT (this branch): the rebuild is real — read its doc first
 
 **On `feat/core-next` the canonical model is `docs/CORE-NEXT.md`**, and
-the new world lives in `core/` + `server/` (node:sqlite direct, no
-build step, `node server/index.ts --data ~/.teller-next`). The old
-world (`worker/`, `src/`, the Stack section below) keeps running as
-REFERENCE and retires when this merges; where the two disagree, the
-doc wins. Supersessions to know before editing:
+the new world lives in `core/` + `server/` + `client/` (node:sqlite
+direct, `node server/index.ts --data ~/.teller-next`). The SERVER runs
+unbundled; the CLIENT is React, bundled (`pnpm client:build` →
+`server/dist`, preferred over `server/public` when present; §E
+extended — the ladder). The old world (`worker/`, `src/`, the Stack
+section below) keeps running as REFERENCE — its components are the
+visual bar the new client is held to — and retires when this merges;
+where the two disagree, the doc wins. Supersessions to know before
+editing:
 
 - **Single runtime.** The dual-runtime "one codebase, two runtimes"
   story below is the old world's; the new server is Node only and
