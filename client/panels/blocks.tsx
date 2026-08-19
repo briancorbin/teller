@@ -1,12 +1,20 @@
 // The standard blocks — §E's nouns, registered into the renderer.
-// These start as plain readings of the data in the house grammar; the
-// visual reckoning replaces their internals with the old app's
-// components (the reference, not inspiration) without touching the
-// block names or the BlockCtx seam.
+//
+// The visual reckoning: these blocks' internals now match the old app's
+// components (the reference, not inspiration) — Vitals, TagSection,
+// Counters (Big/Ledger/Rows), the sheet chrome and the Grit cylinder —
+// without touching the block names or the BlockCtx seam.
 
+import { useEffect, useState } from 'react';
 import type { Entity, Entry } from '../../core/entity.ts';
+import type { PanelBlock } from '../../core/panels.ts';
+import { api, fileUrl } from '../lib/api.ts';
 import { card, sectionLabel } from '../lib/ui.ts';
-import { registerBlock, Refusal, type BlockCtx } from './render.tsx';
+import { CounterStepper } from '../components/Vitals.tsx';
+import { TagSection } from '../components/TagSection.tsx';
+import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters.tsx';
+import { Cylinder, dialable } from '../components/sheet/Cylinder.tsx';
+import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
 
 function subject(ctx: BlockCtx): Entity | undefined {
   return ctx.entity as Entity | undefined;
@@ -20,56 +28,292 @@ function entriesOf(e: Entity | undefined, list: string): Entry[] {
   return key ? e.lists[key] : [];
 }
 
-// ---- header ------------------------------------------------------------
+function accentOf(ctx: BlockCtx, e: Entity | undefined): string | undefined {
+  return e?.type ? (ctx.records.accents?.[e.type] as string | undefined) : undefined;
+}
 
-registerBlock('header', (_block, ctx) => {
+function dialOf(ctx: BlockCtx, entry: Entry): string | undefined {
+  return ctx.records.dials?.[entry.name] as string | undefined;
+}
+
+function filterEntries(entries: Entry[], filter: unknown): Entry[] {
+  const capped = (e: Entry) => typeof e.max === 'number' && e.max > 0;
+  if (filter === 'capped') return entries.filter(capped);
+  if (filter === 'uncapped') return entries.filter((e) => !capped(e));
+  return entries;
+}
+
+/** A path from a records slot, resolved to a fetchable url — or nothing. */
+function useArt(path: string | undefined): string | undefined {
+  const [url, setUrl] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    if (!path) {
+      setUrl(undefined);
+      return;
+    }
+    let cancelled = false;
+    fileUrl(path).then((u) => {
+      if (!cancelled) setUrl(u);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+  return url;
+}
+
+// ---- header --------------------------------------------------------------
+// Old sheet header grammar: a serif name, the type as an accent-coloured
+// caption, and the pack's own portrait for that type (ported plate shape
+// from src/components/sheet/SheetHeader.tsx — trimmed to what the panel
+// declares: no player/trade fields, no spend chips yet).
+
+function HeaderBlock({ ctx }: { ctx: BlockCtx }) {
   const e = subject(ctx);
+  const accent = accentOf(ctx, e);
+  const portraitPath = e?.type
+    ? (ctx.records.portraits?.[e.type] as string | undefined)
+    : undefined;
+  const portraitUrl = useArt(portraitPath);
+
   if (!e) return <Refusal>no entity to head</Refusal>;
-  const accent =
-    (e.type && (ctx.records.accents?.[e.type] as string | undefined)) ??
-    undefined;
   return (
-    <header className="flex items-baseline gap-3 px-1">
-      <h1 className="font-serif text-2xl text-stone-100">{e.name}</h1>
-      {e.type && (
-        <span
-          className={sectionLabel}
-          style={accent ? { color: accent } : undefined}
-        >
-          {e.type}
-        </span>
+    <header className="flex items-center gap-3 px-1">
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate font-serif text-2xl text-stone-100">{e.name}</h1>
+        {e.type && (
+          <span
+            className={`block ${sectionLabel}`}
+            style={accent ? { color: accent } : undefined}
+          >
+            {e.type}
+          </span>
+        )}
+      </div>
+      {portraitUrl && (
+        <img
+          src={portraitUrl}
+          alt=""
+          className="h-[4.2rem] w-[4.2rem] shrink-0 rounded-full border-2 object-cover"
+          style={{ borderColor: accent ? `${accent}88` : '#57534e' }}
+        />
       )}
     </header>
   );
-});
+}
 
-// ---- list --------------------------------------------------------------
+registerBlock('header', (_block, ctx) => <HeaderBlock ctx={ctx} />);
+
+// ---- brand -----------------------------------------------------------
+// The system's mark, when a pack brought one (record 'brand'). Sized as
+// the vanilla client's own `.brand-logo`.
+
+function BrandBlock({ ctx }: { ctx: BlockCtx }) {
+  const logoPath = ctx.records.brand?.logo as string | undefined;
+  const url = useArt(logoPath);
+  if (!url) return null;
+  return <img src={url} alt="" className="mx-auto block max-h-[4.5rem] max-w-[60%]" />;
+}
+
+registerBlock('brand', (_block, ctx) => <BrandBlock ctx={ctx} />);
+
+// ---- list ------------------------------------------------------------
+// `as` maps to the old app's counter layouts; a per-entry `dials` record
+// of 'cylinder' overrides whatever the arrangement asked for, same as
+// the vanilla client's presentation() — the system's word for THIS name
+// beats the panel's generic one.
+
+/** The floor's own auto grammar, one entry: bare → chip, string → row, number → stepper. */
+function AutoEntry({
+  entry,
+  onWrite,
+}: {
+  entry: Entry;
+  onWrite: (edit: Record<string, unknown>) => void;
+}) {
+  if (entry.value === undefined) {
+    return (
+      <span className="flex w-fit items-center gap-1.5 overflow-hidden rounded-full bg-amber-950/60 py-1 pl-2.5 pr-2 text-xs text-amber-200">
+        {entry.name}
+        <button
+          className="text-amber-500/60 transition-colors hover:text-red-300"
+          onClick={() => onWrite({ remove: true })}
+          title="remove"
+        >
+          ✕
+        </button>
+      </span>
+    );
+  }
+  if (typeof entry.value === 'string') {
+    return (
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm text-stone-200">{entry.name}</span>
+        <span className="ml-auto font-mono text-sm text-stone-300">{entry.value}</span>
+      </div>
+    );
+  }
+  return (
+    <CounterStepper
+      entry={entry}
+      onBump={(d) => onWrite({ value: stepValue(entry, d) })}
+    />
+  );
+}
 
 registerBlock('list', (block, ctx) => {
   const e = subject(ctx);
   const name = typeof block.list === 'string' ? block.list : '';
   if (!name) return <Refusal>a list block with no list</Refusal>;
-  const entries = entriesOf(e, name);
+  const as = typeof block.as === 'string' ? block.as : 'auto';
+  const accent = accentOf(ctx, e);
+  const entries = filterEntries(entriesOf(e, name), block.filter);
+
+  const write = (entryName: string, edit: Record<string, unknown>) =>
+    ctx.write?.({ list: name, name: entryName, ...edit });
+
+  if (as === 'chips') {
+    if (!entries.length) return null;
+    return (
+      <TagSection
+        entries={entries}
+        onWrite={(edit) => write(edit.name, edit)}
+        label={name}
+      />
+    );
+  }
+
+  if (as === 'rows') {
+    if (!entries.length) return null;
+    return (
+      <div className="divide-y divide-stone-800/80">
+        {entries.map((entry) => (
+          <SkillRow key={entry.name} entry={entry} accent={accent} />
+        ))}
+      </div>
+    );
+  }
+
+  if (as === 'big') {
+    if (!entries.length) return null;
+    return (
+      <div
+        className="grid gap-3"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))' }}
+      >
+        {entries.map((entry) =>
+          dialOf(ctx, entry) === 'cylinder' && dialable(entry) ? (
+            <Cylinder
+              key={entry.name}
+              entry={entry}
+              onSet={(v) => write(entry.name, { value: v })}
+              accent={accent}
+            />
+          ) : (
+            <BigGauge
+              key={entry.name}
+              entry={entry}
+              onWrite={(v) => write(entry.name, { value: v })}
+            />
+          ),
+        )}
+      </div>
+    );
+  }
+
+  if (as === 'ledger') {
+    if (!entries.length) return null;
+    return (
+      <div className="flex flex-col">
+        {entries.map((entry) => (
+          <LedgerRow
+            key={entry.name}
+            entry={entry}
+            onWrite={(v) => write(entry.name, { value: v })}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (as === 'bars') {
+    if (!entries.length) return null;
+    return (
+      <div className="flex flex-col gap-2">
+        {entries.map((entry) => (
+          <CounterStepper
+            key={entry.name}
+            entry={entry}
+            onBump={(d) => write(entry.name, { value: stepValue(entry, d) })}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  // auto — the floor's grammar, dressed in a labelled card.
   return (
     <section className={`${card} flex flex-col gap-2`}>
       <p className={sectionLabel}>{name}</p>
       {entries.length === 0 && <Refusal>nothing here yet</Refusal>}
       {entries.map((entry) => (
-        <div key={entry.name} className="flex items-baseline gap-2">
-          <span className="text-sm text-stone-200">{entry.name}</span>
-          {entry.value !== undefined && (
-            <span className="ml-auto font-mono text-sm text-stone-300">
-              {entry.value}
-              {entry.max !== undefined && (
-                <span className="text-stone-600"> / {entry.max}</span>
-              )}
-            </span>
-          )}
-        </div>
+        <AutoEntry
+          key={entry.name}
+          entry={entry}
+          onWrite={(edit) => write(entry.name, edit)}
+        />
       ))}
     </section>
   );
 });
+
+// ---- statuses ----------------------------------------------------------
+// The system's statuses (`/api/stack/declarations/statuses`), drawn with
+// TagSection's chip grammar — bare-or-numbered, ⓘ opens the relieving
+// skill. The entity's own `conditions` list is the stored truth; the
+// declaration only supplies the lookup.
+
+type StatusDecl = { name: string; relief?: string; effect?: string };
+
+function StatusesBlock({ ctx }: { ctx: BlockCtx }) {
+  const e = subject(ctx);
+  const [decls, setDecls] = useState<StatusDecl[] | undefined>(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    api<StatusDecl[]>('/api/stack/declarations/statuses')
+      .then((d) => {
+        if (!cancelled) setDecls(d);
+      })
+      .catch(() => {
+        if (!cancelled) setDecls([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!e) return null;
+  const entries = entriesOf(e, 'conditions');
+  if (!entries.length && !ctx.write) return null;
+
+  const lookup = decls
+    ? (name: string) => {
+        const d = decls.find((s) => s.name.toLowerCase() === name.toLowerCase());
+        return d ? { meta: d.relief, text: d.effect, section: 'Statuses' } : undefined;
+      }
+    : undefined;
+
+  return (
+    <TagSection
+      entries={entries}
+      onWrite={(edit) => ctx.write?.({ list: 'conditions', ...edit })}
+      label="Statuses"
+      lookup={lookup}
+    />
+  );
+}
+
+registerBlock('statuses', (_block, ctx) => <StatusesBlock ctx={ctx} />);
 
 // ---- notes -------------------------------------------------------------
 
@@ -81,6 +325,48 @@ registerBlock('notes', (_block, ctx) => {
       <p className={sectionLabel}>notes</p>
       <p className="text-sm whitespace-pre-wrap text-stone-300">{e.notes}</p>
     </section>
+  );
+});
+
+// ---- children ----------------------------------------------------------
+// A nested entity gets its own small card — name, type, and its lists in
+// the floor's plain grammar. Not a full sheet-in-a-sheet; a stray in the
+// same sense `rest` catches strays, just one level down.
+
+registerBlock('children', (_block, ctx) => {
+  const e = subject(ctx);
+  if (!e?.children?.length) return null;
+  return (
+    <>
+      {e.children.map((child) => (
+        <section key={child.id} className={`${card} flex flex-col gap-2`}>
+          <div className="flex items-baseline gap-2">
+            <p className="text-sm font-medium text-stone-100">{child.name}</p>
+            {child.type && <span className={sectionLabel}>{child.type}</span>}
+          </div>
+          {Object.entries(child.lists).map(([listName, entries]) => (
+            <div key={listName} className="flex flex-col gap-1">
+              <p className="text-[10px] uppercase tracking-widest text-stone-600">
+                {listName}
+              </p>
+              {entries.map((entry) => (
+                <div key={entry.name} className="flex items-baseline gap-2 text-sm">
+                  <span className="text-stone-300">{entry.name}</span>
+                  {entry.value !== undefined && (
+                    <span className="ml-auto font-mono text-stone-400">
+                      {entry.value}
+                      {entry.max !== undefined && (
+                        <span className="text-stone-600"> / {entry.max}</span>
+                      )}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </section>
+      ))}
+    </>
   );
 });
 
@@ -104,17 +390,11 @@ registerBlock('rest', (block, ctx) => {
         <section key={name} className={`${card} flex flex-col gap-2`}>
           <p className={sectionLabel}>{name}</p>
           {e.lists[name].map((entry) => (
-            <div key={entry.name} className="flex items-baseline gap-2">
-              <span className="text-sm text-stone-200">{entry.name}</span>
-              {entry.value !== undefined && (
-                <span className="ml-auto font-mono text-sm text-stone-300">
-                  {entry.value}
-                  {entry.max !== undefined && (
-                    <span className="text-stone-600"> / {entry.max}</span>
-                  )}
-                </span>
-              )}
-            </div>
+            <AutoEntry
+              key={entry.name}
+              entry={entry}
+              onWrite={(edit) => ctx.write?.({ list: name, name: entry.name, ...edit })}
+            />
           ))}
         </section>
       ))}
@@ -133,7 +413,7 @@ registerBlock('columns', (block, ctx) => {
           {Array.isArray(col) &&
             col.map((b, j) =>
               b && typeof b === 'object' && 'block' in b ? (
-                <RenderInColumn key={j} block={b} ctx={ctx} />
+                <RenderInColumn key={j} block={b as PanelBlock} ctx={ctx} />
               ) : null,
             )}
         </div>
@@ -142,16 +422,13 @@ registerBlock('columns', (block, ctx) => {
   );
 });
 
-import { RenderBlock } from './render.tsx';
-import type { PanelBlock } from '../../core/panels.ts';
-
 function RenderInColumn({ block, ctx }: { block: PanelBlock; ctx: BlockCtx }) {
   return <RenderBlock block={block} ctx={ctx} />;
 }
 
 // ---- placeholders that the port will fill -----------------------------
 
-for (const name of ['statuses', 'children', 'turn', 'tool']) {
+for (const name of ['turn', 'tool']) {
   registerBlock(name, (block) => (
     <Refusal>
       '{String(block.tool ?? name)}' isn't ported to the new client yet

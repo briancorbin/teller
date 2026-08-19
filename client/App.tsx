@@ -94,13 +94,23 @@ function KeyGate({ onUnlock }: { onUnlock: () => void }) {
 
 // ---- panel route -------------------------------------------------------
 
-function glassOf(params: Record<string, unknown> | undefined): Glass {
+/** Aspect-derived glass, live: a rotated tablet re-renders, it doesn't
+ * keep the arrangement it woke up with. An ASSIGNED glass still wins. */
+function useGlass(params: Record<string, unknown> | undefined): Glass {
+  const aspect = useSyncExternalStore(
+    (cb) => {
+      window.addEventListener('resize', cb);
+      return () => window.removeEventListener('resize', cb);
+    },
+    () => (window.innerWidth / window.innerHeight > 2 ? 'mounted' : 'held'),
+  );
   const declared = params?.glass;
   if (declared === 'mounted' || declared === 'held') return declared;
-  return window.innerWidth / window.innerHeight > 2 ? 'mounted' : 'held';
+  return aspect;
 }
 
 function PanelRoute({ name, entityId }: { name: string; entityId?: string }) {
+  const glass = useGlass(undefined);
   const panels = useLive(
     () => api<PanelDef[]>('/api/stack/declarations/panels'),
     [],
@@ -140,7 +150,7 @@ function PanelRoute({ name, entityId }: { name: string; entityId?: string }) {
     );
 
   const ctx: BlockCtx = {
-    glass: glassOf(undefined),
+    glass,
     entity: entity.data,
     records: (records.data ?? {}) as BlockCtx['records'],
     write: entityId
@@ -148,16 +158,27 @@ function PanelRoute({ name, entityId }: { name: string; entityId?: string }) {
           api(`/api/entities/${entityId}/entry`, { body: edit }).then(() => {})
       : undefined,
   };
+  // Glass discipline (rule 6): mounted is fixed-height and never scrolls
+  // — overflow is CLIPPED, the diagnostic that a layout doesn't fit that
+  // glass. Held is elastic and scrolls down, same as the page always has.
   return (
-    <PanelSurface
-      panel={panel}
-      ctx={ctx}
-      fallback={
-        <p className="p-8 text-sm text-stone-500">
-          '{name}' failed to render — the floor has it
-        </p>
+    <div
+      className={
+        ctx.glass === 'mounted'
+          ? 'h-dvh overflow-hidden p-3'
+          : 'min-h-dvh p-3'
       }
-    />
+    >
+      <PanelSurface
+        panel={panel}
+        ctx={ctx}
+        fallback={
+          <p className="p-8 text-sm text-stone-500">
+            '{name}' failed to render — the floor has it
+          </p>
+        }
+      />
+    </div>
   );
 }
 
