@@ -5,9 +5,11 @@
 // surface. It rides the same stack as every other declaration —
 // vocabulary-coupled, merged by NAME, later wins — under a `panels`
 // slot on any layer. THIS file is the layer below everything: the
-// arrangements teller ships so a fresh host has a console and a seat
-// at all. A system, pack or campaign overrides one by restating its
-// word; a human's layer always wins (rule 1 for UI). Furniture, not
+// arrangements teller ships so a fresh host has a console at all —
+// the HOST's own tools only, since a play screen without a system has
+// nothing to arrange (2026-08-19; see `STANDARD_PANELS` below). A
+// system, pack or campaign adds its own or overrides one by restating
+// its word; a human's layer always wins (rule 1 for UI). Furniture, not
 // content — a panel gates nothing and grants nothing; the ROLE decides
 // what a screen may do, the panel only decides how it looks.
 //
@@ -110,69 +112,25 @@ const tool = (
 export const PLACED = ['skills', 'resources', 'conditions', 'meta'];
 
 /**
- * teller ships exactly TWO arrangements: `sheet` (the one generic
- * default — the roster and runner render entities through this name)
- * and `bare` (the floor, the degradation contract's landing pad). The
- * five style variants that used to live here (gauges/dials/ledger/
- * focus/classic) were the old app's seat experiments wearing teller's
- * badge — pruned 2026-08-19 (Brian): a table that wants one authors a
- * `.panel` for it, which is what the machinery is FOR. Identity
- * (name, trade, spend chips) lives in the seat chrome's top bar, not
- * in any arrangement.
+ * teller seeds the HOST's own tools and nothing else (Brian,
+ * 2026-08-19): boards, log, plugins, screens, shelf — the five panels
+ * that are about this machine and the room around it, which mean the
+ * same thing whether a system is loaded or not.
+ *
+ * Everything that arranges the GAME moved to the system layer —
+ * `sheet`, `bare`, `roster`, `bestiary`, `encounters`, `runner`,
+ * `rules` now ship as `panels/<name>/panel.json` folders inside a
+ * system's own directory (§M, "a system ships PANELS"). Only the
+ * DECLARATIONS moved: the tool blocks they name are still registered in
+ * teller's client, so a system declares `roster` and teller draws it.
+ * A bare host — no system yet — therefore has a console of host tools
+ * and no play screens, which is the honest thing to show: there is no
+ * game to arrange.
  */
 export const STANDARD_PANELS: PanelDef[] = [
-  {
-    name: 'sheet',
-    label: 'Sheet',
-    blurb: 'Arranged like the paper you already know.',
-    subject: 'entity',
-    // Mounted glass draws exactly what the printed page's Sheet screen
-    // does — Skills, Health+Grit, Statuses, three columns, nothing more
-    // (the old app kept everything else on a 'More' screen this rebuild
-    // hasn't grown yet; the Ledger/Gauges/Classic tabs already surface
-    // every counter, so nothing here is actually lost — see `bare` for
-    // the literal floor). Held glass has room to scroll, so it keeps
-    // showing the rest underneath.
-    mounted: [
-      {
-        block: 'columns',
-        columns: [
-          [{ block: 'list', list: 'skills', as: 'rows' }],
-          [{ block: 'list', list: 'resources', filter: 'capped', as: 'sheet' }],
-          [{ block: 'statuses' }],
-        ],
-      },
-    ],
-    // Held glass used to keep scrolling to the rest of the character
-    // below the fold — every uncapped resource, every stray field, notes
-    // and children. That's gone (Brian, fix 6): the old app's printed
-    // Sheet screen was exactly Skills/Health+Grit/Statuses too, and
-    // everything else moved to a screen of its own (the seat chrome's
-    // declared-screens tabs, `client/components/seat/SeatChrome.tsx`) —
-    // the holding pen the old app called "More". Duplicating that
-    // spillover here would show it twice.
-    held: [
-      { block: 'list', list: 'skills', as: 'rows' },
-      { block: 'list', list: 'resources', filter: 'capped', as: 'sheet' },
-      { block: 'statuses' },
-    ],
-  },
-  {
-    name: 'bare',
-    label: 'Bare',
-    blurb: "The floor's grammar — every stored value, one control each.",
-    subject: 'entity',
-    mounted: [{ block: 'floor' }],
-    held: [{ block: 'floor' }],
-  },
-  tool('roster', 'Roster', 'Everyone at the table; open a sheet, stamp a foe.'),
-  tool('runner', 'Runner', 'The turn order — round, rolling, next, assist.'),
-  tool('encounters', 'Encounters', 'Prep: author a fight against the merged bestiary.'),
-  tool('bestiary', 'Bestiary', 'Everything you could put in front of the party.'),
   tool('screens', 'Screens', 'The room: adopt by code, assign roles, identify.'),
   tool('shelf', 'Shelf', "This machine's systems, packs and what the campaign runs on."),
   tool('plugins', 'Plugins', 'Discovered on disk; enabled only by you, here.'),
   tool('boards', 'Boards', 'The maps and their live placements.'),
   tool('log', 'Log', 'Everything that happened, newest first (rule 3, readable).'),
-  tool('rules', 'Rules', 'The book, searchable — a status, an action, a page.'),
 ];

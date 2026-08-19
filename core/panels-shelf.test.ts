@@ -29,26 +29,26 @@ describe('seedPanels — seed-if-absent, the seedSystems posture for files', () 
 
   it('never touches a folder that already exists — an edit survives every boot', () => {
     seedPanels(dir);
-    const path = join(dir, 'panels', 'sheet', 'panel.json');
+    const path = join(dir, 'panels', 'shelf', 'panel.json');
     const before = JSON.parse(readFileSync(path, 'utf8'));
-    const edited = { ...before, label: 'House Sheet' };
+    const edited = { ...before, label: 'House Shelf' };
     writeFileSync(path, JSON.stringify(edited));
 
     seedPanels(dir); // a second boot
 
     const after = JSON.parse(readFileSync(path, 'utf8'));
-    expect(after.label).toBe('House Sheet');
+    expect(after.label).toBe('House Shelf');
     expect(after.id).toBe(before.id);
   });
 
   it('mints a stable id once — reseeding a fresh host does not remint an existing panel', () => {
     seedPanels(dir);
     const id1 = JSON.parse(
-      readFileSync(join(dir, 'panels', 'bare', 'panel.json'), 'utf8'),
+      readFileSync(join(dir, 'panels', 'boards', 'panel.json'), 'utf8'),
     ).id;
     seedPanels(dir);
     const id2 = JSON.parse(
-      readFileSync(join(dir, 'panels', 'bare', 'panel.json'), 'utf8'),
+      readFileSync(join(dir, 'panels', 'boards', 'panel.json'), 'utf8'),
     ).id;
     expect(id2).toBe(id1);
   });
@@ -70,33 +70,33 @@ describe('sweepPanels — reads and reports, writes nothing (like discoverPlugin
 
   it('a swept panel carries the edit — the file on disk wins', () => {
     seedPanels(dir);
-    const path = join(dir, 'panels', 'sheet', 'panel.json');
+    const path = join(dir, 'panels', 'shelf', 'panel.json');
     const before = JSON.parse(readFileSync(path, 'utf8'));
-    writeFileSync(path, JSON.stringify({ ...before, label: 'House Sheet' }));
+    writeFileSync(path, JSON.stringify({ ...before, label: 'House Shelf' }));
 
     const { panels } = sweepPanels(dir);
-    const sheet = panels.find((p) => p.name === 'sheet');
-    expect(sheet?.label).toBe('House Sheet');
+    const shelfPanel = panels.find((p) => p.name === 'shelf');
+    expect(shelfPanel?.label).toBe('House Shelf');
   });
 
   it('a duplicated folder just works — another file in the collection', () => {
     seedPanels(dir);
-    const sheet = JSON.parse(
-      readFileSync(join(dir, 'panels', 'sheet', 'panel.json'), 'utf8'),
+    const boards = JSON.parse(
+      readFileSync(join(dir, 'panels', 'boards', 'panel.json'), 'utf8'),
     );
-    const dupDir = join(dir, 'panels', 'my-sheet');
+    const dupDir = join(dir, 'panels', 'my-boards');
     mkdirSync(dupDir, { recursive: true });
     writeFileSync(
       join(dupDir, 'panel.json'),
-      JSON.stringify({ ...sheet, name: 'my-sheet', label: 'My Sheet' }),
+      JSON.stringify({ ...boards, name: 'my-boards', label: 'My Boards' }),
     );
 
     const { panels } = sweepPanels(dir);
-    expect(panels.some((p) => p.name === 'my-sheet' && p.label === 'My Sheet')).toBe(
+    expect(panels.some((p) => p.name === 'my-boards' && p.label === 'My Boards')).toBe(
       true,
     );
     // The original is untouched — duplicating didn't rename it away.
-    expect(panels.some((p) => p.name === 'sheet')).toBe(true);
+    expect(panels.some((p) => p.name === 'boards')).toBe(true);
   });
 
   it('a broken panel.json degrades — reported, never a crash, rest of the shelf loads', () => {
@@ -225,24 +225,24 @@ describe('sweepPanels — the code ladder (§E UN-DEFERRED, rungs 3-5)', () => {
     // Simulate a standard panel authored WITH a block, as if teller
     // shipped one, and confirm the seed-time trust write lets its code
     // through with no separate enable step.
-    const seedDir = join(dir, 'panels', 'sheet');
+    const seedDir = join(dir, 'panels', 'boards');
     seedPanels(dir, shelf);
     mkdirSync(join(seedDir, 'blocks'), { recursive: true });
     writeFileSync(join(seedDir, 'blocks', 'Widget.tsx'), VALID_BLOCK);
     const seededId = JSON.parse(readFileSync(join(seedDir, 'panel.json'), 'utf8')).id;
 
     const { panels } = sweepPanels(dir, shelf);
-    const sheet = panels.find((p) => p.name === 'sheet');
-    expect(sheet?.code?.blocks?.Widget).toBe(`/panel-code/${seededId}/blocks/Widget.js`);
+    const boards = panels.find((p) => p.name === 'boards');
+    expect(boards?.code?.blocks?.Widget).toBe(`/panel-code/${seededId}/blocks/Widget.js`);
   });
 });
 
 describe('panelDir — resolving a pan_ id back to its folder', () => {
   it('finds the folder whose panel.json carries this id', () => {
     seedPanels(dir);
-    const path = join(dir, 'panels', 'bare', 'panel.json');
+    const path = join(dir, 'panels', 'boards', 'panel.json');
     const id = JSON.parse(readFileSync(path, 'utf8')).id;
-    expect(panelDir(dir, id)).toBe(join(dir, 'panels', 'bare'));
+    expect(panelDir(dir, id)).toBe(join(dir, 'panels', 'boards'));
   });
 
   it('an unknown id resolves to nothing', () => {

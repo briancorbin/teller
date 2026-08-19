@@ -233,6 +233,10 @@ function Console() {
       ).then(Object.fromEntries),
     [],
   );
+  // A PREFERENCE, not a declaration: 'roster' is where a table wants to
+  // land, but it's a system-layer panel now (2026-08-19) and a bare host
+  // has none — so the `?? tools[0]` below is the real contract, and the
+  // highlight reads from `current`, never from `pane`.
   const [pane, setPane] = useState('roster');
   const tools = (panels.data ?? []).filter((p) => p.subject !== 'entity');
   const current = tools.find((p) => p.name === pane) ?? tools[0];

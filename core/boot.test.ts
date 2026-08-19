@@ -200,9 +200,17 @@ describe('the merged readings', () => {
 });
 
 describe("teller's own furniture (§E)", () => {
-  it('ships the standard panels below everything, overridable by name', () => {
+  it('ships the HOST\'s own tools below everything; a system brings the play screens', () => {
     const shelf = openShelf(dir);
-    shelf.putSystem({ id: 'sys_x', name: 'X', data: {} });
+    // teller seeds only the host tools now (2026-08-19) — a play screen
+    // like 'sheet' arrives on the SYSTEM layer, from its `panels/` dir.
+    shelf.putSystem({
+      id: 'sys_x',
+      name: 'X',
+      data: {
+        panels: [{ name: 'sheet', label: 'Sheet', subject: 'entity', held: [{ block: 'floor' }] }],
+      },
+    });
     const campaign = createCampaign(dir, 'furn', 'Furniture');
     campaign.save(
       { ...campaign.root(), refs: { system: { id: 'sys_x', name: 'X' } } },
@@ -212,7 +220,8 @@ describe("teller's own furniture (§E)", () => {
     const names = loaded.declarations('panels').map((p: any) => p.name);
     expect(names).toContain('sheet');
     expect(names).toContain('screens');
-    expect(loaded.sourceOf('panels', 'sheet')).toBe('teller');
+    expect(loaded.sourceOf('panels', 'screens')).toBe('teller');
+    expect(loaded.sourceOf('panels', 'sheet')).toBe('system:sys_x');
 
     // The campaign restates the word and wins — furniture, not law.
     campaign.putTemplate(
@@ -241,16 +250,16 @@ describe("teller's own furniture (§E)", () => {
     seedPanels(dir);
     // An edit on the shelf survives — the sweep reads it back, not the
     // in-memory STANDARD_PANELS.
-    const sheetPath = join(dir, 'panels', 'sheet', 'panel.json');
-    const before = JSON.parse(readFileSync(sheetPath, 'utf8'));
-    writeFileSync(sheetPath, JSON.stringify({ ...before, label: 'Edited On Disk' }));
+    const shelfPath = join(dir, 'panels', 'shelf', 'panel.json');
+    const before = JSON.parse(readFileSync(shelfPath, 'utf8'));
+    writeFileSync(shelfPath, JSON.stringify({ ...before, label: 'Edited On Disk' }));
 
     const loaded = loadCampaign(shelf, campaign, dir);
     const names = loaded.declarations('panels').map((p: any) => p.name);
-    expect(names).toContain('sheet');
-    expect(loaded.sourceOf('panels', 'sheet')).toBe('teller');
-    const sheet: any = loaded.declarations('panels').find((p: any) => p.name === 'sheet');
-    expect(sheet.label).toBe('Edited On Disk');
+    expect(names).toContain('shelf');
+    expect(loaded.sourceOf('panels', 'shelf')).toBe('teller');
+    const swept: any = loaded.declarations('panels').find((p: any) => p.name === 'shelf');
+    expect(swept.label).toBe('Edited On Disk');
     campaign.close();
   });
 
@@ -270,8 +279,8 @@ describe("teller's own furniture (§E)", () => {
 
     const loaded = loadCampaign(shelf, campaign, dir);
     const names = loaded.declarations('panels').map((p: any) => p.name);
-    expect(names).toContain('sheet');
-    expect(names).toContain('bare');
+    expect(names).toContain('screens');
+    expect(names).toContain('boards');
     expect(loaded.panelProblems).toHaveLength(1);
     expect(loaded.panelProblems[0].dir).toBe(brokenDir);
     campaign.close();
