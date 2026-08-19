@@ -426,12 +426,20 @@ function RenderInColumn({ block, ctx }: { block: PanelBlock; ctx: BlockCtx }) {
   return <RenderBlock block={block} ctx={ctx} />;
 }
 
+// ---- tool (dispatch into the registry) --------------------------------
+
+import { toolOf } from '../tools/index.ts';
+
+registerBlock('tool', (block, ctx) => {
+  const name = typeof block.tool === 'string' ? block.tool : '';
+  const render = toolOf(name);
+  if (!render)
+    return <Refusal>this build doesn't know the tool '{name || '?'}'</Refusal>;
+  return <>{render(block, ctx)}</>;
+});
+
 // ---- placeholders that the port will fill -----------------------------
 
-for (const name of ['turn', 'tool']) {
-  registerBlock(name, (block) => (
-    <Refusal>
-      '{String(block.tool ?? name)}' isn't ported to the new client yet
-    </Refusal>
-  ));
-}
+registerBlock('turn', () => (
+  <Refusal>'turn' isn't ported to the new client yet</Refusal>
+));
