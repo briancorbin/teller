@@ -1231,6 +1231,42 @@ how CARRIED items behave:
   the old world punted too) and dual-pistol slot pooling (two items;
   probably fine forever).
 
+### L · The library conflation — SETTLED in principle (2026-08-19, Brian), migration phased
+
+"StatusPanel, HealthPanel, DicePool, Vitals… those are NOT generic
+things. Those ARE specific to WiW, and should be contained within its
+scope. Eventually we will have other systems, and they don't all have
+vitals, or statuses, or health."
+
+He's right, and the error has a name: **data-generic was conflated
+with belongs-to-teller.** A component parameterized by records is
+still VOCABULARY — HealthPanel is the WiW printed sheet's health box,
+the Cylinder is a revolver — and vocabulary lives on the system
+layer. These components sit in teller's client for one historical
+reason: the library was ported from an app built for one WiW table.
+
+**Target state:** teller ships only shape-derived, neutral primitives
+(bars, steppers, chips, ledger rows, the floor — a capped counter
+with no system-supplied face falls back to a bar); a SYSTEM ships its
+presentations as pack-carried CODE — the panel compile/trust
+machinery generalized to packs, same sweep, same esbuild, same gate —
+and the `dials`/`pins` records summon pack-supplied components by
+name exactly as they summon by name today. Panels compose from the
+system's vocabulary plus teller's primitives.
+
+**Why phased:** the WiW components are consumed by teller furniture
+today (the standard sheet's faces, roster cards, the runner stage),
+so they cannot leave the client until packs can carry code. Order:
+(1) packs get the compile/trust machinery; (2) WiW presentations
+migrate from `client/components/` into the WiW pack, teller's library
+slims to the neutral floor; (3) the summoning seam — a record naming
+a presentation resolves pack-supplied first, teller fallback second,
+same later-wins stack as everything else. Until (2) lands, the
+library's WiW-flavored pieces are understood as SQUATTERS, not
+precedent — the boundary question ("is this primitive neutral, or
+WiW wearing teller's badge?") gets asked every time the library
+grows.
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
