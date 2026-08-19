@@ -17,7 +17,17 @@ import type { LoadedPlugin, PluginProblem } from '../core/plugins.ts';
 import { findEntry, sameName, withoutEntry, type Entity } from '../core/entity.ts';
 import { kindFor, setEntry, toKindDef, type KindDef } from '../core/kind.ts';
 import { resolve, stamp } from '../core/stamp.ts';
-import type { Campaign, EntityDraft, Shelf } from '../core/store.ts';
+import {
+  campaignSummaries,
+  createCampaign,
+  openCampaign,
+  slugFor,
+  type Campaign,
+  type CampaignSummary,
+  type EntityDraft,
+  type Shelf,
+} from '../core/store.ts';
+import type { Ref } from '../core/entity.ts';
 import { applyTurnOp, toTurnState, type TurnOp, type TurnState } from './turn.ts';
 
 /** Which slots resolution stamps through — the stampable ones this loop knows. */
@@ -32,39 +42,25 @@ export type EntryEdit = {
   remove?: boolean;
 };
 
-export class Session {
-  readonly shelf: Shelf;
-  readonly campaign: Campaign;
-  /** The resolved content stack — system, packs, campaign's own — from boot. */
-  loaded: Loaded;
-  /** Enabled plugins, wired at boot by the caller (loadPlugins is async; the constructor is not). */
-  plugins: LoadedPlugin[] = [];
-  pluginProblems: PluginProblem[] = [];
+/**
+ * The room's listeners, hoisted OUT of the session on purpose.
+ *
+ * A screen subscribes to the table, not to one campaign — the whole
+ * point of the campaign switch is that every screen follows without
+ * reconnecting (rule 9: displays live on the shelf and survive it). So
+ * the subscriber set belongs to the machine and the Session borrows
+ * it; swapping the campaign underneath leaves every stream in place.
+ */
+export class Room {
   /** Each listener, keyed by its send fn; the value is the screen's handle (or undefined for the DM's own console). */
   #subscribers = new Map<(msg: string) => void, string | undefined>();
-
-  /** Where this host's data lives — plugin discovery needs the path. */
-  dataDir?: string;
-
-  constructor(shelf: Shelf, campaign: Campaign, dataDir?: string) {
-    this.shelf = shelf;
-    this.campaign = campaign;
-    this.dataDir = dataDir;
-    this.loaded = loadCampaign(shelf, campaign, dataDir);
-  }
-
-  /** Re-run the resolution law — after a pack upgrade, on the sweep's signal. */
-  reload(): void {
-    this.loaded = loadCampaign(this.shelf, this.campaign, this.dataDir);
-    this.changed('reload');
-  }
 
   subscribe(send: (msg: string) => void, handle?: string): () => void {
     this.#subscribers.set(send, handle);
     return () => this.#subscribers.delete(send);
   }
 
-  get watching(): number {
+  get size(): number {
     return this.#subscribers.size;
   }
 
@@ -81,6 +77,55 @@ export class Session {
     for (const [send, h] of this.#subscribers) {
       if (h === handle) send(what);
     }
+  }
+
+  clear(): void {
+    this.#subscribers.clear();
+  }
+}
+
+export class Session {
+  readonly shelf: Shelf;
+  readonly campaign: Campaign;
+  /** The resolved content stack — system, packs, campaign's own — from boot. */
+  loaded: Loaded;
+  /** Enabled plugins, wired at boot by the caller (loadPlugins is async; the constructor is not). */
+  plugins: LoadedPlugin[] = [];
+  pluginProblems: PluginProblem[] = [];
+  /** The machine's listeners, borrowed — see `Room`. */
+  readonly room: Room;
+
+  /** Where this host's data lives — plugin discovery needs the path. */
+  dataDir?: string;
+
+  constructor(shelf: Shelf, campaign: Campaign, dataDir?: string, room?: Room) {
+    this.shelf = shelf;
+    this.campaign = campaign;
+    this.dataDir = dataDir;
+    this.room = room ?? new Room();
+    this.loaded = loadCampaign(shelf, campaign, dataDir);
+  }
+
+  /** Re-run the resolution law — after a pack upgrade, on the sweep's signal. */
+  reload(): void {
+    this.loaded = loadCampaign(this.shelf, this.campaign, this.dataDir);
+    this.changed('reload');
+  }
+
+  subscribe(send: (msg: string) => void, handle?: string): () => void {
+    return this.room.subscribe(send, handle);
+  }
+
+  get watching(): number {
+    return this.room.size;
+  }
+
+  changed(what: string): void {
+    this.room.changed(what);
+  }
+
+  notify(handle: string, what: string): void {
+    this.room.notify(handle, what);
   }
 
   // -- mutations, each one store-write + room-nudge ---------------------
@@ -234,8 +279,108 @@ export class Session {
   }
 
   close(): void {
-    this.#subscribers.clear();
+    this.room.clear();
     this.campaign.close();
     this.shelf.close();
+  }
+}
+
+// ---------------------------------------------------------------------
+// The host — one machine, one ACTIVE campaign, and the door between.
+//
+// One active campaign per host, and every screen follows it (rule 9).
+// That's why this is a holder rather than a map: the table has one
+// story going at a time, and a display assigned to a seat is assigned
+// on the SHELF, so it survives the switch and simply refetches.
+//
+// The switch order matters and is the whole trick: nudge the room
+// FIRST, so every screen is already on its way back for fresh data,
+// then swap the session under them. The listeners live on the Room,
+// not on the Session, so nothing has to reconnect.
+
+/** The shelf key the active campaign's slug is remembered under. */
+export const ACTIVE_CAMPAIGN = 'campaign';
+
+export class Host {
+  readonly shelf: Shelf;
+  /** Where this host's data lives. Absent means a session built by hand (tests) — the campaign doors say 501. */
+  readonly dataDir?: string;
+  readonly room: Room;
+  session?: Session;
+  /** Loaded plugins ride the machine, not the campaign — a switch keeps them. */
+  plugins: LoadedPlugin[] = [];
+  pluginProblems: PluginProblem[] = [];
+
+  constructor(shelf: Shelf, dataDir?: string, room?: Room) {
+    this.shelf = shelf;
+    this.dataDir = dataDir;
+    this.room = room ?? new Room();
+  }
+
+  /** A host around a session someone already built — how the existing tests keep working. */
+  static around(session: Session): Host {
+    const host = new Host(session.shelf, session.dataDir, session.room);
+    host.session = session;
+    return host;
+  }
+
+  /** What this machine holds, the active one marked. */
+  list(): (CampaignSummary & { active: boolean })[] {
+    if (!this.dataDir) return [];
+    const active = this.session?.campaign.slug;
+    return campaignSummaries(this.dataDir).map((c) => ({
+      ...c,
+      active: c.slug === active,
+    }));
+  }
+
+  setPlugins(plugins: LoadedPlugin[], problems: PluginProblem[]): void {
+    this.plugins = plugins;
+    this.pluginProblems = problems;
+    if (this.session) {
+      this.session.plugins = plugins;
+      this.session.pluginProblems = problems;
+    }
+  }
+
+  /** Open an existing campaign and make it the table's. */
+  activate(slug: string): Session {
+    if (!this.dataDir) throw new Error('this host has no data dir');
+    if (this.session?.campaign.slug === slug) return this.session;
+    return this.#adopt(openCampaign(this.dataDir, slug));
+  }
+
+  /**
+   * Mint one and play it — the DM just made it, so activating is what
+   * they meant. The system ref is written into the manifest at birth
+   * because a campaign with no system is a campaign that resolves
+   * nothing; it stays editable afterwards like everything else.
+   */
+  start(name: string, system?: Ref): Session {
+    if (!this.dataDir) throw new Error('this host has no data dir');
+    const trimmed = name.trim();
+    if (!trimmed) throw new Error('a campaign needs a name');
+    const campaign = createCampaign(this.dataDir, slugFor(this.dataDir, trimmed), trimmed);
+    if (system) {
+      const root = campaign.root();
+      campaign.save({ ...root, refs: { ...root.refs, system } }, 'host');
+    }
+    return this.#adopt(campaign);
+  }
+
+  #adopt(campaign: Campaign): Session {
+    // The room hears about it BEFORE the swap: a screen that refetches
+    // early gets the old answer and refetches again on the second
+    // nudge, where one that hears nothing sits on a stale table.
+    this.room.changed('campaign');
+    const previous = this.session;
+    const session = new Session(this.shelf, campaign, this.dataDir, this.room);
+    session.plugins = this.plugins;
+    session.pluginProblems = this.pluginProblems;
+    this.session = session;
+    if (previous) previous.campaign.close();
+    this.shelf.setSetting(ACTIVE_CAMPAIGN, campaign.slug);
+    this.room.changed('campaign');
+    return session;
   }
 }

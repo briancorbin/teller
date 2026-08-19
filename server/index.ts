@@ -20,13 +20,13 @@ import { homedir } from 'node:os';
 import { dirname, extname, join, normalize, resolve as resolvePath } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { toEntity } from '../core/entity.ts';
+import { toEntity, type Ref } from '../core/entity.ts';
 import {
   createCampaign,
   isDisplayRole,
   listCampaigns,
-  openCampaign,
   openShelf,
+  validSlug,
   type EntityDraft,
 } from '../core/store.ts';
 import {
@@ -47,7 +47,7 @@ import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
 import { panelDir, seedPanels } from '../core/panels-shelf.ts';
 import { packDir, systemIndexModule } from '../core/packs-shelf.ts';
 import { systemDir, systemPanelDir } from '../core/systems-shelf.ts';
-import { Session, type EntryEdit } from './session.ts';
+import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
@@ -57,8 +57,17 @@ const DIST = join(dirname(fileURLToPath(import.meta.url)), 'dist');
 
 type Reply = { status: number; body: unknown };
 
-/** Everything a route may know. The key rides along only for tickets. */
-export type Ctx = { session: Session; auth: Auth; key: string };
+/**
+ * Everything a route may know. The key rides along only for tickets.
+ *
+ * The HOST is what's passed, not the session: the active campaign is
+ * swappable at runtime, so a route reads through the holder rather
+ * than closing over one session for the life of the process. A host
+ * with no campaign at all is a real state (a fresh data dir boots into
+ * it, and the console lands on the campaign screen) — which is why
+ * `host.session` is optional and the table's routes say so.
+ */
+export type Ctx = { host: Host; auth: Auth; key: string };
 
 function reply(status: number, body: unknown): Reply {
   return { status, body };
@@ -66,6 +75,8 @@ function reply(status: number, body: unknown): Reply {
 
 const denied = () => reply(401, { error: 'DM key required' });
 const notAtTable = () => reply(401, { error: 'not at this table' });
+const noCampaign = () =>
+  reply(503, { error: 'no campaign is active — pick one from the campaign screen' });
 
 async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
@@ -82,6 +93,41 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 /**
+ * Content code a human has ENABLED — the systems, packs and panels
+ * whose compiled presentations this table is willing to run.
+ *
+ * Trust is a one-way street until something lists it: `codePending`
+ * says "nobody has said yes yet", so the enable buttons disappear the
+ * instant you press them and the answer becomes unreachable. This is
+ * the other direction. Names come from the shelf and the panel
+ * declarations; an id whose folder is gone still lists, by its id —
+ * a row you can't see is a row you can't revoke.
+ */
+function trustedCode(
+  session: Session,
+): { id: string; name: string; kind: 'system' | 'pack' | 'panel' }[] {
+  const panels = new Map(
+    session.loaded
+      .declarations('panels')
+      .map((p) => p as { id?: string; name?: string; label?: string })
+      .filter((p) => p.id)
+      .map((p) => [p.id!, p.label ?? p.name ?? p.id!]),
+  );
+  const out: { id: string; name: string; kind: 'system' | 'pack' | 'panel' }[] = [];
+  for (const { id, enabled } of session.shelf.pluginTrusts()) {
+    if (!enabled) continue;
+    if (id.startsWith('sys_')) {
+      out.push({ id, name: session.shelf.system(id)?.name ?? id, kind: 'system' });
+    } else if (id.startsWith('pak_')) {
+      out.push({ id, name: session.shelf.pack(id)?.name ?? id, kind: 'pack' });
+    } else if (id.startsWith('pan_')) {
+      out.push({ id, name: panels.get(id) ?? id, kind: 'panel' });
+    }
+  }
+  return out;
+}
+
+/**
  * The API, as one function — testable without a socket, servable with
  * one. Returns undefined for paths that aren't the API's.
  */
@@ -91,7 +137,8 @@ export async function handleApi(
   url: URL,
   req: IncomingMessage,
 ): Promise<Reply | undefined> {
-  const { session, auth, key } = ctx;
+  const { host, auth, key } = ctx;
+  const shelf = host.shelf;
   const parts = url.pathname.split('/').filter(Boolean); // ['api', …]
   if (parts[0] !== 'api') return undefined;
   const [, head, a, b] = parts;
@@ -106,12 +153,12 @@ export async function handleApi(
     if (method === 'POST' && a === 'hello' && !b) {
       const body = await bodyOf(req);
       let display =
-        typeof body.id === 'string' ? session.shelf.display(body.id) : undefined;
+        typeof body.id === 'string' ? shelf.display(body.id) : undefined;
       if (display) {
-        session.shelf.touchDisplay(display.id);
-        display = session.shelf.refreshCodeIfExpired(display);
+        shelf.touchDisplay(display.id);
+        display = shelf.refreshCodeIfExpired(display);
       } else {
-        display = session.shelf.createDisplay();
+        display = shelf.createDisplay();
       }
       // The handle is told, not derived: a LAN origin is not a secure
       // context, so the client couldn't compute its own sha-256.
@@ -132,7 +179,7 @@ export async function handleApi(
       const h = clamp(body.h);
       if (!w || !h) return reply(400, { error: 'w and h required' });
       if (self.viewport?.w !== w || self.viewport?.h !== h) {
-        session.shelf.setDisplayViewport(self.id, w, h);
+        shelf.setDisplayViewport(self.id, w, h);
       }
       return reply(200, { ok: true });
     }
@@ -142,8 +189,8 @@ export async function handleApi(
 
     if (method === 'GET' && !a) {
       // Listing is the moment truth matters — sweep the ghosts first.
-      session.shelf.expireUnclaimedDisplays();
-      return reply(200, session.shelf.displays());
+      shelf.expireUnclaimedDisplays();
+      return reply(200, shelf.displays());
     }
 
     // Adopt a waiting screen by the code it's showing.
@@ -151,40 +198,40 @@ export async function handleApi(
       const body = await bodyOf(req);
       const code = String(body.code ?? '').trim();
       if (!code) return reply(400, { error: 'pairing code required' });
-      const found = session.shelf.displayByCode(code);
+      const found = shelf.displayByCode(code);
       if (!found) return reply(404, { error: 'no screen is showing that code' });
-      const claimed = session.shelf.displays().filter((d) => !d.code).length;
+      const claimed = shelf.displays().filter((d) => !d.code).length;
       const name =
         (typeof body.name === 'string' && body.name.trim()) ||
         `Screen ${claimed + 1}`;
-      const display = session.shelf.claimDisplay(found.id, name);
-      session.changed('displays');
+      const display = shelf.claimDisplay(found.id, name);
+      host.room.changed('displays');
       return reply(200, display);
     }
 
     // "Which one of you is Screen 3?"
     if (method === 'POST' && a && b === 'identify') {
-      const display = session.shelf.display(a);
+      const display = shelf.display(a);
       if (!adopted(display)) return reply(404, { error: 'display not found' });
-      session.notify(displayHandle(display.id), 'identify');
+      host.room.notify(displayHandle(display.id), 'identify');
       return reply(200, { ok: true });
     }
 
     if (a && !b && (method === 'PATCH' || method === 'DELETE')) {
-      const display = session.shelf.display(a);
+      const display = shelf.display(a);
       if (!display) return reply(404, { error: 'display not found' });
 
       if (method === 'DELETE') {
-        session.shelf.removeDisplay(a);
+        shelf.removeDisplay(a);
         // It's still connected: tell it to go look at itself and
         // discover it's a stranger again.
-        session.notify(displayHandle(a), 'assign');
-        session.changed('displays');
+        host.room.notify(displayHandle(a), 'assign');
+        host.room.changed('displays');
         return reply(200, { ok: true });
       }
 
       const body = await bodyOf(req);
-      const patch: Parameters<typeof session.shelf.updateDisplay>[1] = {};
+      const patch: Parameters<typeof shelf.updateDisplay>[1] = {};
       if (typeof body.name === 'string') patch.name = body.name;
       if (typeof body.color === 'string') patch.color = body.color;
       if (body.role !== undefined) {
@@ -199,9 +246,9 @@ export async function handleApi(
       if (body.ppi === null || typeof body.ppi === 'number') patch.ppi = body.ppi;
       if (body.ppiY === null || typeof body.ppiY === 'number') patch.ppiY = body.ppiY;
       if (typeof body.position === 'number') patch.position = body.position;
-      const updated = session.shelf.updateDisplay(a, patch);
-      session.notify(displayHandle(a), 'assign');
-      session.changed('displays');
+      const updated = shelf.updateDisplay(a, patch);
+      host.room.notify(displayHandle(a), 'assign');
+      host.room.changed('displays');
       return reply(200, updated);
     }
   }
@@ -223,11 +270,90 @@ export async function handleApi(
     return notAtTable();
   }
 
+  // -- which campaign this table is running (rule 9: ONE per host) ------
+  //
+  // The DM's door, and app chrome rather than a panel — it has to exist
+  // BEFORE a campaign resolves, which is exactly when the panel merge
+  // has nothing to say. Activating swaps the session under every screen
+  // in the room; the displays are on the shelf, so they follow without
+  // being touched.
+  if (head === 'campaigns') {
+    if (!canDm(auth)) return denied();
+    if (!host.dataDir) return reply(501, { error: 'this host has no data dir' });
+
+    if (method === 'GET' && !a) {
+      return reply(200, {
+        active: host.session?.campaign.slug ?? null,
+        campaigns: host.list().map((c) => ({
+          slug: c.slug,
+          name: c.name,
+          active: c.active,
+          // The manifest's ref cached a name; the shelf may know a
+          // better one. A system nobody has still lists — "you don't
+          // have this" beats a blank column.
+          system: c.system
+            ? {
+                id: c.system.id,
+                name: shelf.system(c.system.id)?.name ?? c.system.name,
+                installed: Boolean(shelf.system(c.system.id)),
+              }
+            : null,
+        })),
+      });
+    }
+
+    if (method === 'POST' && !a) {
+      const body = await bodyOf(req);
+      const name = String(body.name ?? '').trim();
+      if (!name) return reply(400, { error: 'a campaign needs a name' });
+      let system: Ref | undefined;
+      if (typeof body.system === 'string' && body.system.trim()) {
+        const row = shelf.system(body.system.trim());
+        if (!row) return reply(400, { error: `no system ${body.system} on this shelf` });
+        system = { id: row.id, name: row.name };
+      }
+      try {
+        const started = host.start(name, system);
+        return reply(201, { slug: started.campaign.slug, name, active: true });
+      } catch (err) {
+        return reply(400, { error: String(err) });
+      }
+    }
+
+    if (method === 'POST' && a && b === 'activate') {
+      if (!validSlug(a) || !listCampaigns(host.dataDir).includes(a)) {
+        return reply(404, { error: `no campaign ${a} on this host` });
+      }
+      try {
+        host.activate(a);
+        return reply(200, { ok: true, slug: a });
+      } catch (err) {
+        return reply(400, { error: String(err) });
+      }
+    }
+  }
+
   // -- the table itself. Watching requires being adopted (or the key). --
 
   if (!canWatch(auth)) return notAtTable();
 
+  const session = host.session;
+
   if (method === 'GET' && head === 'campaign' && !a) {
+    // A host with no campaign answers this one anyway, with nothing in
+    // it — the key gate calls this to prove a key, and the console
+    // reads `slug: null` as "land on the campaign screen". A 503 here
+    // would read to the client as a bad key.
+    if (!session) {
+      return reply(200, {
+        slug: null,
+        manifest: null,
+        system: null,
+        packs: [],
+        missing: [],
+        watching: host.room.size,
+      });
+    }
     const { manifest, system, packs, missing } = session.loaded;
     return reply(200, {
       slug: session.campaign.slug,
@@ -237,6 +363,56 @@ export async function handleApi(
       missing,
       watching: session.watching,
     });
+  }
+
+  if (!session) return noCampaign();
+
+  // Which system and packs this campaign runs on — the manifest's refs,
+  // rewritten. An ABSENT (or emptied) pack list is not "no packs": it
+  // restores the default, every pack for the system in arrival order,
+  // because a host with one pack must never make anyone tick a box.
+  if (method === 'PUT' && head === 'campaign' && a === 'refs' && !b) {
+    if (!canDm(auth)) return denied();
+    const body = await bodyOf(req);
+    const manifest = session.campaign.root();
+    const refs: Record<string, Ref | Ref[]> = { ...(manifest.refs ?? {}) };
+
+    if ('system' in body) {
+      if (body.system === null || body.system === '') delete refs.system;
+      else if (typeof body.system === 'string') {
+        const row = shelf.system(body.system);
+        if (!row) return reply(400, { error: `no system ${body.system} on this shelf` });
+        refs.system = { id: row.id, name: row.name };
+      } else {
+        return reply(400, { error: 'system must be a sys_ id or null' });
+      }
+    }
+
+    if ('packs' in body) {
+      if (body.packs === null || (Array.isArray(body.packs) && !body.packs.length)) {
+        delete refs.packs;
+      } else if (Array.isArray(body.packs)) {
+        const declared: Ref[] = [];
+        for (const raw of body.packs) {
+          const id = String(raw ?? '').trim();
+          if (!id) continue;
+          const row = shelf.pack(id);
+          // A pack that isn't on the shelf may still be declared — it
+          // reports as missing at load rather than being refused here,
+          // which is what lets a `.story` name packs you haven't got.
+          declared.push({ id, name: row?.name ?? id });
+        }
+        if (declared.length) refs.packs = declared;
+        else delete refs.packs;
+      } else {
+        return reply(400, { error: 'packs must be a list of pak_ ids, or null' });
+      }
+    }
+
+    session.save({ ...manifest, refs }, actorOf(auth, String(body.actor ?? '')));
+    session.reload();
+    const { system, packs, missing } = session.loaded;
+    return reply(200, { ok: true, system: system ?? null, packs, missing });
   }
 
   if (head === 'entities' && !a) {
@@ -353,9 +529,9 @@ export async function handleApi(
   if (method === 'GET' && head === 'shelf' && !a) {
     if (!canDm(auth)) return denied();
     return reply(200, {
-      systems: session.shelf.systems(),
-      packs: session.shelf.packs(),
-      boards: session.shelf.boards().map(({ id, name }) => ({ id, name })),
+      systems: shelf.systems(),
+      packs: shelf.packs(),
+      boards: shelf.boards().map(({ id, name }) => ({ id, name })),
     });
   }
 
@@ -400,12 +576,17 @@ export async function handleApi(
         found,
         problems: [...problems, ...session.pluginProblems],
         running: session.plugins.map((p) => p.manifest.id),
+        // Trust that a human granted to CONTENT code, listed so it can
+        // be taken back. Granting already had a door (the POST below);
+        // revoking had none, because the only surfaces that offered the
+        // toggle rendered while `codePending` — which is false the
+        // moment you say yes, so the button vanished with the answer.
+        trusted: trustedCode(session),
       });
     }
     const reloadPlugins = async () => {
       const result = await loadPlugins(dataDir, session.shelf);
-      session.plugins = result.loaded;
-      session.pluginProblems = result.problems;
+      host.setPlugins(result.loaded, result.problems);
       session.changed('plugins');
     };
     if (method === 'POST' && a && !b) {
@@ -413,7 +594,7 @@ export async function handleApi(
       if (typeof body.enabled !== 'boolean') {
         return reply(400, { error: 'enabled must be true or false' });
       }
-      session.shelf.setPluginEnabled(a, body.enabled);
+      shelf.setPluginEnabled(a, body.enabled);
       if (a.startsWith('pan_') || a.startsWith('pak_') || a.startsWith('sys_')) {
         // Panel, pack and system code aren't a plugin's `provides` —
         // all three are attached to their declaration by the sweep, so
@@ -427,7 +608,7 @@ export async function handleApi(
     }
     if (method === 'PUT' && a && b === 'config') {
       const body = await bodyOf(req);
-      session.shelf.setPluginConfig(a, body.config);
+      shelf.setPluginConfig(a, body.config);
       await reloadPlugins();
       return reply(200, { ok: true });
     }
@@ -605,7 +786,11 @@ function serveStatic(pathname: string, res: ServerResponse): boolean {
 }
 
 /** The whole server, session + key in, listener out. Tests call this on port 0. */
-export function serve(session: Session, port: number, key: string) {
+export function serve(what: Session | Host, port: number, key: string) {
+  // A Session is accepted for the callers that build one directly (the
+  // tests, mostly) — it gets wrapped in a host whose room is the one it
+  // already handed out, so nothing reconnects.
+  const host = what instanceof Host ? what : Host.around(what);
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
@@ -616,7 +801,7 @@ export function serve(session: Session, port: number, key: string) {
     // this url in the first place, not whether the byte is fetchable
     // once someone has it.
     if (url.pathname.startsWith('/panel-code/')) {
-      const dataDir = session.dataDir;
+      const dataDir = host.dataDir;
       const rel = decodeURIComponent(url.pathname.slice('/panel-code/'.length));
       const [panelId, ...fileParts] = rel.split('/').filter(Boolean);
       // The table's own panels first, then the active system's own
@@ -653,14 +838,14 @@ export function serve(session: Session, port: number, key: string) {
     // never drift from the packs actually loaded. Empty stack, empty
     // module: importing `system` must never 404 a panel.
     if (url.pathname.startsWith('/pack-code/')) {
-      const dataDir = session.dataDir;
+      const dataDir = host.dataDir;
       const rel = decodeURIComponent(url.pathname.slice('/pack-code/'.length));
       if (rel === 'system.js') {
         res.writeHead(200, {
           'Content-Type': 'text/javascript',
           'Cache-Control': 'no-store',
         });
-        res.end(systemIndexModule(session.loaded.presentations()));
+        res.end(systemIndexModule(host.session?.loaded.presentations() ?? {}));
         return;
       }
       const [packId, ...fileParts] = rel.split('/').filter(Boolean);
@@ -694,12 +879,12 @@ export function serve(session: Session, port: number, key: string) {
       const ticket = url.searchParams.get('ticket');
       let valid = Boolean(handle) && checkTicket(key, `files:${handle}`, ticket);
       if (valid && handle !== 'dm') {
-        const display = session.shelf
+        const display = host.shelf
           .displays()
           .find((d) => displayHandle(d.id) === handle);
         valid = adopted(display);
       }
-      const dataDir = session.dataDir;
+      const dataDir = host.dataDir;
       if (!valid || !dataDir) {
         res.writeHead(401, { 'Content-Type': 'text/plain' });
         res.end('ticket required');
@@ -733,7 +918,7 @@ export function serve(session: Session, port: number, key: string) {
       const ticket = url.searchParams.get('ticket');
       let valid = Boolean(handle) && checkTicket(key, `stream:${handle}`, ticket);
       if (valid && handle !== 'dm') {
-        const display = session.shelf
+        const display = host.shelf
           .displays()
           .find((d) => displayHandle(d.id) === handle);
         valid = adopted(display);
@@ -749,7 +934,7 @@ export function serve(session: Session, port: number, key: string) {
         Connection: 'keep-alive',
       });
       res.write('retry: 2000\n\n');
-      const unsubscribe = session.subscribe(
+      const unsubscribe = host.room.subscribe(
         (what) => {
           res.write(`data: ${what}\n\n`);
         },
@@ -763,13 +948,13 @@ export function serve(session: Session, port: number, key: string) {
       return;
     }
 
-    const auth = resolveAuth(session.shelf, key, {
+    const auth = resolveAuth(host.shelf, key, {
       key: req.headers['x-teller-key'] as string | undefined,
       display: req.headers['x-teller-display'] as string | undefined,
     });
 
     const handled = await handleApi(
-      { session, auth, key },
+      { host, auth, key },
       req.method ?? 'GET',
       url,
       req,
@@ -858,32 +1043,62 @@ if (import.meta.main) {
     process.exit(0);
   }
 
-  if (!slug) {
+  const key = loadDmKey(dataDir);
+  const host = new Host(shelf, dataDir);
+  const plugins = await loadPlugins(dataDir, shelf);
+  host.setPlugins(plugins.loaded, plugins.problems);
+
+  // `--campaign` is an explicit override that also becomes the
+  // remembered choice; with no flag the host resumes whatever it was
+  // running. A host with NEITHER boots anyway, into the no-campaign
+  // state — the console lands on the campaign screen and the DM picks
+  // one there. Exiting at this point was the old shape, and it made a
+  // fresh install a dead end with no way out but the command line.
+  const remembered = shelf.setting(ACTIVE_CAMPAIGN);
+  const wanted = slug || remembered;
+  if (slug && args.new) {
+    const campaign = createCampaign(dataDir, slug, args.new);
+    host.session = new Session(shelf, campaign, dataDir, host.room);
+    host.session.plugins = plugins.loaded;
+    host.session.pluginProblems = plugins.problems;
+    shelf.setSetting(ACTIVE_CAMPAIGN, slug);
+  } else if (wanted) {
+    try {
+      host.activate(wanted);
+    } catch (err) {
+      // A remembered campaign whose file went away is a note, never a
+      // refusal to boot: the room's screens are still on the shelf.
+      console.log(`  could not open '${wanted}': ${String(err)}`);
+      if (wanted === remembered) shelf.setSetting(ACTIVE_CAMPAIGN, null);
+    }
+  }
+
+  serve(host, port, key);
+
+  const session = host.session;
+  console.log(
+    `teller-next · ${session?.campaign.slug ?? '(no campaign)'} · http://localhost:${port}`,
+  );
+  if (!session) {
     const have = listCampaigns(dataDir);
     console.log(
       have.length
-        ? `campaigns in ${dataDir}:\n${have.map((s) => `  --campaign ${s}`).join('\n')}`
-        : `no campaigns in ${dataDir} yet — start one:\n  node server/index.ts --campaign <slug> --new "Its Name"`,
+        ? `  campaigns here: ${have.join(', ')} — pick one from the console`
+        : `  no campaigns in ${dataDir} yet — start one from the console`,
     );
-    process.exit(1);
   }
-
-  const key = loadDmKey(dataDir);
-  const campaign = args.new
-    ? createCampaign(dataDir, slug, args.new)
-    : openCampaign(dataDir, slug);
-  const session = new Session(shelf, campaign, dataDir);
-  const plugins = await loadPlugins(dataDir, shelf);
-  session.plugins = plugins.loaded;
-  session.pluginProblems = plugins.problems;
-  serve(session, port, key);
-
-  const { system, packs, missing, panelProblems } = session.loaded;
-  console.log(`teller-next · ${campaign.slug} · http://localhost:${port}`);
-  console.log(
-    `  system: ${system ? `${system.name} v${system.version}` : '(none)'}` +
-      ` · packs: ${packs.length ? packs.map((p) => p.name).join(', ') : '(none)'}`,
-  );
+  const { system, packs, missing, panelProblems } = session?.loaded ?? {
+    system: undefined,
+    packs: [],
+    missing: [],
+    panelProblems: [],
+  };
+  if (session) {
+    console.log(
+      `  system: ${system ? `${system.name} v${system.version}` : '(none)'}` +
+        ` · packs: ${packs.length ? packs.map((p) => p.name).join(', ') : '(none)'}`,
+    );
+  }
   for (const miss of missing) {
     console.log(`  MISSING ${miss.slot}: ${miss.ref.name} (${miss.ref.id})`);
   }

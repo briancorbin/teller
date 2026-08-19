@@ -31,7 +31,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { newId } from './id.ts';
-import { toEntity, type Entity } from './entity.ts';
+import { refIn, toEntity, type Entity, type Ref } from './entity.ts';
 
 const now = () => new Date().toISOString();
 
@@ -484,6 +484,60 @@ export function openCampaign(dataDir: string, slug: string): Campaign {
   return new Campaign(db, slug);
 }
 
+/**
+ * One campaign, read from the outside — enough to put a row on the
+ * campaign screen without opening the whole thing. The system arrives
+ * as the ref the manifest declared (id + the name it cached); whether
+ * that ref RESOLVES is the shelf's business, not this list's.
+ */
+export type CampaignSummary = { slug: string; name: string; system?: Ref };
+
+/**
+ * Every campaign on this machine, summarised. Each file is opened,
+ * read and closed — a campaign that won't open is reported by its
+ * slug alone rather than vanishing from the list ("you don't have
+ * this" beats forgetting it existed, applied to a broken file).
+ */
+export function campaignSummaries(dataDir: string): CampaignSummary[] {
+  return listCampaigns(dataDir).map((slug) => {
+    try {
+      const campaign = openCampaign(dataDir, slug);
+      try {
+        const root = campaign.root();
+        const system = refIn(root.refs, 'system');
+        return system ? { slug, name: root.name, system } : { slug, name: root.name };
+      } finally {
+        campaign.close();
+      }
+    } catch {
+      return { slug, name: slug };
+    }
+  });
+}
+
+/**
+ * A filename for a campaign someone just named. Derived, never typed:
+ * the DM types "The Unlikely Duo" and the file is `the-unlikely-duo`.
+ * A name that reduces to nothing still gets a file, and a slug already
+ * taken gets a number — two campaigns may share a name, but never a
+ * file.
+ */
+export function slugFor(dataDir: string, name: string): string {
+  const base =
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48)
+      .replace(/^-+/, '') || 'campaign';
+  const taken = new Set(listCampaigns(dataDir));
+  if (!taken.has(base)) return base;
+  for (let n = 2; ; n++) {
+    const candidate = `${base}-${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 /** What's on this machine — the list bare `teller host` offers. */
 export function listCampaigns(dataDir: string): string[] {
   try {
@@ -543,6 +597,11 @@ CREATE TABLE IF NOT EXISTS plugins (
   id         TEXT PRIMARY KEY,
   enabled    INTEGER NOT NULL DEFAULT 0,
   config     TEXT,
+  updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT,
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS displays (
@@ -834,6 +893,45 @@ export class Shelf {
          ON CONFLICT(id) DO UPDATE SET config = excluded.config, updated_at = excluded.updated_at`,
       )
       .run(id, config === undefined ? null : JSON.stringify(config), now());
+  }
+
+  /** Every trust row a human has touched — enabled or not. Revoking
+   * needs the LIST, and until this existed the only way to reach a row
+   * was to already know its id. */
+  pluginTrusts(): { id: string; enabled: boolean }[] {
+    const rows = this.#db
+      .prepare('SELECT id, enabled FROM plugins ORDER BY id')
+      .all() as Row[];
+    return rows.map((r) => ({ id: String(r.id), enabled: r.enabled === 1 }));
+  }
+
+  // -- the machine's own small preferences ------------------------------
+  //
+  // Which campaign this table is running is a fact about the MACHINE,
+  // not about any campaign — so it lives here, next to the displays
+  // that survive a switch (rule 9). One key/value table rather than a
+  // column per preference: nothing queries these, they're read by name.
+
+  setting(key: string): string | undefined {
+    const row = this.#db
+      .prepare('SELECT value FROM settings WHERE key = ?')
+      .get(key) as Row | undefined;
+    return row?.value === null || row?.value === undefined
+      ? undefined
+      : String(row.value);
+  }
+
+  setSetting(key: string, value: string | null): void {
+    if (value === null) {
+      this.#db.prepare('DELETE FROM settings WHERE key = ?').run(key);
+      return;
+    }
+    this.#db
+      .prepare(
+        `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      )
+      .run(key, value, now());
   }
 
   putBoard(board: Omit<Board, 'id'> & { id?: string }): Board {
