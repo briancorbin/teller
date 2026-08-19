@@ -1590,8 +1590,59 @@ resources and statuses, and never the NAME — and offers no way to
 hand-add an entry. That's now the shipping system-layer sheet's bug
 to fix (WiW's, and the starter's when it exists), not the kernel's;
 noted here so it doesn't get lost in the handoff between layers.
+(There IS a `header` block in the grammar — name, type, portrait —
+the declaration just never asked for it; Brian is adding it by hand,
+which is the ladder working as designed.)
 
-### Still open from `ARCHITECTURE.md`
+**Packs carry panels too** (same day, the moment the sort test was
+applied to a real file): `packs/<name>/panels/` sweeps exactly as a
+system's does, the declarations ride the PACK's layer — so a pack's
+panel beats the system's on a name collision, branded over unbranded,
+which is the point — and panel code takes the pack's trust. The
+`wiw-sheet` panel moved off the table's shelf into the Guidebook pack
+where it always belonged: it is the BOOK's sheet (its layout
+language, its look), and "whose is this, really?" answers `pak_`, not
+`panels/`. The table's `panels/` dir now holds only teller's five
+seeds plus whatever a table writes for itself.
+
+Two wrinkles found by this work, filed not fixed:
+
+- **The table's own panels sit at the BOTTOM of the merge** (the
+  `teller` layer), so a table restating a system's panel loses —
+  backwards from every other merge in teller (rule 1: the table's
+  ruling beats the book's). Fix: the swept `panels/` dir becomes a
+  layer ABOVE packs, separate from the in-memory seeds.
+- **A deleted seed comes back**: seeding is per-name if-absent, every
+  boot, so an edit survives but a deletion doesn't. A table that
+  wants to REJECT a default needs a tombstone or a seeded-once flag.
+
+**7 · The table picks its campaign at the door** (2026-08-19, Brian:
+"dynamically select which campaign is selected from like, a 'login'
+screen").
+
+One host, one ACTIVE campaign, every screen follows it — rule 9 was
+already shaped this way (displays live on the SHELF, not in any
+campaign, so screens survive a switch without re-pairing). What's new
+is that the choice is runtime, not boot-time: the session is
+swappable under a `Host` (subscribers hoisted into a `Room` that
+outlives any one campaign), the active choice persists in the shelf's
+`settings` so a reboot resumes it, `--campaign` is an override, and a
+host with NO campaign boots into the picker instead of dying. The
+campaign screen is APP CHROME, not a panel — it exists before any
+campaign resolves, so it cannot come from the panels merge; it's the
+one screen that stands outside the collection, beside the key gate.
+Everything that needs a table answers 503 ("no table right now")
+when none is active — a different fact from 404, and the client
+treats it so.
+
+With it came the management §M had left as data-only: the shelf
+tab's THIS CAMPAIGN edits the manifest's `system` and `packs` refs
+(precedence arrows, add/remove, and "use all" restoring the sacred
+no-list default — a host with one pack never makes anyone tick a
+box), and the plugins tab lists ENABLED content code (`sys_`/`pak_`/
+`pan_`) with a disable — trust finally revocable from the console,
+same door, opposite direction. Creating a campaign takes a name and
+a system off the shelf, and activates — the DM made it to play it.
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
 - **Door 3** — don't serialise `.system` until the kind declaration
