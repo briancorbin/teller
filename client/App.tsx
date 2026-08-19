@@ -103,7 +103,10 @@ function useGlass(params: Record<string, unknown> | undefined): Glass {
       window.addEventListener('resize', cb);
       return () => window.removeEventListener('resize', cb);
     },
-    () => (window.innerWidth / window.innerHeight > 2 ? 'mounted' : 'held'),
+    // ≥ 1.3, the old app's own `wide` threshold (src/views/SeatView.tsx)
+    // — a desktop browser is wide glass; only a genuinely portrait hand
+    // gets the held arrangement.
+    () => (window.innerWidth / window.innerHeight >= 1.3 ? 'mounted' : 'held'),
   );
   const declared = params?.glass;
   if (declared === 'mounted' || declared === 'held') return declared;
