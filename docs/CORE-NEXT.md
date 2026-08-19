@@ -1287,10 +1287,84 @@ answers with the load report); the plugin-enable POST stops doing double
 duty as a rebuild.
 
 What the later phases inherit: the folder is now the obvious home for a
-system's presentation CODE — `packs/<name>/blocks/*.tsx` compiled by the
-same esbuild pass and gated by the same trust row `panels-shelf.ts`
-already reuses, one sweep, no second machinery. Nothing about that was
-built here, and the seam is the sweep itself.
+system's presentation CODE — `packs/<name>/presentations/*.tsx` compiled
+by the same esbuild pass and gated by the same trust row
+`panels-shelf.ts` already reuses, one sweep, no second machinery.
+Nothing about that was built here, and the seam is the sweep itself.
+
+**Steps 1–3 landed (2026-08-19). The migration is done; the demotion
+is the part that's still pending.**
+
+*Step 1 — a pack carries code.* `core/compile.ts` is the one esbuild
+pass both shelves share, differing in exactly one thing: what a file
+may import. `PANEL_IMPORTS` is react + react/jsx-runtime + teller +
+`system`; `PACK_IMPORTS` is the neutral three and **not** `system`,
+because a pack's presentations ARE the system and the cycle would be
+incoherent — leaving it out of the externals IS the enforcement, and
+esbuild says so out loud in the load report. `/pack-code/<pak_id>/…`
+serves `.build` output only; `/pack-code/system.js` is GENERATED per
+request from whatever the campaign's trusted packs resolve to, so it
+can never drift from what's loaded, and it answers `export {};` rather
+than 404 when there's nothing — importing `system` must never break a
+panel.
+
+*Step 2 — the components moved.* `Cylinder`, `HealthPanel`,
+`StatusPanel` and `DicePool` now live in
+`~/.teller-next/packs/wiw-guidebook/presentations/`, one file each,
+**filename = export name = the name a record summons**. They import
+`teller` for the neutral parts (`SheetPanel`, the dice helpers) and
+carry no facts: entity, records and the write door all arrive as props.
+
+*Step 3 — the summoning seam.* `client/lib/presentations.ts` is the one
+place that answers "what draws a thing called X?", and every caller goes
+through it: `presentationOf(name) → system[Name] ?? fallback[Name] ??
+undefined`. A `dials` word resolves both spellings (`"cylinder"` and
+`Cylinder.tsx`) so a pack needn't choose. Every consumer has an answer
+for `undefined` and it is the FLOOR: a pinned or dialled counter with no
+face draws as a stepper, a `statuses` block with no face draws the
+stored list in the floor's own grammar. Verified by disabling the pack's
+trust and emptying the fallback — the sheet degrades to bars and chips
+and every number stays present and editable. That screenshot is "other
+systems don't all have vitals" made visible.
+
+**What is NOT done, and is deliberately not done: the deletion.**
+teller's copies of the four are still in `client/components/`, still
+exported from `client/runtime/teller.ts` (marked deprecated, pointing
+at `system`), and still wired as `FALLBACK_PRESENTATIONS`. They are
+DEMOTED, not resident: the map is the transitional floor so this phase
+regressed nothing on a day nobody asked it to. **Emptying that map is
+phase 3.5** — a one-line change, plus deleting four files and four
+export lines — and it should happen when a second system exists to
+prove the point. Until then the boundary question stays live: the
+library's WiW-flavoured pieces are squatters with a notice served, not
+precedent.
+
+Two things flagged in passing rather than churned now:
+
+- **`SkillRow`** stays in the library, but its dice-track and starburst
+  are WiW-born. It degrades to a plain row when no `dice` record exists,
+  which is the neutral behaviour, so it isn't wrong — it's the next
+  candidate. Same for `SheetPanel`'s corner-tick plate, which is one
+  book's page furniture teller happens to draw.
+- **`dialable()`** (a ring past twelve chambers stops being countable)
+  gates EVERY dial, not just the cylinder — one face's constraint
+  wearing the seam's clothes. The honest fix is a face declaring its own
+  fitness.
+
+**Landmine found and fixed on the way through** (2026-08-19), because
+it would have made all of this dead on arrival in a released teller:
+`vite.client.config.ts` now sets `preserveEntrySignatures: 'strict'`.
+Vite's app default is `false`, which treats every entry as a script
+nobody imports and licenses Rollup to rename or drop its exports — and
+it did both. The built `runtime-teller.js` was emitting
+`export{lt as G, Ct as P, …}`, so EVERY panel and pack module failed to
+link in production with "does not provide an export named 'SheetPanel'",
+while dev (which serves the transformed source, exports intact) looked
+perfect. The `wiw-sheet` panel had been rendering its
+code-failed-to-load refusal in every build since rung 4 landed and
+nobody had looked at a built client. **The rung-4/§L import contract is
+a public API and its entry signature is load-bearing — say so in the
+bundler config, or the bundler will assume otherwise.**
 
 ### Still open from `ARCHITECTURE.md`
 

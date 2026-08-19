@@ -15,13 +15,24 @@ import { useRuleLookup, usePanelNote } from '../lib/rules.ts';
 import { CounterStepper } from '../components/Vitals.tsx';
 import { TagSection } from '../components/TagSection.tsx';
 import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters.tsx';
-import { Cylinder, dialable } from '../components/sheet/Cylinder.tsx';
-import { HealthPanel } from '../components/sheet/HealthPanel.tsx';
+import { dialable } from '../components/sheet/Cylinder.tsx';
 import { SheetPanel } from '../components/sheet/SheetPanel.tsx';
-import { StatusPanel, type StatusDecl } from '../components/sheet/StatusPanel.tsx';
+import { type StatusDecl } from '../components/sheet/StatusPanel.tsx';
+import { presentationOf } from '../lib/presentations.ts';
 import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
 import { CarriedScreen } from '../components/items/Screen.tsx';
 import type { ScreenDecl } from '../components/items/types.ts';
+
+// The faces this file summons by name (§L phase 3). They are NOT
+// imported: a `HealthPanel` is the WiW printed sheet's health box and a
+// `Cylinder` is a revolver, so both belong to the system that prints
+// them, and arrive as pack-carried code through `presentationOf`. The
+// types below are the shape this file passes — teller's own demoted
+// copies are what they're read off, and they stay the contract even
+// after the copies go (`FALLBACK_PRESENTATIONS`, phase 3.5).
+type CylinderFace = typeof import('../components/sheet/Cylinder.tsx').Cylinder;
+type HealthFace = typeof import('../components/sheet/HealthPanel.tsx').HealthPanel;
+type StatusFace = typeof import('../components/sheet/StatusPanel.tsx').StatusPanel;
 
 /** 'skills' → 'Skills'. The one heading this file supplies rather than reads off a pack. */
 function titleCase(name: string): string {
@@ -262,6 +273,13 @@ function RowsBlock({
  * "Sheet shows Health + Grit", not every capped resource; the rest
  * surface on the seat chrome's declared-screens tabs instead, see
  * `SeatChrome.tsx`'s 'More').
+ *
+ * Both faces are SUMMONED (§L phase 3), not imported — and a system that
+ * supplies neither still gets a working sheet: `shaped()` is a fact
+ * about the DECLARATION (something is pinned here, this one is dialled),
+ * so the counter is still the one the sheet means to show, and with no
+ * face to draw it in, the floor's own stepper draws it. That is the
+ * neutral bottom of §L's target state, wired now rather than promised.
  */
 function SheetListBlock({
   entries,
@@ -287,23 +305,37 @@ function SheetListBlock({
       {shown.map((entry) => {
         const pinned = pinsOf(ctx, e, entry);
         if (pinned.length) {
-          return (
-            <HealthPanel
+          const Health = presentationOf<HealthFace>('HealthPanel');
+          return Health ? (
+            <Health
               key={entry.name}
               entry={entry}
               pinned={pinned}
               note={note(entry.name)}
               onSet={(v) => write(entry.name, { value: v })}
             />
+          ) : (
+            <CounterStepper
+              key={entry.name}
+              entry={entry}
+              onBump={(d) => write(entry.name, { value: stepValue(entry, d) })}
+            />
           );
         }
-        return (
-          <Cylinder
+        const Dial = presentationOf<CylinderFace>(dialOf(ctx, entry) ?? '');
+        return Dial ? (
+          <Dial
             key={entry.name}
             entry={entry}
             note={note(entry.name)}
             onSet={(v) => write(entry.name, { value: v })}
             accent={accent}
+          />
+        ) : (
+          <CounterStepper
+            key={entry.name}
+            entry={entry}
+            onBump={(d) => write(entry.name, { value: stepValue(entry, d) })}
           />
         );
       })}
@@ -381,9 +413,21 @@ registerBlock('list', (block, ctx) => {
         className="grid gap-3"
         style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(14rem, 1fr))' }}
       >
-        {entries.map((entry) =>
-          dialOf(ctx, entry) === 'cylinder' && dialable(entry) ? (
-            <Cylinder
+        {entries.map((entry) => {
+          // The dial word names a face; the SYSTEM decides whether one
+          // exists. No face, no drama — `BigGauge` is the floor and was
+          // always what an undialled counter got here.
+          //
+          // `dialable` is a Cylinder-ism (a ring of more than twelve
+          // chambers stops being countable) still gating every dial,
+          // which is one face's constraint wearing the seam's clothes.
+          // Kept as-is because it's what shipped; the honest fix is a
+          // face declaring its own fitness, and that's phase 3.5.
+          const Dial = dialable(entry)
+            ? presentationOf<CylinderFace>(dialOf(ctx, entry) ?? '')
+            : undefined;
+          return Dial ? (
+            <Dial
               key={entry.name}
               entry={entry}
               onSet={(v) => write(entry.name, { value: v })}
@@ -395,8 +439,8 @@ registerBlock('list', (block, ctx) => {
               entry={entry}
               onWrite={(v) => write(entry.name, { value: v })}
             />
-          ),
-        )}
+          );
+        })}
       </div>
     );
   }
@@ -477,8 +521,31 @@ function StatusesBlock({ ctx, title = 'Statuses' }: { ctx: BlockCtx; title?: str
   if (!e || !decls) return null;
   const entries = entriesOf(e, 'conditions');
 
+  // Summoned, not imported (§L phase 3) — severity boxes with a relief
+  // caption are how the WiW sheet PRINTS its statuses, not how every
+  // system has them. Without a face the stored list still shows, in the
+  // floor's own grammar: a labelled card of steppers you can edit. The
+  // declaration's extra columns (relief, effect) are what's lost, and
+  // losing them is honest — nothing renders them.
+  const Status = presentationOf<StatusFace>('StatusPanel');
+  if (!Status) {
+    if (!entries.length) return null;
+    return (
+      <section className={`${card} flex flex-col gap-2`}>
+        <p className={sectionLabel}>{title}</p>
+        {entries.map((entry) => (
+          <AutoEntry
+            key={entry.name}
+            entry={entry}
+            onWrite={(edit) => ctx.write?.({ list: 'conditions', name: entry.name, ...edit })}
+          />
+        ))}
+      </section>
+    );
+  }
+
   return (
-    <StatusPanel
+    <Status
       declared={decls}
       entries={entries}
       onWrite={(edit) => ctx.write?.({ list: 'conditions', ...edit })}

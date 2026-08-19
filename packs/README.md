@@ -31,6 +31,7 @@ wiw-guidebook/            ← or wiw-guidebook.pack, zipped
   creation.json           the creation flow's own prose
   notes.json              the sheet's panel captions
   art/                    the pictures
+  presentations/          the system's own components — see below
 ```
 
 Only `pack.json` is required. Everything else is optional and a pack
@@ -214,6 +215,52 @@ is the exact check that route exists to make.
 
 A book does NOT travel with a pack. It's referenced by hash, because a
 book is something the recipient owns; a monster portrait isn't.
+
+### `presentations/` — the system's own components
+
+A counter is a counter everywhere, but a *revolver* is not. teller ships
+the neutral floor — bars, steppers, chips, ledger rows — and a system
+that wants its own faces brings them, as code, in its pack:
+
+```
+presentations/
+  Cylinder.tsx            a revolver: six chambers, spend one, reload
+  HealthPanel.tsx         the printed health box, with pinned stats beside it
+  StatusPanel.tsx         severity boxes with a relief caption each
+```
+
+**The file name is the summoning name, three times over**: it is the
+export name, it is what `import { Cylinder } from 'system'` gives a
+panel, and it is the word a record uses to ask for a face. A `dials`
+entry of `{"Grit": "cylinder"}` finds `Cylinder.tsx` (the exact word or
+that word capitalized — a pack needn't choose a spelling). Rename the
+file and nothing finds it.
+
+Each file **default-exports** its component. A file with no default
+export supplies nothing.
+
+Four rules, and each one is load-bearing:
+
+- **The host compiles it, at sweep.** esbuild builds each `*.tsx` into
+  `.build/presentations/`, rebuilding when the source is newer. There is
+  no toolchain for the author: edit the file on the shelf, sweep, look.
+  A compile error is a line in the load report, never a crash.
+- **A human enables it.** Code arriving from outside sits behind the
+  trust gate (the plugins tool, same row a code-carrying `.panel`
+  rides). Until it's enabled the pack's DATA loads and its code does
+  not — the console says so rather than pretending the pack is inert.
+- **Three imports resolve, and `system` is not one of them.** `react`,
+  `react/jsx-runtime` and `teller`. A presentation may not import
+  `system`, because it *is* the system; the compiler refuses it out
+  loud. Anything else you import gets bundled into the output.
+- **A presentation carries no facts.** Entity, records, catalogue, the
+  write door — all arrive as props. The folder owns look and behaviour;
+  the campaign owns the numbers.
+
+A host whose system supplies no presentations still plays: teller falls
+back to the floor, and a counter with nobody's face on it is drawn as a
+bar you can still edit. A face is dressing; the stored value is the
+sheet.
 
 Every value above is invented. A pack's contents are somebody's rules
 text, and this file is public — so the example teaches the shape and
