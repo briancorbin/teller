@@ -22,11 +22,51 @@
 // answer for `undefined` that a table could sit down at. A face is
 // dressing; the stored value is the sheet.
 
-import * as system from 'system';
+import { useSyncExternalStore } from 'react';
 import { Cylinder } from '../components/sheet/Cylinder.tsx';
 import { HealthPanel } from '../components/sheet/HealthPanel.tsx';
 import { StatusPanel } from '../components/sheet/StatusPanel.tsx';
 import { DicePool } from '../components/DicePool.tsx';
+
+// The system module is fetched BY URL, dynamically — never as a bare
+// `import 'system'` from the app's own code. A static bare import made
+// the MAIN BUNDLE depend on import-map support, which blanked the whole
+// app on any glass older than Safari 16.4 — and rule 6 says the dumbest
+// panel in the room runs the core app, full stop. Import maps remain
+// the contract for PANEL/PACK code (which degrades to a Refusal when
+// they're absent); the app itself must boot everywhere.
+//
+// The load is async, so early renders see only the fallbacks — the
+// same one-frame settle code panels already have. `useSystemFaces()`
+// re-renders subscribers when the module lands.
+let supplied: Record<string, unknown> = {};
+let version = 0;
+const listeners = new Set<() => void>();
+
+// A VARIABLE specifier on purpose: TS resolves a literal path and finds
+// no module (the host generates it per request); a variable makes this
+// the plain runtime fetch it really is.
+const SYSTEM_URL = '/pack-code/system.js';
+import(/* @vite-ignore */ SYSTEM_URL)
+  .then((mod: Record<string, unknown>) => {
+    supplied = mod;
+    version += 1;
+    for (const fn of listeners) fn();
+  })
+  .catch(() => {
+    // No system module (or no import support for it) — the floor holds.
+  });
+
+/** Subscribe a component to the system module's arrival. */
+export function useSystemFaces(): number {
+  return useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => version,
+  );
+}
 
 /**
  * teller's own copies of the four faces the WiW pack now carries —
@@ -49,9 +89,6 @@ export const FALLBACK_PRESENTATIONS: Record<string, unknown> = {
   StatusPanel,
   DicePool,
 };
-
-/** '/pack-code/system.js' as a namespace — `any`, by declaration (client/system.d.ts). */
-const supplied = system as Record<string, unknown>;
 
 /**
  * The face named `name`, or `undefined` if nobody supplies one.

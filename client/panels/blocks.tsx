@@ -18,7 +18,7 @@ import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters
 import { dialable } from '../components/sheet/Cylinder.tsx';
 import { SheetPanel } from '../components/sheet/SheetPanel.tsx';
 import { type StatusDecl } from '../components/sheet/StatusPanel.tsx';
-import { presentationOf } from '../lib/presentations.ts';
+import { presentationOf, useSystemFaces } from '../lib/presentations.ts';
 import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
 import { CarriedScreen } from '../components/items/Screen.tsx';
 import type { ScreenDecl } from '../components/items/types.ts';
@@ -294,6 +294,7 @@ function SheetListBlock({
   accent?: string;
   write: (entryName: string, edit: Record<string, unknown>) => void;
 }) {
+  useSystemFaces(); // re-render when the system module lands (url-loaded, async)
   const note = usePanelNote();
   const shown = entries.filter((entry) => shaped(ctx, e, entry));
   if (!shown.length) return null;
@@ -500,6 +501,7 @@ registerBlock('list', (block, ctx) => {
 // relief/effect text.
 
 function StatusesBlock({ ctx, title = 'Statuses' }: { ctx: BlockCtx; title?: string }) {
+  useSystemFaces(); // re-render when the system module lands (url-loaded, async)
   const e = subject(ctx);
   const lookup = useRuleLookup();
   const note = usePanelNote();

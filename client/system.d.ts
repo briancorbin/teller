@@ -14,3 +14,7 @@
 // same url: the browser import map (client/index.html), Rollup's
 // externals and the dev-server plugin (both vite.client.config.ts).
 declare module 'system';
+
+// The same module by its URL — how the APP loads it (dynamic import,
+// no import-map dependency; see client/lib/presentations.ts).
+declare module '/pack-code/system.js';
