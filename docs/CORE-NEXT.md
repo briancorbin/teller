@@ -1605,16 +1605,44 @@ language, its look), and "whose is this, really?" answers `pak_`, not
 `panels/`. The table's `panels/` dir now holds only teller's five
 seeds plus whatever a table writes for itself.
 
-Two wrinkles found by this work, filed not fixed:
+Two wrinkles found by this work — **both DISSOLVED the same day by
+the layer split** (Brian: "there needs to be a different spot for
+default panels… then it follows the hierarchy of overrides, all the
+way up to the TABLE panels"):
 
-- **The table's own panels sit at the BOTTOM of the merge** (the
-  `teller` layer), so a table restating a system's panel loses —
-  backwards from every other merge in teller (rule 1: the table's
-  ruling beats the book's). Fix: the swept `panels/` dir becomes a
-  layer ABOVE packs, separate from the in-memory seeds.
-- **A deleted seed comes back**: seeding is per-name if-absent, every
-  boot, so an edit survives but a deletion doesn't. A table that
-  wants to REJECT a default needs a tombstone or a seeded-once flag.
+- **Defaults ship WITH teller** — real `.panel` folders in the repo
+  (`defaults/panels/`), loaded from the INSTALL as the floor layer,
+  versioned and upgraded with the software. Seeding into the data
+  dir is GONE, and with it both wrinkles: nothing is ever written
+  into `panels/` by teller, so nothing goes stale and nothing
+  resurrects. "The defaults are .panel files too" stays literally
+  true — open the install and read them.
+- **The data dir's `panels/` is the TABLE layer, at the TOP.** The
+  full merge order, finally rule-1-shaped end to end:
+  `teller (install) < system < packs < campaign < table` — the
+  table restating ANY name wins, including a default's and a
+  system's. The counterargument was heard and priced (edit-in-place
+  on a seeded copy dies; discovery from an empty dir costs): the
+  five host tools are FURNITURE, which wants to upgrade with the
+  software, and customizing one becomes copy-up-and-restate. The
+  concession owed: a **copy-to-table affordance** in the console, so
+  discovering and duplicating a default never requires finding the
+  install dir. Queued, not built.
+
+**The punchline the whole section was building toward** (Brian:
+"Full control if you care, simple controls if you don't. You choose
+how much to expose yourself to as the author"): customization is a
+GRID, and its two axes are independent. The LAYER answers *who wins*
+— teller < system < pack < campaign < table, ownership all the way
+up. The RUNG answers *how deep* — rearrange json → restate records →
+style → custom blocks → takeover, exposure chosen by the author. Any
+cell is legal: a pack may take a screen over entirely; a table may
+nudge one line of json over that takeover and still win, because
+**precedence comes from the merge, never from how much code you
+wrote — later beats fancier.** And the floor holds it all up: the
+app never requires what the fanciest rung needs, so the author who
+never learns React and the author who rebuilds every pixel are both
+first-class, on the same host, at the same table.
 
 **7 · The table picks its campaign at the door** (2026-08-19, Brian:
 "dynamically select which campaign is selected from like, a 'login'
