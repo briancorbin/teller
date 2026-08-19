@@ -8,11 +8,12 @@
 // is no selection to get lost in and no way to be looking at the wrong
 // sheet.
 //
-// What the old one had and this doesn't: the ✦ propose/roll/resolve/
-// narrate flow. The proposal half now lives in `ProviderSlot` — the
-// runner asks for a POINT and never learns what answers it — and the
-// dice/target/resolve half is WiW's own machinery, not yet ported. Both
-// are deliberate, both noted in the runner.
+// The old ✦ card split in two on the way over, and both halves are here
+// now. The PROPOSAL half lives in `ProviderSlot` — the runner asks for a
+// POINT and never learns what answers it — and the roll/target/defense/
+// resolve half is `Exchange.tsx`, armed from the chips below. Arming is
+// the step the old app didn't need and this one does: it read an
+// attack's dice out of prose, and here you tap the attack.
 //
 // Everything printed is drawn by the SHARED statblock (`TemplateSheet`):
 // one statblock, rendered the same in both places, which is the law this
@@ -20,22 +21,18 @@
 // only what a TURN needs and a printing doesn't — the bars you push, the
 // statuses you hang, and the gate that has opened.
 
-import { numberOf, type Entry } from '../../../core/entity.ts';
+import { numberOf, type Entity, type Entry } from '../../../core/entity.ts';
 import { readGate } from '../../../core/gate.ts';
 import type { Template } from '../../../core/stamp.ts';
+import type { DiceRecord } from '../../lib/dice.ts';
 import { sectionLabel } from '../../lib/ui.ts';
 import { CounterStepper } from '../Vitals.tsx';
+import { Exchange, type Armed, type Combatant, type EntryWrite, type StatusDecl } from './Exchange.tsx';
 import { StatPools, StatblockProse, StatusChip, attackProfile } from './TemplateSheet.tsx';
 
-/** The system's own declared statuses — a host with none renders no row. */
-export type StatusDecl = { name: string; relief?: string; effect?: string };
-
-export type EntryWrite = {
-  list: string;
-  name: string;
-  value?: number | string;
-  remove?: boolean;
-};
+// The two shapes the runner hands in live with the flow that consumes
+// them, and pass through here so a tool imports one file, not three.
+export type { Armed, Combatant, EntryWrite, StatusDecl };
 
 /** Clamp a bump the way every stepper in teller does: floor at 0, ceiling if declared. */
 function bumped(entry: Entry, delta: number): number {
@@ -54,7 +51,19 @@ function bumped(entry: Entry, delta: number): number {
  * them cross it (rule 1). Reaching one is the interesting moment of a
  * fight, and it lights up on its own.
  */
-function DoesRow({ acting }: { acting: Template }) {
+function DoesRow({
+  acting,
+  armed,
+  onArm,
+  costCounter,
+}: {
+  acting: Template;
+  armed?: Armed;
+  /** The system's word for what an action is paid out of. */
+  costCounter?: string;
+  /** Tap to arm, tap the armed one to put it back. */
+  onArm: (armed: Armed | undefined) => void;
+}) {
   const attacks = (acting.children ?? []).filter((c) => c.type === 'attack');
   const frenzies = (acting.children ?? []).filter((c) => c.type === 'frenzy');
   if (!attacks.length && !frenzies.length) return null;
@@ -64,10 +73,29 @@ function DoesRow({ acting }: { acting: Template }) {
       <div className="mt-1.5 flex flex-wrap gap-1.5">
         {attacks.map((attack) => {
           const p = attackProfile(attack);
+          const on = armed?.id === attack.id;
           return (
-            <span
+            <button
               key={attack.id}
-              className="rounded-md bg-stone-800 px-2 py-1 text-left font-mono text-[11px] text-stone-300"
+              className={`rounded-md px-2 py-1 text-left font-mono text-[11px] transition-colors ${
+                on
+                  ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
+                  : 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+              }`}
+              onClick={() =>
+                onArm(
+                  on
+                    ? undefined
+                    : {
+                        id: attack.id,
+                        name: attack.name,
+                        ...(typeof p.damage?.value === 'string' ? { damage: p.damage.value } : {}),
+                        ...(typeof p.cost?.value === 'number' ? { cost: p.cost.value } : {}),
+                        inflicts: p.inflicts,
+                        ...(p.band ? { note: p.band } : {}),
+                      },
+                )
+              }
             >
               {attack.name}
               {/* The band, because one weapon prints a pool per reach and
@@ -75,27 +103,54 @@ function DoesRow({ acting }: { acting: Template }) {
               {p.band && <span className="ml-1.5 text-[10px] text-stone-500">{p.band}</span>}
               {p.aoe && <span className="ml-1.5 text-[10px] text-stone-500">AOE</span>}
               {p.damage && <span className="ml-1.5 text-amber-300">{p.damage.value}</span>}
+              {/* Spelled out, because "4G" beside a "2G" pool reads as
+                  four gold dice and it is four of the counter the system
+                  says actions are paid out of — whose NAME is the
+                  system's, never a word spelled here. */}
               {p.cost !== undefined && (
-                <span className="ml-1.5 text-[10px] text-stone-500">{p.cost.value} grit</span>
+                <span className="ml-1.5 text-[10px] text-stone-500">
+                  {p.cost.value} {(costCounter ?? 'cost').toLowerCase()}
+                </span>
               )}
               {p.inflicts.map((s) => (
                 <span key={s.name} className="ml-1.5">
                   <StatusChip entry={s} />
                 </span>
               ))}
-            </span>
+            </button>
           );
         })}
         {frenzies.map((frenzy) => {
           const gate = readGate(frenzy, acting.lists);
           const open = gate?.met ?? false;
+          const on = armed?.id === frenzy.id;
           return (
-            <span
+            <button
               key={frenzy.id}
-              className={`rounded-md px-2 py-1 text-left font-mono text-[11px] ${
-                open ? 'bg-rose-950/70 text-rose-200' : 'bg-stone-900 text-stone-600'
+              className={`rounded-md px-2 py-1 text-left font-mono text-[11px] transition-colors ${
+                on
+                  ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
+                  : open
+                    ? 'bg-rose-950/70 text-rose-200 hover:bg-rose-900/70'
+                    : 'bg-stone-900 text-stone-600 hover:bg-stone-800'
               }`}
               title={frenzy.notes ?? undefined}
+              // An unmet gate still arms. teller shows the Warden where
+              // the line is and lets them cross it (rule 1) — a chip that
+              // dims is a warning, never a lock.
+              onClick={() =>
+                onArm(
+                  on
+                    ? undefined
+                    : {
+                        id: frenzy.id,
+                        name: frenzy.name,
+                        frenzy: true,
+                        inflicts: frenzy.lists?.inflicts ?? [],
+                        ...(frenzy.notes ? { note: frenzy.notes } : {}),
+                      },
+                )
+              }
             >
               {frenzy.name}
               {gate && (
@@ -103,7 +158,7 @@ function DoesRow({ acting }: { acting: Template }) {
                   {open ? 'ready' : `at ${gate.at} ${gate.counter.toLowerCase()}`}
                 </span>
               )}
-            </span>
+            </button>
           );
         })}
       </div>
@@ -119,6 +174,17 @@ export function TurnStage({
   statuses,
   accent,
   onWrite,
+  armed,
+  onArm,
+  order,
+  sheetOf,
+  dice,
+  icons,
+  pins,
+  conditionsList = 'conditions',
+  conditionCap,
+  costCounter,
+  onWriteTo,
 }: {
   /** The acting entity, RESOLVED — a thin stamp's template values are facts. */
   acting: Template;
@@ -129,6 +195,19 @@ export function TurnStage({
   /** The party accent for this trade, if the system declared one. Foes get red. */
   accent?: string;
   onWrite: (edit: EntryWrite) => void;
+  /** What's armed, held by the caller so it survives this component. */
+  armed?: Armed;
+  onArm: (armed: Armed | undefined) => void;
+  /** Everyone in the order — who the armed action can land on. */
+  order: Combatant[];
+  sheetOf: (id: string) => Entity | undefined;
+  dice: DiceRecord | undefined;
+  icons?: Record<string, string>;
+  pins?: Record<string, string[]>;
+  conditionsList?: string;
+  conditionCap?: number;
+  costCounter?: string;
+  onWriteTo: (entityId: string, edit: EntryWrite) => Promise<unknown>;
 }) {
   const foe = acting.type === 'foe';
   const conditions = acting.lists?.conditions ?? [];
@@ -221,7 +300,30 @@ export function TurnStage({
           </div>
         )}
 
-        <DoesRow acting={acting} />
+        <DoesRow acting={acting} armed={armed} onArm={onArm} costCounter={costCounter} />
+
+        {/* Armed: the exchange opens under the chips, keyed on what was
+            armed so arming something else starts a clean one rather than
+            inheriting the last turn's dice. */}
+        {armed && (
+          <Exchange
+            key={armed.id}
+            actor={acting as Entity}
+            armed={armed}
+            order={order}
+            sheetOf={sheetOf}
+            dice={dice}
+            icons={icons}
+            pins={pins}
+            statuses={statuses}
+            conditionsList={conditionsList}
+            conditionCap={conditionCap}
+            costCounter={costCounter}
+            round={round}
+            onWrite={onWriteTo}
+            onDisarm={() => onArm(undefined)}
+          />
+        )}
 
         {/* And what it IS, right here. Same renderer the bestiary dialog
             uses — one statblock, two places, no chance of them drifting

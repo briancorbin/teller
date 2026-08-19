@@ -21,6 +21,7 @@ import { dirname, extname, join, normalize, resolve as resolvePath } from 'node:
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { toEntity, type Ref } from '../core/entity.ts';
+import { toExchangeRecord, toRollRecord } from '../core/exchange.ts';
 import {
   createCampaign,
   isDisplayRole,
@@ -1069,6 +1070,38 @@ export async function handleApi(
       session.putBoardState(a, body.data ?? null, actorOf(auth, String(body.actor ?? '')));
       return reply(200, { ok: true });
     }
+  }
+
+  // -- the record doors (rule 3, and the runner's half of it) ----------
+  //
+  // Both of these RECORD and nothing else. The values a turn moves are
+  // moved through the ordinary entry door, one at a time, so every one
+  // of them is a number a stepper can move back and the log already
+  // carries each write. What the log could NOT say is what the dice
+  // showed and what the arithmetic was, and a fight nobody can replay is
+  // a fight the log only half kept. Same posture as the old world's
+  // `/moved`: records only — if one of these is lost, the table is still
+  // exactly where the Warden put it and only the history is thinner.
+
+  if (method === 'POST' && head === 'rolls' && !a) {
+    if (!canDm(auth)) return denied();
+    const record = toRollRecord(await bodyOf(req));
+    if (!record) return reply(400, { error: 'a roll needs its pool' });
+    session.campaign.append(record.by ?? null, actorOf(auth), 'dice.rolled', record);
+    session.changed('events');
+    return reply(200, { ok: true });
+  }
+
+  if (method === 'POST' && head === 'exchange' && !a) {
+    if (!canDm(auth)) return denied();
+    const record = toExchangeRecord(await bodyOf(req));
+    if (!record) return reply(400, { error: 'an exchange needs its actor' });
+    // Filed against the one it happened TO — which for a turn aimed at
+    // nobody is the one who took it, so a creature's own turns can never
+    // age out from under it.
+    session.campaign.append(record.target ?? record.by, actorOf(auth), 'turn.resolved', record);
+    session.changed('events');
+    return reply(200, { ok: true });
   }
 
   if (method === 'GET' && head === 'events' && !a) {

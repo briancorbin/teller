@@ -35,6 +35,24 @@ export function expandPool(pool: string): string[] {
   return out;
 }
 
+/**
+ * Several pools as one — ported unchanged from the old app. Defense is
+ * additive wherever a system says it is, and a target holding two of
+ * them rolls one handful, not two.
+ */
+export function combinePools(pools: string[]): string {
+  const counts = new Map<string, number>();
+  for (const pool of pools) {
+    for (const letter of expandPool(pool)) {
+      counts.set(letter, (counts.get(letter) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([letter, n]) => `${n}${letter}`)
+    .join('');
+}
+
 /** Whether a string is a pool at all — "2B1G" yes, "Normal" no. */
 export function isPool(text: string): boolean {
   return /^(?:\d+[A-Za-z])+$/.test(text.replace(/\s+/g, ''));

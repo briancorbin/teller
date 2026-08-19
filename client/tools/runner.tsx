@@ -11,12 +11,14 @@
 //   * the controls under it: back, next turn, end;
 //   * and setup folded to one line the moment a fight is running.
 //
-// Two things the old panel had are deliberately elsewhere or absent.
-// The ✦ box is a `ProviderSlot` — this file names a POINT ('propose.turn')
-// and cannot learn what provides it, so a host with no plugin renders no
-// box at all. The target/dice/resolve flow is WiW's own machinery and
-// has not been ported; the stage says what it shows and nothing pretends
-// to roll for you but initiative.
+// One thing the old panel had is deliberately elsewhere: the ✦ box is a
+// `ProviderSlot` — this file names a POINT ('propose.turn') and cannot
+// learn what provides it, so a host with no plugin renders no box at
+// all. The target/dice/resolve flow that used to live inside that box
+// does NOT depend on it: arming an action is a tap on the stage, and the
+// exchange runs identically with every plugin turned off. What the
+// runner hands down is what the fight needs and this file doesn't know —
+// the order, the sheets, and the system's own records (dice, pins, use).
 //
 // Also owns the 'turn' BLOCK (entity panels' slice of the same state):
 // a seat's own sheet can show "you're up" without importing this whole
@@ -33,6 +35,7 @@ import { ProviderSlot } from '../components/ProviderSlot.tsx';
 import { VitalBar } from '../components/Vitals.tsx';
 import {
   TurnStage,
+  type Armed,
   type EntryWrite,
   type StatusDecl,
 } from '../components/encounters/TurnStage.tsx';
@@ -47,6 +50,24 @@ import { registerTool } from './index.ts';
 // rather than hardcoding "finesse" is what makes this generic: a
 // different system's row changes the record, not this file.
 type InitiativeRecord = { field?: string; highWins?: boolean };
+
+/**
+ * The `use` record — what an action is paid out of. Already declared for
+ * the carried screens' fire button; the runner needs the same counter,
+ * which is what keeps a cost from being a word spelled in this file.
+ */
+type UseRecord = { costCounter?: string };
+
+/** Enough of a kind declaration to read a list's ceiling off it. */
+type KindDecl = { name: string; domain?: { kind?: string; cap?: number } };
+
+/**
+ * Which list a hung condition is written to — the same word the stage
+ * already draws its status chips from, and the one the system declares a
+ * kind for (its label and its ceiling ride that declaration, so the
+ * VOCABULARY is the pack's; only the slot is spelled here).
+ */
+const CONDITIONS = 'conditions';
 
 // ---- the shape of /api/turn (server/turn.ts) — mirrored, not imported:
 // the server module isn't otherwise part of the client's dependency
@@ -127,8 +148,14 @@ function RunnerTool() {
   const initiative = useLive(() => api<InitiativeRecord>('/api/stack/record/initiative'), []);
   const statuses = useLive(() => api<StatusDecl[]>('/api/stack/declarations/statuses'), []);
   const accents = useLive(() => api<Record<string, string>>('/api/stack/record/accents'), []);
+  const icons = useLive(() => api<Record<string, string>>('/api/stack/record/icons'), []);
+  const pins = useLive(() => api<Record<string, string[]>>('/api/stack/record/pins'), []);
+  const use = useLive(() => api<UseRecord>('/api/stack/record/use'), []);
+  const kinds = useLive(() => api<KindDecl[]>('/api/stack/declarations/kinds'), []);
   const displays = useLive(() => api<Display[]>('/api/displays'), []);
   const [draft, setDraft] = useState('');
+  /** What the acting thing is about to do. Cleared when the turn moves. */
+  const [armed, setArmed] = useState<Armed | undefined>(undefined);
   const [rollingFoes, setRollingFoes] = useState(false);
   /** Setup, while a fight is running — closed by default, on purpose. */
   const [setupOpen, setSetupOpen] = useState(false);
@@ -153,7 +180,17 @@ function RunnerTool() {
   );
   const sheetOf = (id: string | undefined) => (id ? sheets.data?.[id] : undefined);
 
-  const op = (o: TurnOp) => api('/api/turn', { body: o }).then(turn.reload);
+  /** The declared ceiling for hung conditions, presented and never enforced. */
+  const conditionCap = (kinds.data ?? []).find((k) => k.name.toLowerCase() === CONDITIONS)?.domain
+    ?.cap;
+
+  const op = (o: TurnOp) => {
+    // Walking the order puts down whatever was armed: an action belongs
+    // to the turn that armed it, and carrying one forward is how a
+    // creature ends up swinging somebody else's attack.
+    if (o.op === 'next' || o.op === 'prev' || o.op === 'end') setArmed(undefined);
+    return api('/api/turn', { body: o }).then(turn.reload);
+  };
 
   const writeEntry = (entityId: string, edit: EntryWrite) =>
     api(`/api/entities/${entityId}/entry`, { body: edit }).then(sheets.reload);
@@ -556,6 +593,7 @@ function RunnerTool() {
             {running && acting && actingSheet ? (
               <>
                 <TurnStage
+                  key={actingSheet.id}
                   acting={actingSheet}
                   index={turn.data!.turn!}
                   total={order.length}
@@ -563,6 +601,22 @@ function RunnerTool() {
                   statuses={statuses.data ?? []}
                   accent={actingSheet.type ? accents.data?.[actingSheet.type] : undefined}
                   onWrite={(edit) => writeEntry(actingSheet.id, edit)}
+                  armed={armed}
+                  onArm={setArmed}
+                  order={order
+                    .filter((e) => e.entityId)
+                    .map((e) => ({
+                      id: e.entityId!,
+                      label: e.label ?? names.get(e.entityId!) ?? '?',
+                    }))}
+                  sheetOf={(id) => sheets.data?.[id]}
+                  dice={dice.data}
+                  icons={icons.data}
+                  pins={pins.data}
+                  conditionsList={CONDITIONS}
+                  conditionCap={conditionCap}
+                  costCounter={use.data?.costCounter}
+                  onWriteTo={writeEntry}
                 />
                 {/* A player's turn gets no proposal, and the stage says
                     why rather than going blank. teller does not play
@@ -599,6 +653,18 @@ function RunnerTool() {
                 point="propose.turn"
                 ask="what would they do?"
                 placeholder="…or tell it what they do, and press enter"
+                // Arming something IS a decision, so it goes over as the
+                // thing to work around rather than a hint — the old app's
+                // own move ("if I want to just say that I think it would
+                // use the frenzy attack now because I decided, but I
+                // still want the rest"). The flow above never reads this
+                // back: with no plugin there is no box, and the exchange
+                // runs exactly the same.
+                payload={() =>
+                  armed
+                    ? { intent: [armed.name, armed.note].filter(Boolean).join(' — ') }
+                    : {}
+                }
               />
             )}
           </div>

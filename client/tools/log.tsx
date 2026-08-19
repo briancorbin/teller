@@ -70,6 +70,30 @@ function describe(e: EventRow, names: Map<string, string>): string {
       return `board updated`;
     case 'board.cleared':
       return `board cleared`;
+    // The two the runner files. A roll and an exchange are the only
+    // events that describe themselves rather than a row's before/after,
+    // which is what makes a fight replayable from this list.
+    case 'dice.rolled':
+      return `${String(p.byName ?? who ?? 'someone')} rolled ${String(p.pool ?? '')}${
+        Array.isArray(p.faces) && p.faces.length ? ` — ${p.faces.join(', ')}` : ''
+      } = ${String(p.total ?? 0)}${p.unit ? ` ${String(p.unit)}` : ''}${
+        p.for ? ` (${String(p.for)})` : ''
+      }`;
+    case 'turn.resolved': {
+      const vital = p.vital as { name?: string; from?: number; to?: number } | undefined;
+      const hung = (p.statuses as { name: string; severity: number }[] | undefined) ?? [];
+      const spent = (p.spend as { counter: string; amount: number; on?: string }[] | undefined) ?? [];
+      const parts = [
+        `${String(p.byName ?? who ?? 'someone')} — ${String(p.action ?? 'a turn')}`,
+        ...(p.targetName
+          ? [`${String(p.hits ?? 0)} − ${String(p.blocked ?? 0)} = ${String(p.damage ?? 0)} on ${String(p.targetName)}`]
+          : []),
+        ...(vital?.name ? [`${vital.name} ${String(vital.from)} → ${String(vital.to)}`] : []),
+        ...(hung.length ? [hung.map((s) => `${s.name} ${s.severity}`).join(', ')] : []),
+        ...spent.filter((s) => s.amount > 0).map((s) => `${s.amount} ${s.counter} on ${s.on ?? 'it'}`),
+      ];
+      return parts.join(' · ');
+    }
     case 'turn.updated':
       return p.op ? `turn: ${String(p.op)}` : 'turn order changed';
     case 'campaign.created':
