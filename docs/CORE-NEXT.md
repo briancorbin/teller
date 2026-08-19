@@ -1096,6 +1096,29 @@ late — Brian pulled it forward the moment its precondition existed):
   the stack, verified live); the `.panel` stays arrangement only,
   never palette, so restating a panel can't fork the look.
 
+### I · Statblock semantics — SETTLED (2026-08-18, Brian): attacks are entities
+
+Found by the console port: the WiW converter flattened every foe's
+attacks into ONE `traits` entry whose value is prose — "Melee — Big
+Foot (3 Grit): 2B2G damage + Dazed [2] · …" — five machine-relevant
+facts per attack (band, name, cost, pool, inflicted status) hiding in
+a text field, the recurring bug by its textbook definition. The old
+world regex-parsed it back apart (`src/lib/statblock.ts`); the new
+world does not get a parser.
+
+Brian, 2026-08-18: **model attacks as actual entities. Words as
+words, mechanics as structured info.** §9's own line decides the
+shape — anything richer than a name, a value and a ceiling was an
+entity all along — so an attack is a CHILD entity of the foe
+template, with its own little lists (cost, pool, damage, inflicts);
+the statblock renders semantically with zero parsing, and a runner
+can offer the attack (propose, never decide — rule 1). The book's own
+wording — Features, Trophies, flavor — stays prose and renders as
+prose. The fix site is the CONVERTER (re-runnable by design), plus
+the statblock renderer learning attack children; design the attack
+shape against SYSTEMS.md's actual WiW attack grammar before writing
+it.
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
