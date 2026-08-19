@@ -11,8 +11,10 @@
 // own file — this is the only place in the new client that needs them,
 // and a `Counter`-shaped `shared.tsx` had nothing left to share.
 
+import { useState } from 'react';
 import type { Entry } from '../../core/entity.ts';
 import { expandPool, type DiceRecord } from '../lib/dice.ts';
+import type { RuleHit } from '../lib/rules.ts';
 import { Starburst } from './sheet/SheetPanel.tsx';
 
 // ---- shared primitives (ported from counters/shared.tsx) --------------
@@ -237,6 +239,13 @@ function Slot({ die, bonus }: { die?: string; bonus?: boolean }) {
  * `panels/blocks.tsx`, doesn't fetch or pass the record yet — this
  * renders exactly as before: one plain box per die, no starburst, no
  * bonus. `dice` and `marked` are additive, never required.
+ *
+ * `lookup` is additive too (rules-lookup): the printed sheet never had
+ * a lookup at all, so a matching entry turns the name into a button —
+ * tap it for the pack's own text on Charm, Finesse, whatever the
+ * system calls its skills. Popped as a bounded, absolutely-positioned
+ * overlay (rule 6 — mounted glass never scrolls, so opening one must
+ * never reflow the row beneath it).
  */
 export function SkillRow({
   entry,
@@ -245,13 +254,16 @@ export function SkillRow({
   /** This skill's Talent is bought — the ✶ box fills (see the `marks` record). */
   marked = false,
   markTitle,
+  lookup,
 }: {
   entry: Entry;
   accent?: string;
   dice?: DiceRecord;
   marked?: boolean;
   markTitle?: string;
+  lookup?: (name: string) => RuleHit | undefined;
 }) {
+  const [open, setOpen] = useState(false);
   const value = typeof entry.value === 'string' ? entry.value : String(entry.value ?? '');
   const owned = /^(?:\d+[A-Za-z])+$/.test(value.replace(/\s+/g, '')) ? expandPool(value) : [];
   const declared = dice?.track ?? 0;
@@ -259,15 +271,43 @@ export function SkillRow({
   // drawing empty boxes under "Normal" and throwing the word away.
   const slots = owned.length ? Math.max(declared, owned.length) : 0;
   const bonus = dice?.trackBonus ?? 0;
+  const hit = lookup?.(entry.name);
 
   return (
-    <div className="flex items-center gap-2.5 py-1">
-      <span
-        className="w-[7.5rem] shrink-0 break-words rounded px-1 py-0.5 text-right text-[1rem] font-bold uppercase leading-tight tracking-wide"
-        style={{ color: accent ?? 'var(--sheet-accent, #f59e0b)' }}
-      >
-        {entry.name}
-      </span>
+    <div className="relative flex items-center gap-2.5 py-1">
+      {hit ? (
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={`what does ${entry.name} do`}
+          className="w-[7.5rem] shrink-0 break-words rounded px-1 py-0.5 text-right text-[1rem] font-bold uppercase leading-tight tracking-wide transition-colors hover:bg-stone-800/60"
+          style={{ color: accent ?? 'var(--sheet-accent, #f59e0b)' }}
+        >
+          {entry.name}
+        </button>
+      ) : (
+        <span
+          className="w-[7.5rem] shrink-0 break-words rounded px-1 py-0.5 text-right text-[1rem] font-bold uppercase leading-tight tracking-wide"
+          style={{ color: accent ?? 'var(--sheet-accent, #f59e0b)' }}
+        >
+          {entry.name}
+        </span>
+      )}
+      {open && hit && (
+        <div className="absolute left-0 top-full z-20 mt-1 max-h-40 w-64 max-w-[85vw] overflow-y-auto rounded-lg border border-amber-900/60 bg-stone-950 p-3 shadow-xl">
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-medium text-amber-200">{hit.name}</span>
+            {hit.meta && <span className="font-mono text-xs text-amber-400">{hit.meta}</span>}
+            <span className="ml-auto text-[10px] uppercase tracking-wider text-stone-600">
+              {hit.section}
+            </span>
+          </div>
+          <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-stone-300">
+            {hit.text}
+          </p>
+        </div>
+      )}
       <div className="w-px self-stretch bg-stone-600" />
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
         {slots ? (

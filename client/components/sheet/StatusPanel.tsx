@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { RuleHit } from '../../lib/rules.ts';
 import { SheetPanel } from './SheetPanel.tsx';
 
 // The STATUSES block: the whole declared list, always, with a number in
@@ -9,6 +10,13 @@ import { SheetPanel } from './SheetPanel.tsx';
 // **Nothing in this file is WiW.** The declared list comes off the
 // system's own `statuses` declaration (name/relief/effect); a host with
 // none renders no panel and still plays.
+//
+// `lookup` is additive (TEL rules-lookup): a status the declaration
+// carries no `effect` for can still open the pack's own Statuses
+// section entry, when there is one — same fallback the old
+// `TagSection` used for tags. Popped as an ABSOLUTE overlay, not
+// inline, so opening it never pushes mounted glass into overflow
+// (rule 6 — mounted never scrolls).
 
 export type StatusDecl = { name: string; relief?: string; effect?: string };
 
@@ -25,15 +33,20 @@ function StatusRow({
   onSet,
   open,
   onToggleInfo,
+  hasInfo,
+  info,
 }: {
   row: Row;
   onSet: (next: number) => void;
   open: boolean;
   onToggleInfo: () => void;
+  hasInfo: boolean;
+  /** What to show when open — the declared effect, or a rule-lookup fallback. */
+  info?: { meta?: string; section?: string; text: string };
 }) {
   const on = row.severity > 0;
   return (
-    <div className="flex items-center gap-1.5 py-0.5">
+    <div className="relative flex items-center gap-1.5 py-0.5">
       <button
         type="button"
         disabled={!on}
@@ -59,10 +72,10 @@ function StatusRow({
 
       <button
         type="button"
-        disabled={!row.effect}
+        disabled={!hasInfo}
         onClick={onToggleInfo}
         aria-expanded={open}
-        aria-label={row.effect ? `what does ${row.name} do` : row.name}
+        aria-label={hasInfo ? `what does ${row.name} do` : row.name}
         className="min-w-0 flex-1 rounded px-1 py-0.5 text-left transition-colors enabled:hover:bg-stone-800/60 disabled:cursor-default"
       >
         <span
@@ -79,6 +92,29 @@ function StatusRow({
           </span>
         )}
       </button>
+
+      {/* A bounded overlay off the ROW, not the panel — opening it must
+          never push mounted glass into overflow (rule 6), and pinning it
+          to the row (rather than the panel's bottom edge) keeps it out
+          of a clipped panel's dead zone for every row but the last. */}
+      {open && info && (
+        <div className="absolute left-6 right-0 top-full z-20 mt-0.5 max-h-32 overflow-y-auto rounded-lg border border-amber-900/60 bg-stone-950 p-3 shadow-xl">
+          <div className="flex items-baseline gap-2">
+            <span className="text-sm font-medium text-amber-200">{row.name}</span>
+            {(row.relief || info.meta) && (
+              <span className="font-mono text-xs text-amber-400">{row.relief ?? info.meta}</span>
+            )}
+            {info.section && (
+              <span className="ml-auto text-[10px] uppercase tracking-wider text-stone-600">
+                {info.section}
+              </span>
+            )}
+          </div>
+          <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-stone-300">
+            {info.text}
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -90,6 +126,7 @@ export function StatusPanel({
   title = 'Statuses',
   note,
   fill = false,
+  lookup,
 }: {
   /** The system's own declared statuses — empty means no panel. */
   declared: StatusDecl[];
@@ -99,6 +136,8 @@ export function StatusPanel({
   title?: string;
   note?: string;
   fill?: boolean;
+  /** Rule-entry lookup, additive — a status with no matching entry opens nothing. */
+  lookup?: (name: string) => RuleHit | undefined;
 }) {
   const [openInfo, setOpenInfo] = useState<string | null>(null);
 
@@ -131,35 +170,29 @@ export function StatusPanel({
     else onWrite({ name, value: next });
   };
 
-  const shown = openInfo ? rows.find((r) => r.name === openInfo) : undefined;
+  const allRows = [...rows, ...loose];
+
+  const infoFor = (row: Row) => {
+    if (row.effect) return { text: row.effect };
+    const hit = lookup?.(row.name);
+    return hit ? { meta: hit.meta, section: hit.section, text: hit.text } : undefined;
+  };
 
   return (
-    <SheetPanel title={title} note={note} fill={fill} className="relative">
+    <SheetPanel title={title} note={note} fill={fill}>
       <div className="divide-y divide-stone-800/70">
-        {[...rows, ...loose].map((row) => (
+        {allRows.map((row) => (
           <StatusRow
             key={row.name}
             row={row}
             onSet={(next) => set(row.name, next)}
             open={openInfo === row.name}
             onToggleInfo={() => setOpenInfo(openInfo === row.name ? null : row.name)}
+            hasInfo={Boolean(row.effect || lookup?.(row.name))}
+            info={openInfo === row.name ? infoFor(row) : undefined}
           />
         ))}
       </div>
-
-      {shown?.effect && (
-        <div className="mt-2 rounded-lg border border-amber-900/60 bg-stone-900 p-3">
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-medium text-amber-200">{shown.name}</span>
-            {shown.relief && (
-              <span className="font-mono text-xs text-amber-400">{shown.relief}</span>
-            )}
-          </div>
-          <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-stone-300">
-            {shown.effect}
-          </p>
-        </div>
-      )}
     </SheetPanel>
   );
 }

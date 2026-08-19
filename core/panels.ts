@@ -212,4 +212,5 @@ export const STANDARD_PANELS: PanelDef[] = [
   tool('plugins', 'Plugins', 'Discovered on disk; enabled only by you, here.'),
   tool('boards', 'Boards', 'The maps and their live placements.'),
   tool('log', 'Log', 'Everything that happened, newest first (rule 3, readable).'),
+  tool('rules', 'Rules', 'The book, searchable — a status, an action, a page.'),
 ];

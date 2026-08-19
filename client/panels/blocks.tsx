@@ -11,6 +11,7 @@ import type { PanelBlock } from '../../core/panels.ts';
 import { api, fileUrl } from '../lib/api.ts';
 import { card, sectionLabel } from '../lib/ui.ts';
 import type { DiceRecord } from '../lib/dice.ts';
+import { useRuleLookup } from '../lib/rules.ts';
 import { CounterStepper } from '../components/Vitals.tsx';
 import { TagSection } from '../components/TagSection.tsx';
 import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters.tsx';
@@ -191,6 +192,35 @@ function AutoEntry({
   );
 }
 
+/**
+ * The `rows` skills list, wrapped so it can call `useRuleLookup` — the
+ * `list` block's own registration is a plain function, not a component,
+ * and hooks need one (same reason `StatusesBlock`/`HeaderBlock` exist
+ * as their own components below).
+ */
+function RowsBlock({
+  title,
+  entries,
+  accent,
+  dice,
+}: {
+  title: string;
+  entries: Entry[];
+  accent?: string;
+  dice?: DiceRecord;
+}) {
+  const lookup = useRuleLookup();
+  return (
+    <SheetPanel title={title} className="w-full">
+      <div className="divide-y divide-stone-800/80">
+        {entries.map((entry) => (
+          <SkillRow key={entry.name} entry={entry} accent={accent} dice={dice} lookup={lookup} />
+        ))}
+      </div>
+    </SheetPanel>
+  );
+}
+
 registerBlock('list', (block, ctx) => {
   const e = subject(ctx);
   const name = typeof block.list === 'string' ? block.list : '';
@@ -234,18 +264,12 @@ registerBlock('list', (block, ctx) => {
   if (as === 'rows') {
     if (!entries.length) return null;
     return (
-      <SheetPanel title={titleCase(name)} className="w-full">
-        <div className="divide-y divide-stone-800/80">
-          {entries.map((entry) => (
-            <SkillRow
-              key={entry.name}
-              entry={entry}
-              accent={accent}
-              dice={ctx.records.dice as DiceRecord | undefined}
-            />
-          ))}
-        </div>
-      </SheetPanel>
+      <RowsBlock
+        title={titleCase(name)}
+        entries={entries}
+        accent={accent}
+        dice={ctx.records.dice as DiceRecord | undefined}
+      />
     );
   }
 
@@ -379,6 +403,7 @@ registerBlock('list', (block, ctx) => {
 
 function StatusesBlock({ ctx }: { ctx: BlockCtx }) {
   const e = subject(ctx);
+  const lookup = useRuleLookup();
   const [decls, setDecls] = useState<StatusDecl[] | undefined>(undefined);
   useEffect(() => {
     let cancelled = false;
@@ -402,6 +427,7 @@ function StatusesBlock({ ctx }: { ctx: BlockCtx }) {
       declared={decls}
       entries={entries}
       onWrite={(edit) => ctx.write?.({ list: 'conditions', ...edit })}
+      lookup={lookup}
     />
   );
 }
@@ -692,6 +718,7 @@ import '../tools/shelf.tsx';
 import '../tools/plugins.tsx';
 import '../tools/boards.tsx';
 import '../tools/log.tsx';
+import '../tools/rules.tsx';
 
 registerBlock('tool', (block, ctx) => {
   const name = typeof block.tool === 'string' ? block.tool : '';
