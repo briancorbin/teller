@@ -762,6 +762,10 @@ export class Shelf {
     return out;
   }
 
+  removePack(id: string): void {
+    this.#db.prepare('DELETE FROM packs WHERE id = ?').run(id);
+  }
+
   packsFor(system: string): string[] {
     const rows = this.#db
       .prepare('SELECT id FROM packs WHERE system = ? ORDER BY created_at, id')
