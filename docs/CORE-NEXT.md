@@ -811,6 +811,9 @@ build to the same seam:
   default-exports a component receiving the BlockCtx props. This is
   the promotion §E said would happen "deliberately, later" — later is
   now, and the seam freezes as it stands.
+- **A panel never carries the data it renders** (Brian, 2026-08-19,
+  confirming the seam). Entity, records, catalog — all arrive through
+  the props contract; the folder owns look and behavior, never facts.
 
 **E extended again (2026-08-18, Brian): the defaults are `.panel`
 files too, and a panel owns its assets.**
