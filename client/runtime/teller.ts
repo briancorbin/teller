@@ -17,6 +17,12 @@ export * from '../lib/ui.ts';
 export { api, fileUrl } from '../lib/api.ts';
 export { useLive } from '../lib/use-session.ts';
 
+// The two declaration readers every standard sheet block already uses:
+// the pack's caption under a heading, and its rule text by name. A
+// custom block that couldn't reach these could not reproduce the sheet
+// it's replacing a piece of — the captions ARE the sheet.
+export { usePanelNote, useRuleLookup } from '../lib/rules.ts';
+
 // -- ported primitives ----------------------------------------------------------
 export { VitalBar, CounterStepper } from '../components/Vitals.tsx';
 export { TagSection } from '../components/TagSection.tsx';
@@ -34,7 +40,7 @@ export * from '../components/items/Track.tsx';
 export * from '../components/items/Purse.tsx';
 
 // -- the blocks helpers already exported from panels/blocks.tsx --------------
-export { entryNamed, accentOf, dialOf, pinsOf, shaped } from '../panels/blocks.tsx';
+export { entriesOf, entryNamed, accentOf, dialOf, pinsOf, shaped } from '../panels/blocks.tsx';
 
 // -- the render seam (client/panels/render.tsx) ------------------------------
 export { registerBlock, Refusal, RenderBlock, PanelSurface } from '../panels/render.tsx';
