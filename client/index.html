@@ -7,6 +7,25 @@
   </head>
   <body>
     <div id="root"></div>
+    <!--
+      The rung-4 import map (§E UN-DEFERRED, docs/CORE-NEXT.md): panel
+      code compiled by the sweep (core/panels-shelf.ts, EXTERNAL)
+      imports these three bare specifiers, and only these resolve.
+      `/runtime-*.js` is a stable, unhashed build output
+      (vite.client.config.ts) in prod; in dev the same urls are
+      answered by a small middleware in that same config that
+      transforms `client/runtime/*.ts` through Vite's normal pipeline
+      — one set of urls either way, documented there.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "/runtime-react.js",
+          "react/jsx-runtime": "/runtime-jsx-runtime.js",
+          "teller": "/runtime-teller.js"
+        }
+      }
+    </script>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>

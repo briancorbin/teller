@@ -14,6 +14,7 @@ import { registerTool } from './index.ts';
 import { api } from '../lib/api.ts';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
+import type { PanelDef } from '../../core/panels.ts';
 
 type PluginManifest = { id: string; name: string; version: number; provides: string[]; needs: string[] };
 type Found = { dir: string; manifest: PluginManifest; enabled: boolean };
@@ -111,7 +112,38 @@ function PluginRow({
   );
 }
 
-function PluginsTool() {
+/** A `.panel` folder that compiled code but has no trust row yet (§E
+ * UN-DEFERRED: "trust rides the plugins table" — the SAME toggle a
+ * plugin uses, `POST /api/plugins/<pan_id>`, just aimed at a `pan_`
+ * id instead of a plugin's manifest id). Enabling it reloads the
+ * content stack server-side, so the next `declarations/panels` fetch
+ * carries `code` instead of `codePending`. */
+function PendingPanelRow({ panel, onChanged }: { panel: PanelDef; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const enable = async () => {
+    if (!panel.id) return;
+    setBusy(true);
+    try {
+      await api(`/api/plugins/${panel.id}`, { method: 'POST', body: { enabled: true } });
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-md border border-stone-800 bg-stone-900/60 px-3 py-2">
+      <span className="text-sm text-stone-100">{panel.label ?? panel.name}</span>
+      <span className="font-mono text-[11px] text-stone-600">{panel.name}</span>
+      <span className="ml-auto">
+        <button className={btnPrimary} disabled={busy || !panel.id} onClick={enable}>
+          enable
+        </button>
+      </span>
+    </li>
+  );
+}
+
+function PluginsSection() {
   const { data, reload } = useLive(() => api<PluginsOut>('/api/plugins'), []);
   if (!data) return null;
 
@@ -162,4 +194,37 @@ function PluginsTool() {
   );
 }
 
-registerTool('plugins', () => <PluginsTool />);
+/** A `.panel` with compiled code and no trust row — same sweep-discovers,
+ * human-enables posture as the plugin list above, just over the panel
+ * declaration collection instead of `/api/plugins` (§E: "trust rides
+ * the plugins table" — one table, two kinds of thing riding it). */
+function PendingPanelCode() {
+  const { data, reload } = useLive(() => api<PanelDef[]>('/api/stack/declarations/panels'), []);
+  const pending = (data ?? []).filter((p) => p.codePending);
+  if (!pending.length) return null;
+
+  return (
+    <section className={`${card} space-y-3`}>
+      <div className="flex items-center justify-between">
+        <span className={sectionLabel}>Panel code awaiting enablement</span>
+        <span className="font-mono text-[11px] text-stone-600">{pending.length}</span>
+      </div>
+      <ul className="space-y-2">
+        {pending.map((p) => (
+          <PendingPanelRow key={p.id ?? p.name} panel={p} onChanged={reload} />
+        ))}
+      </ul>
+      <p className="text-[11px] text-stone-600">
+        a `.panel` folder compiled code the sweep found but nobody's enabled yet —
+        same trust table as a plugin, just naming a `pan_` id instead.
+      </p>
+    </section>
+  );
+}
+
+registerTool('plugins', () => (
+  <div className="space-y-4">
+    <PluginsSection />
+    <PendingPanelCode />
+  </div>
+));
