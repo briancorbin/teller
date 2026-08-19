@@ -27,42 +27,29 @@ import { onNudge } from '../../lib/use-session.ts';
 import { entriesOf, entryNamed, shaped } from '../../panels/blocks.tsx';
 import { Glyph } from '../sheet/glyphs.tsx';
 import { PanelSurface, type BlockCtx, type Glass } from '../../panels/render.tsx';
+import type { ScreenDecl } from '../items/types.ts';
 
 type Records = Record<string, Record<string, unknown>>;
 
-const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'groups', 'dice', 'marks'];
-
-/** The system's own carried-things screens (`SystemTemplate.screens`,
- * ported) — Weapons, Abilities, Inventory for WiW. `/api/stack/declarations/screens`,
- * not `record/screens`: the record endpoint doesn't resolve this slot
- * yet (it comes back `{}`), while the merged declaration does — same
- * gap class as `notes` almost had. */
-type ScreenDecl = {
-  name: string;
-  icon?: string;
-  kinds?: string[];
-  counters?: string[];
-  arms?: boolean;
-  rest?: boolean;
-};
+const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'currency', 'icons', 'groups', 'dice', 'marks'];
 
 /** Every declared screen's own claimed counters, lower-cased, in one set. */
 function screenClaims(screens: ScreenDecl[]): Set<string> {
   return new Set(screens.flatMap((s) => s.counters ?? []).map((n) => n.toLowerCase()));
 }
 
-/** The `items arrive with the inventory port` note (fix 1) — teller's
- * own honest word about what isn't built yet, never pack content, so
- * it's safe to author here rather than reading it off a declaration. */
-const NO_ITEMS_YET = 'items arrive with the inventory port';
+/** Every kind ANY declared screen claims — what a `rest` screen (Inventory) catches is what's left over. */
+function allClaimedKinds(screens: ScreenDecl[]): string[] {
+  return [...new Set(screens.flatMap((s) => s.kinds ?? []).map((k) => k.toLowerCase()))];
+}
 
-/** A synthetic PanelDef for one declared screen — its claimed counters
- * (drawn the same way the Sheet screen's ledger rows are) plus the
- * honest note, since the items subsystem behind `kinds` isn't built. */
-function carriedPanel(screen: ScreenDecl): PanelDef {
+/** A synthetic PanelDef for one declared screen — the `carried` block
+ * (`client/panels/blocks.tsx` → `client/components/items/Screen.tsx`)
+ * does the actual work: weapon/ability/ammo/gear tiles, the chamber
+ * select and trigger, the purse. */
+function carriedPanel(screen: ScreenDecl, allScreens: ScreenDecl[]): PanelDef {
   const blocks: PanelBlock[] = [
-    { block: 'list', list: 'resources', filter: 'named', names: screen.counters ?? [], as: 'ledger' },
-    { block: 'aside', text: NO_ITEMS_YET },
+    { block: 'carried', screen, claimedKinds: allClaimedKinds(allScreens) },
   ];
   return { name: screen.name, subject: 'entity', mounted: blocks, held: blocks };
 }
@@ -402,7 +389,7 @@ export function SeatChrome({
   const tabs: Tab[] = sheetPanel
     ? [
         { name: 'Sheet', icon: 'sheet', panel: sheetPanel },
-        ...screenDecls.map((s) => ({ name: s.name, icon: s.icon, panel: carriedPanel(s) })),
+        ...screenDecls.map((s) => ({ name: s.name, icon: s.icon, panel: carriedPanel(s, screenDecls) })),
         ...(hasSpare ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed) }] : []),
       ]
     : [];

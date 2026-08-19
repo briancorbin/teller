@@ -20,6 +20,8 @@ import { HealthPanel } from '../components/sheet/HealthPanel.tsx';
 import { SheetPanel } from '../components/sheet/SheetPanel.tsx';
 import { StatusPanel, type StatusDecl } from '../components/sheet/StatusPanel.tsx';
 import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
+import { CarriedScreen } from '../components/items/Screen.tsx';
+import type { ScreenDecl } from '../components/items/types.ts';
 
 /** 'skills' → 'Skills'. The one heading this file supplies rather than reads off a pack. */
 function titleCase(name: string): string {
@@ -499,6 +501,21 @@ registerBlock('aside', (block, _ctx) => {
   const text = typeof block.text === 'string' ? block.text : '';
   return text ? <Refusal>{text}</Refusal> : null;
 });
+
+// ---- carried (§K — the system's own Weapons/Abilities/Inventory) -------
+// The seat chrome synthesizes one of these per declared screen
+// (`carriedPanel`, `client/components/seat/SeatChrome.tsx`) — the block
+// itself just hands the screen declaration and the kinds every OTHER
+// screen already claimed (so a `rest` screen knows what's left over) to
+// `CarriedScreen`, which does the actual work.
+
+registerBlock('carried', (block, ctx) => (
+  <CarriedScreen
+    ctx={ctx}
+    screen={block.screen as ScreenDecl}
+    claimedKinds={new Set((block.claimedKinds as string[] | undefined) ?? [])}
+  />
+));
 
 // ---- notes -------------------------------------------------------------
 
