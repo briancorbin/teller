@@ -805,9 +805,8 @@ Fourth pass — **the minimal loop is lit** (`server/`, H step 3):
   campaign and an SSE subscriber set; every mutation is a store-write
   plus a room-nudge, so forgetting to broadcast is unrepresentable.
   The server is `node server/index.ts --data ~/.teller-next --campaign
-  <slug>` — no build, no bundler. DELIBERATELY KEYLESS on localhost;
-  rule 7's auth and pairing port with the surfaces in step 4, and the
-  file says so at the top.
+  <slug>` — no build, no bundler. Deliberately keyless for exactly one
+  day — rule 7 ported in the fifth pass, below.
 - **The bare panel exists and is the floor made real** (`server/
   public/panel.js`, vanilla ESM, view-source IS the source): every
   §7 control derived from value shape alone, everything writes,
@@ -830,6 +829,62 @@ and the loop live at `localhost:4526` against `~/.teller-next` —
 console roster, stamping from the merged bestiary, two seats' worth of
 entities, a board with placements, and the event log rendering rule 3
 back at you.
+
+Fifth pass — **H step 4, the porting era** (2026-08-18, evening — auth,
+seat, runner, plugin №1, and the old world moving in):
+
+- **Rule 7 ported, and the move SIMPLIFIED it**: displays lost their
+  campaign column. The room's screens belong to the machine (rule 9),
+  the host runs one campaign at a time, so "bring a screen over" — the
+  old cross-campaign dance — dissolved; adoption is a consumed pairing
+  code, and `adopted(display)` is just "has no code". Tickets went
+  `node:crypto`-synchronous. The one key prints at boot: the host's
+  terminal IS the DM's device. A seat's actor is derived from its
+  assignment, never from what the client claims.
+- **Resolve-with-sparse-write got its design, and it's per-entry
+  copy-on-write**: the seat edits the READING; touching an entry that
+  lives only in the template copies exactly that entry down into the
+  stored half first — max and spelling ride along — then the write goes
+  through `setEntry`, so a declared kind's zero-rule answers the same
+  at the seat as everywhere. One door: `POST /entities/:id/entry`.
+  **Known hole, deliberately open**: storing "absent" over a template
+  that has the entry (a tombstone) has no spelling yet — removing a
+  stored entry resurrects the template's reading. Nothing at the table
+  needs it yet; design it when something does.
+- **The turn order ported with its home upgraded** (rule 5): the op
+  machine moved verbatim from the v0 runner — every case was found by a
+  real fight — but state lives in a campaign-file table now and every
+  op lands in the event log, which the old DO never managed. Entries
+  link entities and derive names at render (§5). An encounter is PREP —
+  a campaign template in slot `encounters`; deploy stamps numbered thin
+  instances and the recipe stays pristine. A seat may say exactly one
+  thing into the order: a score for its own row.
+- **Plugin №1 exists and is NOT a builtin** (`examples/plugins/
+  assistant/` — source you copy onto your own shelf). Contact finding:
+  a plugin had no way to receive its CONFIG, so the load path now hands
+  it to every call as a cloned second argument — the plugin never reads
+  the shelf, and the clone boundary guards config exactly as it guards
+  payloads. The propose route assembles its snapshot server-side
+  (resolved acting sheet, named order), because a fact the host holds
+  and doesn't pass on is a fact the model invents.
+- **The old world moved in, and the conversion taught three things**
+  (`scripts/convert-pack.mjs`, `scripts/port-campaign.mjs`): the old
+  statuses META (stack/cap/uncapped) was a kind declaration all along —
+  it converts straight into `kinds: [{name: 'conditions', domain:
+  {count, zero: 'clears', cap: 6}}]` with per-status `uncapped` riding
+  on the status's own declaration. Severity hiding in tag strings gets
+  unwound at the border (a trailing number becomes the value). And the
+  id-coupling paid off in the wild: the Duo pack restates three
+  Guidebook creature ids, 59 + 9 merge to 65, campaign pack winning —
+  nobody had to be taught anything.
+- **The sheet layout ported as the seat's first real arrangement**:
+  layouts are data again (`sheet` · `bare`, on `params.layout` — a
+  seat renders its assignment and doesn't negotiate), the skills ARE
+  the left-hand column, and the statuses panel is the system list with
+  a severity box each — a menu of what can happen, not a report of what
+  has. Verified live on Barrett Vargas's ported sheet: Poisoned + wrote
+  severity 1 through the conditions kind; easing to nothing cleared it
+  by the declaration, not by the UI.
 
 ### Still open from `ARCHITECTURE.md`
 

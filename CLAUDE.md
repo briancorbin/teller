@@ -34,6 +34,31 @@ result lands somewhere a human can overrule it, and the table's ruling
 beats the book's. What it must never do is decide something nobody can
 change.
 
+## CORE-NEXT (this branch): the rebuild is real — read its doc first
+
+**On `feat/core-next` the canonical model is `docs/CORE-NEXT.md`**, and
+the new world lives in `core/` + `server/` (node:sqlite direct, no
+build step, `node server/index.ts --data ~/.teller-next`). The old
+world (`worker/`, `src/`, the Stack section below) keeps running as
+REFERENCE and retires when this merges; where the two disagree, the
+doc wins. Supersessions to know before editing:
+
+- **Single runtime.** The dual-runtime "one codebase, two runtimes"
+  story below is the old world's; the new server is Node only and
+  Cloudflare is a brochure (§16).
+- **No builtin plugins, ever** (Brian, 2026-08-18). teller ships with
+  zero; `examples/plugins/` is source a person copies onto their own
+  shelf and enables by hand. The assistant is plugin №1, not a feature.
+- **Rule 2's shape sharpened**: fields/counters/tags became `lists` of
+  entries; what a list MEANS is a system-layer kind declaration
+  (`core/kind.ts`), and "tags is kind zero" in ARCHITECTURE.md is
+  superseded (§2 — there is no un-kinded bucket).
+- Auth, pairing, the turn order and the seat have PORTED — the old
+  implementations under `worker/` are history, not the spec.
+
+The full fold of this file happens when the branch merges and
+`worker/` dies; until then this section is the seam.
+
 ## Relationship to the-shed-next
 
 Standalone on purpose (the sidewalk precedent): own repo, own infra,
