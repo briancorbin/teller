@@ -127,6 +127,183 @@ function trustedCode(
   return out;
 }
 
+// -- the plugins tool's grouping: everything by WHERE IT CAME FROM ------
+//
+// The console used to render trust as three flat lists — pending
+// panels, pending system/pack code, code you've trusted — which is the
+// TRUST TABLE's shape, not the table's. A DM looking at "wiw-sheet
+// carries code" wants to know which book it came in, and that answer
+// existed nowhere on the screen. So the endpoint assembles containers
+// instead: one per thing that SHIPS things (the active system, each
+// pack in the stack, the campaign's own, this table's `panels/`, and
+// teller's floor), each carrying its own code state and the panels it
+// contributes.
+//
+// Nothing here re-derives what boot already worked out. A container's
+// code state is `Loaded`'s own `code`/`codePending`; a panel's is the
+// same pair on the declaration the sweep attached them to. The only
+// thing read fresh is the trust ROW, because a row can outlive the
+// folder it named — which is exactly what `unresolved` is for.
+
+/** Three states, and a console that says "no code" instead of nothing. */
+type CodeState = 'none' | 'pending' | 'enabled';
+
+type PanelRow = {
+  id?: string;
+  name: string;
+  label?: string;
+  code: CodeState;
+  /** The shelf row, read straight — what the disable button acts on. */
+  trusted: boolean;
+};
+
+type Container = {
+  kind: 'system' | 'pack' | 'campaign' | 'table' | 'teller';
+  /** `sys_`/`pak_` — the id the toggle names. Absent for the campaign, the table and teller. */
+  id?: string;
+  name: string;
+  version?: number;
+  code: CodeState;
+  trusted: boolean;
+  /**
+   * What this container carries BESIDES code and panels, slot by slot
+   * — the quiet one-liner under its name. Empty slots are absent, so a
+   * container with nothing but panels gets `{}` and the console says
+   * nothing rather than "0 bestiary".
+   */
+  cargo: Record<string, number>;
+  panels: PanelRow[];
+};
+
+function codeStateOf(held: { code?: unknown; codePending?: boolean }): CodeState {
+  if (held.code) return 'enabled';
+  if (held.codePending) return 'pending';
+  return 'none';
+}
+
+function toPanelRow(raw: unknown, trusts: Map<string, boolean>): PanelRow | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const p = raw as { id?: string; name?: string; label?: string; code?: unknown; codePending?: boolean };
+  const name = String(p.name ?? '').trim();
+  if (!name) return undefined;
+  const row: PanelRow = {
+    name,
+    code: codeStateOf(p),
+    trusted: p.id ? (trusts.get(p.id) ?? false) : false,
+  };
+  if (p.id) row.id = p.id;
+  if (p.label) row.label = p.label;
+  return row;
+}
+
+/**
+ * The campaign's content stack, grouped by container, in PRECEDENCE
+ * order — system, then packs as declared, then the campaign's own, then
+ * the table's `panels/`, then teller's floor last.
+ *
+ * That's the merge order READ BACKWARDS on purpose: the merge stacks
+ * teller's furniture at the bottom because everything may override it,
+ * and a human reading the console wants the specific thing first and
+ * the floor last.
+ */
+function containersOf(session: Session): Container[] {
+  const trusts = new Map(session.shelf.pluginTrusts().map((t) => [t.id, t.enabled]));
+  const { loaded } = session;
+  const bySource = new Map(
+    loaded.sourced('panels').map(({ source, items }) => [
+      source,
+      items.map((raw) => toPanelRow(raw, trusts)).filter((r): r is PanelRow => r !== undefined),
+    ]),
+  );
+  const panelsFrom = (source: string): PanelRow[] => bySource.get(source) ?? [];
+
+  const out: Container[] = [];
+  if (loaded.system) {
+    const { id, name, version } = loaded.system;
+    out.push({
+      kind: 'system',
+      id,
+      name,
+      version,
+      code: codeStateOf(loaded.system),
+      trusted: trusts.get(id) ?? false,
+      cargo: loaded.cargo(`system:${id}`),
+      panels: panelsFrom(`system:${id}`),
+    });
+  }
+  for (const pack of loaded.packs) {
+    out.push({
+      kind: 'pack',
+      id: pack.id,
+      name: pack.name,
+      version: pack.version,
+      code: codeStateOf(pack),
+      trusted: trusts.get(pack.id) ?? false,
+      cargo: loaded.cargo(`pack:${pack.id}`),
+      panels: panelsFrom(`pack:${pack.id}`),
+    });
+  }
+  // The campaign's own stored panels — listed only when it has some.
+  // It ships no code (there is no folder to compile), so it is a group
+  // of rows and nothing else; an empty one would be a heading about
+  // nothing.
+  const campaignPanels = panelsFrom('campaign');
+  if (campaignPanels.length) {
+    out.push({
+      kind: 'campaign',
+      name: loaded.manifest.name,
+      code: 'none',
+      trusted: false,
+      cargo: {},
+      panels: campaignPanels,
+    });
+  }
+  // This table's own `panels/` folder — ALWAYS listed, empty or not.
+  // "Nothing of your own yet" is the useful answer: it says the folder
+  // is a place you may write, which an absent heading never says.
+  out.push({
+    kind: 'table',
+    name: 'This table',
+    code: 'none',
+    trusted: false,
+    cargo: {},
+    panels: panelsFrom('table'),
+  });
+  out.push({
+    kind: 'teller',
+    name: 'teller',
+    code: 'none',
+    trusted: false,
+    cargo: loaded.cargo('teller'),
+    panels: panelsFrom('teller'),
+  });
+  return out;
+}
+
+/**
+ * An enabled trust row naming a `sys_`/`pak_`/`pan_` id that no
+ * container accounts for — a folder someone deleted, a pack this
+ * campaign no longer declares. Surfaced with nothing but a disable
+ * button, because a grant you can't see is a grant you can't take back
+ * (the same reasoning that produced `trusted` in the first place).
+ */
+function unresolvedTrusts(session: Session, containers: Container[]): { id: string }[] {
+  const known = new Set<string>();
+  for (const c of containers) {
+    if (c.id) known.add(c.id);
+    for (const p of c.panels) if (p.id) known.add(p.id);
+  }
+  return session.shelf
+    .pluginTrusts()
+    .filter(
+      ({ id, enabled }) =>
+        enabled &&
+        (id.startsWith('sys_') || id.startsWith('pak_') || id.startsWith('pan_')) &&
+        !known.has(id),
+    )
+    .map(({ id }) => ({ id }));
+}
+
 /**
  * What this machine holds, resolved the way the LOADER resolves it:
  * **a folder beats a row**, per id (`loadCampaign` in `core/boot.ts`).
@@ -645,6 +822,7 @@ export async function handleApi(
     if (!dataDir) return reply(501, { error: 'this host has no data dir' });
     if (method === 'GET' && !a) {
       const { found, problems } = discoverPlugins(dataDir, session.shelf);
+      const containers = containersOf(session);
       return reply(200, {
         found,
         problems: [...problems, ...session.pluginProblems],
@@ -654,7 +832,14 @@ export async function handleApi(
         // revoking had none, because the only surfaces that offered the
         // toggle rendered while `codePending` — which is false the
         // moment you say yes, so the button vanished with the answer.
+        //
+        // The containers below subsume this for the console — every
+        // grant is reachable inline, next to the thing it names. It
+        // stays because it is the flat truth of the trust table and
+        // costs one query; nothing on screen renders from it now.
         trusted: trustedCode(session),
+        containers,
+        unresolved: unresolvedTrusts(session, containers),
       });
     }
     const reloadPlugins = async () => {

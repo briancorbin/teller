@@ -1,33 +1,223 @@
-// The 'plugins' tool — the old app has no equivalent (plugins are new
-// in core-next, §15), so this borrows DmView's general card/section
-// grammar rather than porting a specific panel. Enablement stays a
-// human act done HERE, in the console, never by the discovery sweep —
-// that's the whole point of the enabled/disabled split in `/api/plugins`.
+// The 'plugins' tool — everything this table runs that isn't the
+// campaign's own data, grouped by TYPE and then by WHERE IT CAME FROM.
 //
-// Config is a raw JSON textarea for v1, same posture the vanilla
-// client took (`server/public/app.js`'s `prompt('config (JSON)?')`)
-// but inline instead of a browser prompt, so it fits the console's own
-// card grammar and a bad JSON parse can say so without an alert().
+// It used to be four flat lists: the plugins on the shelf, panels
+// awaiting enablement, system/pack code awaiting enablement, and code
+// you'd trusted. That is the TRUST TABLE's shape — one row per grant,
+// sorted by whether the grant had been made — and it answered the wrong
+// question. A DM reading "wiw-sheet carries code" wants to know which
+// book it arrived in, and that fact appeared nowhere on the screen; the
+// same panel could be listed as pending on Monday and trusted on
+// Tuesday, in two different cards, with nothing tying either to the
+// Guidebook.
+//
+// So the four lists are gone, subsumed rather than duplicated: four
+// TYPE headings (plugins · system · packs · panels, the shelf tab's
+// SYSTEMS/PACKS/BOARDS grammar), containers as accordions inside them,
+// and every action the old sections offered — enable a pending grant,
+// revoke a made one — living inline on the row it belongs to. An
+// orphan grant (an enabled id nothing on disk accounts for) gets the
+// last word, because a grant you can't see is a grant you can't take
+// back.
+//
+// Config stays a raw JSON textarea, same posture the vanilla client
+// took (`server/public/app.js`'s `prompt('config (JSON)?')`) but inline,
+// so a bad parse can say so without an alert().
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { registerTool } from './index.ts';
 import { api } from '../lib/api.ts';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
-import type { PanelDef } from '../../core/panels.ts';
 
 type PluginManifest = { id: string; name: string; version: number; provides: string[]; needs: string[] };
 type Found = { dir: string; manifest: PluginManifest; enabled: boolean };
 type Problem = { dir: string; problem: string };
-type Trusted = { id: string; name: string; kind: 'system' | 'pack' | 'panel' };
-type PluginsOut =
-  | { found: Found[]; problems: Problem[]; running: string[]; trusted?: Trusted[] }
-  | { error: string };
-/** Only the half this tool reads — the campaign's resolved pack stack. */
-type CampaignOut = {
-  system: { id: string; name: string; codePending?: boolean } | null;
-  packs: { id: string; name: string; codePending?: boolean }[];
+/** Three states, so "no code" is something the console can SAY. */
+type CodeState = 'none' | 'pending' | 'enabled';
+type PanelRow = {
+  id?: string;
+  name: string;
+  label?: string;
+  code: CodeState;
+  trusted: boolean;
 };
+type Container = {
+  kind: 'system' | 'pack' | 'campaign' | 'table' | 'teller';
+  id?: string;
+  name: string;
+  version?: number;
+  code: CodeState;
+  trusted: boolean;
+  cargo: Record<string, number>;
+  panels: PanelRow[];
+};
+type PluginsOut =
+  | {
+      found: Found[];
+      problems: Problem[];
+      running: string[];
+      containers: Container[];
+      unresolved: { id: string }[];
+    }
+  | { error: string };
+
+const rowClass = 'rounded-md border border-stone-800 bg-stone-900/60';
+const chip = 'rounded bg-stone-800 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-stone-400';
+const dim = 'font-mono text-[11px] text-stone-600';
+
+/** The whole grant vocabulary, in one place — every toggle is this POST. */
+function grant(id: string, enabled: boolean): Promise<unknown> {
+  return api(`/api/plugins/${id}`, { method: 'POST', body: { enabled } });
+}
+
+/**
+ * The enable/disable control for one `sys_`/`pak_`/`pan_` id, wherever
+ * it appears. `code` says what the folder holds; `trusted` says what
+ * the shelf row holds, and they are separate on purpose — a grant can
+ * outlive the code it was given for, and the button that takes it back
+ * has to keep rendering when it does.
+ */
+function TrustToggle({
+  id,
+  code,
+  trusted,
+  onChanged,
+}: {
+  id?: string;
+  code: CodeState;
+  trusted: boolean;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  if (!id || (code === 'none' && !trusted)) {
+    return <span className={dim}>{code === 'none' ? 'data only' : ''}</span>;
+  }
+
+  const set = async (enabled: boolean) => {
+    if (
+      !enabled &&
+      !window.confirm(
+        'Stop running this code? Its rules and bestiary stay; only the presentations go.',
+      )
+    )
+      return;
+    setBusy(true);
+    try {
+      await grant(id, enabled);
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (code === 'pending') {
+    return (
+      <button className={btnPrimary} disabled={busy} onClick={() => set(true)}>
+        enable
+      </button>
+    );
+  }
+  return (
+    <button className={btnGhost} disabled={busy} onClick={() => set(false)}>
+      disable
+    </button>
+  );
+}
+
+/** One panel a container ships. Its provenance, when it needs one, is the caller's to pass. */
+function PanelLine({
+  panel,
+  from,
+  onChanged,
+}: {
+  panel: PanelRow;
+  from?: string;
+  onChanged: () => void;
+}) {
+  return (
+    <li className={`flex flex-wrap items-center gap-2 px-3 py-1.5 ${rowClass}`}>
+      <span className="text-sm text-stone-200">{panel.label ?? panel.name}</span>
+      <span className={dim}>{panel.name}</span>
+      {from && <span className={chip}>{from}</span>}
+      {panel.code === 'pending' && (
+        <span className="rounded bg-amber-900/60 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-amber-300">
+          code pending
+        </span>
+      )}
+      <span className="ml-auto">
+        <TrustToggle id={panel.id} code={panel.code} trusted={panel.trusted} onChanged={onChanged} />
+      </span>
+    </li>
+  );
+}
+
+/**
+ * `{ bestiary: 59, catalog: 301 }` → `301 catalog · 59 bestiary`.
+ * Biggest first, because a WiW system layer carries twenty-one slots
+ * and the line is only scannable if what's substantial reads first.
+ * Nothing is dropped — a summary that hid the tail would be the same
+ * omission this whole rewrite is about.
+ */
+function cargoLine(cargo: Record<string, number>): string {
+  return Object.entries(cargo)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([slot, n]) => `${n} ${slot}`)
+    .join(' · ');
+}
+
+/**
+ * One container — a system or a pack — as an accordion: its own
+ * presentation-code trust on the header, its non-code cargo summarised
+ * in a quiet line under it, and the panels it ships as the only
+ * expandable children. Open by default, because a table with two packs
+ * and six panels fits on a screen and a closed accordion is a thing to
+ * click before you can read anything.
+ */
+function ContainerCard({ container, onChanged }: { container: Container; onChanged: () => void }) {
+  const [open, setOpen] = useState(true);
+  const cargo = cargoLine(container.cargo);
+
+  return (
+    <div className={`${rowClass} overflow-hidden`}>
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <button
+          className="text-sm text-stone-100 transition-colors hover:text-amber-400"
+          onClick={() => setOpen(!open)}
+        >
+          <span className="mr-2 inline-block w-3 text-stone-600">{open ? '▾' : '▸'}</span>
+          {container.name}
+        </button>
+        <span className={chip}>{container.kind}</span>
+        {container.version !== undefined && <span className={dim}>v{container.version}</span>}
+        {container.id && <span className={dim}>{container.id}</span>}
+        <span className="ml-auto flex items-center gap-2">
+          <span className={dim}>{container.panels.length || 'no'} panels</span>
+          <TrustToggle
+            id={container.id}
+            code={container.code}
+            trusted={container.trusted}
+            onChanged={onChanged}
+          />
+        </span>
+      </div>
+      {cargo && <div className={`px-3 pb-2 ${dim}`}>{cargo}</div>}
+      {open && (
+        <div className="border-t border-stone-800 px-3 py-2">
+          {container.panels.length === 0 ? (
+            <p className="text-sm text-stone-600">ships no panels</p>
+          ) : (
+            <ul className="space-y-1">
+              {container.panels.map((p) => (
+                <PanelLine key={p.id ?? p.name} panel={p} onChanged={onChanged} />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function PluginRow({
   found,
@@ -46,10 +236,7 @@ function PluginRow({
   const toggle = async () => {
     setBusy(true);
     try {
-      await api(`/api/plugins/${found.manifest.id}`, {
-        method: 'POST',
-        body: { enabled: !found.enabled },
-      });
+      await grant(found.manifest.id, !found.enabled);
       onChanged();
     } finally {
       setBusy(false);
@@ -71,12 +258,12 @@ function PluginRow({
   };
 
   return (
-    <li className="rounded-md border border-stone-800 bg-stone-900/60">
+    <li className={rowClass}>
       <div className="flex flex-wrap items-center gap-2 px-3 py-2">
         <span className="text-sm text-stone-100" title={found.manifest.id}>
           {found.manifest.name}
         </span>
-        <span className="font-mono text-[11px] text-stone-600">v{found.manifest.version}</span>
+        <span className={dim}>v{found.manifest.version}</span>
         {running && (
           <span className="rounded bg-amber-900/60 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-amber-300">
             running
@@ -91,7 +278,7 @@ function PluginRow({
           </button>
         </span>
       </div>
-      <div className="px-3 pb-2 font-mono text-[11px] text-stone-600">
+      <div className={`px-3 pb-2 ${dim}`}>
         provides {found.manifest.provides.join(', ') || '(nothing)'} · needs{' '}
         {found.manifest.needs.join(', ') || '(nothing)'}
       </div>
@@ -118,38 +305,31 @@ function PluginRow({
   );
 }
 
-/** A `.panel` folder that compiled code but has no trust row yet (§E
- * UN-DEFERRED: "trust rides the plugins table" — the SAME toggle a
- * plugin uses, `POST /api/plugins/<pan_id>`, just aimed at a `pan_`
- * id instead of a plugin's manifest id). Enabling it reloads the
- * content stack server-side, so the next `declarations/panels` fetch
- * carries `code` instead of `codePending`. */
-function PendingPanelRow({ panel, onChanged }: { panel: PanelDef; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const enable = async () => {
-    if (!panel.id) return;
-    setBusy(true);
-    try {
-      await api(`/api/plugins/${panel.id}`, { method: 'POST', body: { enabled: true } });
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
+/** A type heading with its own count — the shelf tab's card grammar. */
+function TypeSection({
+  label,
+  count,
+  children,
+  note,
+}: {
+  label: string;
+  count?: string;
+  children: ReactNode;
+  note?: string;
+}) {
   return (
-    <li className="flex flex-wrap items-center gap-2 rounded-md border border-stone-800 bg-stone-900/60 px-3 py-2">
-      <span className="text-sm text-stone-100">{panel.label ?? panel.name}</span>
-      <span className="font-mono text-[11px] text-stone-600">{panel.name}</span>
-      <span className="ml-auto">
-        <button className={btnPrimary} disabled={busy || !panel.id} onClick={enable}>
-          enable
-        </button>
-      </span>
-    </li>
+    <section className={`${card} space-y-3`}>
+      <div className="flex items-center justify-between">
+        <span className={sectionLabel}>{label}</span>
+        {count && <span className={dim}>{count}</span>}
+      </div>
+      {children}
+      {note && <p className="text-[11px] text-stone-600">{note}</p>}
+    </section>
   );
 }
 
-function PluginsSection() {
+function PluginsTool() {
   const { data, reload } = useLive(() => api<PluginsOut>('/api/plugins'), []);
   if (!data) return null;
 
@@ -163,209 +343,117 @@ function PluginsSection() {
   }
 
   const running = new Set(data.running);
+  const containers = data.containers ?? [];
+  const system = containers.find((c) => c.kind === 'system');
+  const packs = containers.filter((c) => c.kind === 'pack');
+  // The PANELS heading holds what doesn't ride a system or a pack: the
+  // campaign's own, the table's `panels/` folder, teller's shipped
+  // floor. Flattened into one list with provenance on the row, because
+  // three accordions of two rows each is furniture in front of content.
+  const standalone = containers.filter(
+    (c) => c.kind === 'table' || c.kind === 'teller' || c.kind === 'campaign',
+  );
+  const label = (c: Container) => (c.kind === 'teller' ? 'teller' : c.kind === 'table' ? 'this table' : c.name);
 
   return (
-    <section className={`${card} space-y-3`}>
-      <div className="flex items-center justify-between">
-        <span className={sectionLabel}>Plugins</span>
-        <span className="font-mono text-[11px] text-stone-600">{data.found.length} on the shelf</span>
-      </div>
-
-      {data.found.length === 0 && (
-        <p className="text-sm text-stone-600">
-          nothing on the shelf — drop a plugin folder in &lt;data&gt;/plugins/
-        </p>
-      )}
-
-      <ul className="space-y-2">
-        {data.found.map((f) => (
-          <PluginRow key={f.manifest.id} found={f} running={running.has(f.manifest.id)} onChanged={reload} />
-        ))}
-      </ul>
-
-      {data.problems.length > 0 && (
-        <div className="space-y-1">
-          {data.problems.map((p, i) => (
-            <p key={i} className="font-mono text-[11px] text-amber-500/80">
-              {p.dir}: {p.problem}
-            </p>
+    <div className="space-y-4">
+      <TypeSection
+        label="Plugins"
+        count={`${data.found.length} on the shelf`}
+        note="the sweep only discovers; enabling is yours alone."
+      >
+        {data.found.length === 0 && (
+          <p className="text-sm text-stone-600">
+            nothing on the shelf — drop a plugin folder in &lt;data&gt;/plugins/
+          </p>
+        )}
+        <ul className="space-y-2">
+          {data.found.map((f) => (
+            <PluginRow
+              key={f.manifest.id}
+              found={f}
+              running={running.has(f.manifest.id)}
+              onChanged={reload}
+            />
           ))}
-        </div>
+        </ul>
+        {data.problems.length > 0 && (
+          <div className="space-y-1">
+            {data.problems.map((p, i) => (
+              <p key={i} className="font-mono text-[11px] text-amber-500/80">
+                {p.dir}: {p.problem}
+              </p>
+            ))}
+          </div>
+        )}
+      </TypeSection>
+
+      <TypeSection
+        label="System"
+        note="its rules and kinds load regardless — only the presentations wait on a human."
+      >
+        {system ? (
+          <ContainerCard container={system} onChanged={reload} />
+        ) : (
+          <p className="text-sm text-stone-600">this campaign runs on no system</p>
+        )}
+      </TypeSection>
+
+      <TypeSection label="Packs" count={`${packs.length} in the stack`}>
+        {packs.length === 0 ? (
+          <p className="text-sm text-stone-600">no packs in this campaign's stack</p>
+        ) : (
+          <div className="space-y-2">
+            {packs.map((p) => (
+              <ContainerCard key={p.id} container={p} onChanged={reload} />
+            ))}
+          </div>
+        )}
+      </TypeSection>
+
+      <TypeSection
+        label="Panels"
+        count={`${standalone.reduce((n, c) => n + c.panels.length, 0)} standalone`}
+        note="teller's five are the floor — a table overrides one by restating its name in <data>/panels/."
+      >
+        {standalone.every((c) => c.panels.length === 0) ? (
+          <p className="text-sm text-stone-600">nothing of your own yet</p>
+        ) : (
+          <ul className="space-y-1">
+            {standalone.flatMap((c) =>
+              c.panels.map((p) => (
+                <PanelLine
+                  key={`${c.kind}:${p.id ?? p.name}`}
+                  panel={p}
+                  from={label(c)}
+                  onChanged={reload}
+                />
+              )),
+            )}
+          </ul>
+        )}
+      </TypeSection>
+
+      {(data.unresolved ?? []).length > 0 && (
+        <TypeSection
+          label="Unresolved"
+          count={`${data.unresolved.length}`}
+          note="an enabled grant naming something nothing on this host accounts for — a deleted folder, or a pack this campaign no longer runs on."
+        >
+          <ul className="space-y-1">
+            {data.unresolved.map(({ id }) => (
+              <li key={id} className={`flex flex-wrap items-center gap-2 px-3 py-1.5 ${rowClass}`}>
+                <span className={dim}>{id}</span>
+                <span className="ml-auto">
+                  <TrustToggle id={id} code="none" trusted onChanged={reload} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </TypeSection>
       )}
-
-      <p className="text-[11px] text-stone-600">
-        the sweep only discovers; enabling is yours alone.
-      </p>
-    </section>
+    </div>
   );
 }
 
-/** A `.panel` with compiled code and no trust row — same sweep-discovers,
- * human-enables posture as the plugin list above, just over the panel
- * declaration collection instead of `/api/plugins` (§E: "trust rides
- * the plugins table" — one table, two kinds of thing riding it). */
-function PendingPanelCode() {
-  const { data, reload } = useLive(() => api<PanelDef[]>('/api/stack/declarations/panels'), []);
-  const pending = (data ?? []).filter((p) => p.codePending);
-  if (!pending.length) return null;
-
-  return (
-    <section className={`${card} space-y-3`}>
-      <div className="flex items-center justify-between">
-        <span className={sectionLabel}>Panel code awaiting enablement</span>
-        <span className="font-mono text-[11px] text-stone-600">{pending.length}</span>
-      </div>
-      <ul className="space-y-2">
-        {pending.map((p) => (
-          <PendingPanelRow key={p.id ?? p.name} panel={p} onChanged={reload} />
-        ))}
-      </ul>
-      <p className="text-[11px] text-stone-600">
-        a `.panel` folder compiled code the sweep found but nobody's enabled yet —
-        same trust table as a plugin, just naming a `pan_` id instead.
-      </p>
-    </section>
-  );
-}
-
-/** A pack folder that compiled `presentations/*.tsx` and has no trust
- * row yet (§L phase 2). Same table, same toggle, same posture as the
- * panel section above — only the id prefix differs (`pak_`). The pack's
- * DATA is already loaded and always was: trust gates code, never facts.
- * `/api/campaign` is the seam because the pending flag belongs to the
- * campaign's RESOLVED stack, which is the list that endpoint already
- * carries — a second endpoint would only restate it. */
-function PendingPackCode() {
-  const { data, reload } = useLive(() => api<CampaignOut>('/api/campaign'), []);
-  // The active SYSTEM rides this list too (§M): its folder carries
-  // presentations on exactly the same terms, and the toggle is the same
-  // one aimed at a `sys_` id.
-  const pending = [
-    ...(data?.system?.codePending ? [data.system] : []),
-    ...(data?.packs ?? []).filter((p) => p.codePending),
-  ];
-  if (!pending.length) return null;
-
-  return (
-    <section className={`${card} space-y-3`}>
-      <div className="flex items-center justify-between">
-        <span className={sectionLabel}>System code awaiting enablement</span>
-        <span className="font-mono text-[11px] text-stone-600">{pending.length}</span>
-      </div>
-      <ul className="space-y-2">
-        {pending.map((p) => (
-          <PendingPackRow key={p.id} pack={p} onChanged={reload} />
-        ))}
-      </ul>
-      <p className="text-[11px] text-stone-600">
-        a system or pack folder carries presentation code the sweep compiled but nobody's
-        enabled yet — its rules and bestiary loaded regardless; only the components wait.
-      </p>
-    </section>
-  );
-}
-
-function PendingPackRow({
-  pack,
-  onChanged,
-}: {
-  pack: { id: string; name: string };
-  onChanged: () => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const enable = async () => {
-    setBusy(true);
-    try {
-      await api(`/api/plugins/${pack.id}`, { method: 'POST', body: { enabled: true } });
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <li className="flex flex-wrap items-center gap-2 rounded-md border border-stone-800 bg-stone-900/60 px-3 py-2">
-      <span className="text-sm text-stone-100">{pack.name}</span>
-      <span className="font-mono text-[11px] text-stone-600">{pack.id}</span>
-      <span className="ml-auto">
-        <button className={btnPrimary} disabled={busy} onClick={enable}>
-          enable
-        </button>
-      </span>
-    </li>
-  );
-}
-
-/**
- * Content code this table has already said yes to — and the way to take
- * it back. Trust was a one-way door until this existed: the pending
- * sections above are the ONLY surfaces that offer the toggle, and they
- * render on `codePending`, which goes false the moment you enable. So
- * the answer became unreachable the instant it was given.
- *
- * Same table, same endpoint, same posture — only the direction differs.
- * Disabling takes nothing away but the CODE: the system's or pack's
- * rules and bestiary are data, always loaded, never gated (§L phase 2).
- */
-function TrustedCode() {
-  const { data, reload } = useLive(() => api<PluginsOut>('/api/plugins'), []);
-  const [busy, setBusy] = useState('');
-  const trusted = data && !('error' in data) ? (data.trusted ?? []) : [];
-  if (!trusted.length) return null;
-
-  const revoke = async (id: string) => {
-    if (
-      !window.confirm(
-        'Stop running this code? Its rules and bestiary stay; only the presentations go.',
-      )
-    )
-      return;
-    setBusy(id);
-    try {
-      await api(`/api/plugins/${id}`, { method: 'POST', body: { enabled: false } });
-      reload();
-    } finally {
-      setBusy('');
-    }
-  };
-
-  return (
-    <section className={`${card} space-y-3`}>
-      <div className="flex items-center justify-between">
-        <span className={sectionLabel}>Code you've trusted</span>
-        <span className="font-mono text-[11px] text-stone-600">{trusted.length}</span>
-      </div>
-      <ul className="space-y-2">
-        {trusted.map((t) => (
-          <li
-            key={t.id}
-            className="flex flex-wrap items-center gap-2 rounded-md border border-stone-800 bg-stone-900/60 px-3 py-2"
-          >
-            <span className="text-sm text-stone-100">{t.name}</span>
-            <span className="rounded bg-stone-800 px-1.5 py-0.5 text-[10px] uppercase tracking-widest text-stone-400">
-              {t.kind}
-            </span>
-            <span className="font-mono text-[11px] text-stone-600">{t.id}</span>
-            <span className="ml-auto">
-              <button className={btnGhost} disabled={busy === t.id} onClick={() => revoke(t.id)}>
-                stop running this
-              </button>
-            </span>
-          </li>
-        ))}
-      </ul>
-      <p className="text-[11px] text-stone-600">
-        revoking stops the compiled presentations from loading — the rules, statuses and
-        bestiary that came with them are data and never went through this gate.
-      </p>
-    </section>
-  );
-}
-
-registerTool('plugins', () => (
-  <div className="space-y-4">
-    <PluginsSection />
-    <PendingPanelCode />
-    <PendingPackCode />
-    <TrustedCode />
-  </div>
-));
+registerTool('plugins', () => <PluginsTool />);

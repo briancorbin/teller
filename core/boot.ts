@@ -215,6 +215,50 @@ export class Loaded {
   }
 
   /**
+   * What ONE layer carries, slot by slot, counted — the quiet
+   * "65 bestiary · 301 catalog · 6 statuses" line a console wants under
+   * a container's name. Whatever the layer holds, in the layer's own
+   * words: this module still knows nothing about what a slot MEANS
+   * (§10), so it counts and the console does the naming.
+   *
+   * `panels` is deliberately absent — a container renders those as its
+   * expandable children, and counting them here would say the same
+   * thing twice in two places that could disagree.
+   */
+  cargo(source: string): Record<string, number> {
+    const layer = this.#layers.find((l) => l.source === source);
+    const out: Record<string, number> = {};
+    if (!layer) return out;
+    for (const [slot, held] of Object.entries(layer.data)) {
+      if (slot === 'panels') continue;
+      const count = Array.isArray(held)
+        ? held.length
+        : held && typeof held === 'object'
+          ? Object.keys(held).length
+          : 0;
+      if (count > 0) out[slot] = count;
+    }
+    return out;
+  }
+
+  /**
+   * The same stack, LAYER BY LAYER rather than merged — what a console
+   * that groups by WHERE IT CAME FROM needs, and the only reading that
+   * can answer it. `declarations()` hands back the winners with their
+   * provenance flattened away, and `sourceOf()` answers one name at a
+   * time; neither can say "here is everything the Guidebook ships".
+   *
+   * Sources are the same words `sourceOf` returns: `teller`,
+   * `system:<id>`, `pack:<id>`, `campaign`, `table`. A layer that
+   * restates a name appears in both its own group and the earlier one —
+   * that IS the stack, and hiding the shadowed copy would hide the
+   * override.
+   */
+  sourced(slot: string): { source: string; items: unknown[] }[] {
+    return this.#sourced(slot);
+  }
+
+  /**
    * The full stack for one slot, bottom to top:
    *
    *   teller (the install's defaults) → system → packs → campaign → table
