@@ -20,8 +20,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Entity } from '../../../core/entity.ts';
+import { numberOf } from '../../../core/entity.ts';
 import type { PanelBlock, PanelDef } from '../../../core/panels.ts';
 import { PLACED } from '../../../core/panels.ts';
+import { locate, toSpends, type SpendPlan, type SpendsDecl } from '../../../core/effects.ts';
+import type { Template } from '../../../core/stamp.ts';
+import { SpendFloor, type SpendMenuProps } from '../SpendFloor.tsx';
+import { ladderList, toLadder } from '../LadderFloor.tsx';
+import { applyPlan, loadCatalog, spendWorld } from '../../lib/spend.ts';
+import { presentationOf, useSystemFaces } from '../../lib/presentations.ts';
+import { usePanelNote } from '../../lib/rules.ts';
 import { api } from '../../lib/api.ts';
 import { onNudge } from '../../lib/use-session.ts';
 import { entriesOf, entryNamed, shaped } from '../../panels/blocks.tsx';
@@ -31,7 +39,7 @@ import type { ScreenDecl } from '../items/types.ts';
 
 type Records = Record<string, Record<string, unknown>>;
 
-const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'currency', 'icons', 'groups', 'dice', 'marks'];
+const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'currency', 'icons', 'groups', 'dice', 'marks', 'spends'];
 
 /** Every declared screen's own claimed counters, lower-cased, in one set. */
 function screenClaims(screens: ScreenDecl[]): Set<string> {
@@ -57,18 +65,30 @@ function carriedPanel(screen: ScreenDecl, allScreens: ScreenDecl[]): PanelDef {
 /** The old app's holding pen ('More'): every resource the Sheet screen
  * and every declared carried-screen didn't claim, plus the strays the
  * `rest` block already knows how to surface, plus notes/children — the
- * same blocks held-glass Sheet used to carry before fix 6 trimmed it. */
-function morePanel(claimed: Set<string>): PanelDef {
+ * same blocks held-glass Sheet used to carry before fix 6 trimmed it.
+ *
+ * The declared standing scales ride here too (the old app's precedent:
+ * `LadderPanel` rode on More), and the `ladders` block draws nothing at
+ * all on a system that declares none — so this stays one arrangement
+ * whether or not anybody has a standing scale. Their lists join
+ * `rest`'s exclusions for the same reason every placed list does: a
+ * list drawn as a ladder above must not surface again as a stray
+ * below. */
+function morePanel(claimed: Set<string>, ladderLists: string[]): PanelDef {
   const blocks: PanelBlock[] = [
     { block: 'list', list: 'resources', filter: 'except-named', names: [...claimed], as: 'ledger' },
-    { block: 'rest', except: PLACED },
+    { block: 'ladders' },
+    { block: 'rest', except: [...PLACED, ...ladderLists] },
     { block: 'children' },
     { block: 'notes' },
   ];
   return { name: 'More', subject: 'entity', mounted: blocks, held: blocks };
 }
 
-function numberOf(entry: { value?: number | string } | undefined): number {
+/** The chip's own reading: a counter nobody has yet shows a zero, not a
+ * blank. (`numberOf` from core answers `undefined` for "not a countable
+ * value", which is the right answer there and the wrong one here.) */
+function countOf(entry: { value?: number | string } | undefined): number {
   return typeof entry?.value === 'number' ? entry.value : 0;
 }
 
@@ -173,17 +193,58 @@ function CostChip({
   );
 }
 
+/** The affordance for a declared advancement menu — the label the
+ * system chose, the wallet it spends from, and a tap that opens the
+ * menu. It exists only because `spends` was declared: a system without
+ * one grows no button, which is the whole test §L is about. */
+function SpendChip({
+  spends,
+  entity,
+  accent,
+  onOpen,
+}: {
+  spends: SpendsDecl;
+  entity?: Entity;
+  accent: string;
+  onOpen: () => void;
+}) {
+  const wallet = locate(entity, spends.counter);
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`${spends.label ?? spends.counter}: ${numberOf(wallet?.entry) ?? 0}`}
+      aria-haspopup="dialog"
+      className="flex items-center gap-1.5"
+    >
+      <span className="text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">
+        {spends.label ?? spends.counter}
+      </span>
+      <span
+        className="flex h-7 min-w-[2.6rem] items-center justify-center rounded-full border px-2.5 font-mono text-sm text-stone-100"
+        style={{ borderColor: accent, background: `${accent}1f` }}
+      >
+        {numberOf(wallet?.entry) ?? 0}
+      </span>
+    </button>
+  );
+}
+
 function TopBar({
   entity,
   seatName,
   records,
   mounted,
+  spends,
+  onOpenSpends,
   onWrite,
 }: {
   entity?: Entity;
   seatName?: string;
   records: Records;
   mounted: boolean;
+  spends?: SpendsDecl;
+  onOpenSpends?: () => void;
   onWrite?: (edit: Record<string, unknown>) => void;
 }) {
   const accent = entity?.type
@@ -198,20 +259,33 @@ function TopBar({
     ...(use?.costCounter ? [use.costCounter] : []),
     ...(use?.costs ?? []).map((c) => c.counter),
   ].filter((n, i, a) => a.indexOf(n) === i);
-  const chips = costNames.flatMap((n) => {
-    const entry = entryNamed(entity, n);
-    if (!entry) return [];
-    return [
-      <CostChip
-        key={n}
-        name={n}
-        value={numberOf(entry)}
-        face={dials?.[n]}
-        accent={accent}
-        onSet={(v) => onWrite?.({ list: 'resources', name: n, value: v })}
-      />,
-    ];
-  });
+  const chips = [
+    ...costNames.flatMap((n) => {
+      const entry = entryNamed(entity, n);
+      if (!entry) return [];
+      return [
+        <CostChip
+          key={n}
+          name={n}
+          value={countOf(entry)}
+          face={dials?.[n]}
+          accent={accent}
+          onSet={(v) => onWrite?.({ list: 'resources', name: n, value: v })}
+        />,
+      ];
+    }),
+    ...(spends && onOpenSpends
+      ? [
+          <SpendChip
+            key="__spends"
+            spends={spends}
+            entity={entity}
+            accent={accent}
+            onOpen={onOpenSpends}
+          />,
+        ]
+      : []),
+  ];
 
   if (!entity && !player) return null;
 
@@ -310,6 +384,96 @@ function TabBar({
   );
 }
 
+/**
+ * The advancement menu, opened over whatever screen is showing.
+ *
+ * Bounded on purpose (rule 6): the PAGE never scrolls, on either family
+ * of glass, so the overlay is a fixed panel with a max height and its
+ * own scroll region — the "deliberate shelf" exemption, which is the
+ * only kind of scrolling a screwed-down panel may be asked for.
+ *
+ * The face is SUMMONED (§L phase 3) and `SpendFloor` is the answer for
+ * `undefined`: a system that prints its own advancement page ships
+ * `SpendMenu.tsx` and gets it; a system that ships none still gets a
+ * working menu, because a price and a counter need no vocabulary.
+ */
+function SpendOverlay({
+  spends,
+  entity,
+  entityId,
+  records,
+  catalog,
+  accent,
+  note,
+  onWrote,
+  onClose,
+}: {
+  spends: SpendsDecl;
+  entity?: Entity;
+  entityId: string;
+  records: Records;
+  catalog: Template[];
+  accent?: string;
+  note?: string;
+  onWrote: () => void;
+  onClose: () => void;
+}) {
+  const [problem, setProblem] = useState<string | undefined>(undefined);
+  const Menu = presentationOf<typeof SpendFloor>('SpendMenu') ?? SpendFloor;
+  const props: SpendMenuProps = {
+    spends,
+    world: spendWorld(entity, records, catalog),
+    note,
+    accent,
+    onSet: (write) => {
+      void api(`/api/entities/${entityId}/entry`, { body: write }).then(onWrote);
+    },
+    onBuy: (plan: SpendPlan) =>
+      applyPlan(entityId, plan, catalog).then(
+        () => {
+          setProblem(undefined);
+          onWrote();
+        },
+        (err: unknown) => {
+          // Never silent: a purchase the server refused (stamping is the
+          // DM's own door) says so in the server's own words, and the
+          // writes that DID land are visible on the sheet behind this.
+          setProblem(err instanceof Error ? err.message : String(err));
+          onWrote();
+          throw err;
+        },
+      ),
+  };
+  return (
+    <div
+      role="dialog"
+      aria-label={spends.label ?? spends.counter}
+      className="fixed inset-0 z-30 flex items-center justify-center bg-stone-950/80 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-full w-full max-w-[34rem] flex-col overflow-y-auto rounded-xl border border-stone-700 bg-stone-950 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-end px-2 pt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="close"
+            className="rounded-md px-2 py-1 text-sm text-stone-400 hover:bg-stone-800 hover:text-stone-200"
+          >
+            ✕
+          </button>
+        </div>
+        <Menu {...props} />
+        {problem && (
+          <p className="px-4 pb-4 text-sm italic text-stone-500">{problem}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function SeatChrome({
   entityId,
   initialPanel,
@@ -329,10 +493,28 @@ export function SeatChrome({
   const [records, setRecords] = useState<Records>({});
   const [entity, setEntity] = useState<Entity | undefined>(undefined);
   const [current, setCurrent] = useState('Sheet');
+  /** How many standing scales the system declares — 'More' has to know
+   * whether the `ladders` block will draw anything before it offers a
+   * tab that might turn out to be empty — and `rest` needs their names
+   * so a standing doesn't surface twice. */
+  const [ladderLists, setLadderLists] = useState<string[]>([]);
+  /** What a purchase may hand you. Loaded once; empty on a host with no pack. */
+  const [catalog, setCatalog] = useState<Template[]>([]);
+  const [spendsOpen, setSpendsOpen] = useState(false);
+  useSystemFaces(); // re-render when the system module lands (url-loaded, async)
+  const note = usePanelNote();
 
   const load = useCallback(() => {
     api<PanelDef[]>('/api/stack/declarations/panels').then(setPanels).catch(() => setPanels([]));
     api<ScreenDecl[]>('/api/stack/declarations/screens').then(setScreenDecls).catch(() => setScreenDecls([]));
+    api<unknown[]>('/api/stack/declarations/ladders')
+      .then((raw) =>
+        setLadderLists(
+          raw.map(toLadder).filter((l) => l !== undefined).map(ladderList),
+        ),
+      )
+      .catch(() => setLadderLists([]));
+    loadCatalog().then(setCatalog);
     Promise.all(
       RECORD_SLOTS.map((slot) =>
         api<Record<string, unknown>>(`/api/stack/record/${slot}`).then((r) => [slot, r] as const),
@@ -381,16 +563,28 @@ export function SeatChrome({
   const allClaimed = new Set([...claimedBySheet, ...claimedByScreens]);
   const spareResources = resourceEntries.filter((en) => !allClaimed.has(en.name.toLowerCase()));
   const strayLists = Object.keys(entity?.lists ?? {}).some(
-    (l) => !PLACED.includes(l.toLowerCase()) && entriesOf(entity, l).length > 0,
+    (l) =>
+      !PLACED.includes(l.toLowerCase()) &&
+      !ladderLists.some((n) => n.toLowerCase() === l.toLowerCase()) &&
+      entriesOf(entity, l).length > 0,
   );
   const hasSpare =
-    spareResources.length > 0 || strayLists || Boolean(entity?.notes) || Boolean(entity?.children?.length);
+    spareResources.length > 0 ||
+    strayLists ||
+    ladderLists.length > 0 ||
+    Boolean(entity?.notes) ||
+    Boolean(entity?.children?.length);
+
+  // The advancement menu, if the system declares one. The affordance,
+  // the overlay and the whole feature exist only because `spends` is in
+  // the merged records — a system without it grows no button.
+  const spends = toSpends(records.spends);
 
   const tabs: Tab[] = sheetPanel
     ? [
         { name: 'Sheet', icon: 'sheet', panel: sheetPanel },
         ...screenDecls.map((s) => ({ name: s.name, icon: s.icon, panel: carriedPanel(s, screenDecls) })),
-        ...(hasSpare ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed) }] : []),
+        ...(hasSpare ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed, ladderLists) }] : []),
       ]
     : [];
   const tab = tabs.find((t) => t.name === current) ?? tabs[0];
@@ -405,8 +599,24 @@ export function SeatChrome({
         seatName={seatName}
         records={records}
         mounted={glass === 'mounted'}
+        spends={spends}
+        onOpenSpends={spends ? () => setSpendsOpen(true) : undefined}
         onWrite={ctx.write ? (edit) => ctx.write!(edit) : undefined}
       />
+
+      {spends && spendsOpen && (
+        <SpendOverlay
+          spends={spends}
+          entity={entity}
+          entityId={entityId}
+          records={records}
+          catalog={catalog}
+          accent={accent}
+          note={note(spends.label ?? spends.counter)}
+          onWrote={load}
+          onClose={() => setSpendsOpen(false)}
+        />
+      )}
 
       <div className={`flex min-h-0 flex-1 flex-col ${glass === 'mounted' ? 'overflow-hidden' : ''}`}>
         {tab ? (

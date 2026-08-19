@@ -882,3 +882,89 @@ registerBlock('tool', (block, ctx) => {
 
 // The 'turn' block registers in tools/runner.tsx — it and the runner
 // tool are one port and share their pieces.
+
+// ---- ladders (§15's standing scales, arranged) --------------------------
+// One panel per declared ladder (`/api/stack/declarations/ladders`), the
+// roster read off the declared SECTION the ladder names — parties are
+// world content and live in the pack, so the block learns them at
+// runtime and never from code.
+//
+// The face is SUMMONED like every other (§L phase 3): a system that
+// prints its standing scales a particular way ships `LadderPanel.tsx`
+// and gets it; a system that ships none still gets a working, tappable
+// scale, because `LadderFloor` is a fact about the DECLARATION (an
+// ordered list of rungs over a `steps` kind) and needs no vocabulary.
+
+import { useRuleSections } from '../lib/rules.ts';
+import { LadderFloor, ladderList, toLadder, type LadderDecl, type LadderPanelProps } from '../components/LadderFloor.tsx';
+
+type LadderFace = typeof LadderFloor;
+
+function LaddersBlock({ ctx }: { ctx: BlockCtx }) {
+  useSystemFaces(); // re-render when the system module lands (url-loaded, async)
+  const e = subject(ctx);
+  const sections = useRuleSections();
+  const lookup = useRuleLookup();
+  const note = usePanelNote();
+  const accent = accentOf(ctx, e);
+  const [decls, setDecls] = useState<LadderDecl[] | undefined>(undefined);
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<unknown[]>('/api/stack/declarations/ladders')
+      .then((raw) => {
+        if (!cancelled)
+          setDecls(raw.map(toLadder).filter((l): l is LadderDecl => l !== undefined));
+      })
+      .catch(() => {
+        if (!cancelled) setDecls([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!decls?.length) return null;
+  const Ladder = presentationOf<LadderFace>('LadderPanel') ?? LadderFloor;
+  const shown = open ? lookup(open) : undefined;
+
+  return (
+    <>
+      {decls.map((ladder) => {
+        // The roster: every entry name in the declared section, in the
+        // order the merged stack gives them.
+        const roster = sections
+          .filter((s) => s.name.trim().toLowerCase() === (ladder.section ?? '').trim().toLowerCase())
+          .flatMap((s) => s.entries.map((entry) => entry.name))
+          .filter((name, i, all) => all.indexOf(name) === i);
+        const props: LadderPanelProps = {
+          ladder,
+          entity: e,
+          roster,
+          note: note(ladder.label ?? ladder.name),
+          accent,
+          hasEntry: (name) => Boolean(lookup(name)?.text),
+          onOpen: (name) => setOpen(open === name ? null : name),
+          // The rung, plainly. The `steps` kind on the write door is
+          // what makes tapping the resting rung REMOVE the row rather
+          // than store a default — one law, wherever the write came
+          // from (`core/kind.ts`, `Session.writeEntry`).
+          onSet: ctx.write
+            ? (name, step) =>
+                void ctx.write?.({ list: ladderList(ladder), name, value: step })
+            : undefined,
+        };
+        return <Ladder key={ladder.name} {...props} />;
+      })}
+      {shown && (
+        <section className={`${card} flex flex-col gap-1`}>
+          <p className={sectionLabel}>{shown.name}</p>
+          <p className="text-sm whitespace-pre-wrap text-stone-300">{shown.text}</p>
+        </section>
+      )}
+    </>
+  );
+}
+
+registerBlock('ladders', (_block, ctx) => <LaddersBlock ctx={ctx} />);

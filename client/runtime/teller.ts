@@ -21,7 +21,8 @@ export { useLive } from '../lib/use-session.ts';
 // the pack's caption under a heading, and its rule text by name. A
 // custom block that couldn't reach these could not reproduce the sheet
 // it's replacing a piece of — the captions ARE the sheet.
-export { usePanelNote, useRuleLookup } from '../lib/rules.ts';
+export { usePanelNote, useRuleLookup, useRuleSections } from '../lib/rules.ts';
+export type { RuleEntry, RuleHit, RuleSection } from '../lib/rules.ts';
 
 // -- the neutral floor (§L: shape-derived, no system's vocabulary) -----------
 // A bar for anything with a ceiling, a stepper for anything you count, a
@@ -41,6 +42,48 @@ export { SheetGauge } from '../components/sheet/SheetGauge.tsx';
 // from the system, so nothing here knows a B from a G.
 export { expandPool, isPool, rollPool, tallyFaces } from '../lib/dice.ts';
 export type { DiceRecord } from '../lib/dice.ts';
+
+// -- declared advancement, interpreted (core/effects.ts) --------------------
+// A system's `spends` menu turned into ordinary writes: what a purchase
+// costs, what it would change, and what it can't do said out loud. Pure
+// declaration-reading — it never names a counter, a rung or a tier, so a
+// pack's own `SpendMenu` composes its LOOK on top of teller's arithmetic
+// rather than reimplementing the arithmetic to get the look.
+export {
+  affordable,
+  amendPool,
+  costWrites,
+  describeEffect,
+  isRefusal,
+  locate,
+  needsChoice,
+  spendOptions,
+  tierAt,
+  toSpends,
+} from '../../core/effects.ts';
+export type {
+  EntryWrite,
+  SpendEffect,
+  SpendItem,
+  SpendOption,
+  SpendPlan,
+  SpendTier,
+  SpendWorld,
+  SpendsDecl,
+  StampWrite,
+} from '../../core/effects.ts';
+
+// The two floors those declarations fall to, exported so a pack's own
+// face can wrap, extend or fall back to one instead of starting from a
+// blank div — and so its props type IS the contract it must satisfy.
+export { SpendFloor } from '../components/SpendFloor.tsx';
+export type { SpendMenuProps } from '../components/SpendFloor.tsx';
+export { LadderFloor, ladderList, toLadder } from '../components/LadderFloor.tsx';
+export type { LadderDecl, LadderPanelProps, LadderStep } from '../components/LadderFloor.tsx';
+
+// The entity leaf helpers a face needs to read what it was handed.
+export { findEntry, formatEntry, numberOf, sameName } from '../../core/entity.ts';
+export type { Entity, Entry, Ref } from '../../core/entity.ts';
 
 // -- the summoning seam (§L phase 3) -----------------------------------------
 // What draws a face called X — the active system's presentations first,

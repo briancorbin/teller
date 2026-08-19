@@ -128,3 +128,23 @@ export function writeChildEntry(
     }),
   );
 }
+
+/**
+ * Add one carried child to a character — the same fetch→mutate→PUT
+ * seam, for the one edit that adds rather than changes.
+ *
+ * `POST /api/stamp` is NOT this door and the difference cost an
+ * afternoon: that route creates a stored entity ROW whose `parent_id`
+ * is the character, which is the campaign's own parent tree (the
+ * roster's shape), not the character's `children`. A carried thing is
+ * an INLINE child of the character's own blob (§K), which is why the
+ * seat's screens read `entity.children` and never saw a thing stamped
+ * the other way. Stamping happens client-side (`core/stamp.ts` — thin,
+ * a ref to the template) and lands here.
+ */
+export function addChild(characterId: string, child: Entity): Promise<Entity> {
+  return patchEntity(characterId, (stored) => ({
+    ...stored,
+    children: [...(stored.children ?? []), child],
+  }));
+}
