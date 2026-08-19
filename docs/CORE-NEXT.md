@@ -1366,6 +1366,117 @@ nobody had looked at a built client. **The rung-4/§L import contract is
 a public API and its entry signature is load-bearing — say so in the
 bundler config, or the bundler will assume otherwise.**
 
+### M · The grand scope, re-drawn — DRAFTED 2026-08-19 (Brian), for tearing apart
+
+Two days of locally-right decisions quietly turned teller into a
+platform; this section makes that deliberate, and it amends the
+thesis itself. Read it as the seed of the ARCHITECTURE rewrite — the
+constitution's fold happens against THIS.
+
+**1 · The simulation ban is repealed. The manual floor is the
+contract.** (Brian: "It should be able to fully simulate everything.
+It just shouldn't be required. As a base teller core, it just works.
+All manual. All user driven. Done.")
+
+The old sentence "teller is not a simulation engine" was amended
+twice and both times the survivor was the AUTHORITY half, never the
+capability half. So, finally said straight: **simulation capacity is
+unlimited; simulation requirement is zero.** Base teller works fully
+manual forever — that floor is a contract, not a starting point. A
+system may automate as much as it likes ABOVE the floor, and the
+**automation level is a table setting** — manual by default, dialed
+up per table, per taste. Rule 1 does not bend for any of it: every
+automated result lands in a slot a human can overtype, the event log
+carries it, and teller still never decides what nobody can change.
+The thesis's play-half ("what's physical stays physical") becomes the
+DEFAULT POSTURE of the shipped floor, not a ceiling on what a system
+may build.
+
+**2 · The containers, final form.** One kernel, four kinds of cargo,
+one merge:
+
+- **teller (the kernel)** — storage, the merge, the event log,
+  roles/pairing, the neutral floor, the small evaluators (dice,
+  effects), sweep/compile/trust, the frozen import contract. Owns no
+  game, ships no vocabulary. "Ships empty" is now a product
+  description, not just an IP rule.
+- **A SYSTEM — pure function, zero IP.** The logic and code (or just
+  declarations — a system that is one JSON file is a full citizen)
+  for running one game on the kernel: kinds, dice, effects, mechanics
+  code, and PANELS — functional, unbranded ("here's the encounters
+  panel and how it works", "a generic character panel", "the NPC
+  details layout"), with assets only where function demands them. No
+  prose, no book art, no branding. **Consequence, load-bearing:
+  mechanics aren't protectable expression, so a no-IP system is
+  freely distributable by ANYONE** — the community-distribution
+  deferral, grown teeth. One system active per campaign; the system
+  is a LAYER in the merge.
+- **A PACK — the book's stuff, rights follow it.** Monsters, NPCs,
+  items, stores, prose, art — and BRANDED panels, each its own
+  self-contained collection of code/art/rules. Rule 4 unchanged:
+  what a pack may carry is its author's affair; who may hand it on
+  follows the content.
+- **A PLUGIN — art-agnostic extended function**, usable with any
+  system: the assistant, a soundboard, a dice camera. NOT in the
+  merge — it provides at registry points (§15). Any number per
+  table.
+- **A STORY** — one table's arrangement, referencing everything by
+  id (unchanged; TEL-87 still owns its manifest questions).
+- **The TABLE'S layer** — the host's own panels folder, the
+  campaign's overrides — always wins (rule 1 for everything).
+
+The merge, after: **teller floor < system (function) < packs
+(content, declared order) < campaign < table.**
+
+**Systems vs plugins — same plumbing, different role.** Folders,
+sweep, esbuild, trust rows: identical machinery. The distinction is
+two properties, both crisp: CARDINALITY (one system — it IS the
+game's identity; N plugins) and POSITION (the system rides the
+merge and owns vocabulary; a plugin never touches the merge and
+provides only at points). Do not collapse the concepts.
+
+**3 · The function/flavor line.** The 2026-08-16 statuses lesson,
+applied totally: *the system carries the mechanic; the pack carries
+the book's words — and now also its pictures — about it.* The
+migrated presentations get sorted one by one against "nothing
+branded": severity-boxes StatusPanel is function (system); the
+Cylinder is the known hard case — "a six-slot rotating spend dial
+that reloads on your turn" is function, drawing it as a REVOLVER is
+flavor (pack skins the system's dial). Expect judgment calls;
+record each.
+
+**4 · On disk, eventually** — a fourth shelf dir:
+
+```
+~/.teller-next/
+├── systems/wiw/        function: declarations + mechanics code +
+│                       unbranded panels   (freely shareable)
+├── packs/wiw-guidebook/ content: bestiary, art, sections, branded
+│                       panels             (rights follow content)
+├── plugins/            cross-system function
+├── panels/             the table's own furniture + teller's two
+└── campaigns/          the facts
+```
+
+Today's `packs/wiw-guidebook/` merges both halves (`system.json`
+inside the pack folder — phase 1's right-for-the-migration choice,
+now known-temporary). The split is a folder move plus the sweep
+learning `systems/`; nothing about the loaded model changes.
+
+**5 · Guard rails restated**, so the platform stays teller:
+
+- Everything computes; everything PROPOSES-or-is-overridable;
+  nothing decides what a human can't change. This binds system and
+  plugin code exactly as it binds teller.
+- The manual floor is compatibility law too: teller's own bundle
+  never requires what the fanciest rung needs (the import-map
+  lesson), and a campaign with a data-only system plays fully.
+- Trust gates every arrival of outside code — system, pack panel,
+  plugin — one human toggle each; a table's own files are its own.
+- The one-table test: none of this platform shape may cost the
+  actual Wednesday table. Build single-table-first; the platform is
+  what falls out.
+
 ### Still open from `ARCHITECTURE.md`
 
 - **Door 2** — system identity is a hand-chosen slug; mint `sys_`.
