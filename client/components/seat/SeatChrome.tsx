@@ -28,7 +28,7 @@ import type { PanelBlock, PanelDef } from '../../../core/panels.ts';
 import { PLACED, surfaceable } from '../../../core/panels.ts';
 import { toSpends } from '../../../core/effects.ts';
 import { ladderList, toLadder } from '../LadderFloor.tsx';
-import { api, panes as fetchPanes, scoreEntry, type Pane } from '../../lib/api.ts';
+import { api, displaySlot, panes as fetchPanes, scoreEntry, type Pane } from '../../lib/api.ts';
 import { paneToPanel, pluginCtx, showing } from '../../lib/panes.ts';
 import { DECLARED, onNudge, PLUGIN_WORD, PROVIDED } from '../../lib/use-session.ts';
 import { useOptimistic, writeEntry, type EntryEdit } from '../../lib/entry.ts';
@@ -157,7 +157,22 @@ export function SeatChrome({
   const [screenDecls, setScreenDecls] = useState<ScreenDecl[]>([]);
   const [records, setRecords] = useState<Records>({});
   const [entity, setEntity] = useState<Entity | undefined>(undefined);
-  const [current, setCurrent] = useState('Sheet');
+  // Remembered per SCREEN, like the console's pane and the display id:
+  // a refresh mid-fight must not yank a player back to Sheet, and one
+  // slotted tab's pick must not aim another's next load. A remembered
+  // name the composite no longer offers falls through `?? tabs[0]`.
+  const tabKey = displaySlot() ? `teller.seat.tab.${displaySlot()}` : 'teller.seat.tab';
+  const [current, setCurrentState] = useState(
+    () => localStorage.getItem(tabKey) ?? 'Sheet',
+  );
+  const setCurrent = (name: string) => {
+    setCurrentState(name);
+    try {
+      localStorage.setItem(tabKey, name);
+    } catch {
+      // Storage full or blocked — the tap still works for this visit.
+    }
+  };
   /** How many standing scales the system declares — 'More' has to know
    * whether the `ladders` block will draw anything before it offers a
    * tab that might turn out to be empty — and `rest` needs their names
