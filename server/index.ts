@@ -82,6 +82,14 @@ import {
   MAX_BYTES,
   saveHandoutBytes,
 } from './handouts.ts';
+import {
+  extFor as boardExtFor,
+  MAX_BYTES as BOARD_MAX_BYTES,
+  saveBoardBytes,
+  toGrid,
+  toWidthInches,
+} from './boards.ts';
+import { calibrationFor, setCalibration, toCalibration } from './calibration.ts';
 import { notesOf, passNote, visibleTo, type NoteHandout } from './notes.ts';
 import { publicBoardState, publicSnapshot } from './public.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
@@ -555,6 +563,16 @@ export async function handleApi(
       return reply(200, { ok: true });
     }
 
+    // What THIS screen is being asked to draw while it's calibrated,
+    // answered from its own identity — the third door a screen may use
+    // about itself, beside hello and viewport. Null is the normal
+    // answer and the overwhelmingly common one. There is deliberately no
+    // way to ask about ANOTHER screen (the notes doors' asymmetry).
+    if (method === 'GET' && a === 'calibration' && !b) {
+      if (!adopted(auth.display)) return reply(200, null);
+      return reply(200, calibrationFor(auth.display.id));
+    }
+
     // Everything below is the DM arranging the room.
     if (!canDm(auth)) return denied();
 
@@ -578,6 +596,36 @@ export async function handleApi(
       const display = shelf.claimDisplay(found.id, name);
       host.room.changed('displays');
       return reply(200, display);
+    }
+
+    // -- calibration: the console draws a ruler on somebody else's glass
+    //
+    // Two doors, and the asymmetry IS the design (the notes doors'
+    // shape): the DM AIMS a pattern at one screen by naming it, and
+    // every other screen asks what IT should be drawing and is answered
+    // from its own identity. There is no way to phrase "what is that
+    // screen showing", and a passive surface grows no control — it draws
+    // what arrived and nothing else (rule 6).
+    //
+    // The RESULT is not written here. It goes through the ordinary
+    // display PATCH as `ppi`/`ppiY`, because that is where the durable
+    // fact about a piece of glass already lives; this is only the ruler.
+    if (method === 'POST' && a && b === 'calibrate') {
+      if (!canDm(auth)) return denied();
+      const display = shelf.display(a);
+      if (!adopted(display)) return reply(404, { error: 'display not found' });
+      const body = await bodyOf(req);
+      // An explicit null puts the screen back to being itself — and the
+      // wizard sends one on its way out, however it left.
+      if (body.pattern === null) {
+        setCalibration(display.id, null);
+      } else {
+        const pattern = toCalibration(body.pattern);
+        if (!pattern) return reply(400, { error: 'not a calibration pattern' });
+        setCalibration(display.id, pattern);
+      }
+      host.room.notify(displayHandle(display.id), 'calibration');
+      return reply(200, { ok: true });
     }
 
     // "Which one of you is Screen 3?"
@@ -1578,8 +1626,136 @@ export async function handleApi(
     if (a === 'record') return reply(200, session.loaded.record(b));
   }
 
-  if (method === 'GET' && head === 'boards' && !a) {
-    return reply(200, session.shelf.boards());
+  // -- boards: the shelf of battlemaps, and the door pictures come in --
+  //
+  // The asset half of §4. A board is a shelf row like a book — reusable
+  // across campaigns, referenced by id — so these are shelf doors and
+  // not campaign ones, and only the fight ON it (`board-state`, below)
+  // belongs to the campaign.
+  //
+  // The upload door is the handouts door's twin and is here for the same
+  // reason: a pack is authored on the shelf and swept in, but a map is a
+  // file the DM just bought, and requiring them to find `~/.teller/map/`
+  // first is requiring them not to bother. Bigger cap (`server/boards.ts`),
+  // because a battlemap is print artwork.
+  //
+  // Every one of these appends (rule 3). The log is the campaign's — it
+  // is the only log there is, and a board arriving is a thing that
+  // happened at this table even though the row outlives it.
+  if (head === 'boards') {
+    if (method === 'GET' && !a) {
+      return reply(200, session.shelf.boards());
+    }
+
+    if (method === 'POST' && a === 'upload' && !b) {
+      if (!canDm(auth)) return denied();
+      if (!host.dataDir) return reply(501, { error: 'this host has no data dir' });
+      const ext = boardExtFor(String(req.headers['content-type'] ?? ''));
+      if (!ext) return reply(415, { error: 'a board is a picture — png, jpg, webp, gif or avif' });
+      const bytes = await rawBody(req, BOARD_MAX_BYTES);
+      if (!bytes) return reply(413, { error: `a board may be ${BOARD_MAX_BYTES} bytes at most` });
+      if (!bytes.length) return reply(400, { error: 'no bytes' });
+      return reply(201, { key: saveBoardBytes(host.dataDir, bytes, ext) });
+    }
+
+    // Mint the row over an already-uploaded key. Two calls rather than
+    // one multipart door: the bytes are content-hashed, so a second
+    // board over the same picture (a lit version and a dark one) costs
+    // nothing and needs no re-upload.
+    if (method === 'POST' && !a) {
+      if (!canDm(auth)) return denied();
+      const body = await bodyOf(req);
+      const key = typeof body.key === 'string' ? body.key.trim() : '';
+      if (!key.startsWith('map/')) return reply(400, { error: 'a board needs its picture' });
+      if (host.dataDir) {
+        const path = normalize(join(host.dataDir, key));
+        if (!path.startsWith(join(host.dataDir, 'map') + '/') || !existsSync(path)) {
+          return reply(400, { error: `no picture at ${key}` });
+        }
+      }
+      const name = typeof body.name === 'string' && body.name.trim() ? body.name.trim() : 'new board';
+      const width = toWidthInches(body.widthInches);
+      const grid = toGrid(body.grid);
+      const board = session.shelf.putBoard({
+        key,
+        name,
+        ...(typeof width === 'number' ? { widthInches: width } : {}),
+        ...(grid ? { grid } : {}),
+      });
+      session.campaign.append(null, actorOf(auth), 'board.added', {
+        id: board.id,
+        name: board.name,
+      });
+      session.changed('boards');
+      return reply(201, board);
+    }
+
+    // What a board IS, edited after the fact — the calibration a DM only
+    // works out once the map is on the table, and rule 1's floor: every
+    // one of these is a stored value a human types over.
+    if (method === 'PATCH' && a && !b) {
+      if (!canDm(auth)) return denied();
+      const board = session.shelf.board(a);
+      if (!board) return reply(404, { error: `no board ${a}` });
+      const body = await bodyOf(req);
+      const next = { ...board };
+      if (typeof body.name === 'string' && body.name.trim()) next.name = body.name.trim();
+      if ('widthInches' in body) {
+        const width = toWidthInches(body.widthInches);
+        if (width === null) delete next.widthInches;
+        else if (typeof width === 'number') next.widthInches = width;
+      }
+      if ('grid' in body) {
+        const grid = toGrid(body.grid);
+        if (grid) next.grid = grid;
+        else delete next.grid;
+      }
+      const saved = session.shelf.putBoard(next);
+      session.campaign.append(null, actorOf(auth), 'board.edited', {
+        id: saved.id,
+        name: saved.name,
+      });
+      session.changed('boards');
+      return reply(200, saved);
+    }
+
+    // Taking one off the shelf takes the fight on it too, and the table
+    // stops showing a board that no longer exists — the handout door's
+    // own reasoning, applied to the other ref. Deleting the ACTIVE board
+    // is allowed and CLEARS it rather than being refused: a refusal
+    // would mean the way to delete a board is to go and find the control
+    // that un-shows it first, which is a puzzle, not a safeguard.
+    if (method === 'DELETE' && a && !b) {
+      if (!canDm(auth)) return denied();
+      const board = session.shelf.board(a);
+      if (!board) return reply(404, { error: `no board ${a}` });
+      const actor = actorOf(auth, url.searchParams.get('actor') ?? '');
+      const manifest = session.campaign.root();
+      const ref = manifest.refs?.board;
+      const showing = (Array.isArray(ref) ? ref[0]?.id : ref?.id) === board.id;
+      session.campaign.clearBoardState(board.id, actor);
+      session.shelf.removeBoard(board.id);
+      if (showing) {
+        const refs = { ...(manifest.refs ?? {}) };
+        delete refs.board;
+        session.save({ ...manifest, refs }, actor);
+      }
+      session.campaign.append(null, actor, 'board.removed', {
+        id: board.id,
+        name: board.name,
+      });
+      // The key is a content hash, so two boards may honestly share one
+      // picture; the bytes only go when nothing else names them.
+      const stillUsed = session.shelf.boards().some((b) => b.key === board.key);
+      if (!stillUsed && host.dataDir) {
+        const path = normalize(join(host.dataDir, board.key));
+        if (path.startsWith(join(host.dataDir, 'map') + '/') && existsSync(path)) {
+          rmSync(path, { force: true });
+        }
+      }
+      session.changed(showing ? 'board' : 'boards');
+      return reply(200, { ok: true });
+    }
   }
 
   if (head === 'board-state' && a && !b) {
