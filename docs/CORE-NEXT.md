@@ -538,6 +538,25 @@ third-party plugins exists.
 proposers pure, portable, cacheable. The first plugin that genuinely
 can't live with it makes the argument (the empirical-ceiling rule).
 
+**The argument arrived: the STORE is plugin №2, by extraction**
+(2026-08-20, Brian: "let it finish up, then after it's done we can
+extract it into a plugin"). The store/vendor flow lands first as
+ordinary furniture — mechanics in their own server module, the panel
+declared at the SYSTEM layer so an undeclaring system pays nothing —
+because the plugin runtime can't host it yet: a store needs session
+state (carts), doors seats hit, and SURFACES (a console counter, a
+seat shelf), which is everything the held line excludes and exactly
+what the sketched `control.*`/`pane.*` points were reserved for. So
+the store is the DESIGNATED FIRST CUSTOMER of the plugin UI tier:
+build `pane.*` (a plugin declares panels/screens) and whatever session
+seam carts prove to need, against this concrete case, then extract the
+store wholesale — the §L pattern again (right home eventually, working
+code now, notice served). Until the extraction, the store's residence
+in teller's client registry is a SQUATTER'S, not precedent; and the
+generic counter stays generic (currency record + catalog in, no WiW
+words), so WiW's flavor rides data and pack panels over it, the same
+way the sheet wears its book.
+
 **Plugin №1 is the assistant.** It already passes the three-question
 test, already has the config precedent (`assistant.json` — absent means
 no button), and already is two proposers: `suggestTurn` and
