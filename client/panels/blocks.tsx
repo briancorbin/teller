@@ -17,8 +17,9 @@ import { TagSection } from '../components/TagSection.tsx';
 import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters.tsx';
 import { SheetPanel } from '../components/sheet/SheetPanel.tsx';
 import { presentationOf, useSystemFaces } from '../lib/presentations.ts';
-import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
+import { IncludeBlock, registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
 import { CarriedScreen } from '../components/items/Screen.tsx';
+import { SpendDoor } from '../components/SpendDoor.tsx';
 import type { ScreenDecl } from '../components/items/types.ts';
 
 // The faces this file summons by name (§L, phase 3.5 complete). They are
@@ -605,6 +606,18 @@ function StatusesBlock({ ctx, title = 'Statuses' }: { ctx: BlockCtx; title?: str
 
 registerBlock('statuses', (_block, ctx) => <StatusesBlock ctx={ctx} />);
 
+// ---- panel (the include — §M-5a′) --------------------------------------
+// The one block that isn't a drawing: it names another panel, and
+// whatever that name MERGES to is rendered here, inheriting this
+// context whole. Every level of composition becomes a named, mergeable
+// file — and a pack restating one fragment updates every arrangement
+// that includes it. The refusals (a cycle, a name nobody declares) live
+// with the machinery in `render.tsx`.
+
+registerBlock('panel', (block, ctx) => (
+  <IncludeBlock name={typeof block.name === 'string' ? block.name : ''} ctx={ctx} />
+));
+
 // ---- aside ---------------------------------------------------------------
 // A plain, teller-authored line — never pack content (rule 4), so this
 // is the one text block that's safe to write straight into a panel's
@@ -617,40 +630,13 @@ registerBlock('aside', (block, _ctx) => {
 });
 
 // ---- spend-door (the way in to a declared advancement menu) -------------
-// Synthesized by the seat chrome onto 'More', which is where the old app
-// kept its `PrestigePanel`. It is deliberately NOT a chip on the top bar:
-// that bar carries what a TURN spends (`use`), and Prestige is what a
-// career spends. The block carries its own `onOpen` because the chrome
-// synthesizes it — a declared panel has no way to write a callback into
-// JSON, and no business opening this menu.
+// Self-contained since §M-5a: it reads `spends` off the merged records
+// and the wallet off the subject, so a DECLARED panel may carry it —
+// which is what let 'More' stop being code and become a system's own
+// `.panel` file. The component (door + overlay) is
+// `client/components/SpendDoor.tsx`.
 
-registerBlock('spend-door', (block, _ctx) => {
-  const onOpen = block.onOpen as (() => void) | undefined;
-  if (typeof onOpen !== 'function') return null;
-  const label = typeof block.label === 'string' ? block.label : 'advancement';
-  const wallet = typeof block.wallet === 'number' ? block.wallet : 0;
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-haspopup="dialog"
-      aria-label={`${label}: ${wallet}`}
-      className={`${card} flex items-center gap-3 text-left transition-colors hover:bg-stone-800/40`}
-    >
-      <span className={sectionLabel}>{label}</span>
-      <span
-        className="flex h-7 min-w-[2.6rem] items-center justify-center rounded-full border px-2.5 font-mono text-sm text-stone-100"
-        style={{
-          borderColor: 'var(--sheet-accent, #f59e0b)',
-          background: 'color-mix(in srgb, var(--sheet-accent, #f59e0b) 12%, transparent)',
-        }}
-      >
-        {wallet}
-      </span>
-      <span className="ml-auto text-xs uppercase tracking-widest text-stone-500">open ▸</span>
-    </button>
-  );
-});
+registerBlock('spend-door', (_block, ctx) => <SpendDoor ctx={ctx} />);
 
 // ---- carried (§K — the system's own Weapons/Abilities/Inventory) -------
 // The seat chrome synthesizes one of these per declared screen

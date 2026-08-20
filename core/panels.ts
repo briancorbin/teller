@@ -37,15 +37,56 @@
 
 export type PanelBlock = { block: string } & Record<string, unknown>;
 
+/**
+ * The five chrome seams a COMPOSITE may name a presentation for (§M-5a).
+ * Each key is an OVERRIDE hook, never a requirement: absent, the seam
+ * resolves the normal way (its default name, system-first, pack-winning,
+ * teller's floor last), so a themed set arrives with zero composite
+ * edits.
+ */
+export type PanelChrome = {
+  header?: string;
+  bar?: string;
+  frame?: string;
+  turncall?: string;
+  notebanner?: string;
+};
+
 export type PanelDef = {
   /** The word. Later layers override by restating it. */
   name: string;
   label?: string;
   blurb?: string;
+  /** The bar's own glyph for this panel, when it wears one. */
+  icon?: string;
   /** What it arranges: one entity, or nothing (a tool panel). */
   subject?: 'entity' | 'none';
   mounted?: PanelBlock[];
   held?: PanelBlock[];
+  /**
+   * **The COMPOSITE** (§M-5a): an ordered list of panel NAMES this panel
+   * assembles into a bar of tabs. A panel with `tabs` declares the SEAT
+   * — which screens it holds and in what order — and merges by name like
+   * everything else, so a table reorders everyone's tabs in four lines
+   * of json.
+   *
+   * Strays SURFACE: an entity-subject panel not listed here APPENDS
+   * rather than vanishing (the `rest` law applied to navigation).
+   * `omit` is the explicit exclusion for the author who means it.
+   */
+  tabs?: string[];
+  /** Names deliberately kept OUT of the tab bar — the stray append's opt-out. */
+  omit?: string[];
+  /** Seam presentations, by seam. Only a composite reads them. */
+  chrome?: PanelChrome;
+  /**
+   * `false` makes this declaration a FRAGMENT (§M-5a′): merged and
+   * overridable exactly as ever, and includable by name from another
+   * panel's arrangement — but never offered as a tab, a console pane or
+   * an assignment. The `panes.ts` law inverted on purpose: a fragment is
+   * deliberately not a place anyone can be pointed.
+   */
+  surface?: boolean;
   /**
    * Where this panel sits in a bar of tabs. Ordinary declaration data,
    * so it merges like everything else — a later layer restating the
@@ -87,10 +128,29 @@ export function toPanel(raw: unknown): PanelDef | undefined {
           (b) => b && typeof b === 'object' && typeof (b as PanelBlock).block === 'string',
         ) as PanelBlock[])
       : undefined;
+  const words = (v: unknown): string[] | undefined =>
+    Array.isArray(v)
+      ? v.filter((n): n is string => typeof n === 'string' && n.trim() !== '').map((n) => n.trim())
+      : undefined;
   const out: PanelDef = { name };
   if (typeof r.label === 'string' && r.label.trim()) out.label = r.label;
   if (typeof r.blurb === 'string' && r.blurb.trim()) out.blurb = r.blurb;
+  if (typeof r.icon === 'string' && r.icon.trim()) out.icon = r.icon.trim();
   if (r.subject === 'entity' || r.subject === 'none') out.subject = r.subject;
+  if (r.surface === false) out.surface = false;
+  const tabs = words(r.tabs);
+  const omit = words(r.omit);
+  if (tabs) out.tabs = tabs;
+  if (omit) out.omit = omit;
+  if (r.chrome && typeof r.chrome === 'object' && !Array.isArray(r.chrome)) {
+    const raw = r.chrome as Record<string, unknown>;
+    const chrome: PanelChrome = {};
+    for (const seam of ['header', 'bar', 'frame', 'turncall', 'notebanner'] as const) {
+      const word = raw[seam];
+      if (typeof word === 'string' && word.trim()) chrome[seam] = word.trim();
+    }
+    if (Object.keys(chrome).length) out.chrome = chrome;
+  }
   const mounted = blocks(r.mounted);
   const held = blocks(r.held);
   if (mounted) out.mounted = mounted;
@@ -98,6 +158,84 @@ export function toPanel(raw: unknown): PanelDef | undefined {
   if (typeof r.id === 'string' && r.id.trim()) out.id = r.id;
   if (typeof r.order === 'number' && Number.isFinite(r.order)) out.order = r.order;
   return out;
+}
+
+/**
+ * Whether a declaration may be OFFERED — a tab, a console pane, a seat
+ * assignment. `surface: false` is the only thing that says no (§M-5a′):
+ * a fragment merges and overrides like any other panel and is includable
+ * by name, but nobody can be pointed at it.
+ */
+export function surfaceable(panel: PanelDef): boolean {
+  return panel.surface !== false;
+}
+
+/** Every panel NAME an arrangement includes, blocks nested in `columns` included. */
+export function includedNames(panel: PanelDef): string[] {
+  const out: string[] = [];
+  const walk = (blocks: unknown): void => {
+    if (!Array.isArray(blocks)) return;
+    for (const raw of blocks) {
+      if (!raw || typeof raw !== 'object') continue;
+      const block = raw as PanelBlock;
+      if (block.block === 'panel' && typeof block.name === 'string' && block.name.trim())
+        out.push(block.name.trim());
+      if (Array.isArray(block.columns)) for (const col of block.columns) walk(col);
+    }
+  };
+  walk(panel.mounted);
+  walk(panel.held);
+  return [...new Set(out)];
+}
+
+/**
+ * What's wrong with the includes in a merged collection — a dangling
+ * name, or a cycle (§M-5a′: "cycles and dangling includes refuse out
+ * loud … in the load report AND at the render site").
+ *
+ * It lives HERE, over the merged declarations, because that's the only
+ * place either fact is knowable: an include resolves against whatever
+ * the name merges to, so a pack restating one fragment can make or break
+ * a cycle in an arrangement it never touched. The renderer refuses in
+ * place as well — it must, since it also draws panels no collection ever
+ * reported (a plugin's pane) — but it can only ever see the one branch
+ * it walked, while this sees the graph.
+ */
+export function includeProblems(panels: PanelDef[]): { dir: string; problem: string }[] {
+  const by = new Map<string, PanelDef>();
+  for (const panel of panels) by.set(panel.name.trim().toLowerCase(), panel);
+  const problems: { dir: string; problem: string }[] = [];
+  const done = new Set<string>();
+
+  const walk = (panel: PanelDef, trail: string[]): void => {
+    for (const name of includedNames(panel)) {
+      const key = name.toLowerCase();
+      if (trail.includes(key)) {
+        problems.push({
+          dir: `panel '${panel.name}'`,
+          problem: `includes '${name}', which includes it back — ${[...trail, key].join(' → ')}`,
+        });
+        continue;
+      }
+      const held = by.get(key);
+      if (!held) {
+        problems.push({
+          dir: `panel '${panel.name}'`,
+          problem: `includes '${name}', and no panel by that name is declared`,
+        });
+        continue;
+      }
+      walk(held, [...trail, key]);
+    }
+  };
+
+  for (const panel of panels) {
+    const key = panel.name.trim().toLowerCase();
+    if (done.has(key)) continue;
+    done.add(key);
+    walk(panel, [key]);
+  }
+  return problems;
 }
 
 /**

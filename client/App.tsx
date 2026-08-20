@@ -19,7 +19,7 @@ import { pluginCtx, paneToPanel, surfaces } from './lib/panes.ts';
 import { onIdentify, resetStream, useLive } from './lib/use-session.ts';
 import { btnPrimary, card, input, sectionLabel } from './lib/ui.ts';
 import type { PanelDef } from '../core/panels.ts';
-import { PanelSurface, type BlockCtx, type Glass } from './panels/render.tsx';
+import { PanelCollection, PanelSurface, type BlockCtx, type Glass } from './panels/render.tsx';
 import { SeatChrome } from './components/seat/SeatChrome.tsx';
 import { CampaignScreen } from './views/campaigns.tsx';
 import { CalibrationOverlay } from './components/board/CalibrationOverlay.tsx';
@@ -212,15 +212,21 @@ function PanelRoute({
           glass={ctx.glass}
         />
       ) : (
-        <PanelSurface
-          panel={panel}
-          ctx={ctx}
-          fallback={
-            <p className="p-8 text-sm text-stone-500">
-              '{name}' failed to render — the floor has it
-            </p>
-          }
-        />
+        // The collection an include resolves against (§M-5a′) — the same
+        // merged list this route picked the panel out of, so a
+        // `{ block: 'panel', name }` inside it reaches whatever that
+        // name merges to.
+        <PanelCollection panels={panels.data}>
+          <PanelSurface
+            panel={panel}
+            ctx={ctx}
+            fallback={
+              <p className="p-8 text-sm text-stone-500">
+                '{name}' failed to render — the floor has it
+              </p>
+            }
+          />
+        </PanelCollection>
       )}
     </div>
   );

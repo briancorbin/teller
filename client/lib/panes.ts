@@ -24,7 +24,7 @@
 // panel folder's `panel.tsx` takes. Nothing in the renderer learned
 // that plugins exist.
 
-import { byPanelOrder, type PanelDef } from '../../core/panels.ts';
+import { byPanelOrder, surfaceable, type PanelDef } from '../../core/panels.ts';
 import { pluginCall, type Pane } from './api.ts';
 import type { BlockCtx } from '../panels/render.tsx';
 
@@ -59,9 +59,13 @@ export function surfaces(
   panes: Pane[] | undefined,
   subject: 'entity' | 'none',
 ): PanelDef[] {
-  const declared = (panels ?? []).filter((p) =>
-    subject === 'entity' ? p.subject === 'entity' : p.subject !== 'entity',
-  );
+  // `surface: false` leaves here and nowhere else (§M-5a′): a FRAGMENT
+  // merges, overrides and can be included by name, but it is never
+  // offered — not as a console tab, not in the Screens picker, not as a
+  // seat's layout. The panes.ts law inverted on purpose.
+  const declared = (panels ?? [])
+    .filter(surfaceable)
+    .filter((p) => (subject === 'entity' ? p.subject === 'entity' : p.subject !== 'entity'));
   const provided = (panes ?? [])
     .filter((p) => (subject === 'entity' ? p.subject === 'entity' : p.subject !== 'entity'))
     .map(paneToPanel);

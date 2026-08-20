@@ -26,7 +26,7 @@
 
 import { refIn, refsIn, sameName, type Entity, type Ref } from './entity.ts';
 import { mergeBy } from './merge.ts';
-import { byPanelOrder, type PanelDef } from './panels.ts';
+import { byPanelOrder, includeProblems, type PanelDef } from './panels.ts';
 import { defaultPanels, sweepPanels } from './panels-shelf.ts';
 import { sweepPacks, type PackProblem } from './packs-shelf.ts';
 import { sweepSystems } from './systems-shelf.ts';
@@ -126,7 +126,6 @@ export class Loaded {
     this.system = system;
     this.packs = packs;
     this.missing = missing;
-    this.panelProblems = panelProblems;
     this.packProblems = packProblems;
     // teller's own furniture is the FLOOR: the panels that ship with
     // the install (`defaults/panels/`), overridable by any layer above
@@ -143,6 +142,14 @@ export class Loaded {
     this.#table = { source: 'table', data: { panels: tablePanels } };
     this.#campaign = campaign;
     this.#disabled = disabled;
+    // A dangling or circular include is a fact about the MERGED
+    // collection, not about any one folder (§M-5a′), so it can only be
+    // asked once every layer is stacked — here, at the end of the
+    // constructor, and it joins the problems the sweeps already found.
+    this.panelProblems = [
+      ...panelProblems,
+      ...includeProblems(this.declarations('panels') as PanelDef[]),
+    ];
   }
 
   /**

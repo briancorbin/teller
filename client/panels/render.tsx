@@ -98,6 +98,59 @@ export function RenderBlock({
   return <>{render(block, ctx)}</>;
 }
 
+// -- the include (§M-5a′) --------------------------------------------------
+//
+// `{ block: 'panel', name }` — an arrangement includes another panel by
+// name, inheriting the subject/records/write context it's placed in.
+// Every level of composition becomes a named, mergeable file, and
+// later-wins reaches INSIDE arrangements: a pack restating one fragment
+// updates every arrangement that includes it, without those
+// arrangements being restated.
+//
+// Two guards, and both refuse OUT LOUD rather than blanking. A CYCLE is
+// caught by the trail below and reported again in the load report
+// (`includeProblems`, which sees the whole graph); a DANGLING name is
+// refused here, because the collection this surface was handed is the
+// only truth a render site has.
+
+const PanelCollectionContext = createContext<PanelDef[] | undefined>(undefined);
+const IncludeTrailContext = createContext<string[]>([]);
+
+/** Hand a subtree the merged panel collection an include resolves against. */
+export function PanelCollection({
+  panels,
+  children,
+}: {
+  panels: PanelDef[] | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <PanelCollectionContext.Provider value={panels}>{children}</PanelCollectionContext.Provider>
+  );
+}
+
+/** The `panel` block itself — registered from `blocks.tsx` with the rest. */
+export function IncludeBlock({ name, ctx }: { name: string; ctx: BlockCtx }) {
+  const panels = useContext(PanelCollectionContext);
+  const trail = useContext(IncludeTrailContext);
+  const word = name.trim();
+  if (!word) return <Refusal>an include with no panel name</Refusal>;
+  const key = word.toLowerCase();
+  if (trail.includes(key))
+    return <Refusal>'{word}' includes itself — {[...trail, key].join(' → ')}</Refusal>;
+  const panel = panels?.find((p) => p.name.trim().toLowerCase() === key);
+  if (!panel) return <Refusal>no panel named '{word}' to include</Refusal>;
+  return (
+    <IncludeTrailContext.Provider value={[...trail, key]}>
+      <PanelSurface
+        panel={panel}
+        ctx={ctx}
+        fallback={<Refusal>'{word}' failed to render — the floor has it</Refusal>}
+      />
+    </IncludeTrailContext.Provider>
+  );
+}
+
 /** Pick the authored arrangement for this glass — never reflow one
  * into the other (rule 6: two families, one question). */
 export function arrangementOf(

@@ -332,6 +332,43 @@ describe("teller's own furniture (§E)", () => {
     campaign.close();
   });
 
+  it('reports a dangling include, and stops reporting it once a layer supplies the name', () => {
+    // §M-5a′: a cycle or a dangling include is a fact about the MERGED
+    // collection — which is why the load report is where it belongs, and
+    // why a pack shipping the missing fragment silences it without the
+    // arrangement that includes it being touched.
+    const shelf = openShelf(dir);
+    shelf.putSystem({
+      id: 'sys_i',
+      name: 'I',
+      data: {
+        panels: [
+          { name: 'sheet', subject: 'entity', held: [{ block: 'panel', name: 'vitals-strip' }] },
+        ],
+      },
+    });
+    const campaign = createCampaign(dir, 'incl', 'Includes');
+    campaign.save({ ...campaign.root(), refs: { system: { id: 'sys_i', name: 'I' } } }, 't');
+
+    let loaded = loadCampaign(shelf, campaign, dir);
+    expect(loaded.panelProblems.map((p) => p.problem).join(' ')).toContain("includes 'vitals-strip'");
+
+    campaign.putTemplate(
+      'panels',
+      { name: 'vitals-strip', surface: false, held: [{ block: 'list', list: 'resources' }] },
+      't',
+    );
+    loaded = loadCampaign(shelf, campaign, dir);
+    expect(loaded.panelProblems).toEqual([]);
+    // …and the fragment merged like any other declaration, while never
+    // being something a screen could be pointed at.
+    const strip: any = loaded
+      .declarations('panels')
+      .find((p: any) => p.name === 'vitals-strip');
+    expect(strip.surface).toBe(false);
+    campaign.close();
+  });
+
   it("a pack's panel beats the system's by restating the name (branded over unbranded)", () => {
     const shelf = openShelf(dir);
     const campaign = createCampaign(dir, 'furn4', 'Furniture Four');
