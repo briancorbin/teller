@@ -30,6 +30,7 @@
 
 import { useEffect } from 'react';
 import { findEntry, type Entry } from '../../../core/entity.ts';
+import { isAoe } from '../../../core/exchange.ts';
 import type { Template } from '../../../core/stamp.ts';
 import { btn, btnGhost, sectionLabel } from '../../lib/ui.ts';
 
@@ -67,7 +68,7 @@ export function attackProfile(attack: Template): {
     ...(typeof band === 'string' ? { band } : {}),
     cost: findEntry(profile, 'Cost'),
     damage: findEntry(profile, 'Damage'),
-    aoe: findEntry(profile, 'AOE') !== undefined,
+    aoe: isAoe(profile),
     piercing: findEntry(profile, 'Piercing'),
     inflicts: attack.lists?.inflicts ?? [],
   };
@@ -93,7 +94,7 @@ function AttackLine({ attack }: { attack: Template }) {
   const inflicts = attack.lists?.inflicts ?? [];
   const cost = findEntry(profile, 'Cost');
   const damage = findEntry(profile, 'Damage');
-  const aoe = findEntry(profile, 'AOE');
+  const aoe = isAoe(profile);
   const piercing = findEntry(profile, 'Piercing');
   return (
     <div className="flex flex-wrap items-baseline gap-x-2 rounded-md bg-stone-950/60 px-3 py-1.5">

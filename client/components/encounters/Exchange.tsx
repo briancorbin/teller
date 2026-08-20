@@ -25,6 +25,15 @@
 // the honest thing the old app also offered — a number the Warden types,
 // because the table just rolled it in front of them.
 //
+// AOE is the one thing that widens step ②, and the gate is DATA: an
+// action whose printed profile carries the marker (`isAoe`) catches
+// everyone the Warden taps, and everything else stays exactly one deep.
+// One throw, then a separate argument with each of them — their own
+// defense, their own tolerance, their own severities, their own line in
+// the ledger — and the cost paid ONCE, because the action was taken
+// once. Nothing about that is a second flow: the single-target exchange
+// is this one with one name in the list.
+//
 // The writes go through the ordinary entry door, one at a time, in the
 // plan's own order — the same posture as `client/lib/spend.ts`, and for
 // the same reason. Not atomic, and better for saying so: a half-applied
@@ -43,6 +52,7 @@ import {
   vitalIn,
   type ExchangeRecord,
   type RollRecord,
+  type TargetOutcome,
 } from '../../../core/exchange.ts';
 import type { NarrationProposal } from '../../../core/registry.ts';
 import { api } from '../../lib/api.ts';
@@ -81,6 +91,12 @@ export type Armed = {
   frenzy?: boolean;
   /** The reach it's printed under, when the printing gives one. */
   band?: string;
+  /**
+   * It catches everyone in the band, not one of them (`isAoe`). The
+   * ONLY thing that opens the target step to more than one pick — the
+   * gate is the printed profile, never a switch the Warden flips.
+   */
+  aoe?: boolean;
   /** The pool the damage rolls, when the printing gives one. */
   damage?: string;
   /** What the printed line costs, when it's a number and not a sentence. */
@@ -91,6 +107,28 @@ export type Armed = {
 };
 
 export type Combatant = { id: string; label: string };
+
+/**
+ * One target's half of the exchange, kept per target.
+ *
+ * An AOE action rolls ONCE and then argues with each of them separately
+ * — their own defense, their own tolerance dice, their own severities,
+ * their own transition once it lands. The single-target flow is this
+ * record with exactly one key in it, which is why there is no second
+ * code path below.
+ */
+type TargetState = {
+  defenses: string[];
+  defFaces?: (string | null)[];
+  /** What the table rolled with its own hands, typed in. */
+  typed: string;
+  /** A severity somebody typed over — `null` means dropped. */
+  sevSet?: Record<string, number | null>;
+  /** The transition that landed, recorded at the press. */
+  landed?: { name: string; from: number; to: number };
+};
+
+const BLANK: TargetState = { defenses: [], typed: '' };
 
 /**
  * The list a printed sheet keeps its resistances in. Named here because
@@ -317,35 +355,55 @@ export function Exchange({
   round: number;
   onWrite: (entityId: string, edit: EntryWrite) => Promise<unknown>;
 }) {
-  const [targetId, setTargetId] = useState<string | undefined>(undefined);
+  /** Everyone picked, in the order they were picked. One deep, unless it's AOE. */
+  const [targetIds, setTargetIds] = useState<string[]>([]);
+  /** Each of them keeps their OWN defense, dice and severities. */
+  const [states, setStates] = useState<Record<string, TargetState>>({});
   const [faces, setFaces] = useState<(string | null)[] | undefined>(undefined);
-  const [defenses, setDefenses] = useState<string[]>([]);
-  const [defFaces, setDefFaces] = useState<(string | null)[] | undefined>(undefined);
-  /** What the table rolled with its own hands, typed in. */
-  const [typed, setTyped] = useState('');
   const [tolFaces, setTolFaces] = useState<Record<string, (string | null)[]>>({});
-  const [sevSet, setSevSet] = useState<Record<string, number | null>>({});
   const [spend, setSpend] = useState<number | undefined>(undefined);
   const [moved, setMoved] = useState(0);
   const [applied, setApplied] = useState(false);
-  /** The transition that landed, recorded at the press. */
-  const [landed, setLanded] = useState<{ name: string; from: number; to: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   /** Pools already filed as rolls, so applying doesn't file them twice. */
   const filed = useRef(new Set<string>());
 
   const foe = actor.type === 'foe';
-  const target = targetId ? sheetOf(targetId) : undefined;
-  const targetFoe = target?.type === 'foe';
-  const targetVital = vitalIn(target?.lists);
-  // A frenzied target defends with what the frenzy leaves it.
-  const offered = defensesOf(readingLists(target), pins, targetVital?.entry);
+  /** The printed profile decides this, never the Warden and never this file. */
+  const aoe = armed.aoe === true;
+  const targets = targetIds
+    .map((id) => sheetOf(id))
+    .filter((t): t is Entity => t !== undefined);
+
+  const stateOf = (id: string): TargetState => states[id] ?? BLANK;
+  const patch = (id: string, next: Partial<TargetState>) =>
+    setStates((prior) => ({ ...prior, [id]: { ...(prior[id] ?? BLANK), ...next } }));
 
   /** Anything changed after a press means the press no longer describes it. */
   const touched = () => {
     setApplied(false);
-    setLanded(null);
+    setStates((prior) =>
+      Object.fromEntries(Object.entries(prior).map(([id, s]) => [id, { ...s, landed: undefined }])),
+    );
+  };
+
+  /**
+   * Pick somebody, or take them back off. An AOE action ADDS — everyone
+   * in the band is caught by the same throw; anything else REPLACES,
+   * which is the single-target flow exactly as it always was.
+   */
+  const toggleTarget = (id: string) => {
+    const on = targetIds.includes(id);
+    setTargetIds(on ? targetIds.filter((x) => x !== id) : aoe ? [...targetIds, id] : [id]);
+    // A pick starts clean — its own dice, its own severities. A
+    // single-target swap clears the one it replaced for the same reason.
+    setStates((prior) => {
+      const next = aoe ? { ...prior } : {};
+      delete next[id];
+      return next;
+    });
+    setApplied(false);
   };
 
   const file = async (record: RollRecord, key: string) => {
@@ -353,14 +411,18 @@ export function Exchange({
     await api('/api/rolls', { body: record }).catch(() => undefined);
   };
 
-  const throwPool = async (pool: string, key: string, forWhat: string, on?: Entity) => {
+  const throwPool = async (
+    pool: string,
+    key: string,
+    forWhat: string,
+    onFaces: (rolled: (string | null)[]) => void,
+    on?: Entity,
+  ) => {
     if (!dice) return;
     const rolled = rollPool(pool, dice);
     const { total } = tallyFaces(rolled, dice);
     const who = on ?? actor;
-    if (key === 'attack') setFaces(rolled);
-    else if (key === 'defense') setDefFaces(rolled);
-    else setTolFaces((prior) => ({ ...prior, [key]: rolled }));
+    onFaces(rolled);
     await file(
       {
         by: who.id,
@@ -376,22 +438,47 @@ export function Exchange({
     );
   };
 
+  const putTolFaces = (key: string) => (rolled: (string | null)[]) =>
+    setTolFaces((prior) => ({ ...prior, [key]: rolled }));
+
+  /** ONE throw, however many it caught — the action was taken once. */
   const hits = tallyFaces(faces ?? [], dice).total;
-  const rolledDefense = tallyFaces(defFaces ?? [], dice).total;
-  const typedNumber = typed.trim() === '' ? undefined : Number(typed.trim());
-  const blocked =
-    typedNumber !== undefined && Number.isFinite(typedNumber)
-      ? Math.max(0, Math.round(typedNumber))
-      : rolledDefense;
-  const damage = damageFrom(hits, blocked);
   const rolled = (faces ?? []).some(Boolean) || !armed.damage;
 
-  const defPool = combinePools(
-    offered.filter((o) => defenses.includes(o.name) && typeof o.value === 'string' && isPool(o.value)).map((o) => String(o.value)),
-  );
+  const typedOn = (id: string): number | undefined => {
+    const raw = stateOf(id).typed.trim();
+    if (raw === '') return undefined;
+    const n = Number(raw);
+    return Number.isFinite(n) ? Math.max(0, Math.round(n)) : undefined;
+  };
+  const blockedOn = (id: string): number =>
+    typedOn(id) ?? tallyFaces(stateOf(id).defFaces ?? [], dice).total;
+  const damageOn = (id: string): number => damageFrom(hits, blockedOn(id));
 
-  /** What one inflicted status proposes right now — arithmetic and words. */
-  const severityOf = (inflict: Entry) => {
+  /** A frenzied target defends with what the frenzy leaves it. */
+  const offeredOn = (t: Entity) =>
+    defensesOf(readingLists(t), pins, vitalIn(t.lists)?.entry);
+
+  const defPoolOn = (t: Entity) =>
+    combinePools(
+      offeredOn(t)
+        .filter(
+          (o) =>
+            stateOf(t.id).defenses.includes(o.name) &&
+            typeof o.value === 'string' &&
+            isPool(o.value),
+        )
+        .map((o) => String(o.value)),
+    );
+
+  /**
+   * What one inflicted status proposes right now, ON ONE TARGET —
+   * arithmetic and words. The severity pool the ACTION printed is rolled
+   * once and shared; what each of them tolerates is their own, so the
+   * tolerance dice are keyed by who threw them.
+   */
+  const severityOf = (t: Entity, inflict: Entry) => {
+    const sevSet = stateOf(t.id).sevSet ?? {};
     if (inflict.name in sevSet) {
       const set = sevSet[inflict.name];
       return { value: set, note: undefined as string | undefined };
@@ -402,14 +489,14 @@ export function Exchange({
         : typeof inflict.value === 'string' && isPool(inflict.value)
           ? tallyFaces(tolFaces[`printed:${inflict.name}`] ?? [], dice).total
           : 0;
-    const tol = toleranceFor(readingOf(target, TOLERANCES), inflict.name);
+    const tol = toleranceFor(readingOf(t, TOLERANCES), inflict.name);
     const relief =
       tol?.flat !== undefined
         ? tol.flat
         : tol?.pool
-          ? tallyFaces(tolFaces[`tolerance:${inflict.name}`] ?? [], dice).total
+          ? tallyFaces(tolFaces[`tolerance:${t.id}:${inflict.name}`] ?? [], dice).total
           : 0;
-    const held = numberOf(findEntry(listOf(target, conditionsList), inflict.name));
+    const held = numberOf(findEntry(listOf(t, conditionsList), inflict.name));
     const decl = statuses.find((s) => s.name.toLowerCase() === inflict.name.trim().toLowerCase());
     const out = proposeSeverity({
       printed,
@@ -422,14 +509,21 @@ export function Exchange({
     return { value: out.value, note: out.note };
   };
 
-  const setSeverity = (name: string, value: number | null) =>
-    setSevSet((prior) => ({ ...prior, [name]: value }));
+  const setSeverity = (id: string, name: string, value: number | null) =>
+    patch(id, { sevSet: { ...(stateOf(id).sevSet ?? {}), [name]: value } });
 
   /**
    * Land it. One press writes the damage, every status that still has a
    * severity, and what the turn spent — which is the only automation
    * here, and it happens after a human has read the arithmetic and
    * chosen to press.
+   *
+   * TARGET BY TARGET, in the order they were picked, through the same
+   * entry door as everything else: each victim's writes append their own
+   * events, so `/undo` steps back one victim at a time rather than
+   * unpicking a blast in one lump (rule 3). Not atomic, and better for
+   * saying so — a half-applied blast leaves ordinary values a stepper
+   * can fix.
    */
   const apply = async () => {
     setBusy(true);
@@ -453,26 +547,30 @@ export function Exchange({
         );
       }
 
-      const hung: { name: string; severity: number }[] = [];
-      let vitalMove: ExchangeRecord['vital'] | undefined;
+      const outcomes: TargetOutcome[] = [];
 
-      if (target && targetVital && damage > 0) {
-        const to = afterDamage(targetVital.entry, damage);
-        vitalMove = {
-          name: targetVital.entry.name,
-          from: numberOf(targetVital.entry) ?? 0,
-          to,
-        };
-        await onWrite(target.id, {
-          list: targetVital.list,
-          name: targetVital.entry.name,
-          value: to,
-        });
-      }
+      for (const target of targets) {
+        const targetVital = vitalIn(target.lists);
+        const damage = damageOn(target.id);
+        const hung: { name: string; severity: number }[] = [];
+        let vitalMove: TargetOutcome['vital'];
 
-      if (target) {
+        if (targetVital && damage > 0) {
+          const to = afterDamage(targetVital.entry, damage);
+          vitalMove = {
+            name: targetVital.entry.name,
+            from: numberOf(targetVital.entry) ?? 0,
+            to,
+          };
+          await onWrite(target.id, {
+            list: targetVital.list,
+            name: targetVital.entry.name,
+            value: to,
+          });
+        }
+
         for (const inflict of armed.inflicts) {
-          const { value } = severityOf(inflict);
+          const { value } = severityOf(target, inflict);
           if (value === null || value <= 0) continue;
           await onWrite(target.id, {
             list: conditionsList,
@@ -481,6 +579,17 @@ export function Exchange({
           });
           hung.push({ name: inflict.name, severity: value });
         }
+
+        outcomes.push({
+          target: target.id,
+          targetName: target.name,
+          hits,
+          blocked: blockedOn(target.id),
+          damage,
+          ...(vitalMove ? { vital: vitalMove } : {}),
+          statuses: hung,
+        });
+        if (vitalMove) patch(target.id, { landed: vitalMove });
       }
 
       const lines: ExchangeRecord['spend'] = [];
@@ -502,17 +611,21 @@ export function Exchange({
         }
       }
 
+      // One record, however many it caught: the head is the first of
+      // them, kept flat for every reader that only ever knew one.
+      const head = outcomes[0];
       await api('/api/exchange', {
         body: {
           by: actor.id,
           byName: actor.name,
-          ...(target ? { target: target.id, targetName: target.name } : {}),
+          ...(head ? { target: head.target, ...(head.targetName ? { targetName: head.targetName } : {}) } : {}),
           action: armed.name,
-          hits: target ? hits : 0,
-          blocked: target ? blocked : 0,
-          damage: target ? damage : 0,
-          ...(vitalMove ? { vital: vitalMove } : {}),
-          statuses: hung,
+          hits: head?.hits ?? 0,
+          blocked: head?.blocked ?? 0,
+          damage: head?.damage ?? 0,
+          ...(head?.vital ? { vital: head.vital } : {}),
+          statuses: head?.statuses ?? [],
+          targets: outcomes,
           spend: lines,
           round,
         } satisfies ExchangeRecord,
@@ -521,12 +634,37 @@ export function Exchange({
       // rather than re-deriving off a counter that is now the AFTER
       // (the old app's `appliedFrom`, and its lesson).
       setApplied(true);
-      setLanded(vitalMove ?? null);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
+  };
+
+  /**
+   * One person's line of the ledger — the same arithmetic the single
+   * target always showed, said once per victim. It names them only when
+   * there is more than one to tell apart.
+   */
+  const ledgerLine = (target: Entity) => {
+    const targetVital = vitalIn(target.lists);
+    const { landed } = stateOf(target.id);
+    const damage = damageOn(target.id);
+    return (
+      <span key={target.id} className="block font-mono text-[11px] text-stone-400">
+        {targets.length > 1 && <span className="mr-1.5 text-stone-500">{target.name}</span>}
+        {hits} − {blockedOn(target.id)} ={' '}
+        <span className="text-base text-amber-200">{damage}</span>{' '}
+        {targetVital ? targetVital.entry.name.toLowerCase() : 'damage'}
+        {(landed ?? targetVital) && (
+          <span className="ml-1.5 text-stone-600">
+            {landed
+              ? `${landed.from} → ${landed.to}`
+              : `${numberOf(targetVital!.entry) ?? 0} → ${afterDamage(targetVital!.entry, damage)}`}
+          </span>
+        )}
+      </span>
+    );
   };
 
   /** What teller worked out, in one sentence somebody could read out. */
@@ -540,7 +678,9 @@ export function Exchange({
     } else {
       parts.push(`${actor.name} — ${armed.name}`);
     }
-    if (target) {
+    for (const target of targets) {
+      const { defenses, landed } = stateOf(target.id);
+      const blocked = blockedOn(target.id);
       const how = defenses.length ? defenses.join(' + ') : '';
       parts.push(
         how
@@ -550,13 +690,13 @@ export function Exchange({
             : `${target.name} had no defense`,
       );
       parts.push(
-        `${target.name} takes ${damage}${
-          landed ? ` (${targetVital?.entry.name} ${landed.from} → ${landed.to})` : ''
+        `${target.name} takes ${damageOn(target.id)}${
+          landed ? ` (${landed.name} ${landed.from} → ${landed.to})` : ''
         }`,
       );
       const hung = armed.inflicts
         .map((inflict) => {
-          const { value } = severityOf(inflict);
+          const { value } = severityOf(target, inflict);
           return value === null || value <= 0 ? null : `${inflict.name} ${value}`;
         })
         .filter(Boolean);
@@ -583,7 +723,9 @@ export function Exchange({
               // teller throws for foes and nobody else. A player's attack
               // is theirs to throw; this records what the plastic said.
               onRoll={
-                foe ? () => throwPool(armed.damage!, 'attack', `${armed.name} damage`) : undefined
+                foe
+                  ? () => throwPool(armed.damage!, 'attack', `${armed.name} damage`, setFaces)
+                  : undefined
               }
             />
           </div>
@@ -593,250 +735,291 @@ export function Exchange({
       {/* 2 — who it lands on, and what they had to stop it */}
       {rolled && (
         <div className="mt-3 border-t border-stone-800 pt-2.5">
-          {stepPip(2, 'who it lands on, and what stops it')}
+          {/* An AOE action says so in the step's own words — the picker
+              below behaves differently and a label that didn't change
+              would be the only warning. */}
+          {stepPip(2, aoe ? 'everyone it catches, and what stops each' : 'who it lands on, and what stops it')}
           <div className="mt-2 flex flex-wrap gap-1">
             {order
               .filter((e) => e.id !== actor.id)
-              .map((e) => (
-                <button
-                  key={e.id}
-                  className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
-                    targetId === e.id
-                      ? 'bg-amber-800 text-amber-50'
-                      : 'bg-stone-800 text-stone-400 hover:bg-stone-700'
-                  }`}
-                  onClick={() => {
-                    setTargetId(targetId === e.id ? undefined : e.id);
-                    setDefenses([]);
-                    setDefFaces(undefined);
-                    setTyped('');
-                    setSevSet({});
-                    touched();
-                  }}
-                >
-                  {e.label}
-                </button>
-              ))}
+              .map((e) => {
+                const on = targetIds.includes(e.id);
+                return (
+                  <button
+                    key={e.id}
+                    className={`rounded-md px-2 py-0.5 text-[11px] transition-colors ${
+                      on
+                        ? 'bg-amber-800 text-amber-50'
+                        : 'bg-stone-800 text-stone-400 hover:bg-stone-700'
+                    }`}
+                    title={on ? 'tap to take them back out' : undefined}
+                    onClick={() => {
+                      toggleTarget(e.id);
+                      touched();
+                    }}
+                  >
+                    {e.label}
+                    {aoe && on && <span className="ml-1 text-amber-200/70">✕</span>}
+                  </button>
+                );
+              })}
           </div>
 
-          {target && (
-            <div className="mt-2.5 space-y-2">
-              <div className="flex flex-wrap items-center gap-1">
-                {offered.map((o) => {
-                  const on = defenses.includes(o.name);
-                  const pool = typeof o.value === 'string' && isPool(o.value);
-                  return (
+          {targets.map((target) => {
+            const s = stateOf(target.id);
+            const targetFoe = target.type === 'foe';
+            const offered = offeredOn(target);
+            const defPool = defPoolOn(target);
+            const typedNumber = typedOn(target.id);
+            return (
+              <div
+                key={target.id}
+                className={`mt-2.5 space-y-2${aoe ? ' border-t border-stone-800/70 pt-2' : ''}`}
+              >
+                {/* Whose row this is, and the way back out of it. Only
+                    when more than one CAN be caught — a single-target
+                    exchange already names its target on the button. */}
+                {aoe && (
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] text-amber-200">{target.name}</span>
                     <button
-                      key={o.name}
-                      className={`rounded-full px-2 py-0.5 font-mono text-[10px] transition-colors ${
-                        on ? 'bg-sky-900 text-sky-100' : 'bg-stone-800 text-stone-500 hover:bg-stone-700'
-                      } ${pool ? '' : 'opacity-50'}`}
-                      title={pool ? 'roll this alongside anything else it brought' : 'nothing printed — type what the table rolled'}
-                      disabled={!pool}
+                      className="rounded px-1 font-mono text-[10px] text-stone-600 transition-colors hover:text-red-300"
+                      title={`don't catch ${target.name}`}
                       onClick={() => {
-                        setDefenses(on ? defenses.filter((d) => d !== o.name) : [...defenses, o.name]);
-                        setDefFaces(undefined);
+                        toggleTarget(target.id);
                         touched();
                       }}
                     >
-                      {o.name} {o.value !== undefined ? String(o.value) : '—'}
+                      ✕
                     </button>
-                  );
-                })}
-                {/* The table's own hands. A player rolls their own
-                    defense at the table and reads the number out; every
-                    surface here is a recording instrument first. */}
-                <span className="flex items-center gap-1 font-mono text-[10px] text-stone-500">
-                  or they rolled
-                  <input
-                    className="w-12 rounded bg-stone-800 px-1 py-0.5 text-center font-mono text-[11px] text-stone-100 focus:outline-none"
-                    inputMode="numeric"
-                    placeholder="—"
-                    aria-label="what the target rolled"
-                    value={typed}
-                    onChange={(e) => {
-                      setTyped(e.target.value);
-                      touched();
-                    }}
-                  />
-                </span>
-              </div>
-
-              {defPool && dice && typedNumber === undefined && (
-                <DicePool
-                  pool={defPool}
-                  faces={defFaces}
-                  onFaces={setDefFaces}
-                  dice={dice}
-                  icons={icons}
-                  size="sm"
-                  // Same line as everywhere: teller throws for foes only.
-                  onRoll={
-                    targetFoe
-                      ? () => throwPool(defPool, 'defense', `${target.name} defense`, target)
-                      : undefined
-                  }
-                />
-              )}
-
-              {/* 3 — what it hangs on them, against what they tolerate */}
-              {armed.inflicts.length > 0 && (
-                <div className="space-y-1.5 border-t border-stone-800/70 pt-2">
-                  {/* Part of step 2, not a step of its own: what a hit
-                      hangs on somebody is decided against the same
-                      defense, in the same breath. */}
-                  <span className="text-[10px] uppercase tracking-widest text-stone-600">
-                    what it hangs on them
-                  </span>
-                  {armed.inflicts.map((inflict) => {
-                    const printedPool =
-                      typeof inflict.value === 'string' && isPool(inflict.value)
-                        ? inflict.value
-                        : undefined;
-                    const tol = toleranceFor(readingOf(target, TOLERANCES), inflict.name);
-                    const { value, note } = severityOf(inflict);
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-1">
+                  {offered.map((o) => {
+                    const on = s.defenses.includes(o.name);
+                    const pool = typeof o.value === 'string' && isPool(o.value);
                     return (
-                      <div key={inflict.name} className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono text-[11px] text-stone-400">
-                          {inflict.name}
-                          {inflict.value !== undefined && ` [${inflict.value}]`}
-                        </span>
-                        {printedPool && dice && (
-                          <DicePool
-                            pool={printedPool}
-                            faces={tolFaces[`printed:${inflict.name}`]}
-                            onFaces={(f) =>
-                              setTolFaces((prior) => ({ ...prior, [`printed:${inflict.name}`]: f }))
-                            }
-                            dice={dice}
-                            icons={icons}
-                            size="sm"
-                            onRoll={() =>
-                              throwPool(
-                                printedPool,
-                                `printed:${inflict.name}`,
-                                `${inflict.name} severity`,
-                              )
-                            }
-                          />
-                        )}
-                        {tol?.pool && dice && (
-                          <>
-                            <span
-                              className="font-mono text-[10px] text-sky-300"
-                              title={
-                                tol.worsens
-                                  ? 'a negative tolerance — it makes this worse'
-                                  : 'what they tolerate of this'
-                              }
-                            >
-                              tolerates {tol.worsens ? '−' : ''}
-                              {tol.pool}
-                            </span>
+                      <button
+                        key={o.name}
+                        className={`rounded-full px-2 py-0.5 font-mono text-[10px] transition-colors ${
+                          on ? 'bg-sky-900 text-sky-100' : 'bg-stone-800 text-stone-500 hover:bg-stone-700'
+                        } ${pool ? '' : 'opacity-50'}`}
+                        title={pool ? 'roll this alongside anything else it brought' : 'nothing printed — type what the table rolled'}
+                        disabled={!pool}
+                        onClick={() => {
+                          patch(target.id, {
+                            defenses: on
+                              ? s.defenses.filter((d) => d !== o.name)
+                              : [...s.defenses, o.name],
+                            defFaces: undefined,
+                          });
+                          touched();
+                        }}
+                      >
+                        {o.name} {o.value !== undefined ? String(o.value) : '—'}
+                      </button>
+                    );
+                  })}
+                  {/* The table's own hands. A player rolls their own
+                      defense at the table and reads the number out; every
+                      surface here is a recording instrument first. */}
+                  <span className="flex items-center gap-1 font-mono text-[10px] text-stone-500">
+                    or they rolled
+                    <input
+                      className="w-12 rounded bg-stone-800 px-1 py-0.5 text-center font-mono text-[11px] text-stone-100 focus:outline-none"
+                      inputMode="numeric"
+                      placeholder="—"
+                      aria-label={`what ${target.name} rolled`}
+                      value={s.typed}
+                      onChange={(e) => {
+                        patch(target.id, { typed: e.target.value });
+                        touched();
+                      }}
+                    />
+                  </span>
+                </div>
+
+                {defPool && dice && typedNumber === undefined && (
+                  <DicePool
+                    pool={defPool}
+                    faces={s.defFaces}
+                    onFaces={(f) => patch(target.id, { defFaces: f })}
+                    dice={dice}
+                    icons={icons}
+                    size="sm"
+                    // Same line as everywhere: teller throws for foes only.
+                    onRoll={
+                      targetFoe
+                        ? () =>
+                            throwPool(
+                              defPool,
+                              `defense:${target.id}`,
+                              `${target.name} defense`,
+                              (f) => patch(target.id, { defFaces: f }),
+                              target,
+                            )
+                        : undefined
+                    }
+                  />
+                )}
+
+                {/* 3 — what it hangs on them, against what they tolerate */}
+                {armed.inflicts.length > 0 && (
+                  <div className="space-y-1.5 border-t border-stone-800/70 pt-2">
+                    {/* Part of step 2, not a step of its own: what a hit
+                        hangs on somebody is decided against the same
+                        defense, in the same breath. */}
+                    <span className="text-[10px] uppercase tracking-widest text-stone-600">
+                      what it hangs on them
+                    </span>
+                    {armed.inflicts.map((inflict) => {
+                      const printedPool =
+                        typeof inflict.value === 'string' && isPool(inflict.value)
+                          ? inflict.value
+                          : undefined;
+                      const tol = toleranceFor(readingOf(target, TOLERANCES), inflict.name);
+                      const { value, note } = severityOf(target, inflict);
+                      // What the ACTION printed is thrown once and shared;
+                      // what THEY tolerate is theirs, and keyed to them.
+                      const tolKey = `tolerance:${target.id}:${inflict.name}`;
+                      return (
+                        <div key={inflict.name} className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-[11px] text-stone-400">
+                            {inflict.name}
+                            {inflict.value !== undefined && ` [${inflict.value}]`}
+                          </span>
+                          {printedPool && dice && (
                             <DicePool
-                              pool={tol.pool}
-                              faces={tolFaces[`tolerance:${inflict.name}`]}
-                              onFaces={(f) =>
-                                setTolFaces((prior) => ({
-                                  ...prior,
-                                  [`tolerance:${inflict.name}`]: f,
-                                }))
-                              }
+                              pool={printedPool}
+                              faces={tolFaces[`printed:${inflict.name}`]}
+                              onFaces={putTolFaces(`printed:${inflict.name}`)}
                               dice={dice}
                               icons={icons}
                               size="sm"
                               onRoll={() =>
                                 throwPool(
-                                  tol.pool!,
-                                  `tolerance:${inflict.name}`,
-                                  `${target.name} tolerance — ${inflict.name}`,
-                                  target,
+                                  printedPool,
+                                  `printed:${inflict.name}`,
+                                  `${inflict.name} severity`,
+                                  putTolFaces(`printed:${inflict.name}`),
                                 )
                               }
                             />
-                          </>
-                        )}
-                        {tol?.flat !== undefined && (
-                          <span className="font-mono text-[10px] text-sky-300">
-                            tolerates {tol.worsens ? '+' : '−'}
-                            {tol.flat}
-                          </span>
-                        )}
-                        {/* Nudge it, or drop it entirely. A blocked hit
-                            that still hangs a status is teller ruling on
-                            the table's behalf. */}
-                        <span className="flex items-center gap-0.5">
-                          <button
-                            className="rounded px-1 text-xs text-stone-500 hover:bg-stone-800 hover:text-stone-200"
-                            aria-label={`${inflict.name} severity down`}
-                            onClick={() => setSeverity(inflict.name, Math.max(0, (value ?? 0) - 1))}
-                          >
-                            −
-                          </button>
-                          <button
-                            className="rounded px-1 text-xs text-stone-500 hover:bg-stone-800 hover:text-stone-200"
-                            aria-label={`${inflict.name} severity up`}
-                            onClick={() => setSeverity(inflict.name, (value ?? 0) + 1)}
-                          >
-                            +
-                          </button>
-                          <button
-                            className={`ml-1 rounded px-1.5 font-mono text-[10px] transition-colors ${
-                              value === null
-                                ? 'bg-stone-800 text-stone-600'
-                                : 'text-stone-500 hover:text-red-300'
-                            }`}
-                            title={value === null ? 'put it back' : "don't hang this one"}
-                            onClick={() =>
-                              setSeverity(
-                                inflict.name,
+                          )}
+                          {tol?.pool && dice && (
+                            <>
+                              <span
+                                className="font-mono text-[10px] text-sky-300"
+                                title={
+                                  tol.worsens
+                                    ? 'a negative tolerance — it makes this worse'
+                                    : 'what they tolerate of this'
+                                }
+                              >
+                                tolerates {tol.worsens ? '−' : ''}
+                                {tol.pool}
+                              </span>
+                              <DicePool
+                                pool={tol.pool}
+                                faces={tolFaces[tolKey]}
+                                onFaces={putTolFaces(tolKey)}
+                                dice={dice}
+                                icons={icons}
+                                size="sm"
+                                onRoll={() =>
+                                  throwPool(
+                                    tol.pool!,
+                                    tolKey,
+                                    `${target.name} tolerance — ${inflict.name}`,
+                                    putTolFaces(tolKey),
+                                    target,
+                                  )
+                                }
+                              />
+                            </>
+                          )}
+                          {tol?.flat !== undefined && (
+                            <span className="font-mono text-[10px] text-sky-300">
+                              tolerates {tol.worsens ? '+' : '−'}
+                              {tol.flat}
+                            </span>
+                          )}
+                          {/* Nudge it, or drop it entirely. A blocked hit
+                              that still hangs a status is teller ruling on
+                              the table's behalf. */}
+                          <span className="flex items-center gap-0.5">
+                            <button
+                              className="rounded px-1 text-xs text-stone-500 hover:bg-stone-800 hover:text-stone-200"
+                              aria-label={`${inflict.name} severity down`}
+                              onClick={() =>
+                                setSeverity(target.id, inflict.name, Math.max(0, (value ?? 0) - 1))
+                              }
+                            >
+                              −
+                            </button>
+                            <button
+                              className="rounded px-1 text-xs text-stone-500 hover:bg-stone-800 hover:text-stone-200"
+                              aria-label={`${inflict.name} severity up`}
+                              onClick={() => setSeverity(target.id, inflict.name, (value ?? 0) + 1)}
+                            >
+                              +
+                            </button>
+                            <button
+                              className={`ml-1 rounded px-1.5 font-mono text-[10px] transition-colors ${
                                 value === null
-                                  ? typeof inflict.value === 'number'
-                                    ? inflict.value
-                                    : 1
-                                  : null,
-                              )
-                            }
-                          >
-                            {value === null ? 'dropped' : '✕'}
-                          </button>
-                        </span>
-                        {value !== null && (
-                          <span className="font-mono text-[11px] text-sky-300">
-                            → {inflict.name} {value}
+                                  ? 'bg-stone-800 text-stone-600'
+                                  : 'text-stone-500 hover:text-red-300'
+                              }`}
+                              title={value === null ? 'put it back' : "don't hang this one"}
+                              onClick={() =>
+                                setSeverity(
+                                  target.id,
+                                  inflict.name,
+                                  value === null
+                                    ? typeof inflict.value === 'number'
+                                      ? inflict.value
+                                      : 1
+                                    : null,
+                                )
+                              }
+                            >
+                              {value === null ? 'dropped' : '✕'}
+                            </button>
                           </span>
-                        )}
-                        {note && value !== null && (
-                          <span className="font-mono text-[10px] text-stone-600">{note}</span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+                          {value !== null && (
+                            <span className="font-mono text-[11px] text-sky-300">
+                              → {inflict.name} {value}
+                            </span>
+                          )}
+                          {note && value !== null && (
+                            <span className="font-mono text-[10px] text-stone-600">{note}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {/* The ledger — outside the target block on purpose. A turn
               aimed at nobody still costs its actor and still belongs in
               the log; gating this row on a target is what once left
               hiding, repositioning and readying unrecorded. */}
-          <div className="mt-2.5 flex flex-wrap items-center gap-3 rounded-lg bg-stone-950/60 px-3 py-2">
-            {target ? (
-              <span className="font-mono text-[11px] text-stone-400">
-                {hits} − {blocked} = <span className="text-base text-amber-200">{damage}</span>{' '}
-                {targetVital ? targetVital.entry.name.toLowerCase() : 'damage'}
-                {(landed ?? targetVital) && (
-                  <span className="ml-1.5 text-stone-600">
-                    {landed
-                      ? `${landed.from} → ${landed.to}`
-                      : `${numberOf(targetVital!.entry) ?? 0} → ${afterDamage(targetVital!.entry, damage)}`}
-                  </span>
-                )}
-              </span>
-            ) : (
-              <span className="font-mono text-[11px] text-stone-500">nobody is hit</span>
+          <div className="mt-2.5 rounded-lg bg-stone-950/60 px-3 py-2">
+            {/* One LINE per person it landed on. They stack above the
+                cost row rather than beside it, because a blast's ledger
+                is a list of victims and the price is paid once. */}
+            {targets.length > 1 && (
+              <div className="mb-1.5 space-y-1">{targets.map(ledgerLine)}</div>
             )}
+            <div className="flex flex-wrap items-center gap-3">
+            {targets.length === 1 ? (
+              ledgerLine(targets[0])
+            ) : targets.length === 0 ? (
+              <span className="font-mono text-[11px] text-stone-500">nobody is hit</span>
+            ) : null}
 
             {costCounter && (
               <>
@@ -866,8 +1049,15 @@ export function Exchange({
               disabled={busy}
               onClick={apply}
             >
-              {applied ? 'recorded ✓' : target ? `apply to ${target.name}` : 'record this turn'}
+              {applied
+                ? 'recorded ✓'
+                : targets.length > 1
+                  ? `apply to all ${targets.length}`
+                  : targets.length === 1
+                    ? `apply to ${targets[0].name}`
+                    : 'record this turn'}
             </button>
+            </div>
           </div>
 
           {/* A frenzy prints its price in a sentence, and teller does not

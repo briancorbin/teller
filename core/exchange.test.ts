@@ -7,6 +7,7 @@ import {
   afterDamage,
   damageFrom,
   defensesOf,
+  isAoe,
   locate,
   proposeSeverity,
   toExchangeRecord,
@@ -219,7 +220,110 @@ describe('the records — forgiving read, strict write', () => {
 
   it('refuses an exchange with no actor, and names a turn aimed at nobody', () => {
     expect(toExchangeRecord({ action: 'hiding' })).toBeUndefined();
-    expect(toExchangeRecord({ by: 'ent_1' })).toMatchObject({ action: 'a turn' });
+    expect(toExchangeRecord({ by: 'ent_1' })).toMatchObject({ action: 'a turn', targets: [] });
     expect(toExchangeRecord({ by: 'ent_1', target: 'ent_2' })).toMatchObject({ action: 'an attack' });
+  });
+
+  it('reads a single target into the list, so every reader sees one shape', () => {
+    const out = toExchangeRecord({
+      by: 'ent_1',
+      target: 'ent_2',
+      targetName: 'Ranger',
+      action: 'Coil',
+      hits: 4,
+      blocked: 1,
+      damage: 3,
+      vital: { name: 'Vigor', from: 7, to: 4 },
+      statuses: [{ name: 'Snared', severity: 2 }],
+    })!;
+    expect(out.targets).toEqual([
+      {
+        target: 'ent_2',
+        targetName: 'Ranger',
+        hits: 4,
+        blocked: 1,
+        damage: 3,
+        vital: { name: 'Vigor', from: 7, to: 4 },
+        statuses: [{ name: 'Snared', severity: 2 }],
+      },
+    ]);
+  });
+
+  it('keeps every target of a blast, and puts the first of them back on the head', () => {
+    const out = toExchangeRecord({
+      by: 'ent_1',
+      byName: 'Bog Lurker',
+      action: 'Mire',
+      targets: [
+        {
+          target: 'ent_2',
+          targetName: 'Ranger',
+          hits: 5,
+          blocked: 2,
+          damage: 3,
+          vital: { name: 'Vigor', from: 7, to: 4 },
+          statuses: [{ name: 'Snared', severity: 4 }, { name: ' ', severity: 9 }],
+        },
+        { target: 'ent_3', targetName: 'Drover', hits: 5, blocked: 5, damage: 0, statuses: [{ name: 'Snared', severity: 2 }] },
+        { targetName: 'nobody in particular' },
+      ],
+      // Paid once, however many it caught.
+      spend: [{ counter: 'Wind', amount: 4, on: 'Mire' }],
+      round: 2,
+    })!;
+    expect(out.targets).toHaveLength(2);
+    expect(out.targets[1]).toEqual({
+      target: 'ent_3',
+      targetName: 'Drover',
+      hits: 5,
+      blocked: 5,
+      damage: 0,
+      statuses: [{ name: 'Snared', severity: 2 }],
+    });
+    // Nameless statuses drop on a target the same way they drop on the head.
+    expect(out.targets[0].statuses).toEqual([{ name: 'Snared', severity: 4 }]);
+    expect(out.target).toBe('ent_2');
+    expect(out.targetName).toBe('Ranger');
+    expect(out.hits).toBe(5);
+    expect(out.blocked).toBe(2);
+    expect(out.damage).toBe(3);
+    expect(out.vital).toEqual({ name: 'Vigor', from: 7, to: 4 });
+    expect(out.statuses).toEqual([{ name: 'Snared', severity: 4 }]);
+    expect(out.spend).toEqual([{ counter: 'Wind', amount: 4, on: 'Mire' }]);
+  });
+
+  it('prefers the list when a payload carries both', () => {
+    const out = toExchangeRecord({
+      by: 'ent_1',
+      target: 'ent_2',
+      targetName: 'Ranger',
+      hits: 5,
+      blocked: 2,
+      damage: 3,
+      statuses: [],
+      targets: [
+        { target: 'ent_2', targetName: 'Ranger', hits: 5, blocked: 2, damage: 3, statuses: [] },
+        { target: 'ent_3', targetName: 'Drover', hits: 5, blocked: 0, damage: 5, statuses: [] },
+      ],
+    })!;
+    expect(out.targets.map((t) => t.target)).toEqual(['ent_2', 'ent_3']);
+    expect(out.damage).toBe(3);
+  });
+});
+
+describe('the AOE marker', () => {
+  it('reads a bare name, however the profile spells it', () => {
+    expect(isAoe([{ name: 'Band', value: 'Short' }, { name: 'AOE' }])).toBe(true);
+    expect(isAoe([{ name: 'aoe' }])).toBe(true);
+    expect(isAoe([{ name: 'Area of Effect' }])).toBe(true);
+    expect(isAoe([{ name: 'Area', value: 'yes' }])).toBe(true);
+  });
+
+  it('is absent when nothing says it, and a value only ever denies it', () => {
+    expect(isAoe([{ name: 'Band', value: 'Melee' }, { name: 'Damage', value: '2G' }])).toBe(false);
+    expect(isAoe(undefined)).toBe(false);
+    expect(isAoe([])).toBe(false);
+    expect(isAoe([{ name: 'AOE', value: 'no' }])).toBe(false);
+    expect(isAoe([{ name: 'AOE', value: 0 }])).toBe(false);
   });
 });

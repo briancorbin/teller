@@ -104,6 +104,30 @@ describe('the record doors', () => {
     });
   });
 
+  it('a blast files everyone it caught, against the first of them', async () => {
+    const drover = session.create({ name: 'Drover', lists: {} }, 'console').id;
+    const posted = await call('POST', '/api/exchange', {
+      key: true,
+      body: {
+        by: lurker,
+        byName: 'Bog Lurker',
+        action: 'Mire',
+        targets: [
+          { target: ranger, targetName: 'Ranger', hits: 0, blocked: 0, damage: 0, statuses: [{ name: 'Snared', severity: 4 }] },
+          { target: drover, targetName: 'Drover', hits: 0, blocked: 0, damage: 0, statuses: [{ name: 'Snared', severity: 2 }] },
+        ],
+        // Paid ONCE, however many it caught.
+        spend: [{ counter: 'Wind', amount: 4, on: 'Mire' }],
+      },
+    });
+    expect(posted.status).toBe(200);
+    const events = await call('GET', `/api/events?entity=${ranger}`, { key: true });
+    const turn = events.body.find((e: any) => e.kind === 'turn.resolved');
+    expect(turn.payload.targets).toHaveLength(2);
+    expect(turn.payload.targets[1]).toMatchObject({ target: drover, statuses: [{ name: 'Snared', severity: 2 }] });
+    expect(turn.payload.spend).toEqual([{ counter: 'Wind', amount: 4, on: 'Mire' }]);
+  });
+
   it('a turn aimed at nobody is still a turn, and files against its actor', async () => {
     await call('POST', '/api/exchange', {
       key: true,

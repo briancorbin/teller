@@ -26,7 +26,34 @@
 // One thing here is NOT a port, and it is flagged where it lives:
 // `toleration` (below). The old app never read a tolerance at all.
 
-import { numberOf, sameName, type Entry } from './entity.ts';
+import { findEntry, numberOf, sameName, type Entry } from './entity.ts';
+
+/**
+ * Does this profile say the action catches more than one?
+ *
+ * ONE reading, here, because the marker is a bare NAME on a profile
+ * entry — `{ name: 'AOE' }`, with no value to carry the answer — and a
+ * marker read in two places is a marker two surfaces will eventually
+ * disagree about. An attack prints it in `profile`; a frenzy prints it
+ * in the profile it acts as; a `modifies` child can `set` it onto an
+ * attack that didn't have one. All three arrive here as the same list.
+ *
+ * The spellings are what a printing plausibly uses for the same idea.
+ * A value is only ever a DENIAL — nothing writes one today, and a
+ * profile that says `AOE: no` should not read as one.
+ */
+const AOE_NAMES = ['AOE', 'Area', 'Area of Effect'];
+
+export function isAoe(profile: Entry[] | undefined): boolean {
+  const marker = AOE_NAMES.map((name) => findEntry(profile ?? [], name)).find(
+    (e): e is Entry => e !== undefined,
+  );
+  if (!marker) return false;
+  const value = marker.value;
+  if (value === undefined) return true;
+  if (typeof value === 'number') return value !== 0;
+  return !['no', 'false', 'none', '0'].includes(value.trim().toLowerCase());
+}
 
 /** An entry and the list it was found in — a write needs both. */
 export type Located = { list: string; entry: Entry };
@@ -214,18 +241,44 @@ export type RollRecord = {
   round?: number;
 };
 
-export type ExchangeRecord = {
-  by: string;
-  byName?: string;
-  target?: string;
+/**
+ * What one turn did to ONE of the people it caught.
+ *
+ * An AOE action rolls once and lands several times, so the per-target
+ * half of an exchange had to stop being the record's top level. It is
+ * the same six facts it always was, with the target named on them.
+ */
+export type TargetOutcome = {
+  target: string;
   targetName?: string;
-  action: string;
   hits: number;
   blocked: number;
   damage: number;
   /** The transition, recorded at the press — never re-derived later. */
   vital?: { name: string; from: number; to: number };
   statuses: { name: string; severity: number }[];
+};
+
+export type ExchangeRecord = {
+  by: string;
+  byName?: string;
+  /**
+   * THE FIRST target, and everything that happened to them — kept flat
+   * because every exchange ever filed carries it there, and a reader
+   * that only knows about one target must keep reading old rows AND new
+   * ones. `targets` is the whole truth; this is its head.
+   */
+  target?: string;
+  targetName?: string;
+  action: string;
+  hits: number;
+  blocked: number;
+  damage: number;
+  vital?: { name: string; from: number; to: number };
+  statuses: { name: string; severity: number }[];
+  /** Everyone it landed on, in the order they were picked. Empty for a turn aimed at nobody. */
+  targets: TargetOutcome[];
+  /** Paid ONCE, however many it caught — the action was taken once. */
   spend: { counter: string; amount: number; on?: string }[];
   round?: number;
 };
@@ -255,29 +308,66 @@ export function toRollRecord(raw: unknown): RollRecord | undefined {
   };
 }
 
+/** The statuses half, which reads the same on a record and on a target. */
+function hungIn(raw: unknown): { name: string; severity: number }[] {
+  return (Array.isArray(raw) ? raw : [])
+    .map((s) => (s && typeof s === 'object' ? (s as Record<string, unknown>) : {}))
+    .filter((s) => str(s.name))
+    .map((s) => ({ name: str(s.name)!, severity: Math.round(num(s.severity)) }));
+}
+
+function movedIn(raw: unknown): ExchangeRecord['vital'] {
+  const vital = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : undefined;
+  const name = vital ? str(vital.name) : undefined;
+  return name
+    ? { name, from: Math.round(num(vital!.from)), to: Math.round(num(vital!.to)) }
+    : undefined;
+}
+
+function toTargetOutcome(raw: unknown): TargetOutcome | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const r = raw as Record<string, unknown>;
+  const target = str(r.target);
+  if (!target) return undefined;
+  const vital = movedIn(r.vital);
+  return {
+    target,
+    ...(str(r.targetName) ? { targetName: str(r.targetName)! } : {}),
+    hits: Math.max(0, Math.round(num(r.hits))),
+    blocked: Math.max(0, Math.round(num(r.blocked))),
+    damage: Math.max(0, Math.round(num(r.damage))),
+    ...(vital ? { vital } : {}),
+    statuses: hungIn(r.statuses),
+  };
+}
+
 export function toExchangeRecord(raw: unknown): ExchangeRecord | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const r = raw as Record<string, unknown>;
   const by = str(r.by);
   if (!by) return undefined;
-  const vital = r.vital && typeof r.vital === 'object' ? (r.vital as Record<string, unknown>) : undefined;
-  const vitalName = vital ? str(vital.name) : undefined;
+  // Forgiving read, both directions: a payload from before AOE carries
+  // one target flat and no list, and a payload that carries the list
+  // may leave the head off. Either way the two agree afterwards.
+  const listed = (Array.isArray(r.targets) ? r.targets : [])
+    .map(toTargetOutcome)
+    .filter((t): t is TargetOutcome => t !== undefined);
+  const flat = toTargetOutcome(r);
+  const targets = listed.length ? listed : flat ? [flat] : [];
+  const head = targets[0];
+  const vital = head?.vital;
   return {
     by,
     ...(str(r.byName) ? { byName: str(r.byName)! } : {}),
-    ...(str(r.target) ? { target: str(r.target)! } : {}),
-    ...(str(r.targetName) ? { targetName: str(r.targetName)! } : {}),
-    action: str(r.action) ?? (str(r.target) ? 'an attack' : 'a turn'),
-    hits: Math.max(0, Math.round(num(r.hits))),
-    blocked: Math.max(0, Math.round(num(r.blocked))),
-    damage: Math.max(0, Math.round(num(r.damage))),
-    ...(vitalName
-      ? { vital: { name: vitalName, from: Math.round(num(vital!.from)), to: Math.round(num(vital!.to)) } }
-      : {}),
-    statuses: (Array.isArray(r.statuses) ? r.statuses : [])
-      .map((s) => (s && typeof s === 'object' ? (s as Record<string, unknown>) : {}))
-      .filter((s) => str(s.name))
-      .map((s) => ({ name: str(s.name)!, severity: Math.round(num(s.severity)) })),
+    ...(head ? { target: head.target } : {}),
+    ...(head?.targetName ? { targetName: head.targetName } : {}),
+    action: str(r.action) ?? (head ? 'an attack' : 'a turn'),
+    hits: head?.hits ?? Math.max(0, Math.round(num(r.hits))),
+    blocked: head?.blocked ?? Math.max(0, Math.round(num(r.blocked))),
+    damage: head?.damage ?? Math.max(0, Math.round(num(r.damage))),
+    ...(vital ? { vital } : {}),
+    statuses: head?.statuses ?? hungIn(r.statuses),
+    targets,
     // A line worth ZERO is kept when it says what it bought — that a
     // feature cost nothing is the most useful fact in the log, and its
     // absence is what once taught a reader to price a free one.

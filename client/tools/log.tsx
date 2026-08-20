@@ -47,6 +47,28 @@ function firstChange(before?: EntitySnapshot, after?: EntitySnapshot): string | 
   return undefined;
 }
 
+/** One victim of an exchange, as `turn.resolved` files them (core/exchange.ts). */
+type TargetLine = {
+  target: string;
+  targetName?: string;
+  hits?: number;
+  blocked?: number;
+  damage?: number;
+  vital?: { name?: string; from?: number; to?: number };
+  statuses?: { name: string; severity: number }[];
+};
+
+/** What one blast did to one of them, named — 'Trapped 4 on Bark Watcher 1'. */
+function onEach(t: TargetLine): string {
+  const bits: string[] = [];
+  if ((t.hits ?? 0) > 0 || (t.damage ?? 0) > 0) {
+    bits.push(`${t.hits ?? 0} − ${t.blocked ?? 0} = ${t.damage ?? 0}`);
+  }
+  for (const s of t.statuses ?? []) bits.push(`${s.name} ${s.severity}`);
+  const moved = t.vital?.name ? ` (${t.vital.name} ${t.vital.from} → ${t.vital.to})` : '';
+  return `${bits.length ? bits.join(', ') : 'nothing'} on ${t.targetName ?? t.target}${moved}`;
+}
+
 /** Kind → a human, mono-friendly summary of what happened (core/store.ts's `append` calls). */
 function describe(e: EventRow, names: Map<string, string>): string {
   const who = e.entityId ? (names.get(e.entityId) ?? e.entityId) : null;
@@ -83,13 +105,22 @@ function describe(e: EventRow, names: Map<string, string>): string {
       const vital = p.vital as { name?: string; from?: number; to?: number } | undefined;
       const hung = (p.statuses as { name: string; severity: number }[] | undefined) ?? [];
       const spent = (p.spend as { counter: string; amount: number; on?: string }[] | undefined) ?? [];
+      // An AOE action lands several times off one throw, so a row can
+      // carry a LIST of victims. A row from before that — and every
+      // single-target row since — carries the one flat, and reads
+      // exactly as it always did.
+      const caught = (p.targets as TargetLine[] | undefined) ?? [];
       const parts = [
         `${String(p.byName ?? who ?? 'someone')} — ${String(p.action ?? 'a turn')}`,
-        ...(p.targetName
-          ? [`${String(p.hits ?? 0)} − ${String(p.blocked ?? 0)} = ${String(p.damage ?? 0)} on ${String(p.targetName)}`]
-          : []),
-        ...(vital?.name ? [`${vital.name} ${String(vital.from)} → ${String(vital.to)}`] : []),
-        ...(hung.length ? [hung.map((s) => `${s.name} ${s.severity}`).join(', ')] : []),
+        ...(caught.length > 1
+          ? caught.map(onEach)
+          : [
+              ...(p.targetName
+                ? [`${String(p.hits ?? 0)} − ${String(p.blocked ?? 0)} = ${String(p.damage ?? 0)} on ${String(p.targetName)}`]
+                : []),
+              ...(vital?.name ? [`${vital.name} ${String(vital.from)} → ${String(vital.to)}`] : []),
+              ...(hung.length ? [hung.map((s) => `${s.name} ${s.severity}`).join(', ')] : []),
+            ]),
         ...spent.filter((s) => s.amount > 0).map((s) => `${s.amount} ${s.counter} on ${s.on ?? 'it'}`),
       ];
       return parts.join(' · ');
