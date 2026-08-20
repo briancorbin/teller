@@ -766,9 +766,17 @@ export async function handleApi(
     // `server/public.ts` makes, or a board swap serves yesterday's
     // scene to anyone reading this route.
     const live = session.campaign.root();
+    // The root is an ENTITY, and an entity can carry notes and lists —
+    // a DM who writes a secret on the campaign itself must not have it
+    // handed to every adopted badge. A mere watcher gets the manifest's
+    // identity and refs; the full root is the DM's own reading. Nothing
+    // leaks today (the live root carries neither), but that's luck, and
+    // this route should be law.
+    const full = { ...manifest, refs: live.refs ?? {} };
+    const redacted = { id: full.id, name: full.name, refs: full.refs };
     return reply(200, {
       slug: session.campaign.slug,
-      manifest: { ...manifest, refs: live.refs ?? {} },
+      manifest: canDm(auth) ? full : redacted,
       system: system ?? null,
       packs,
       missing,
