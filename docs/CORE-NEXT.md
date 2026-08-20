@@ -1722,7 +1722,8 @@ learning `systems/`; nothing about the loaded model changes.
 `~/.teller-next/systems/<name>/` — `system.json` (read by the SAME
 `systemFrom` a pack-embedded one is, so the reserved-keys rule has one
 implementation), `presentations/*.tsx` (the shared `core/compile.ts`
-pass, `PACK_IMPORTS` — still no `system` self-import), `panels/`
+pass, `PACK_IMPORTS` — no bare-`system` self-import, though §M-4a
+now opens the narrower `system/<name>` door), `panels/`
 (ordinary `.panel` folders via a `sweepPanelsIn` extracted for the
 purpose; their declarations ride the system layer's `panels` slot and
 their code takes the same trust row), and `art/` (installed under
@@ -1771,6 +1772,59 @@ rather than to a system dial; (2) `client/lib/presentations.ts`'s
 (emptying it) is now cheaper to argue for, since a *system* exists to
 own those files; (3) nothing yet exports a `.system` archive — Door 2/3
 above still stand, and the folder is the only serialization.
+
+**4a · The system's export surface — packs build on declared
+function** (2026-08-20, Brian, ratified in conversation; the relative
+form was argued and he took it: "yeah okay, go for it").
+
+A system may publish code for the packs that run on it. The
+declaration is a directory: **`exports/*.ts(x)`** on the system's
+shelf, swept and compiled exactly like presentations, the filename the
+export name. Pack code imports it as **`system/<name>`** — a RELATIVE
+reference into the pack's *declared* system, never a search. The
+system id is spelled once, in `pack.json`; the import grammar cannot
+restate it, so the declaration and the import can never disagree.
+(Brian proposed `system:wiw:creation` for disambiguation; the
+namespace he wanted turned out to already exist — it IS `pack.json`'s
+`system` field — and baking the id into every specifier would have
+added a representable mismatch plus a sed-sweep on every house-fork.
+Spelled with a slash, not a colon, because import maps resolve prefix
+mappings natively on `/`.)
+
+- **Resolution follows the bare-`system` trick**: import-map prefix →
+  a no-store shim per export → the stamped immutable module. The
+  active system can change at runtime and the shim always points at
+  whoever is active.
+- **Bare `system` (the merged presentation index) stays closed to
+  packs.** A pack importing the merge it rides is a cycle by
+  construction. `system/<name>` never is: `exports/` is system-tier
+  only, so the dependency arrow only ever points DOWN the merge.
+- **A missing export refuses out loud, at load** — a problem-report
+  entry and a labeled render-site refusal naming all three parties:
+  "wiw-guidebook needs `creation` from wiw, which this version doesn't
+  export." Same idiom as dangling includes. **No version ranges,
+  deliberately** — the refusal tells you to update the system;
+  dependency resolution is not being built, and if that ever hurts we
+  add it then, not now.
+- **The fork property**: house-fork a system under a new id, keep
+  exporting the same names, update `pack.json`'s one field, and every
+  pack import keeps working. The requirement is on the surface, not on
+  the bytes that shipped it.
+- **Flat names are a convention engine**: `system/creation` can mean
+  "this system's character-creation engine" in every ecosystem —
+  WiW's and a future DnD's packs spell the identical specifier and
+  each gets their own. Docs and examples stay portable across games.
+
+First customer: **creation phase 2**. The engine moves from the WiW
+system's `presentations/creation.ts` to `exports/creation.ts` (the
+dialog keeps a relative import — bundled, as ever), and the
+Guidebook's branded rail builder ("what's yer trade?") arrives as a
+PACK panel importing `system/creation`. One small composite-grammar
+companion ships with it: an optional **`draft` key on the composite**
+naming a panel that takes the seat over while the subject entity
+carries the draft flag — absent, the floor is today's behavior
+unchanged. That is how a pack's builder gets the whole strip during
+creation and hands it back at "saddle up."
 
 **5 · Guard rails restated**, so the platform stays teller:
 
