@@ -149,10 +149,12 @@ type CodeState =
  * `takeover` if it has one. Modules are cached by `import()` itself —
  * the same url resolves to the same module instance everywhere.
  *
- * KNOWN GAP: urls carry no cache-busting param (`server/index.ts`'s
- * `/panel-code/…` route and `panelDir` expose no build hash/mtime to
- * the client), so a recompile behind an unchanged url is invisible
- * until a full page reload. Follow-up, not hacked around here. */
+ * That caching is the point rather than a hazard now: a panel's urls
+ * carry `?v=<mtime>`, minted from the compiled artifact at sweep
+ * (`stamp` in `core/panels-shelf.ts`), so a recompile arrives as a
+ * DIFFERENT url and imports fresh, while an untouched panel keeps the
+ * module it already has. Nothing here has to know that happened — the
+ * effect re-runs because `code` changed. */
 function usePanelCode(code: PanelDef['code']): CodeState {
   const key = code ? JSON.stringify(code) : '';
   const [state, setState] = useState<CodeState>(code ? { status: 'loading' } : { status: 'none' });

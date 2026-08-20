@@ -58,7 +58,15 @@
 // If one ever grows a block, it takes the same route every other
 // code-carrying panel takes: a human enables it.
 
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildOne, compileFolder, newerThan, PANEL_IMPORTS } from './compile.ts';
@@ -113,6 +121,29 @@ export function defaultPanels(): PanelDef[] {
 }
 
 /**
+ * The `?v=` a code url carries: the compiled artifact's own mtime, in
+ * base 36. A browser caches a module by its url, and an edited-and-
+ * swept panel used to serve yesterday's bytes behind today's url until
+ * somebody thought to hard-refresh. Naming the mtime makes the url
+ * change EXACTLY when the code changed and never otherwise — so a
+ * re-sweep that compiled nothing keeps every cache intact, and one that
+ * rebuilt a block invalidates that block alone.
+ *
+ * The mtime, not a content hash: the sweep already stats these files to
+ * decide whether to compile at all, so this costs nothing, and the
+ * question a cache is asking ("is this the same build?") is one an
+ * mtime answers honestly. An unstattable file gets no stamp rather than
+ * a made-up one.
+ */
+function stamp(outPath: string): string {
+  try {
+    return `?v=${Math.floor(statSync(outPath).mtimeMs).toString(36)}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Compile one panel folder's code (`blocks/*.tsx`, `panel.tsx`,
  * `style.css`) into `<dir>/.build/`, skipping anything whose output is
  * already newer than its source. Returns the URLs the client should be
@@ -149,7 +180,10 @@ export function compilePanelCode(
     );
     for (const { file, problem } of blockProblems) problems.push(`blocks/${file}: ${problem}`);
     const blocks: Record<string, string> = {};
-    for (const name of built) blocks[name] = `/panel-code/${panelId}/blocks/${name}.js`;
+    for (const name of built) {
+      const out = join(buildRoot, 'blocks', `${name}.js`);
+      blocks[name] = `/panel-code/${panelId}/blocks/${name}.js${stamp(out)}`;
+    }
     if (Object.keys(blocks).length) code.blocks = blocks;
   }
 
@@ -159,7 +193,7 @@ export function compilePanelCode(
       const err = buildOne(takeoverPath, out, PANEL_IMPORTS);
       if (err) problems.push(`panel.tsx: ${err}`);
     }
-    if (existsSync(out)) code.takeover = `/panel-code/${panelId}/panel.js`;
+    if (existsSync(out)) code.takeover = `/panel-code/${panelId}/panel.js${stamp(out)}`;
   }
 
   if (hasStyle) {
@@ -172,7 +206,7 @@ export function compilePanelCode(
         problems.push(`style.css: ${String(err)}`);
       }
     }
-    if (existsSync(out)) code.style = `/panel-code/${panelId}/style.css`;
+    if (existsSync(out)) code.style = `/panel-code/${panelId}/style.css${stamp(out)}`;
   }
 
   return { code: Object.keys(code).length ? code : undefined, problems };

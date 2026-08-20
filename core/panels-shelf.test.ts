@@ -26,6 +26,13 @@ function copyDefaultsOntoShelf(): void {
 
 const DEFAULT_NAMES = ['boards', 'log', 'plugins', 'screens', 'shelf'];
 
+/** The `?v=` a code url is expected to carry, worked out from the
+ * artifact the same way the sweep does — so these tests pin the RULE
+ * (the url names this build), not one machine's clock. */
+function stampOf(outPath: string): string {
+  return `?v=${Math.floor(statSync(outPath).mtimeMs).toString(36)}`;
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'teller-panels-'));
 });
@@ -164,7 +171,9 @@ describe('sweepPanels — the code ladder (§E UN-DEFERRED, rungs 3-5)', () => {
     expect(problems).toEqual([]);
     const panel = panels.find((p) => p.name === 'my-widget');
     expect(panel?.codePending).toBeUndefined();
-    expect(panel?.code?.blocks?.Widget).toBe('/panel-code/pan_widget1/blocks/Widget.js');
+    expect(panel?.code?.blocks?.Widget).toBe(
+      `/panel-code/pan_widget1/blocks/Widget.js${stampOf(join(dir, 'panels', 'my-widget', '.build', 'blocks', 'Widget.js'))}`,
+    );
 
     const built = readFileSync(
       join(dir, 'panels', 'my-widget', '.build', 'blocks', 'Widget.js'),
@@ -214,6 +223,32 @@ describe('sweepPanels — the code ladder (§E UN-DEFERRED, rungs 3-5)', () => {
     expect(secondBuild).not.toBe(firstBuild);
   });
 
+  it('a recompile changes the URL, and an unchanged one keeps it', () => {
+    writeBlockPanel('stamped-widget', 'pan_widget6', VALID_BLOCK);
+    shelf.setPluginEnabled('pan_widget6', true);
+    const urlNow = () =>
+      sweepPanels(dir, shelf).panels.find((p) => p.name === 'stamped-widget')?.code?.blocks
+        ?.Widget;
+
+    const first = urlNow();
+    expect(first).toMatch(/\?v=[0-9a-z]+$/);
+    // Two sweeps over an untouched folder: nothing recompiled, so
+    // nothing may move — a url that churned on its own would throw
+    // every cached module away for no reason.
+    expect(urlNow()).toBe(first);
+
+    // Now edit the source the way a person does, and push its mtime
+    // past the build's so the sweep sees the change on a fast disk.
+    const source = join(dir, 'panels', 'stamped-widget', 'blocks', 'Widget.tsx');
+    writeFileSync(source, `export default function Widget() { return null; } // edited\n`);
+    const later = new Date(Date.now() + 60_000);
+    utimesSync(source, later, later);
+
+    const second = urlNow();
+    expect(second).toMatch(/\?v=[0-9a-z]+$/);
+    expect(second).not.toBe(first);
+  });
+
   it('style.css passes through untouched', () => {
     const name = 'styled-widget';
     const id = 'pan_widget5';
@@ -228,7 +263,9 @@ describe('sweepPanels — the code ladder (§E UN-DEFERRED, rungs 3-5)', () => {
 
     const { panels } = sweepPanels(dir, shelf);
     const panel = panels.find((p) => p.name === name);
-    expect(panel?.code?.style).toBe(`/panel-code/${id}/style.css`);
+    expect(panel?.code?.style).toBe(
+      `/panel-code/${id}/style.css${stampOf(join(panelDirPath, '.build', 'style.css'))}`,
+    );
     const copied = readFileSync(join(panelDirPath, '.build', 'style.css'), 'utf8');
     expect(copied).toBe('.widget { color: red; }\n');
   });
@@ -249,7 +286,9 @@ describe('sweepPanels — the code ladder (§E UN-DEFERRED, rungs 3-5)', () => {
 
     shelf.setPluginEnabled(id, true);
     boards = sweepPanels(dir, shelf).panels.find((p) => p.name === 'boards');
-    expect(boards?.code?.blocks?.Widget).toBe(`/panel-code/${id}/blocks/Widget.js`);
+    expect(boards?.code?.blocks?.Widget).toBe(
+      `/panel-code/${id}/blocks/Widget.js${stampOf(join(tableDir, '.build', 'blocks', 'Widget.js'))}`,
+    );
   });
 });
 

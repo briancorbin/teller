@@ -1324,6 +1324,26 @@ function serveStatic(pathname: string, res: ServerResponse): boolean {
   }
 }
 
+/**
+ * How long a browser may keep a piece of served code, and the answer
+ * comes off the url rather than off the route. A url stamped `?v=` was
+ * built from its artifact's mtime (`stamp` in `core/panels-shelf.ts`),
+ * so it is immutable BY CONSTRUCTION — a rebuild mints a different url
+ * and the old one is never asked for again, which is the one condition
+ * under which a year-long `immutable` is honest. An unstamped url makes
+ * no such promise, so it revalidates every time: `no-cache` doesn't
+ * mean "don't store", it means "ask first", and a 304 on unchanged
+ * bytes is cheap on a machine in the same room.
+ *
+ * The pair is deliberate. Stale panel code behind a fresh-looking url
+ * cost an afternoon of confusion, and the fix has to be the DEFAULT
+ * that a url without a stamp falls into — not something a caller
+ * remembers to opt into.
+ */
+function codeCache(url: URL): string {
+  return url.searchParams.has('v') ? 'public, max-age=31536000, immutable' : 'no-cache';
+}
+
 /** The whole server, session + key in, listener out. Tests call this on port 0. */
 export function serve(what: Session | Host, port: number, key: string) {
   // A Session is accepted for the callers that build one directly (the
@@ -1368,6 +1388,7 @@ export function serve(what: Session | Host, port: number, key: string) {
       }
       res.writeHead(200, {
         'Content-Type': MIME[extname(path)] ?? 'application/octet-stream',
+        'Cache-Control': codeCache(url),
       });
       res.end(readFileSync(path));
       return;
@@ -1412,6 +1433,7 @@ export function serve(what: Session | Host, port: number, key: string) {
       }
       res.writeHead(200, {
         'Content-Type': MIME[extname(path)] ?? 'application/octet-stream',
+        'Cache-Control': codeCache(url),
       });
       res.end(readFileSync(path));
       return;

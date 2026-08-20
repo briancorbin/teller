@@ -170,3 +170,32 @@ describe('copying a default up to the table', () => {
     expect(row.payload).toMatchObject({ name: 'log', from: 'teller', id: body.id });
   });
 });
+
+describe('the code door and what a browser may keep', () => {
+  // The fixture above already carries a compiled block, so this is the
+  // cheapest place to ask the question the stale-bundle afternoon
+  // raised: does a served module say how long it is good for?
+
+  it('a stamped url is immutable, and the same bytes unstamped revalidate', async () => {
+    await api('POST', '/api/plugins/pan_dial000000001', { enabled: true });
+    const dial = (await panelsIn()).find((p: any) => p.name === 'dial');
+    const url: string = dial.code.blocks.Widget;
+    expect(url).toMatch(/^\/panel-code\/pan_dial000000001\/blocks\/Widget\.js\?v=[0-9a-z]+$/);
+
+    const stamped = await fetch(`${base}${url}`);
+    expect(stamped.status).toBe(200);
+    expect(stamped.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+
+    // Strip the stamp and the promise goes with it — the url no longer
+    // names a build, so it has to be asked about every time.
+    const bare = await fetch(`${base}${url.split('?')[0]}`);
+    expect(bare.status).toBe(200);
+    expect(bare.headers.get('cache-control')).toBe('no-cache');
+  });
+
+  it('the generated system module is never stored — it has no build to name', async () => {
+    const res = await fetch(`${base}/pack-code/system.js`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+  });
+});
