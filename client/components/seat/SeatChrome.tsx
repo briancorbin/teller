@@ -92,13 +92,18 @@ function morePanel(
   ladderLists: string[],
   /** The advancement door, when the system declares a menu to open. */
   spendDoor?: PanelBlock,
+  /** Whether declared carried screens already show what's carried —
+   * if they do, More re-listing every child (stats, prices and all)
+   * is a duplicate inventory with the shop's numbers leaking through;
+   * the block only rides for a system with no screens of its own. */
+  hasCarriedScreens = false,
 ): PanelDef {
   const blocks: PanelBlock[] = [
     ...(spendDoor ? [spendDoor] : []),
     { block: 'list', list: 'resources', filter: 'except-named', names: [...claimed], as: 'ledger' },
     { block: 'ladders' },
     { block: 'rest', except: [...PLACED, ...ladderLists] },
-    { block: 'children' },
+    ...(hasCarriedScreens ? [] : [{ block: 'children' } as PanelBlock]),
     { block: 'notes' },
   ];
   return { name: 'More', subject: 'entity', mounted: blocks, held: blocks };
@@ -620,7 +625,7 @@ export function SeatChrome({
           pane: p,
         })),
         ...(hasSpare
-          ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed, ladderLists, spendDoor) }]
+          ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed, ladderLists, spendDoor, screenDecls.length > 0) }]
           : []),
       ]
     : [];
