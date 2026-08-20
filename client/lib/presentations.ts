@@ -14,19 +14,16 @@
 // everything else, one rung shorter:
 //
 //   1. the active system's presentations (`import * as system`)
-//   2. teller's own fallback registry, below
+//   2. teller's own fallback registry, below — EMPTY as of phase 3.5
 //   3. nothing — and the caller falls to its neutral rendering
 //
-// Step 3 is the point of the whole exercise: a system with no code of
-// its own still plays, and every caller of `presentationOf` must have an
-// answer for `undefined` that a table could sit down at. A face is
-// dressing; the stored value is the sheet.
+// Step 3 is the point of the whole exercise, and since phase 3.5 it is
+// the ONLY thing under step 1: a system with no code of its own still
+// plays, and every caller of `presentationOf` must have an answer for
+// `undefined` that a table could sit down at. A face is dressing; the
+// stored value is the sheet.
 
 import { useSyncExternalStore } from 'react';
-import { Cylinder } from '../components/sheet/Cylinder.tsx';
-import { HealthPanel } from '../components/sheet/HealthPanel.tsx';
-import { StatusPanel } from '../components/sheet/StatusPanel.tsx';
-import { DicePool } from '../components/DicePool.tsx';
 
 // The system module is fetched BY URL, dynamically — never as a bare
 // `import 'system'` from the app's own code. A static bare import made
@@ -69,26 +66,26 @@ export function useSystemFaces(): number {
 }
 
 /**
- * teller's own copies of the four faces the WiW pack now carries —
- * step 2 of the ladder above, and a DEMOTION, not a home.
+ * **Empty, and that is the finished state (§L phase 3.5, 2026-08-19).**
  *
- * §L phase 3 moved these components into the pack; this map is the
- * transitional floor under that move, so a host whose pack is untrusted,
- * absent or mid-edit renders the sheet it rendered yesterday instead of
- * degrading on a day nobody asked it to. Emptying it is phase 3.5 — the
- * one-line change that makes "other systems don't all have vitals" true
- * in the code rather than only in the doc, and the reason every consumer
- * below is written to survive `undefined` TODAY.
+ * This map held teller's own copies of the four faces the WiW system now
+ * carries — `Cylinder`, `HealthPanel`, `StatusPanel`, `DicePool`. They
+ * were a DEMOTION, not a home: phase 3 moved the components onto the
+ * system layer and kept these wired so that a host mid-migration
+ * rendered the sheet it rendered yesterday. Phase 3.5 is the deletion,
+ * taken once a SECOND system existed to prove the point
+ * (`examples/systems/starter/`), and the four files are gone from
+ * `client/components/` along with their exports from the `teller`
+ * module.
  *
- * Nothing new belongs in here. A face teller genuinely owns is a neutral
- * primitive with a plain import, not a name someone has to summon.
+ * The seam stays because the seam was never the problem: `presentationOf`
+ * still asks system-then-fallback-then-nothing, and a table's own
+ * client build may legitimately want to answer here. What may NOT go in
+ * is what came out — vocabulary. A face teller genuinely owns is a
+ * neutral primitive with a plain import (`VitalBar`, `SpendFloor`,
+ * `DiceFloor`), not a name someone has to summon.
  */
-export const FALLBACK_PRESENTATIONS: Record<string, unknown> = {
-  Cylinder,
-  HealthPanel,
-  StatusPanel,
-  DicePool,
-};
+export const FALLBACK_PRESENTATIONS: Record<string, unknown> = {};
 
 /**
  * The face named `name`, or `undefined` if nobody supplies one.

@@ -87,27 +87,31 @@ export type { Entity, Entry, Ref } from '../../core/entity.ts';
 
 // -- the summoning seam (§L phase 3) -----------------------------------------
 // What draws a face called X — the active system's presentations first,
-// teller's demoted copies second, `undefined` third. Panel code that
-// wants a system's own vocabulary should `import { … } from 'system'`
-// directly; this is for code that must survive not finding it.
+// teller's fallback registry second (empty since phase 3.5), `undefined`
+// third. Panel code that wants a system's own vocabulary should
+// `import { … } from 'system'` directly; this is for code that must
+// survive not finding it.
 export { presentationOf, suppliedPresentations } from '../lib/presentations.ts';
 
-// -- DEPRECATED: system vocabulary, still exported so nothing breaks ---------
-// §L phase 3 moved these four into the WiW pack
-// (`packs/<name>/presentations/*.tsx`). They are **not teller's** — a
+// **The four are GONE** (§L phase 3.5, 2026-08-19). `DicePool`,
+// `HealthPanel`, `StatusPanel` and `Cylinder` were exported from here
+// under a deprecation notice saying they would go when the fallback map
+// did; the map is empty and so are they. They were never teller's — a
 // HealthPanel is one printed sheet's health box, a Cylinder is a
-// revolver, a StatusPanel is severity boxes with relief captions, a
-// DicePool is B and G dice — and they remain here only as the fallback
-// under the migration (`FALLBACK_PRESENTATIONS`, client/lib/presentations.ts).
+// revolver — and they live on their system's shelf now.
 //
-// **Panel code should import these from `'system'`, not from `'teller'`.**
-// A panel that reaches for them here gets whatever teller happened to
-// ship rather than what the system it's arranging actually prints, which
-// is the conflation §L exists to end. They go when the fallback map does.
-export { DicePool } from '../components/DicePool.tsx';
-export { HealthPanel } from '../components/sheet/HealthPanel.tsx';
-export { StatusPanel } from '../components/sheet/StatusPanel.tsx';
-export { Cylinder } from '../components/sheet/Cylinder.tsx';
+// This is a BREAK in a frozen import contract, taken deliberately and
+// with the notice served: `import { HealthPanel } from 'teller'` now
+// fails to link, and the fix is the one the notice always named —
+// `from 'system'`. Nothing on the shelf did it (checked); everything
+// there already imported them from `system`.
+//
+// What teller ships instead is the FLOOR each of them falls to, and
+// those are plain imports above, not summoned names: `VitalBar` and
+// `CounterStepper` for a counter, `TagSection` for a chip strip,
+// `DiceFloor` for a declared pool.
+export { DiceFloor } from '../components/DiceFloor.tsx';
+export type { DicePoolProps } from '../components/DiceFloor.tsx';
 
 // -- items (§K furniture) ---------------------------------------------------
 export { ItemTile } from '../components/items/ItemTile.tsx';

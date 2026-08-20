@@ -5,34 +5,77 @@
 // Counters (Big/Ledger/Rows), the sheet chrome and the Grit cylinder —
 // without touching the block names or the BlockCtx seam.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ComponentType } from 'react';
 import type { Entity, Entry } from '../../core/entity.ts';
 import type { PanelBlock } from '../../core/panels.ts';
 import { api, fileUrl } from '../lib/api.ts';
 import { card, sectionLabel } from '../lib/ui.ts';
 import type { DiceRecord } from '../lib/dice.ts';
-import { useRuleLookup, usePanelNote } from '../lib/rules.ts';
+import { useRuleLookup, usePanelNote, type RuleHit } from '../lib/rules.ts';
 import { CounterStepper } from '../components/Vitals.tsx';
 import { TagSection } from '../components/TagSection.tsx';
 import { BigGauge, LedgerRow, SkillRow, stepValue } from '../components/Counters.tsx';
-import { dialable } from '../components/sheet/Cylinder.tsx';
 import { SheetPanel } from '../components/sheet/SheetPanel.tsx';
-import { type StatusDecl } from '../components/sheet/StatusPanel.tsx';
 import { presentationOf, useSystemFaces } from '../lib/presentations.ts';
 import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
 import { CarriedScreen } from '../components/items/Screen.tsx';
 import type { ScreenDecl } from '../components/items/types.ts';
 
-// The faces this file summons by name (§L phase 3). They are NOT
-// imported: a `HealthPanel` is the WiW printed sheet's health box and a
-// `Cylinder` is a revolver, so both belong to the system that prints
-// them, and arrive as pack-carried code through `presentationOf`. The
-// types below are the shape this file passes — teller's own demoted
-// copies are what they're read off, and they stay the contract even
-// after the copies go (`FALLBACK_PRESENTATIONS`, phase 3.5).
-type CylinderFace = typeof import('../components/sheet/Cylinder.tsx').Cylinder;
-type HealthFace = typeof import('../components/sheet/HealthPanel.tsx').HealthPanel;
-type StatusFace = typeof import('../components/sheet/StatusPanel.tsx').StatusPanel;
+// The faces this file summons by name (§L, phase 3.5 complete). They are
+// NOT imported and teller no longer ships any of them: a `HealthPanel`
+// is one printed sheet's health box and a `Cylinder` is a revolver, so
+// both belong to the system that prints them and arrive as system- or
+// pack-carried code through `presentationOf`.
+//
+// These types used to be read off teller's own demoted copies
+// (`typeof import('../components/sheet/Cylinder.tsx').Cylinder`). With
+// the copies deleted they are written out here, which is what they
+// always were: **the contract this file passes**. A system's face
+// satisfies these props or it doesn't get drawn the way this block
+// means; nothing else about it is teller's business.
+type CylinderFace = ComponentType<{
+  entry: Entry;
+  onSet: (next: number) => void;
+  note?: string;
+  fill?: boolean;
+  accent?: string;
+}>;
+
+type HealthFace = ComponentType<{
+  entry: Entry;
+  pinned: Entry[];
+  onSet: (next: number) => void;
+  note?: string;
+  fill?: boolean;
+}>;
+
+/** One row of the system's `statuses` declaration — the mechanic, never the prose. */
+export type StatusDecl = { name: string; relief?: string; effect?: string };
+
+type StatusFace = ComponentType<{
+  declared: StatusDecl[];
+  entries: { name: string; value?: number | string }[];
+  onWrite: (edit: { name: string; value?: number; remove?: boolean }) => void;
+  title?: string;
+  note?: string;
+  fill?: boolean;
+  lookup?: (name: string) => RuleHit | undefined;
+}>;
+
+/**
+ * Past twelve chambers a ring stops being countable — so a `dials` word
+ * on a bigger counter is ignored and the floor's gauge draws it.
+ *
+ * §L flagged this as one face's constraint wearing the seam's clothes,
+ * and it still is: it lived in `Cylinder.tsx` and gated EVERY dial, not
+ * just cylinders. It moved here rather than dying when the cylinder did,
+ * because deleting it would silently change what a big dialled counter
+ * draws as, on a day nobody asked for that. The honest fix is unchanged
+ * and still owed: a face declaring its own fitness.
+ */
+function dialable(entry: Entry): boolean {
+  return typeof entry.max === 'number' && entry.max > 0 && entry.max <= 12;
+}
 
 /** 'skills' → 'Skills'. The one heading this file supplies rather than reads off a pack. */
 function titleCase(name: string): string {
@@ -423,7 +466,7 @@ registerBlock('list', (block, ctx) => {
           // chambers stops being countable) still gating every dial,
           // which is one face's constraint wearing the seam's clothes.
           // Kept as-is because it's what shipped; the honest fix is a
-          // face declaring its own fitness, and that's phase 3.5.
+          // face declaring its own fitness, and it is still owed.
           const Dial = dialable(entry)
             ? presentationOf<CylinderFace>(dialOf(ctx, entry) ?? '')
             : undefined;
