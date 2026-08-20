@@ -8,7 +8,11 @@
 // this tool supplies the list, the filter, and entity CRUD around it.
 
 import { useState } from 'react';
+import type { ComponentType } from 'react';
+import type { Entity } from '../../core/entity.ts';
 import { api } from '../lib/api.ts';
+import { presentationOf, useSystemFaces } from '../lib/presentations.ts';
+import { addChild } from '../lib/refs.ts';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui.ts';
 import { Refusal } from '../panels/render.tsx';
@@ -16,6 +20,52 @@ import { EntityCard, usePanelRecords, useSheetPanel } from '../components/roster
 import { registerTool } from './index.ts';
 
 type RosterEntry = { id: string; name: string; type: string | null };
+
+/**
+ * The system's own way of making a character, if it has one.
+ *
+ * teller ships NO builder — "ships empty" applied to creation. Composing
+ * a character out of trades, tiers and starting kits is a claim about
+ * how a particular game works, so the claim (and the code) lives on the
+ * system's shelf and is SUMMONED by name here. The floor when nobody
+ * supplies one is the plain create bar below: a name, a type, and a
+ * human filling in the rest — which is exactly how a data-only system
+ * hand-assembles an entity, and it is honest rather than apologetic.
+ *
+ * Every prop is a DOOR, never a fact. The roster cannot know which slots
+ * a builder reads without learning some game's words, and it isn't
+ * allowed to (the seam resolves the component; the component names its
+ * own vocabulary). All five are module-level and therefore stable — a
+ * fresh identity each render would relaunch whatever the dialog loads.
+ */
+type CreationDialogProps = {
+  declarations: (slot: string) => Promise<unknown[]>;
+  record: (slot: string) => Promise<Record<string, unknown>>;
+  create: (draft: unknown) => Promise<{ id: string }>;
+  carry: (entityId: string, child: Entity) => Promise<unknown>;
+  entry: (
+    entityId: string,
+    write: {
+      list: string;
+      name: string;
+      value?: number | string;
+      max?: number | null;
+      remove?: boolean;
+    },
+  ) => Promise<unknown>;
+  onDone: (id: string) => void;
+  onClose: () => void;
+};
+
+const doors: Omit<CreationDialogProps, 'onDone' | 'onClose'> = {
+  declarations: (slot) => api<unknown[]>(`/api/stack/declarations/${slot}`),
+  record: (slot) => api<Record<string, unknown>>(`/api/stack/record/${slot}`),
+  create: (draft) => api<{ id: string }>('/api/entities', { body: { draft } }),
+  // §K: a carried thing is an INLINE child of the character's own blob,
+  // never a stamped row under it in the campaign's parent tree.
+  carry: (entityId, child) => addChild(entityId, child),
+  entry: (entityId, write) => api(`/api/entities/${entityId}/entry`, { body: write }),
+};
 
 const FILTERS: {
   key: string;
@@ -43,6 +93,12 @@ function RosterTool() {
   const [query, setQuery] = useState('');
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<'pc' | 'npc'>('pc');
+  const [building, setBuilding] = useState(false);
+
+  // Re-render when the system module lands, so the builder appears
+  // rather than staying missing for the life of the tab.
+  useSystemFaces();
+  const Builder = presentationOf<ComponentType<CreationDialogProps>>('CreationDialog');
 
   const entities = list.data ?? [];
   const shown = entities
@@ -125,7 +181,14 @@ function RosterTool() {
       </div>
 
       <div className={`${card} space-y-2`}>
-        <span className={sectionLabel}>New entity</span>
+        <div className="flex items-baseline justify-between">
+          <span className={sectionLabel}>New entity</span>
+          {Builder && (
+            <button className={btn} onClick={() => setBuilding(true)}>
+              build one…
+            </button>
+          )}
+        </div>
         <div className="flex gap-2">
           <input
             className={`${input} min-w-0 flex-1`}
@@ -147,6 +210,10 @@ function RosterTool() {
           </button>
         </div>
       </div>
+
+      {Builder && building && (
+        <Builder {...doors} onDone={() => list.reload()} onClose={() => setBuilding(false)} />
+      )}
     </div>
   );
 }
