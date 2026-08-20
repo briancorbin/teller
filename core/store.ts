@@ -603,6 +603,36 @@ CREATE TABLE IF NOT EXISTS book_pages (
   text       TEXT NOT NULL,
   PRIMARY KEY (book_id, page)
 );
+-- Book search that knows what a word is (old world's migration 0006,
+-- ported because the reasoning is unchanged). A LIKE '%q%' is
+-- substring matching: "cover" hits "uncovered" and "discovery", so a
+-- real question drowns. FTS5's tokenizer matches whole words, the
+-- porter stemmer means "grapple" finds "grappled", and bm25() ranks,
+-- which is what makes a cap mean "the best forty" instead of "the
+-- first forty".
+--
+-- book_pages stays the source of truth; this is an EXTERNAL-CONTENT
+-- index over it, kept in step by triggers — one copy of the text, and
+-- anything that writes pages updates search for free.
+CREATE VIRTUAL TABLE IF NOT EXISTS book_fts USING fts5(
+  text,
+  content = 'book_pages',
+  content_rowid = 'rowid',
+  tokenize = 'porter unicode61'
+);
+-- External-content tables don't read the content table on write; they
+-- are TOLD what changed, and a 'delete' row must carry the OLD text —
+-- which is why update deletes-then-inserts rather than just inserting.
+CREATE TRIGGER IF NOT EXISTS book_pages_ai AFTER INSERT ON book_pages BEGIN
+  INSERT INTO book_fts (rowid, text) VALUES (new.rowid, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS book_pages_ad AFTER DELETE ON book_pages BEGIN
+  INSERT INTO book_fts (book_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+END;
+CREATE TRIGGER IF NOT EXISTS book_pages_au AFTER UPDATE ON book_pages BEGIN
+  INSERT INTO book_fts (book_fts, rowid, text) VALUES ('delete', old.rowid, old.text);
+  INSERT INTO book_fts (rowid, text) VALUES (new.rowid, new.text);
+END;
 CREATE TABLE IF NOT EXISTS boards (
   id            TEXT PRIMARY KEY,
   key           TEXT NOT NULL,
@@ -745,6 +775,41 @@ function rowToBoard(row: Row): Board {
   const grid = parseJson(row.grid);
   if (grid !== undefined) out.grid = grid;
   return out;
+}
+
+/**
+ * A rulebook on this machine. `id` is `bok_` + the first 12 hex of the
+ * sha-256 of its own bytes (rule 4a), so two people who own the same
+ * book derive the same id without coordinating and a `.story` that
+ * names one resolves on any host that has it.
+ */
+export type Book = {
+  id: string;
+  name: string;
+  /** Pages with a text layer, once read. */
+  pages: number;
+  indexed: boolean;
+  createdAt: string;
+  /** False when the row is here but the file isn't — say so, never drop it (rule 9). */
+  present?: boolean;
+};
+
+/** One page that answered a search, with the words fenced (see `searchBooks`). */
+export type BookHit = {
+  bookId: string;
+  bookName: string;
+  page: number;
+  snippet: string;
+};
+
+function rowToBook(row: Row): Book {
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    pages: Number(row.pages ?? 0),
+    indexed: row.indexed === 1,
+    createdAt: String(row.created_at),
+  };
 }
 
 export class Shelf {
@@ -989,6 +1054,108 @@ export class Shelf {
 
   removeBoard(id: string): void {
     this.#db.prepare('DELETE FROM boards WHERE id = ?').run(id);
+  }
+
+  // -- books ------------------------------------------------------------
+  //
+  // The DM's own rulebooks. A book lives on the host and nowhere else:
+  // it arrives once and every screen in the room can read it, with no
+  // per-device import and no copy stranded in one browser's storage
+  // (rule 9). Not scoped to a campaign or a system — you own the
+  // books, campaigns refer to them by id.
+  //
+  // There is no `key` column, unlike the old world's: a book's bytes
+  // live at `<data>/books/<id>.pdf` and that path is a FUNCTION of the
+  // id, so storing it would only create a second thing to keep true
+  // (rule 8 — a column earns its place when a query needs it).
+
+  putBook(row: { id: string; name: string }): void {
+    this.#db
+      .prepare(
+        `INSERT INTO books (id, name, pages, indexed, created_at)
+         VALUES (?, ?, 0, 0, ?)
+         ON CONFLICT(id) DO NOTHING`,
+      )
+      .run(row.id, row.name, now());
+  }
+
+  book(id: string): Book | undefined {
+    const row = this.#db
+      .prepare('SELECT * FROM books WHERE id = ?')
+      .get(id) as Row | undefined;
+    return row ? rowToBook(row) : undefined;
+  }
+
+  books(): Book[] {
+    const rows = this.#db
+      .prepare('SELECT * FROM books ORDER BY created_at, id')
+      .all() as Row[];
+    return rows.map(rowToBook);
+  }
+
+  renameBook(id: string, name: string): void {
+    this.#db.prepare('UPDATE books SET name = ? WHERE id = ?').run(name, id);
+  }
+
+  /** Forget the row AND its text. The FILE is the sweep's business. */
+  removeBook(id: string): void {
+    this.#db.prepare('DELETE FROM book_pages WHERE book_id = ?').run(id);
+    this.#db.prepare('DELETE FROM books WHERE id = ?').run(id);
+  }
+
+  /** A book's text, replacing whatever was there. The triggers keep FTS in step. */
+  indexBook(id: string, pages: { page: number; text: string }[]): void {
+    this.#db.exec('BEGIN');
+    try {
+      this.#db.prepare('DELETE FROM book_pages WHERE book_id = ?').run(id);
+      const insert = this.#db.prepare(
+        'INSERT INTO book_pages (book_id, page, text) VALUES (?, ?, ?)',
+      );
+      for (const p of pages) insert.run(id, p.page, p.text);
+      this.#db
+        .prepare('UPDATE books SET indexed = 1, pages = ? WHERE id = ?')
+        .run(pages.length, id);
+      this.#db.exec('COMMIT');
+    } catch (err) {
+      this.#db.exec('ROLLBACK');
+      throw err;
+    }
+  }
+
+  /**
+   * Ranked pages, with the matched words fenced for the client.
+   *
+   * `match` is an FTS5 expression, already built — raw input must never
+   * reach MATCH (see `ftsQuery` in `server/books.ts`). char(2)/char(3)
+   * are the fences: control characters, deliberately, because they
+   * can't collide with anything a PDF's text layer contains and one
+   * that escaped to the DOM would render as nothing.
+   */
+  searchBooks(match: string, limit: number): { hits: BookHit[]; total: number } {
+    const from = `FROM book_fts
+        JOIN book_pages p ON p.rowid = book_fts.rowid
+        JOIN books b ON b.id = p.book_id
+       WHERE book_fts MATCH ?`;
+    const rows = this.#db
+      .prepare(
+        `SELECT p.book_id, p.page, b.name,
+                snippet(book_fts, 0, char(2), char(3), '…', 18) AS snip
+           ${from}
+         ORDER BY bm25(book_fts)
+         LIMIT ${Number(limit) || 40}`,
+      )
+      .all(match) as Row[];
+    // Ranking makes the cap honest, but only if you can see you hit it.
+    const counted = this.#db
+      .prepare(`SELECT COUNT(*) AS n ${from}`)
+      .get(match) as Row | undefined;
+    const hits = rows.map((r) => ({
+      bookId: String(r.book_id),
+      bookName: String(r.name),
+      page: Number(r.page),
+      snippet: String(r.snip),
+    }));
+    return { hits, total: Number(counted?.n ?? hits.length) };
   }
 
   // -- displays ---------------------------------------------------------

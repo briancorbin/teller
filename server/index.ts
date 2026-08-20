@@ -15,7 +15,7 @@
 // store boundary, so a route never sees a raw row.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
+import { createReadStream, readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, join, normalize, resolve as resolvePath } from 'node:path';
 import process from 'node:process';
@@ -44,6 +44,18 @@ import {
   STREAM_MINUTES,
   type Auth,
 } from './auth.ts';
+import {
+  bookBytes,
+  bookSubject,
+  bookUrl,
+  declaredBooks,
+  forgetBook,
+  ftsQuery,
+  HIT_LIMIT,
+  sweepBooks,
+  withPresence,
+} from './books.ts';
+import { isBookId } from '../core/books-shelf.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
 import { isPoint, POINTS, type Point } from '../core/registry.ts';
 import {
@@ -686,6 +698,85 @@ export async function handleApi(
       ...shelfListing(host),
       boards: shelf.boards().map(({ id, name }) => ({ id, name })),
     });
+  }
+
+  // -- the rulebooks (server/books.ts holds the law and the reasoning).
+  //
+  // Beside the shelf and above the campaign gate, for the same reason:
+  // a book is a fact about the MACHINE (rule 9), it is not scoped to a
+  // campaign or a system, and a host with nothing running still has a
+  // shelf of books on it. The gate is `canPrep` rather than `canDm`,
+  // because a seat looking a rule up mid-fight is the whole point of
+  // the books living on the host at all.
+  if (head === 'books') {
+    // Search first: the point of the feature, and a bare
+    // `/api/books/:id` match would otherwise swallow it.
+    if (method === 'GET' && a === 'search' && !b) {
+      if (!canPrep(auth)) return denied();
+      const q = (url.searchParams.get('q') ?? '').trim();
+      const match = q.length < 2 ? null : ftsQuery(q);
+      if (!match) return reply(200, { hits: [], total: 0 });
+      return reply(200, shelf.searchBooks(match, HIT_LIMIT));
+    }
+
+    if (method === 'GET' && !a) {
+      if (!canPrep(auth)) return denied();
+      return reply(200, {
+        books: withPresence(host.dataDir, shelf.books()),
+        // What the packs this table runs on were written against —
+        // which is what makes a rule entry's bare "p.26" openable.
+        declared: declaredBooks(
+          host.dataDir,
+          (host.session?.loaded.packs ?? []).map((p) => p.id),
+        ),
+      });
+    }
+
+    // "I just dropped one in." The sweep is the road IN (there is
+    // deliberately no upload route — see server/books.ts), and it is
+    // its own door rather than a limb of `/api/shelf/sweep` because
+    // reading a 300-page rulebook is seconds, and the panel sweep is
+    // pressed constantly and must stay instant.
+    if (method === 'POST' && a === 'sweep' && !b) {
+      if (!canDm(auth)) return denied();
+      if (!host.dataDir) return reply(501, { error: 'this host has no data dir' });
+      const swept = await sweepBooks(host.dataDir, shelf);
+      host.room.changed('books');
+      return reply(200, { ok: true, ...swept });
+    }
+
+    // Permission to read ONE book, so the viewer can be a plain iframe
+    // with a URL in it (rule 7 — an iframe sends no headers). The
+    // ticket is minted late, on the click: a short-lived slip fetched
+    // early is just a slip that has already expired.
+    if (method === 'POST' && a && b === 'ticket') {
+      if (!canPrep(auth)) return denied();
+      if (!isBookId(a)) return reply(404, { error: 'no such book' });
+      if (!shelf.book(a)) return reply(404, { error: 'no such book' });
+      return reply(200, { url: bookUrl(key, a) });
+    }
+
+    // The name is for a human and only ever was — a book dropped in
+    // already carrying its hash has no other name to take, and rule 1
+    // says a human can always type over what teller worked out.
+    if (method === 'PUT' && a && !b) {
+      if (!canDm(auth)) return denied();
+      if (!shelf.book(a)) return reply(404, { error: 'no such book' });
+      const body = await bodyOf(req);
+      const name = String(body.name ?? '').trim();
+      if (!name) return reply(400, { error: 'a book needs a name' });
+      shelf.renameBook(a, name);
+      host.room.changed('books');
+      return reply(200, shelf.book(a));
+    }
+
+    if (method === 'DELETE' && a && !b) {
+      if (!canDm(auth)) return denied();
+      forgetBook(host.dataDir, a);
+      shelf.removeBook(a);
+      host.room.changed('books');
+      return reply(200, { ok: true });
+    }
   }
 
   // -- zip it up and hand it over (rule 4a: "zipped it's a `.pack` you
@@ -1529,6 +1620,44 @@ export function serve(what: Session | Host, port: number, key: string) {
       return;
     }
 
+    // A rulebook's bytes. Its own door rather than a limb of `/files/`
+    // for two reasons: it answers RANGES, which is what makes opening
+    // page 184 of a hundred-megabyte Guidebook instant instead of a
+    // download; and its ticket names ONE BOOK (`book:<id>`) rather than
+    // the whole data dir, so a slip that leaks out of a devtools panel
+    // opens exactly the book it was minted for and nothing else.
+    const verb = req.method ?? 'GET';
+    if (url.pathname.startsWith('/books/') && (verb === 'GET' || verb === 'HEAD')) {
+      const id = url.pathname.slice('/books/'.length).replace(/\.pdf$/i, '');
+      const dataDir = host.dataDir;
+      const ticketed = checkTicket(key, bookSubject(id), url.searchParams.get('t'));
+      if (!ticketed || !dataDir) {
+        res.writeHead(401, { 'Content-Type': 'text/plain' });
+        res.end('ticket required');
+        return;
+      }
+      const found = bookBytes(dataDir, id, req.headers.range);
+      if (found.status === 404) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('not here');
+        return;
+      }
+      if (found.status === 416) {
+        res.writeHead(416, found.headers);
+        res.end();
+        return;
+      }
+      res.writeHead(found.status, found.headers);
+      if (verb === 'HEAD') {
+        res.end();
+        return;
+      }
+      // Streamed, never buffered: a rulebook is a hundred megabytes and
+      // a table has several screens.
+      createReadStream(found.path, { start: found.start, end: found.end }).pipe(res);
+      return;
+    }
+
     // Bytes from the data dir — pack art and board images — behind the
     // same ticket law as the stream (an <img> can't send headers).
     // Only art/ and map/ are reachable, and only inside the data dir.
@@ -1734,6 +1863,29 @@ if (import.meta.main) {
   }
 
   serve(host, port, key);
+
+  // The books folder, swept exactly like the packs one — drop a PDF in
+  // and it is installed (rule 4a). NOT awaited: reading a rulebook that
+  // arrived since last boot takes seconds, and the table must not wait
+  // on it. A book is openable the moment its row exists; searchable
+  // shortly after.
+  void sweepBooks(dataDir, shelf)
+    .then(({ onDisk, missing, indexed, problems }) => {
+      if (onDisk.length) {
+        console.log(
+          `  books: ${onDisk.length} on this host` +
+            (indexed.length ? ` · read ${indexed.length} just now` : ''),
+        );
+      }
+      // A row whose file has gone is SAID, never dropped — the campaign
+      // still refers to it (rule 9).
+      if (missing.length) {
+        console.log(`  ${missing.length} book(s) referenced but not here: ${missing.join(', ')}`);
+      }
+      for (const p of problems) console.log(`  BOOK PROBLEM ${p.file}: ${p.problem}`);
+      host.room.changed('books');
+    })
+    .catch((err: unknown) => console.log(`  books: did not sweep — ${String(err)}`));
 
   const session = host.session;
   console.log(
