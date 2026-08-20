@@ -292,18 +292,22 @@ function Console() {
   // has none — so the `?? tools[0]` below is the real contract, and the
   // highlight reads from `current`, never from `pane`.
   //
-  // Remembered per browser, never in the URL: the hash is the screen's
+  // Remembered per SCREEN, never in the URL: the hash is the screen's
   // IDENTITY (rule 6) and must not change as the DM clicks around — but
   // a refresh mid-fight landing back on the roster loses the runner, so
-  // the last pick survives in storage. A remembered pane a later system
-  // doesn't declare falls through `?? tools[0]` like any other absence.
+  // the last pick survives in storage. Keyed by the slot, exactly like
+  // the display id one shelf over: two slotted tabs in one browser are
+  // two screens, and one screen's click must not aim the other on its
+  // next refresh (found live by Brian, 2026-08-20). A remembered pane a
+  // later system doesn't declare falls through `?? tools[0]`.
+  const paneKey = displaySlot() ? `teller.console.pane.${displaySlot()}` : 'teller.console.pane';
   const [pane, setPaneState] = useState(
-    () => localStorage.getItem('teller.console.pane') ?? 'roster',
+    () => localStorage.getItem(paneKey) ?? 'roster',
   );
   const setPane = (name: string) => {
     setPaneState(name);
     try {
-      localStorage.setItem('teller.console.pane', name);
+      localStorage.setItem(paneKey, name);
     } catch {
       // Storage full or blocked — the click still works for this visit.
     }
