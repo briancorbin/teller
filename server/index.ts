@@ -49,6 +49,7 @@ import { isPoint, POINTS, type Point } from '../core/registry.ts';
 import { defaultPanelDir, panelDir } from '../core/panels-shelf.ts';
 import { packDir, packPanelDir, sweepPacks, systemIndexModule } from '../core/packs-shelf.ts';
 import { sweepSystems, systemDir, systemPanelDir } from '../core/systems-shelf.ts';
+import { publicBoardState, publicSnapshot } from './public.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
 import type { TurnOp } from './turn.ts';
 
@@ -669,6 +670,13 @@ export async function handleApi(
 
   if (!session) return noCampaign();
 
+  // The player-safe snapshot — one payload every passive surface (table,
+  // board, badge, art) renders whole. The redaction law lives in
+  // `server/public.ts`; the gate is `canWatch`, above.
+  if (method === 'GET' && head === 'public' && !a) {
+    return reply(200, publicSnapshot(session));
+  }
+
   // Which system and packs this campaign runs on — the manifest's refs,
   // rewritten. An ABSENT (or emptied) pack list is not "no packs": it
   // restores the default, every pack for the system in arrival order,
@@ -714,10 +722,34 @@ export async function handleApi(
       }
     }
 
+    // Which board the table is showing — one ref beside the other two,
+    // because "the active scene" is a fact about this campaign and the
+    // manifest is where a campaign's facts live. Absent means no active
+    // board, which means the table sits idle.
+    if ('board' in body) {
+      if (body.board === null || body.board === '') delete refs.board;
+      else if (typeof body.board === 'string') {
+        const board = shelf.board(body.board);
+        if (!board) return reply(400, { error: `no board ${body.board} on this shelf` });
+        refs.board = { id: board.id, name: board.name };
+      } else {
+        return reply(400, { error: 'board must be a brd_ id or null' });
+      }
+    }
+
     session.save({ ...manifest, refs }, actorOf(auth, String(body.actor ?? '')));
-    session.reload();
+    // A board swap changes nothing about what's LOADED, so it nudges
+    // the room instead of re-resolving the whole content stack.
+    if ('system' in body || 'packs' in body) session.reload();
+    else session.changed('board');
     const { system, packs, missing } = session.loaded;
-    return reply(200, { ok: true, system: system ?? null, packs, missing });
+    return reply(200, {
+      ok: true,
+      system: system ?? null,
+      packs,
+      missing,
+      board: refs.board ?? null,
+    });
   }
 
   if (head === 'entities' && !a) {
@@ -1062,7 +1094,12 @@ export async function handleApi(
 
   if (head === 'board-state' && a && !b) {
     if (method === 'GET') {
-      return reply(200, session.campaign.boardState(a) ?? null);
+      const state = session.campaign.boardState(a) ?? null;
+      // The DM sees the board as it is; anyone else at the table sees
+      // it as the table may — hidden placements gone, fog flattened.
+      // Same function the snapshot uses, because two strippings would
+      // eventually disagree and one of them would be the leak.
+      return reply(200, canDm(auth) ? state : publicBoardState(state));
     }
     if (method === 'PUT') {
       if (!canDm(auth)) return denied();
