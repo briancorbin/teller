@@ -3,6 +3,7 @@
   "label": "Log",
   "blurb": "Everything that happened, newest first (rule 3, readable).",
   "subject": "none",
+  "order": 98,
   "mounted": [
     {
       "block": "tool",

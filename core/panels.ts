@@ -47,6 +47,14 @@ export type PanelDef = {
   mounted?: PanelBlock[];
   held?: PanelBlock[];
   /**
+   * Where this panel sits in a bar of tabs. Ordinary declaration data,
+   * so it merges like everything else — a later layer restating the
+   * name with a different `order` moves the tab, and the table's
+   * restatement moves anything (rule 1, pointed at the furniture).
+   * Undeclared means `PANEL_ORDER_DEFAULT`; see `byPanelOrder`.
+   */
+  order?: number;
+  /**
    * `pan_…`, minted once at seed/authoring and baked into the file.
    * Identity for the FILE (namespaces its art, names it on disk) — the
    * merge key stays `name`, exactly as `pak_` doesn't touch a pack's.
@@ -88,7 +96,33 @@ export function toPanel(raw: unknown): PanelDef | undefined {
   if (mounted) out.mounted = mounted;
   if (held) out.held = held;
   if (typeof r.id === 'string' && r.id.trim()) out.id = r.id;
+  if (typeof r.order === 'number' && Number.isFinite(r.order)) out.order = r.order;
   return out;
+}
+
+/**
+ * Where an undeclared panel sits: the MIDDLE, not the end. A system's
+ * play screens declare nothing today, and they are the reason anyone
+ * opens the console — so the rule has to read right when the number is
+ * absent. Low sorts first, high sorts last, and silence lands between
+ * them: teller's own host tools carry 90-98 and sit after the play
+ * screens, a system that wants one of its screens first says 10.
+ */
+export const PANEL_ORDER_DEFAULT = 50;
+
+/**
+ * The ONE order a bar of panels is drawn in — the console's tabs, the
+ * Screens picker's pane list, anything that offers panels to choose
+ * from. Declared number first, then the visible word, so a shelf full
+ * of undeclared panels still reads alphabetically instead of by
+ * whichever folder the sweep happened to open first.
+ */
+export function byPanelOrder(a: PanelDef, b: PanelDef): number {
+  const order = (p: PanelDef) => p.order ?? PANEL_ORDER_DEFAULT;
+  return (
+    order(a) - order(b) ||
+    (a.label ?? a.name).toLowerCase().localeCompare((b.label ?? b.name).toLowerCase())
+  );
 }
 
 /** Every list a sheet places by hand, so `rest` can catch the strays.

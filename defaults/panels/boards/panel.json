@@ -3,6 +3,7 @@
   "label": "Boards",
   "blurb": "The maps and their live placements.",
   "subject": "none",
+  "order": 92,
   "mounted": [
     {
       "block": "tool",

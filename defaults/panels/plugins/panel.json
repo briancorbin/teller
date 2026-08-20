@@ -3,6 +3,7 @@
   "label": "Plugins",
   "blurb": "Discovered on disk; enabled only by you, here.",
   "subject": "none",
+  "order": 96,
   "mounted": [
     {
       "block": "tool",

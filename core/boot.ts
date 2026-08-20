@@ -26,7 +26,7 @@
 
 import { refIn, refsIn, sameName, type Entity, type Ref } from './entity.ts';
 import { mergeBy } from './merge.ts';
-import { type PanelDef } from './panels.ts';
+import { byPanelOrder, type PanelDef } from './panels.ts';
 import { defaultPanels, sweepPanels } from './panels-shelf.ts';
 import { sweepPacks, type PackProblem } from './packs-shelf.ts';
 import { sweepSystems } from './systems-shelf.ts';
@@ -167,12 +167,22 @@ export class Loaded {
    * A slot's VOCABULARY-coupled reading — declarations, statuses:
    * later restates earlier by name, the campaign's own word last and
    * winning.
+   *
+   * `panels` leaves here SORTED, and that is deliberate: every surface
+   * that draws a bar of panels — the console's tabs, the Screens
+   * picker, the seat's segmented bar — reads this one endpoint, so the
+   * order belongs at the seam they share rather than in three
+   * comparators that drift (the `panes.ts` law, arrived at again).
+   * Merge order is an accident of which layer spoke last; `order` is
+   * something a human wrote down.
    */
   declarations(slot: string): unknown[] {
-    return mergeBy(
+    const merged = mergeBy(
       (item: unknown) => String(asRecord(item).name ?? '').trim().toLowerCase(),
       ...this.#live(slot).map((s) => s.items),
     ).filter((item) => String(asRecord(item).name ?? '').trim());
+    if (slot !== 'panels') return merged;
+    return (merged as PanelDef[]).slice().sort(byPanelOrder);
   }
 
   /**

@@ -379,6 +379,60 @@ describe("teller's own furniture (§E)", () => {
   });
 });
 
+describe('the order a bar of panels is drawn in', () => {
+  // One sorted list at one seam, so the console's tabs, the Screens
+  // picker and the seat's bar can't disagree about where a panel sits.
+
+  function tableWith(panels: Record<string, unknown>[]): Campaign {
+    const shelf = openShelf(dir);
+    shelf.putSystem({ id: 'sys_o', name: 'O', data: { panels } });
+    const campaign = createCampaign(dir, 'ord', 'Order');
+    campaign.save({ ...campaign.root(), refs: { system: { id: 'sys_o', name: 'O' } } }, 't');
+    return campaign;
+  }
+
+  it("play screens first, teller's host tools last — undeclared sits between", () => {
+    const campaign = tableWith([
+      { name: 'roster', label: 'Roster', subject: 'none' },
+      { name: 'runner', label: 'Runner', subject: 'none', order: 10 },
+    ]);
+    const names = loadCampaign(openShelf(dir), campaign).declarations('panels').map(
+      (p: any) => p.name,
+    );
+    // Runner declared 10, roster declared nothing (50), the five
+    // defaults 90-98. Alphabetical within a tie is the tiebreak, which
+    // is why the tools read screens · boards · shelf · plugins · log.
+    expect(names).toEqual([
+      'runner',
+      'roster',
+      'screens',
+      'boards',
+      'shelf',
+      'plugins',
+      'log',
+    ]);
+    campaign.close();
+  });
+
+  it('a restatement moves a tab — reordering is the same override as everything else', () => {
+    const campaign = tableWith([{ name: 'roster', label: 'Roster', subject: 'none' }]);
+    // The table says the log belongs first. No new machinery: it
+    // restates the word with a number, and the merge does the rest.
+    const tablePanel = join(dir, 'panels', 'log');
+    mkdirSync(tablePanel, { recursive: true });
+    writeFileSync(
+      join(tablePanel, 'panel.json'),
+      JSON.stringify({ id: 'pan_tlog', name: 'log', label: 'Log', subject: 'none', order: 1 }),
+    );
+
+    const names = loadCampaign(openShelf(dir), campaign, dir)
+      .declarations('panels')
+      .map((p: any) => p.name);
+    expect(names[0]).toBe('log');
+    campaign.close();
+  });
+});
+
 describe('sections — declarations, merged by name (§J)', () => {
   it('a pack section loads, and the campaign overrides one by restating its name', () => {
     const shelf = openShelf(dir);
