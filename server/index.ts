@@ -78,7 +78,9 @@ import {
   packArchive,
   packDir,
   packPanelDir,
+  refusalModule,
   sweepPacks,
+  systemExportModule,
   systemIndexModule,
 } from '../core/packs-shelf.ts';
 import { sweepSystems, systemDir, systemPanelDir } from '../core/systems-shelf.ts';
@@ -2235,6 +2237,42 @@ export function serve(what: Session | Host, port: number, key: string) {
         'Cache-Control': codeCache(url),
       });
       res.end(readFileSync(path));
+      return;
+    }
+
+    // The `system/<name>` specifier's body (§M-4a) — one shim per
+    // export, generated per request against whatever system is ACTIVE
+    // right now, re-exporting the stamped immutable module by its exact
+    // names. No-store for the same reason `/pack-code/system.js` is: the
+    // active system can change under a running table and the shim is
+    // what absorbs it.
+    //
+    // Every refusal — no system, no such export, a system whose code
+    // nobody enabled — is a 200 whose body THROWS, labeled. A 404 would
+    // reject the dynamic import with a message naming nothing; this one
+    // says exactly what's missing, at the render site, out loud (rule 1).
+    if (url.pathname.startsWith('/system-export/')) {
+      const name = decodeURIComponent(url.pathname.slice('/system-export/'.length)).replace(
+        /\.js$/,
+        '',
+      );
+      const loaded = host.session?.loaded;
+      const entry = name ? loaded?.exports()[name] : undefined;
+      const body = entry
+        ? systemExportModule(name, entry)
+        : refusalModule(
+            !loaded?.system
+              ? `\`${name}\` was imported, and this table has no active system`
+              : `${loaded.system.name} doesn't export \`${name}\`` +
+                (loaded.system.codePending
+                  ? " — its code is on the shelf awaiting enablement"
+                  : ''),
+          );
+      res.writeHead(200, {
+        'Content-Type': 'text/javascript',
+        'Cache-Control': 'no-store',
+      });
+      res.end(body);
       return;
     }
 

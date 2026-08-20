@@ -15,6 +15,11 @@
       served, not built — a generated index module re-exporting the
       active system's pack-carried presentations, empty when no pack
       supplies any, so importing it never 404s a panel.
+      `system/` is the PREFIX mapping beside it (§M-4a): `system/creation`
+      is one file of the active system's declared function, resolved
+      through a no-store shim that re-exports the stamped module. A
+      prefix key is why the specifier is spelled with a slash — import
+      maps resolve those natively.
       `/runtime-*.js` is a stable, unhashed build output
       (vite.client.config.ts) in prod; in dev the same urls are
       answered by a small middleware in that same config that
@@ -27,7 +32,8 @@
           "react": "/runtime-react.js",
           "react/jsx-runtime": "/runtime-jsx-runtime.js",
           "teller": "/runtime-teller.js",
-          "system": "/pack-code/system.js"
+          "system": "/pack-code/system.js",
+          "system/": "/system-export/"
         }
       }
     </script>
