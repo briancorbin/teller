@@ -1827,6 +1827,38 @@ as everything else: **facts stay teller's, rendering is summonable.**
   composite declared the floor is exactly the old behavior — every
   entity panel a tab — so a data-only system loses nothing.
 
+**5a′ · The include — panels nest, atoms stay atoms** (2026-08-20,
+Brian: "everything becomes just modular levels of nested panels…
+[and] this doesn't stop people from just not using panels like this").
+
+A new block noun, `{ block: 'panel', name: '…' }`: an arrangement may
+include another panel by name, inheriting the subject/records/write
+context it's placed in. Every level of COMPOSITION is now a named,
+mergeable file — composite → tabs → fragments → fragments — and
+later-wins reaches INSIDE arrangements: a pack restating
+`vitals-strip` updates every arrangement that includes it, without
+those arrangements being restated. The honest floor: blocks are the
+atoms and the include — `list`, `header`, `statuses` are renderer
+primitives, the alphabet something must eventually draw with. Guards:
+
+- **Fragments aren't surfaces.** `surface: false` on a declaration:
+  merged and overridable as ever, never offered as a tab, a console
+  pane, or an assignment. The panes.ts law, inverted on purpose — a
+  fragment is deliberately not a place anyone can be pointed.
+- **Cycles and dangling includes refuse out loud** — a labeled
+  refusal in the load report and at the render site, never a crash,
+  never a blank.
+- **Trust never launders through an include** — each panel's code
+  gates on its own row, exactly as before.
+
+And the property that keeps it teller's (Brian, same conversation):
+**the grammar is an offer, not a discipline.** A rung-5 takeover that
+draws its own header, tabs and everything inside remains fully legal —
+one panel that chose to be opaque. Includes exist for the author who
+wants some pieces custom and the rest default, mixing freely, because
+an include resolves whatever the name merges to without caring which
+rung built it.
+
 **6 · The play screens are the system's** (2026-08-19, Brian, the
 first cut made under this section — "when you load a system, it adds
 the extra console screens it needs").
