@@ -60,7 +60,27 @@ import { formatPrice, makePayment, parsePrice } from '../store.mjs';
 type Entry = { name: string; value?: unknown };
 
 /** Only what this screen reads off a catalogue row — the goods are teller's. */
-type Template = { id: string; name: string };
+type Template = { id: string; name: string; lists?: Record<string, Entry[]> };
+
+/**
+ * What the book asks for this thing — the catalogue entry's own price
+ * stat, found the way `shelfOf` finds it (the system's word for "what a
+ * thing costs", matched case-insensitively: `costField` is 'cost', the
+ * entry says 'Cost').
+ *
+ * Verbatim, not reformatted: this is the string that WILL apply if the
+ * line's own price is left unset, so showing a tidied version of it
+ * would be showing a number the shelf isn't going to use.
+ */
+function bookPrice(template: Template | undefined, costField: string): string | undefined {
+  if (!template) return undefined;
+  const want = costField.toLowerCase();
+  for (const entries of Object.values(template.lists ?? {})) {
+    const hit = (entries ?? []).find((e) => String(e?.name ?? '').toLowerCase() === want);
+    if (hit?.value !== undefined && hit?.value !== null) return String(hit.value);
+  }
+  return undefined;
+}
 
 type VendorLine = { ref: string; name?: string; price?: string; qty?: number | null };
 
@@ -132,11 +152,14 @@ type PaneProps = BlockCtx & { plugin: NonNullable<BlockCtx['plugin']> };
 function LineRow({
   line,
   template,
+  book,
   onChange,
   onRemove,
 }: {
   line: VendorLine;
   template: Template | undefined;
+  /** What the catalogue asks, when it asks anything — the placeholder. */
+  book: string | undefined;
   onChange: (patch: Partial<VendorLine>) => void;
   onRemove: () => void;
 }) {
@@ -150,12 +173,20 @@ function LineRow({
           </span>
         )}
       </span>
+      {/* UNSET shows the book's own number, greyed — the figure that
+          WILL apply, rather than the word "book's", which named the
+          fallback without ever saying what it was. It stays a
+          placeholder and never a value: typing overrides it, clearing
+          lets the book's number show through again (rule 1 — the stored
+          value wins, and here there isn't one). */}
       <input
         className={`${input} w-24 text-right font-mono text-xs`}
-        placeholder="book's"
+        placeholder={book ?? "book's"}
         defaultValue={line.price ?? ''}
         onBlur={(e) => onChange({ price: e.target.value.trim() || undefined })}
-        aria-label={`what ${template?.name ?? line.ref} costs here`}
+        aria-label={`what ${template?.name ?? line.ref} costs here${
+          book ? ` (the book says ${book})` : ''
+        }`}
       />
       <input
         className={`${input} w-20 text-right font-mono text-xs`}
@@ -180,6 +211,7 @@ function VendorCard({
   vendor,
   catalog,
   byId,
+  costField,
   expanded,
   isOpen,
   onToggle,
@@ -190,6 +222,8 @@ function VendorCard({
   vendor: Vendor;
   catalog: Template[];
   byId: Map<string, Template>;
+  /** The system's word for what a thing costs (`records.store.costField`). */
+  costField: string;
   expanded: boolean;
   isOpen: boolean;
   onToggle: () => void;
@@ -271,6 +305,7 @@ function VendorCard({
                 key={`${line.ref}-${i}`}
                 line={line}
                 template={byId.get(line.ref)}
+                book={bookPrice(byId.get(line.ref), costField)}
                 onChange={(p) =>
                   patch({ lines: lines.map((l, j) => (j === i ? { ...l, ...p } : l)) })
                 }
@@ -451,7 +486,14 @@ function CounterRow({
   );
 }
 
-export default function StorePane({ plugin }: PaneProps) {
+export default function StorePane({ plugin, records }: PaneProps) {
+  // The system's word for what a thing costs — the same declaration the
+  // shelf reads, so an unset line's placeholder is exactly the number
+  // the shelf will use. A system that declares nothing falls to 'cost',
+  // which is what `store.mjs` does too.
+  const costField = String(
+    (records.store as { costField?: unknown } | undefined)?.costField ?? 'cost',
+  );
   const { data: vendors, reload: reloadVendors } = useLive(
     () => plugin.call<Vendor[]>('vendors'),
     [],
@@ -597,6 +639,7 @@ export default function StorePane({ plugin }: PaneProps) {
               vendor={vendor}
               catalog={catalog}
               byId={byId}
+              costField={costField}
               expanded={open === vendor.id}
               isOpen={openId === vendor.id}
               onToggle={() => setOpen(open === vendor.id ? null : vendor.id)}

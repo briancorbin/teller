@@ -40,7 +40,7 @@
 // the DM's, at the console. That is the same shape as everything else a
 // seat may do — it moves its own numbers and asks for the rest.
 
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { SheetPanel, StatRow, useLive, type BlockCtx, type Entity, type Glass } from 'teller';
 import { formatPrice, parsePrice } from '../store.mjs';
 
@@ -86,17 +86,30 @@ type ShopView = {
 /** A pane always has its plugin — that is what makes it a pane (§15). */
 type PaneProps = BlockCtx & { plugin: NonNullable<BlockCtx['plugin']> };
 
-/** The two families' tile (rule 6): fixed on mounted glass so the shelf
- * pans, elastic on a phone so it wraps. The widths are inline for the
- * reason the header gives — they are the classes that vanished. */
-const TILE = {
+/** The accent, spelled once — every card, price and chip reads it. */
+const ACCENT = 'var(--sheet-accent, #f59e0b)';
+
+/**
+ * The SHELF GRID, both families (rule 6).
+ *
+ * Mounted glass PANS: the shelf fills DOWN a column and then marches
+ * right, one 6.7rem card per row and 16rem per column, because one
+ * full-height card per item would spend the whole rail on four goods.
+ * How many fit per column is derived from the card's own height against
+ * the glass — `auto-fill` decides it, nothing declares it.
+ *
+ * Held glass WRAPS: as many columns as fit at a 15rem floor, one column
+ * in a hand, every row the same height.
+ */
+const GRID: Record<Glass, React.CSSProperties> = {
   mounted: {
-    className: 'shrink-0 snap-start self-stretch',
-    style: { width: '19rem' },
+    gridAutoFlow: 'column',
+    gridTemplateRows: 'repeat(auto-fill, 6.7rem)',
+    gridAutoColumns: '16rem',
   },
   held: {
-    className: 'flex-1 self-start',
-    style: { minWidth: '13rem' },
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 15rem), 1fr))',
+    gridAutoRows: 'minmax(5.5rem, auto)',
   },
 };
 
@@ -105,36 +118,96 @@ function inCart(cart: CartLine[], ref: string): number {
   return cart.find((l) => l.ref === ref)?.qty ?? 0;
 }
 
+/** The rule between shelves, when the whole store is on display. */
+function GroupRule({ label, glass }: { label: string; glass: Glass }) {
+  if (glass === 'mounted') {
+    // On the panning bar the rule stands UP, so a shelf change is
+    // visible as you sweep past it.
+    return (
+      <div className="flex shrink-0 flex-col items-center gap-1 self-stretch px-1">
+        <div className="w-px flex-1 bg-stone-800" />
+        <span
+          className="whitespace-nowrap uppercase text-stone-500"
+          style={{ writingMode: 'vertical-rl', fontSize: '0.6rem', letterSpacing: '0.2em' }}
+        >
+          {label}
+        </span>
+        <div className="w-px flex-1 bg-stone-800" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      <span
+        className="uppercase tracking-widest text-stone-500"
+        style={{ fontSize: '0.65rem' }}
+      >
+        {label}
+      </span>
+      <div className="h-px flex-1 bg-stone-800" />
+    </div>
+  );
+}
+
+const STEP_BTN =
+  'flex shrink-0 select-none items-center justify-center rounded-lg bg-stone-800 text-lg text-stone-200 transition-colors hover:bg-stone-700 active:bg-amber-700 active:text-stone-950 disabled:pointer-events-none disabled:opacity-30';
+
+/**
+ * The −/+ pair, identical on the card and in the detail.
+ *
+ * At zero the minus is INVISIBLE rather than greyed and the count isn't
+ * drawn at all — a shelf of thirty goods each announcing a nought is a
+ * shelf of noughts. The card keeps the minus's room, so nothing shifts
+ * when the first one goes in the cart.
+ */
 function Stepper({
   line,
   have,
+  big = false,
   onSet,
 }: {
   line: StockLine;
   have: number;
+  big?: boolean;
   onSet: (qty: number) => void;
 }) {
+  const soldOut = line.qty !== null && line.qty <= 0;
   // Stock caps what you can gather; unlimited caps at something sane so
   // a stuck finger doesn't put ninety-nine rifles on the counter.
   const ceiling = line.qty === null ? 99 : line.qty;
+  const size = big
+    ? { height: '2.5rem', minWidth: '2.5rem' }
+    : { height: '2rem', minWidth: '2rem' };
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex shrink-0 items-center gap-1">
       <button
         type="button"
         aria-label={`one fewer ${line.name}`}
-        disabled={have === 0}
+        className={`${STEP_BTN} ${have === 0 ? 'invisible' : ''}`}
+        style={size}
         onClick={() => onSet(have - 1)}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-stone-800 text-stone-200 hover:bg-stone-700 disabled:opacity-30"
       >
         −
       </button>
-      <span className="w-7 text-center font-mono text-sm tabular-nums text-stone-100">{have}</span>
+      {have > 0 && (
+        <span
+          className="text-center font-mono tabular-nums"
+          style={{
+            color: ACCENT,
+            minWidth: '1.25rem',
+            fontSize: big ? '1rem' : '0.875rem',
+          }}
+        >
+          {have}
+        </span>
+      )}
       <button
         type="button"
         aria-label={`one more ${line.name}`}
-        disabled={have >= ceiling}
+        disabled={soldOut || have >= ceiling || parsePrice(line.price) === null}
+        className={STEP_BTN}
+        style={size}
         onClick={() => onSet(have + 1)}
-        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-stone-800 text-stone-200 hover:bg-stone-700 disabled:opacity-30"
       >
         +
       </button>
@@ -142,92 +215,205 @@ function Stepper({
   );
 }
 
+/**
+ * One thing on the shelf: a name, what it's off, its price, and the
+ * count you're taking.
+ *
+ * **A shelf is a TABLE, so every card is the same card.** `h-full`
+ * hands it the grid row's height, so a row of goods lines up whatever
+ * the names did; two lines of room for the name means nearly every card
+ * is the same height without a single name being cut (nothing
+ * truncates, ever). NOT a `SheetPanel` — the sheet's corner ticks and
+ * darts are the chrome of a BLOCK, and thirty of them side by side read
+ * as a jumble rather than as stock.
+ */
 function StockTile({
   line,
   have,
-  fill,
+  glass,
   onSet,
   onOpen,
 }: {
   line: StockLine;
   have: number;
-  fill: boolean;
+  glass: Glass;
   onSet: (qty: number) => void;
   onOpen: () => void;
 }) {
+  const soldOut = line.qty !== null && line.qty <= 0;
   return (
-    <SheetPanel title={line.name} fill={fill} className="w-full">
-      <div className={`flex flex-col gap-1 ${fill ? 'min-h-0 flex-1' : ''}`}>
-        <button
-          type="button"
-          className="text-left uppercase tracking-widest text-stone-500 hover:text-stone-300"
-          style={{ fontSize: '0.65rem' }}
-          onClick={onOpen}
-          aria-label={`look at ${line.name}`}
+    <div
+      className={`flex h-full flex-col rounded-lg border bg-stone-900/60 transition-colors ${
+        have > 0 ? '' : 'border-stone-800'
+      } ${glass === 'mounted' ? 'snap-start' : ''} ${soldOut ? 'opacity-50' : ''}`}
+      style={have > 0 ? { borderColor: ACCENT } : undefined}
+    >
+      {/* The whole upper card opens it. A shelf label is a thing you
+          point at, so the target is the card, not a chevron. */}
+      <button
+        type="button"
+        className="flex min-h-0 flex-1 flex-col items-start gap-1 px-3 pt-2 text-left"
+        onClick={onOpen}
+        aria-label={`${line.name} — look closer`}
+        disabled={line.missing}
+      >
+        <span
+          className="break-words font-serif leading-tight text-stone-100"
+          style={{ minHeight: '2.4em', fontSize: '0.9rem' }}
         >
-          {line.type ?? 'goods'} · look closer
-        </button>
-        {line.missing && (
-          <span className="font-mono text-amber-500/80" style={{ fontSize: '11px' }}>
-            not on this host
-          </span>
-        )}
-        <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 pt-2">
-          <span
-            className="font-mono text-base tabular-nums"
-            style={{ color: 'var(--sheet-accent, #f59e0b)' }}
-          >
-            {line.price ?? '—'}
-          </span>
+          {line.name}
+        </span>
+        {/* Always a LINE, even with nothing to say — a card with no
+            count would otherwise stand a line shorter than the rifle
+            beside it, and that, not the names, is what makes a shelf
+            ragged. The blank is a real line of this exact type, so it
+            can't drift from one. */}
+        <span
+          className="flex flex-wrap gap-x-2 uppercase tracking-widest text-stone-500"
+          style={{ fontSize: '0.6rem' }}
+        >
+          {/* A stocked ref whose catalogue entry isn't on this host is a
+              hole to REPORT, never to hide (rule 9). */}
+          {line.missing && (
+            <span style={{ color: 'rgb(180 83 9 / 0.8)' }}>not on this host</span>
+          )}
           {line.qty !== null && (
-            <span className="text-stone-500" style={{ fontSize: '11px' }}>
-              {line.qty} left
+            <span style={soldOut ? { color: 'rgb(248 113 113 / 0.8)' } : undefined}>
+              {soldOut ? 'sold out' : `${line.qty} left`}
             </span>
           )}
-          <span className="ml-auto">
-            <Stepper line={line} have={have} onSet={onSet} />
-          </span>
-        </div>
+          {!line.missing && line.qty === null && <span>&nbsp;</span>}
+        </span>
+      </button>
+      {/* The price and the count, on the same line at the same height on
+          every card — the row of them reads as one price list. */}
+      <div className="flex items-center gap-2 px-3 pb-2 pt-1">
+        <span
+          className="min-w-0 flex-1 font-mono text-sm tabular-nums"
+          style={{ color: ACCENT }}
+        >
+          {line.price ?? '—'}
+        </span>
+        <Stepper line={line} have={have} onSet={onSet} />
       </div>
-    </SheetPanel>
+    </div>
   );
 }
 
-/** One thing up close — its stats in the catalogue's own order, and the stepper. */
+/** The way back — a round accent-bordered chevron you can hit with a thumb. */
+function BackButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className="group flex shrink-0 items-center gap-2 self-start"
+      aria-label={label}
+      onClick={onClick}
+    >
+      <span
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors"
+        style={{ borderColor: ACCENT, color: ACCENT }}
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-5 w-5"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+        >
+          <path d="M14.5 5.5 8 12l6.5 6.5" />
+        </svg>
+      </span>
+      <span
+        aria-hidden
+        className="uppercase tracking-widest text-stone-400 transition-colors group-hover:text-stone-100"
+        style={{ fontSize: '0.7rem' }}
+      >
+        {label}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * One thing up close — its stats in the catalogue's own order.
+ *
+ * It OWNS the screen: the shelf's chips and cards would only compete
+ * with the thing you opened them to read. And it carries its own price
+ * and stepper at the foot, because walking back to the shelf to pick up
+ * the thing you just decided on is a step nobody wants.
+ */
 function Detail({
   line,
   have,
+  glass,
   onSet,
   onBack,
 }: {
   line: StockLine;
   have: number;
+  glass: Glass;
   onSet: (qty: number) => void;
   onBack: () => void;
 }) {
+  const soldOut = line.qty !== null && line.qty <= 0;
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          className="rounded-md bg-stone-800 px-3 py-1.5 text-sm text-stone-200 hover:bg-stone-700"
-          onClick={onBack}
-        >
-          ← back to the shelf
-        </button>
-        <span className="ml-auto">
-          <Stepper line={line} have={have} onSet={onSet} />
-        </span>
-      </div>
-      <SheetPanel title={line.name} className="w-full">
-        <div className="flex flex-col gap-1">
-          <StatRow label="price" value={line.price ?? '—'} />
-          {line.qty !== null && <StatRow label="in stock" value={String(line.qty)} />}
-          {line.stats.map((stat) => (
-            <StatRow key={stat.name} label={stat.name} value={String(stat.value ?? '')} />
-          ))}
+      <BackButton label="the shelf" onClick={onBack} />
+      <div
+        className={`flex min-h-0 flex-1 flex-col gap-2 ${
+          glass === 'mounted' ? 'overflow-y-auto' : ''
+        }`}
+      >
+        <SheetPanel title={line.name} className="w-full">
+          <div className="flex flex-col gap-2">
+            {/* Filing first, because this IS the moment you're choosing
+                the thing — what it costs and what shelf it's off are
+                most of the decision at the gunsmith's. */}
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-stone-400" style={{ fontSize: '0.7rem' }}>
+                <span className="uppercase tracking-widest text-stone-600">here </span>
+                <span className="font-mono" style={{ color: ACCENT }}>
+                  {line.price ?? '—'}
+                </span>
+              </span>
+              {(line.group ?? line.type) && (
+                <span
+                  className="uppercase tracking-widest text-stone-600"
+                  style={{ fontSize: '0.6rem' }}
+                >
+                  {line.group ?? line.type}
+                </span>
+              )}
+            </div>
+
+            {line.stats.length > 0 && (
+              <div className="flex flex-col gap-1 border-t border-stone-800 pt-2">
+                {line.stats.map((stat) => (
+                  <StatRow key={stat.name} label={stat.name} value={String(stat.value ?? '')} />
+                ))}
+              </div>
+            )}
+          </div>
+        </SheetPanel>
+
+        <div className="flex shrink-0 items-center gap-3 rounded-lg border border-stone-800 bg-stone-900/60 px-3 py-2">
+          <span className="min-w-0 flex-1 font-mono text-base tabular-nums text-stone-100">
+            {line.price ?? '—'}
+          </span>
+          {line.qty !== null && (
+            <span
+              className="uppercase tracking-widest text-stone-500"
+              style={{ fontSize: '0.65rem' }}
+            >
+              {soldOut ? 'sold out' : `${line.qty} left`}
+            </span>
+          )}
+          <Stepper line={line} have={have} big onSet={onSet} />
         </div>
-      </SheetPanel>
+      </div>
     </div>
   );
 }
@@ -329,7 +515,24 @@ function ShopShelf({
     () => [...new Set(view.shelf.map(shelfOf).filter(Boolean))],
     [view.shelf],
   );
-  const shown = kind ? view.shelf.filter((l) => shelfOf(l) === kind) : view.shelf;
+
+  /**
+   * The shelf, in sections. One chosen shelf is one section with no rule
+   * over it (the chip already said which you're on); ALL is every shelf
+   * in turn, each under its own rule — three hundred goods in one
+   * undifferentiated run is a wall, not a shop.
+   */
+  const sections = useMemo(() => {
+    if (kind) return [{ name: kind, lines: view.shelf.filter((l) => shelfOf(l) === kind) }];
+    const out = kinds.map((k) => ({
+      name: k,
+      lines: view.shelf.filter((l) => shelfOf(l) === k),
+    }));
+    // Anything the catalogue never filed still gets a home, and says so.
+    const loose = view.shelf.filter((l) => !shelfOf(l));
+    if (loose.length) out.push({ name: 'unfiled', lines: loose });
+    return out.filter((s) => s.lines.length);
+  }, [view.shelf, kinds, kind]);
 
   const total = cart.reduce((sum, l) => {
     const each = parsePrice(view.shelf.find((s) => s.ref === l.ref)?.price);
@@ -360,11 +563,17 @@ function ShopShelf({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-        <span className="font-serif text-lg font-bold text-stone-100">{view.vendor.name}</span>
+      {/* The masthead: whose shop this is, and the seat's own means. */}
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+        <span className="font-serif text-lg text-stone-100">{view.vendor.name}</span>
         {view.vendor.blurb && (
           <span className="min-w-0 italic text-stone-500" style={{ fontSize: '12px' }}>
             {view.vendor.blurb}
+          </span>
+        )}
+        {mine?.held !== undefined && (
+          <span className="ml-auto font-mono text-sm text-stone-300">
+            {formatPrice(mine.held, symbol)}
           </span>
         )}
       </div>
@@ -373,33 +582,29 @@ function ShopShelf({
         <Detail
           line={detailLine}
           have={inCart(cart, detailLine.ref)}
+          glass={glass}
           onSet={(q) => setQty(detailLine.ref, q)}
           onBack={() => setDetail(null)}
         />
       ) : (
-        <div className={`flex min-h-0 flex-1 gap-2 ${mounted ? '' : 'flex-col'}`}>
+        <>
           {kinds.length > 1 && (
-            <div
-              className={`flex shrink-0 gap-1 self-start ${
-                mounted ? 'flex-col' : 'w-full flex-wrap'
-              }`}
-            >
+            <div className="flex shrink-0 flex-wrap gap-1">
               {['', ...kinds].map((k) => (
                 <button
                   key={k || 'all'}
                   type="button"
                   onClick={() => setKind(k)}
                   aria-pressed={kind === k}
-                  className={`break-words rounded-md px-2 py-1.5 text-left uppercase transition-colors ${
+                  className={`rounded-md px-2 py-1 uppercase transition-colors ${
                     kind === k
                       ? 'text-stone-950'
                       : 'bg-stone-900 text-stone-400 hover:bg-stone-800 hover:text-stone-100'
                   }`}
                   style={{
-                    maxWidth: '7rem',
                     fontSize: '0.65rem',
                     letterSpacing: '0.14em',
-                    ...(kind === k ? { background: 'var(--sheet-accent, #f59e0b)' } : {}),
+                    ...(kind === k ? { background: ACCENT } : {}),
                   }}
                 >
                   {k || 'all'}
@@ -407,33 +612,45 @@ function ShopShelf({
               ))}
             </div>
           )}
+
+          {/* The shelf. On mounted glass it PANS sideways, the deliberate
+              gesture the item shelves already taught; in a hand it
+              stacks and the card scrolls, as it always did. */}
           <div
+            key={`shop:${kind}`}
             className={`flex min-h-0 min-w-0 flex-1 gap-2 ${
               mounted
                 ? 'snap-x snap-mandatory flex-nowrap items-stretch overflow-x-auto overflow-y-hidden'
-                : 'flex-wrap content-start'
+                : 'flex-col'
             }`}
           >
-            {shown.length === 0 && (
-              <p className="p-4 text-sm text-stone-600 italic">the shelves are bare</p>
-            )}
-            {shown.map((line) => (
-              <div
-                key={line.ref}
-                className={`flex flex-col gap-2 ${TILE[glass].className}`}
-                style={TILE[glass].style}
-              >
-                <StockTile
-                  line={line}
-                  have={inCart(cart, line.ref)}
-                  fill={mounted}
-                  onSet={(q) => setQty(line.ref, q)}
-                  onOpen={() => setDetail(line.ref)}
-                />
-              </div>
+            {sections.map((section) => (
+              <Fragment key={section.name}>
+                {/* Only when the whole store is on show. With one shelf
+                    chosen, the chip above already named it. */}
+                {!kind && <GroupRule label={section.name} glass={glass} />}
+                <div
+                  className={`grid gap-2 ${mounted ? 'shrink-0' : ''}`}
+                  style={GRID[glass]}
+                >
+                  {section.lines.map((line) => (
+                    <StockTile
+                      key={line.ref}
+                      line={line}
+                      have={inCart(cart, line.ref)}
+                      glass={glass}
+                      onSet={(q) => setQty(line.ref, q)}
+                      onOpen={() => setDetail(line.ref)}
+                    />
+                  ))}
+                </div>
+              </Fragment>
             ))}
+            {sections.length === 0 && (
+              <p className="p-4 text-sm italic text-stone-600">the shelves are bare</p>
+            )}
           </div>
-        </div>
+        </>
       )}
 
       <Cart
