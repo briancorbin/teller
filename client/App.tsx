@@ -18,6 +18,10 @@ import type { PanelDef } from '../core/panels.ts';
 import { PanelSurface, type BlockCtx, type Glass } from './panels/render.tsx';
 import { SeatChrome } from './components/seat/SeatChrome.tsx';
 import { CampaignScreen } from './views/campaigns.tsx';
+import { TableView } from './views/TableView.tsx';
+import { BoardView } from './views/BoardView.tsx';
+import { BadgeView } from './views/BadgeView.tsx';
+import { ArtView } from './views/ArtView.tsx';
 
 function useHash(): string {
   return useSyncExternalStore(
@@ -361,6 +365,15 @@ function PairScreen() {
     ) : (
       <Console />
     );
+  // The passive surfaces (rule 6). Each renders the player-safe
+  // snapshot whole and offers nothing to touch; the table's calibration
+  // is its own row, so it comes off this display and not the campaign.
+  if (display.role === 'table')
+    return <TableView ppi={display.ppi} ppiY={display.ppiY} />;
+  if (display.role === 'board') return <BoardView />;
+  if (display.role === 'art') return <ArtView />;
+  if (display.role === 'badge' && typeof params.entityId === 'string')
+    return <BadgeView entityId={params.entityId} />;
   return (
     <div className="flex min-h-dvh items-center justify-center">
       <p className="text-sm text-stone-500">

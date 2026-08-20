@@ -90,6 +90,9 @@ export type DisplayInfo = {
   name?: string;
   color?: string;
   params?: Record<string, unknown>;
+  /** This screen's own calibration — px per true inch, per axis. */
+  ppi?: number;
+  ppiY?: number;
 };
 
 export async function hello(): Promise<{ display: DisplayInfo; handle: string }> {
@@ -124,4 +127,85 @@ export function forgetSlips(): void {
 export async function fileUrl(path: string): Promise<string> {
   const slips = await getSlips();
   return `/files/${path}?handle=${encodeURIComponent(slips.handle)}&ticket=${encodeURIComponent(slips.files)}`;
+}
+
+// ---- the player-safe snapshot -----------------------------------------
+//
+// One payload, and the ONLY thing a passive surface is allowed to read
+// (rule 6). The redaction law lives on the server (`server/public.ts`);
+// these are the shapes it hands back, mirrored here rather than
+// imported — same reasoning as `screens.tsx`'s local `DisplayRole` and
+// `runner.tsx`'s local `TurnState`: the server module is not part of
+// the client's graph.
+//
+// What the views may therefore assume, and must never work around: a
+// foe carries no numbers at all, only tag-like lists and a qualitative
+// `vitality`. If a passive view ever wants a number the snapshot didn't
+// bring, the answer is that the number is not for that screen.
+
+export type PublicEntry = { name: string; value?: number | string; max?: number };
+
+export type Vitality = 'healthy' | 'bloodied' | 'critical' | 'down';
+
+export type PublicEntity = {
+  id: string;
+  name: string;
+  type?: string;
+  side: 'foe' | 'party';
+  lists: Record<string, PublicEntry[]>;
+  vitality?: Vitality;
+};
+
+export type PublicTurnEntry = {
+  id: string;
+  entityId?: string;
+  label?: string;
+  score?: number | null;
+};
+
+export type PublicTurn = {
+  order: PublicTurnEntry[];
+  turn: number | null;
+  round: number;
+  rolling?: boolean;
+};
+
+/** The board asset, plus its live state minus everything hidden. */
+export type PublicBoard = {
+  board: {
+    id: string;
+    key: string;
+    name: string;
+    widthInches?: number;
+    grid?: { on?: boolean; color?: string; opacity?: number };
+  };
+  state: {
+    placements?: PublicPlacement[];
+    /** Already flattened to plain revealed cells — no region shapes. */
+    fog?: { on?: boolean; revealed?: [number, number][] };
+    view?: { mode?: 'fit' | 'true'; zoom?: number; cu?: number; cv?: number };
+  } | null;
+};
+
+/** Where a thing stands and what it looks like; how it's DOING comes
+ *  through `entityId` at render, never from here (§5). */
+export type PublicPlacement = {
+  entityId?: string;
+  label?: string;
+  color?: string;
+  /** Normalized image coordinates, 0..1 (docs/BATTLEMAP.md). */
+  u: number;
+  v: number;
+  sizeInches?: number;
+};
+
+export type PublicSnapshot = {
+  campaign: { slug: string; name: string };
+  roster: PublicEntity[];
+  turn: PublicTurn;
+  board: PublicBoard | null;
+};
+
+export function publicSnapshot(): Promise<PublicSnapshot> {
+  return api<PublicSnapshot>('/api/public');
 }

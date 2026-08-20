@@ -6,6 +6,12 @@
 // into one card, matching the vanilla `boardView`'s functionality (who,
 // u, v, remove) without reaching for the full battlemap editor —
 // SceneEditor's fog/grid/token authoring is out of scope here.
+//
+// It also carries the one control that aims the table: `show` writes
+// `refs.board`, and the table TV picks the swap up over the stream.
+// That control lives HERE and not on the table, because a passive
+// surface never grows a button (rule 6) — everything the ground shows
+// is decided from the console.
 
 import { useState } from 'react';
 import { registerTool } from './index.ts';
@@ -14,6 +20,11 @@ import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui.ts';
 
 type BoardMeta = { id: string; name: string };
+/** Only the half of the snapshot this tool asks about: which board the
+ *  table is showing. Read live rather than off the loaded manifest — a
+ *  board swap doesn't re-resolve the stack, so the manifest the console
+ *  holds would answer with yesterday's scene. */
+type ActiveBoard = { board: { board: { id: string } } | null };
 type RosterRow = { id: string; name: string; type?: string };
 type Placement = { entityId?: string; label?: string; u: number; v: number; sizeInches?: number };
 type BoardState = { placements?: Placement[] } & Record<string, unknown>;
@@ -27,6 +38,10 @@ function whoOf(p: Placement, names: Map<string, string>): string {
 function BoardsTool() {
   const { data: boards } = useLive(() => api<BoardMeta[]>('/api/boards'), []);
   const { data: roster } = useLive(() => api<RosterRow[]>('/api/entities'), []);
+  const { data: active, reload: reloadActive } = useLive(
+    () => api<ActiveBoard>('/api/public'),
+    [],
+  );
   const [selected, setSelected] = useState<string | null>(null);
 
   const { data: state, reload } = useLive(
@@ -45,6 +60,17 @@ function BoardsTool() {
   const board = boards.find((b) => b.id === selected);
   const placements = state?.placements ?? [];
   const names = new Map(roster.map((r) => [r.id, r.name]));
+
+  const activeId = active?.board?.board.id ?? null;
+
+  // What the table is showing. One ordinary manifest ref, written the
+  // same way the system and the packs are — and the only control in
+  // this whole client that aims a passive surface at anything, because
+  // the table itself has none (rule 6).
+  const show = async (id: string | null) => {
+    await api('/api/campaign/refs', { method: 'PUT', body: { board: id } });
+    reloadActive();
+  };
 
   const save = async (next: Placement[]) => {
     if (!selected) return;
@@ -79,9 +105,9 @@ function BoardsTool() {
         {boards.length === 0 && <p className="text-sm text-stone-600">no boards on the shelf</p>}
         <ul className="space-y-1">
           {boards.map((b) => (
-            <li key={b.id}>
+            <li key={b.id} className="flex items-center gap-2">
               <button
-                className={`w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
+                className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
                   selected === b.id
                     ? 'bg-stone-800 text-stone-50'
                     : 'bg-stone-900 text-stone-200 hover:bg-stone-800'
@@ -89,6 +115,17 @@ function BoardsTool() {
                 onClick={() => setSelected(b.id)}
               >
                 {b.name}
+                {activeId === b.id && (
+                  <span className="ml-2 font-mono text-[11px] text-amber-500">
+                    on the table
+                  </span>
+                )}
+              </button>
+              <button
+                className={activeId === b.id ? btnGhost : btn}
+                onClick={() => show(activeId === b.id ? null : b.id)}
+              >
+                {activeId === b.id ? 'clear' : 'show'}
               </button>
             </li>
           ))}
