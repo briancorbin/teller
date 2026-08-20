@@ -25,6 +25,7 @@
 import { useEffect, useState } from 'react';
 import { fileUrl, myNotes, type PassedNote } from '../../lib/api.ts';
 import { useLive } from '../../lib/use-session.ts';
+import type { NoteBannerProps } from './seams.tsx';
 
 /** Everything passed to this screen, newest first, minus what it has seen. */
 export function usePassedNotes(): {
@@ -62,20 +63,17 @@ function Attachment({ path, alt }: { path: string; alt: string }) {
 }
 
 /**
- * The newest one, over everything. The rest wait their turn — a stack
- * of three notes read one at a time is a stack of three notes read,
- * where three cards at once is a wall.
+ * The NoteBanner SEAM's floor (§M-5a): the newest note, over
+ * everything. The rest wait their turn — a stack of three notes read
+ * one at a time is a stack of three notes read, where three cards at
+ * once is a wall, so the chrome hands over one note and a count.
+ *
+ * A theme may draw this as a telegram, a wanted poster, or quietly
+ * (rule 1 for UI) — what it may not do is decide whether the note was
+ * delivered. That is the seat's own business and it happens above.
  */
-export function PassedNoteOverlay({
-  notes,
-  onDismiss,
-}: {
-  notes: PassedNote[];
-  onDismiss: (id: string) => void;
-}) {
-  const note = notes[0];
+export function PassedNoteFloor({ note, waiting, onDismiss }: NoteBannerProps) {
   if (!note) return null;
-  const waiting = notes.length - 1;
 
   return (
     <div

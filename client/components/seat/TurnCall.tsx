@@ -21,8 +21,12 @@
 // most of the time — the first screen's economy is the design.
 
 import { useState } from 'react';
-import { scoreEntry, turnState, type TurnEntry } from '../../lib/api.ts';
+import { turnState, type TurnEntry } from '../../lib/api.ts';
 import { useLive } from '../../lib/use-session.ts';
+// Type-only, so the pair `seams.tsx` ↔ this file makes no runtime cycle:
+// the seam contract is declared beside the other four, and the floor
+// that satisfies it stays with the reading it grew up with.
+import type { TurnCallProps } from './seams.tsx';
 
 const LABEL = 'text-[0.7rem] uppercase tracking-[0.18em] text-stone-500';
 
@@ -58,14 +62,6 @@ export function useTurnCall(entityId: string): TurnCall {
   };
 }
 
-/** Whether the flag draws anything at all — asked by the chrome BEFORE
- *  it makes a place to put it, because an element that renders null is
- *  still an element and would leave an empty row behind it on held
- *  glass. */
-export function calling(call: TurnCall): boolean {
-  return Boolean((call.rolling && call.entry) || call.up || call.onDeck);
-}
-
 /** The frame's own answer: a ring drawn OVER the seat rather than around
  *  it, so it costs no layout on glass that can't spare any. Sits in the
  *  padding the seat already had. */
@@ -83,11 +79,9 @@ export function TurnRing({ on }: { on: boolean }) {
  *  Not optimistic on purpose: the round trip is a nudge away and a score
  *  that only LOOKS set is worse than one that took a beat. */
 function Initiative({
-  entryId,
-  onScored,
+  submit: send,
 }: {
-  entryId: string;
-  onScored: () => void;
+  submit: (score: number) => Promise<void>;
 }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -99,11 +93,8 @@ function Initiative({
     if (!text.trim() || Number.isNaN(n)) return;
     setBusy(true);
     setProblem(false);
-    scoreEntry(entryId, n)
-      .then(() => {
-        setText('');
-        onScored();
-      })
+    send(n)
+      .then(() => setText(''))
       .catch(() => setProblem(true))
       .finally(() => setBusy(false));
   };
@@ -131,43 +122,52 @@ function Initiative({
 }
 
 /**
- * What the chrome shows about the order, in priority: the one thing
- * being asked of you first, then whose turn it is.
+ * The TurnCall SEAM's floor (§M-5a) — what the seat shows about the
+ * order, in priority: the one thing being asked of you first, then
+ * whose turn it is, plus the ring drawn over the whole seat when it IS
+ * your turn.
  *
  * The rolling phase wipes every score when it opens (`server/turn.ts`),
  * so "no score yet" is the honest test for "we're waiting on you" —
  * distinct from a genuine 0, which reads back as a number and quietly
  * shows itself instead.
+ *
+ * A theme may quiet or even suppress this — rule 1 for UI, the author's
+ * own table — which is exactly why the FACTS arrive as props and the
+ * one write it may make arrives as a bound function: nothing here reads
+ * the order and nothing here decides what a seat is allowed to say.
  */
-export function TurnFlag({ call }: { call: TurnCall }) {
-  const { entry, up, onDeck, rolling, reload } = call;
-
-  if (rolling && entry) {
-    return typeof entry.score === 'number' ? (
-      <span className="flex shrink-0 items-center gap-1.5">
-        <span className={LABEL}>initiative</span>
-        <span className="font-mono text-sm text-stone-300">{entry.score}</span>
-      </span>
-    ) : (
-      <Initiative entryId={entry.id} onScored={reload} />
-    );
-  }
-
-  if (up) {
-    return (
-      <span className="shrink-0 animate-pulse whitespace-nowrap rounded-full bg-amber-500 px-3 py-0.5 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-stone-950">
-        you're up
-      </span>
-    );
-  }
-
-  if (onDeck) {
-    return (
-      <span className="shrink-0 whitespace-nowrap rounded-full border border-amber-700/60 px-3 py-0.5 text-[0.7rem] uppercase tracking-[0.18em] text-amber-300/90">
-        on deck
-      </span>
-    );
-  }
-
-  return null;
+export function TurnCallFloor({ up, onDeck, rolling, myScore, submitScore }: TurnCallProps) {
+  const flag = (): React.ReactNode => {
+    if (rolling && submitScore)
+      return typeof myScore === 'number' ? (
+        <span className="flex shrink-0 items-center gap-1.5">
+          <span className={LABEL}>initiative</span>
+          <span className="font-mono text-sm text-stone-300">{myScore}</span>
+        </span>
+      ) : (
+        <Initiative submit={submitScore} />
+      );
+    if (up)
+      return (
+        <span className="shrink-0 animate-pulse whitespace-nowrap rounded-full bg-amber-500 px-3 py-0.5 text-[0.7rem] font-bold uppercase tracking-[0.18em] text-stone-950">
+          you're up
+        </span>
+      );
+    if (onDeck)
+      return (
+        <span className="shrink-0 whitespace-nowrap rounded-full border border-amber-700/60 px-3 py-0.5 text-[0.7rem] uppercase tracking-[0.18em] text-amber-300/90">
+          on deck
+        </span>
+      );
+    return null;
+  };
+  const shown = flag();
+  if (!up && !shown) return null;
+  return (
+    <>
+      <TurnRing on={up} />
+      {shown}
+    </>
+  );
 }

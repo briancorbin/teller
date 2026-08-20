@@ -1,44 +1,42 @@
-// The seat's own chrome — the top bar and the segmented screen bar that
-// wrap whichever entity-subject panel is showing. Ported from the old
-// app's `SheetHeader` (src/components/sheet/SheetHeader.tsx) and
-// `Screens` (src/components/sheet/Screens.tsx): identity lives in the
-// bar at the top, and switching between the six seat layouts
-// (`core/panels.ts`'s entity-subject panels) is the segmented bar at
-// the bottom, exactly the shape the DM's console offered before this
-// port — a seat, or a console previewing one, is never a single frozen
-// arrangement.
+// The seat, assembled — and since §M-5a, ASSEMBLED IS ALL IT DOES.
 //
-// The seam from the old app: `SheetHeader` read the trade/player off
-// `groups.title`/`groups.player` FIELDS and priced its chips off
-// `use.costCounter`/`use.costs`. The new `Entity` gives the trade for
-// free (`entity.type`) and the player is the SEAT's own identity now
-// (rule 7 — a seat belongs to a person, and that person is who the DM
-// named the display for), so `seatName` is preferred and the `meta`
-// list's own "Player" entry (when a system still declares one) is only
-// the fallback. The spend chips still come from `use` — that's the
-// system's own word for what a turn costs, not a hosting-layer concept.
+// What lives here is what stays teller's: which entity this seat is
+// pointed at, what the tab list is, where the fight stands, which note
+// arrived, and the one write a seat may make into the order. What it
+// LOOKS like doesn't — the five chrome seams (`seams.tsx`) resolve to a
+// presentation the same way every other face does, system-first,
+// pack-winning, teller's floor last.
+//
+// Two shapes, one file. `params.layout` names either an ARRANGEMENT —
+// the old behavior, and still exactly the old behavior: its blocks are
+// the first tab, the carried screens and panes follow, More catches the
+// strays — or a COMPOSITE, a panel carrying `tabs`, which declares the
+// seat outright: the order is its list, a stray appends rather than
+// vanishing, and its `chrome` map may name a presentation per seam.
+//
+// The seam from the old app, unchanged and now the Header floor's:
+// `SheetHeader` read the trade/player off `groups.title`/`groups.player`
+// FIELDS and priced its chips off `use.costCounter`/`use.costs`. The new
+// `Entity` gives the trade for free (`entity.type`) and the player is the
+// SEAT's own identity now (rule 7 — a seat belongs to a person, and that
+// person is who the DM named the display for), so `seatName` is preferred
+// and the `meta` list's own "Player" entry is only the fallback.
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Entity } from '../../../core/entity.ts';
-import { numberOf } from '../../../core/entity.ts';
 import type { PanelBlock, PanelDef } from '../../../core/panels.ts';
-import { PLACED } from '../../../core/panels.ts';
-import { locate, toSpends, type SpendPlan, type SpendsDecl } from '../../../core/effects.ts';
-import type { Template } from '../../../core/stamp.ts';
-import { SpendFloor, type SpendMenuProps } from '../SpendFloor.tsx';
+import { PLACED, surfaceable } from '../../../core/panels.ts';
+import { toSpends } from '../../../core/effects.ts';
 import { ladderList, toLadder } from '../LadderFloor.tsx';
-import { applyPlan, loadCatalog, spendWorld } from '../../lib/spend.ts';
-import { presentationOf, useSystemFaces } from '../../lib/presentations.ts';
-import { usePanelNote } from '../../lib/rules.ts';
-import { api, panes as fetchPanes, type Pane } from '../../lib/api.ts';
+import { api, panes as fetchPanes, scoreEntry, type Pane } from '../../lib/api.ts';
 import { paneToPanel, pluginCtx, showing } from '../../lib/panes.ts';
 import { onNudge } from '../../lib/use-session.ts';
-import { entriesOf, entryNamed, shaped } from '../../panels/blocks.tsx';
-import { Glyph } from '../sheet/glyphs.tsx';
-import { PanelSurface, type BlockCtx, type Glass } from '../../panels/render.tsx';
+import { entriesOf, shaped } from '../../panels/blocks.tsx';
+import { PanelCollection, PanelSurface, type BlockCtx, type Glass } from '../../panels/render.tsx';
 import type { ScreenDecl } from '../items/types.ts';
-import { calling, TurnFlag, TurnRing, useTurnCall } from './TurnCall.tsx';
-import { PassedNoteOverlay, usePassedNotes } from './PassedNote.tsx';
+import { useTurnCall } from './TurnCall.tsx';
+import { usePassedNotes } from './PassedNote.tsx';
+import { useSeams, type SeatTab } from './seams.tsx';
 
 type Records = Record<string, Record<string, unknown>>;
 
@@ -75,10 +73,16 @@ function carriedPanel(screen: ScreenDecl, allScreens: ScreenDecl[]): PanelDef {
 // wants a tab that comes and goes writes `when` instead of a patch to
 // this file.
 
-/** The old app's holding pen ('More'): every resource the Sheet screen
- * and every declared carried-screen didn't claim, plus the strays the
- * `rest` block already knows how to surface, plus notes/children — the
- * same blocks held-glass Sheet used to carry before fix 6 trimmed it.
+/** The old app's holding pen ('More'), as teller's FLOOR: every resource
+ * the Sheet screen and every declared carried-screen didn't claim, plus
+ * the strays the `rest` block already knows how to surface, plus
+ * notes/children.
+ *
+ * §M-5a says More stops being code and becomes a `.panel` file, and it
+ * has: a system that ships `panels/more/` gets its own, merged and
+ * overridable like everything else. This stays as the answer for a
+ * system that ships none — the floor, synthesized, because the strays
+ * a system never placed still have to land somewhere.
  *
  * The declared standing scales ride here too (the old app's precedent:
  * `LadderPanel` rode on More), and the `ladders` block draws nothing at
@@ -90,8 +94,6 @@ function carriedPanel(screen: ScreenDecl, allScreens: ScreenDecl[]): PanelDef {
 function morePanel(
   claimed: Set<string>,
   ladderLists: string[],
-  /** The advancement door, when the system declares a menu to open. */
-  spendDoor?: PanelBlock,
   /** Whether declared carried screens already show what's carried —
    * if they do, More re-listing every child (stats, prices and all)
    * is a duplicate inventory with the shop's numbers leaking through;
@@ -99,7 +101,7 @@ function morePanel(
   hasCarriedScreens = false,
 ): PanelDef {
   const blocks: PanelBlock[] = [
-    ...(spendDoor ? [spendDoor] : []),
+    { block: 'spend-door' },
     { block: 'list', list: 'resources', filter: 'except-named', names: [...claimed], as: 'ledger' },
     { block: 'ladders' },
     { block: 'rest', except: [...PLACED, ...ladderLists] },
@@ -109,372 +111,30 @@ function morePanel(
   return { name: 'More', subject: 'entity', mounted: blocks, held: blocks };
 }
 
-/** The chip's own reading: a counter nobody has yet shows a zero, not a
- * blank. (`numberOf` from core answers `undefined` for "not a countable
- * value", which is the right answer there and the wrong one here.) */
-function countOf(entry: { value?: number | string } | undefined): number {
-  return typeof entry?.value === 'number' ? entry.value : 0;
-}
-
-/** The header's plate: who this is, and the trade as its caption. */
-function Plate({
-  name,
-  trade,
-  accent,
-  mounted,
-}: {
-  name?: string;
-  trade?: string;
-  accent?: string;
-  mounted: boolean;
-}) {
-  return (
-    <span className="flex min-w-0 flex-col items-center px-1">
-      {name && (
-        <span
-          className={`min-w-0 font-serif text-[1.35rem] font-bold leading-tight text-stone-100 ${
-            mounted ? 'max-w-full truncate' : 'break-words text-center'
-          }`}
-        >
-          {name}
-        </span>
-      )}
-      {trade && (
-        <span
-          className="whitespace-nowrap text-[0.7rem] uppercase leading-tight tracking-[0.18em]"
-          style={{ color: accent ?? '#f59e0b' }}
-        >
-          The {trade}
-        </span>
-      )}
-    </span>
-  );
-}
-
-function CostChip({
-  name,
-  value,
-  face,
-  accent,
-  onSet,
-}: {
-  name: string;
-  value: number;
-  face?: string;
-  accent: string;
-  onSet: (next: number) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label={`${name}: ${value}`}
-        aria-expanded={open}
-        className="flex items-center gap-1.5"
-      >
-        <span className="text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">{name}</span>
-        {face === 'cards' ? (
-          <span className="flex h-8 w-6 items-center justify-center rounded-[4px] border border-stone-400 bg-[#f4efe4] font-mono text-sm font-bold text-stone-900">
-            {value}
-          </span>
-        ) : (
-          <span
-            className={`flex h-7 min-w-[2.6rem] items-center justify-center border font-mono text-sm text-stone-100 ${
-              face === 'cylinder'
-                ? 'rounded-l-sm rounded-r-full border-l-2 pl-1.5 pr-2.5'
-                : 'rounded-full px-2.5'
-            }`}
-            style={{ borderColor: accent, background: `${accent}1f` }}
-          >
-            {value}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="absolute right-0 top-full z-20 mt-1 flex items-center gap-1 rounded-lg border border-stone-700 bg-stone-950 p-1 shadow-lg">
-          <button
-            type="button"
-            aria-label={`decrease ${name}`}
-            onClick={() => onSet(Math.max(0, value - 1))}
-            className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-800 font-mono text-lg text-stone-100 hover:bg-stone-700"
-          >
-            −
-          </button>
-          <span className="min-w-[2rem] text-center font-mono text-sm text-stone-100">{value}</span>
-          <button
-            type="button"
-            aria-label={`increase ${name}`}
-            onClick={() => onSet(value + 1)}
-            className="flex h-9 w-9 items-center justify-center rounded-md bg-stone-800 font-mono text-lg text-stone-100 hover:bg-stone-700"
-          >
-            +
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// The advancement menu's affordance USED to live here, as a third chip
-// beside Grit and Aces — and it was never the old app's shape (Brian,
-// 2026-08-20, from the iPad). The old bar carried exactly what `use`
-// prices (`SheetHeader`'s `costs`, costCounter first then every extra),
-// because those are the numbers a turn spends; Prestige is what a
-// CAREER spends, it moves twice a session, and it rode on the More
-// screen as `PrestigePanel`. So the bar is the turn's wallet again and
-// the door to the menu is a block on More — see `spendDoor` below.
-
-function TopBar({
-  entity,
-  seatName,
-  records,
-  mounted,
-  onWrite,
-  flag,
-}: {
-  entity?: Entity;
-  seatName?: string;
-  records: Records;
-  mounted: boolean;
-  onWrite?: (edit: Record<string, unknown>) => void;
-  /** What the order is asking of this seat, if anything (`TurnCall.tsx`).
-   *  It rides HERE rather than in a row of its own because mounted glass
-   *  has no row to spare — the bar's hairlines had the width already. */
-  flag?: React.ReactNode;
-}) {
-  const accent = entity?.type
-    ? ((records.accents?.[entity.type] as string | undefined) ?? '#f59e0b')
-    : '#f59e0b';
-  const player = seatName?.trim() || entryNamed(entity, 'player')?.value?.toString().trim();
-  const use = records.use as
-    | { costCounter?: string; costs?: { counter: string }[] }
-    | undefined;
-  const dials = records.dials as Record<string, string> | undefined;
-  const costNames = [
-    ...(use?.costCounter ? [use.costCounter] : []),
-    ...(use?.costs ?? []).map((c) => c.counter),
-  ].filter((n, i, a) => a.indexOf(n) === i);
-  const chips = [
-    ...costNames.flatMap((n) => {
-      const entry = entryNamed(entity, n);
-      if (!entry) return [];
-      return [
-        <CostChip
-          key={n}
-          name={n}
-          value={countOf(entry)}
-          face={dials?.[n]}
-          accent={accent}
-          onSet={(v) => onWrite?.({ list: 'resources', name: n, value: v })}
-        />,
-      ];
-    }),
-  ];
-
-  if (!entity && !player) return null;
-
-  if (!mounted) {
-    return (
-      <div
-        className="flex shrink-0 flex-col gap-1.5 rounded-md border px-3 py-1.5"
-        style={{ borderColor: `${accent}66` }}
-      >
-        <div className="flex items-center gap-2.5">
-          <span className="h-px flex-1" style={{ background: `${accent}55` }} />
-          <Plate name={entity?.name} trade={entity?.type} accent={accent} mounted={mounted} />
-          <span className="h-px flex-1" style={{ background: `${accent}55` }} />
-        </div>
-        {(player || chips.length > 0) && (
-          <div className="flex items-center justify-between gap-3">
-            <span className="min-w-0 truncate text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">
-              {player}
-            </span>
-            <div className="flex shrink-0 items-center gap-3">{chips}</div>
-          </div>
-        )}
-        {/* Held glass is elastic, so the flag gets its own line here —
-            a phone can afford the row a rail panel can't. */}
-        {flag && <div className="flex items-center justify-center">{flag}</div>}
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-3 rounded-md border px-3 py-1.5"
-      style={{ borderColor: `${accent}66` }}
-    >
-      <div className="flex min-w-0 items-center gap-2.5">
-        {player && (
-          <span className="min-w-0 truncate text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">
-            {player}
-          </span>
-        )}
-        <span className="h-px flex-1" style={{ background: `${accent}55` }} />
-      </div>
-
-      <Plate name={entity?.name} trade={entity?.type} accent={accent} mounted={mounted} />
-
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="h-px flex-1" style={{ background: `${accent}55` }} />
-        {flag}
-        {chips}
-      </div>
-    </div>
-  );
-}
-
-/** One tab: the tab bar's own key/label/icon, decoupled from whichever
- * PanelDef it renders (fix 1 — the first tab is always labelled
- * 'Sheet' whatever layout `params.layout` names underneath it, exactly
- * as the old app's `Screens` array hardcoded `{ name: 'Sheet', … }`
- * regardless of which `COUNTER_VIEWS` arrangement was picked). */
-type Tab = {
-  name: string;
-  icon?: string;
+/** One tab: the bar's own key/label/icon, decoupled from whichever
+ * PanelDef it renders. The NAME is the key (what `current` holds and
+ * what a composite's `tabs` list names); the LABEL is only what a
+ * person reads, so a panel called `wiw-sheet` can still say 'Sheet'. */
+type Tab = SeatTab & {
   panel: PanelDef;
   /** Set for a PLUGIN's pane — what binds its door caller into the ctx. */
   pane?: Pane;
 };
 
-/** The segmented bar — one button per SCREEN the system declares, not
- * per entity-subject panel (fix 1: those six were the DM's own layout
- * roster, `params.layout`, never a player tab). Ported from `Screens`
- * (src/components/sheet/Screens.tsx): each tab wears the icon the old
- * app's `icons` record gave it (sixgun/star/satchel/…), same glyph set. */
-function TabBar({
-  tabs,
-  current,
-  onGo,
-}: {
-  tabs: Tab[];
-  current: string;
-  onGo: (name: string) => void;
-}) {
-  if (tabs.length <= 1) return null;
-  // `@container` + the label's `@[30rem]:inline`: on glass too narrow
-  // for five worded tabs the words go and the glyphs stay, because the
-  // PAGE never pans sideways (rule 6) and a wrapping tab bar is worse
-  // than an iconic one. A tab with no glyph keeps its word — a row of
-  // blank buttons isn't a bar, it's a mystery.
-  return (
-    <nav
-      aria-label="screens"
-      className="@container flex min-w-0 gap-1 rounded-lg bg-stone-950/85 p-1 backdrop-blur-sm"
-    >
-      {tabs.map((t) => (
-        <button
-          key={t.name}
-          type="button"
-          onClick={() => onGo(t.name)}
-          aria-current={t.name === current}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[0.7rem] uppercase tracking-[0.18em] transition-colors ${
-            t.name === current
-              ? 'text-stone-950'
-              : 'text-stone-400 hover:bg-stone-800 hover:text-stone-100'
-          }`}
-          style={t.name === current ? { background: 'var(--sheet-accent, #f59e0b)' } : undefined}
-        >
-          {t.icon && <Glyph name={t.icon} className="h-[1.15rem] w-[1.15rem] shrink-0" />}
-          <span className={`min-w-0 break-words ${t.icon ? 'hidden @[30rem]:inline' : ''}`}>
-            {t.name}
-          </span>
-        </button>
-      ))}
-    </nav>
-  );
-}
+const word = (name: string): string => name.trim().toLowerCase();
 
-/**
- * The advancement menu, opened over whatever screen is showing.
- *
- * Bounded on purpose (rule 6): the PAGE never scrolls, on either family
- * of glass, so the overlay is a fixed panel with a max height and its
- * own scroll region — the "deliberate shelf" exemption, which is the
- * only kind of scrolling a screwed-down panel may be asked for.
- *
- * The face is SUMMONED (§L phase 3) and `SpendFloor` is the answer for
- * `undefined`: a system that prints its own advancement page ships
- * `SpendMenu.tsx` and gets it; a system that ships none still gets a
- * working menu, because a price and a counter need no vocabulary.
- */
-function SpendOverlay({
-  spends,
-  entity,
-  entityId,
-  records,
-  catalog,
-  accent,
-  note,
-  onWrote,
-  onClose,
-}: {
-  spends: SpendsDecl;
-  entity?: Entity;
-  entityId: string;
-  records: Records;
-  catalog: Template[];
-  accent?: string;
-  note?: string;
-  onWrote: () => void;
-  onClose: () => void;
-}) {
-  const [problem, setProblem] = useState<string | undefined>(undefined);
-  const Menu = presentationOf<typeof SpendFloor>('SpendMenu') ?? SpendFloor;
-  const props: SpendMenuProps = {
-    spends,
-    world: spendWorld(entity, records, catalog),
-    note,
-    accent,
-    onSet: (write) => {
-      void api(`/api/entities/${entityId}/entry`, { body: write }).then(onWrote);
-    },
-    onBuy: (plan: SpendPlan) =>
-      applyPlan(entityId, plan, catalog).then(
-        () => {
-          setProblem(undefined);
-          onWrote();
-        },
-        (err: unknown) => {
-          // Never silent: a purchase the server refused (stamping is the
-          // DM's own door) says so in the server's own words, and the
-          // writes that DID land are visible on the sheet behind this.
-          setProblem(err instanceof Error ? err.message : String(err));
-          onWrote();
-          throw err;
-        },
-      ),
+/** A tab a composite asked for that nothing supplies — a labeled
+ * refusal wearing a tab's clothes, because a name that resolves to
+ * nothing is the author's own typo and must not vanish quietly. */
+function missingTab(name: string): Tab {
+  const blocks: PanelBlock[] = [
+    { block: 'aside', text: `no panel named '${name}' — the seat asked for it and nothing declares it` },
+  ];
+  return {
+    name,
+    label: name,
+    panel: { name, subject: 'entity', mounted: blocks, held: blocks },
   };
-  return (
-    <div
-      role="dialog"
-      aria-label={spends.label ?? spends.counter}
-      className="fixed inset-0 z-30 flex items-center justify-center bg-stone-950/80 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="flex max-h-full w-full max-w-[34rem] flex-col overflow-y-auto rounded-xl border border-stone-700 bg-stone-950 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-end px-2 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="close"
-            className="rounded-md px-2 py-1 text-sm text-stone-400 hover:bg-stone-800 hover:text-stone-200"
-          >
-            ✕
-          </button>
-        </div>
-        <Menu {...props} />
-        {problem && (
-          <p className="px-4 pb-4 text-sm italic text-stone-500">{problem}</p>
-        )}
-      </div>
-    </div>
-  );
 }
 
 export function SeatChrome({
@@ -484,9 +144,10 @@ export function SeatChrome({
   glass,
 }: {
   entityId: string;
-  /** `params.layout` — the DM's own arrangement choice for the FIRST
-   * tab's content (fix 1: this is not a tab name any more, only which
-   * of the six layouts 'Sheet' renders — defaults to 'sheet'). */
+  /** `params.layout` — what the DM pointed this seat at. It names either
+   * an ARRANGEMENT (the old shape: its blocks are the first tab's
+   * content, and the tab set is assembled around it) or a COMPOSITE
+   * (§M-5a: a panel with `tabs`, which declares the whole seat). */
   initialPanel: string;
   seatName?: string;
   glass: Glass;
@@ -501,15 +162,10 @@ export function SeatChrome({
    * tab that might turn out to be empty — and `rest` needs their names
    * so a standing doesn't surface twice. */
   const [ladderLists, setLadderLists] = useState<string[]>([]);
-  /** What a purchase may hand you. Loaded once; empty on a host with no pack. */
-  const [catalog, setCatalog] = useState<Template[]>([]);
   /** The plugins' entity-subject panes that are SHOWING right now —
    * asked on the same nudge as everything else, because `when` is a
    * fact about the moment (`client/lib/panes.ts`). */
   const [panes, setPanes] = useState<Pane[]>([]);
-  const [spendsOpen, setSpendsOpen] = useState(false);
-  useSystemFaces(); // re-render when the system module lands (url-loaded, async)
-  const note = usePanelNote();
   // Where this seat stands in the fight, and the one thing it may say
   // back into it (`TurnCall.tsx`).
   const call = useTurnCall(entityId);
@@ -527,7 +183,6 @@ export function SeatChrome({
         ),
       )
       .catch(() => setLadderLists([]));
-    loadCatalog().then(setCatalog);
     fetchPanes()
       .then((all) => showing(all.filter((p) => p.subject === 'entity')))
       .then(setPanes)
@@ -556,15 +211,14 @@ export function SeatChrome({
     write: (edit) => api(`/api/entities/${entityId}/entry`, { body: edit }).then(() => {}),
   };
 
-  // The FIRST tab: always labelled 'Sheet', but its CONTENT is whichever
-  // layout the DM assigned (`params.layout` — Gauges, Dials, Classic,
-  // Bare, … `core/panels.ts`'s STANDARD_PANELS), defaulting to 'sheet'.
-  // That roster is a DM-side arrangement choice now, never a player tab
-  // (fix 1) — this is the one place it still matters.
+  // What `params.layout` resolves to, and whether it declares the seat.
+  // A panel with `tabs` is the COMPOSITE: it drives the tab set and may
+  // name a presentation per chrome seam. Anything else is an
+  // arrangement, and the assembly below is exactly what it always was.
   const layoutPanels = (panels ?? []).filter((p) => p.subject === 'entity');
-  const sheetPanel =
-    layoutPanels.find((p) => p.name === initialPanel) ??
-    layoutPanels.find((p) => p.name === 'sheet');
+  const named = layoutPanels.find((p) => word(p.name) === word(initialPanel));
+  const composite = named?.tabs?.length ? named : undefined;
+  const seams = useSeams(composite?.chrome);
 
   // What the Sheet screen itself draws for `resources` — Health + Grit,
   // whatever's pinned-to or dialled a cylinder (fix 6's generic rule,
@@ -598,93 +252,148 @@ export function SeatChrome({
     Boolean(entity?.notes) ||
     Boolean(entity?.children?.length);
 
-  /**
-   * The door to the advancement menu, as a block on More — where the
-   * old app kept its `PrestigePanel`. Synthesized, so it may carry a
-   * callback: this panel is the chrome's own and never a declared one,
-   * and a DECLARED panel could not write a function into JSON even if
-   * it wanted to.
-   */
-  const spendDoor: PanelBlock | undefined = spends
-    ? {
-        block: 'spend-door',
-        label: spends.label ?? spends.counter,
-        wallet: numberOf(locate(entity, spends.counter)?.entry) ?? 0,
-        onOpen: () => setSpendsOpen(true),
-      }
-    : undefined;
+  // Everything that COULD be a tab, in one namespace, because §M-5a puts
+  // the carried screens and the plugins' panes in the same one the
+  // declared panels are in — that's what lets a composite order them.
+  const screenTabs: Tab[] = screenDecls.map((s) => ({
+    name: s.name,
+    label: s.name,
+    ...(s.icon ? { icon: s.icon } : {}),
+    panel: carriedPanel(s, screenDecls),
+  }));
+  const paneTabs: Tab[] = panes.map((p) => ({
+    name: p.name,
+    label: p.label ?? p.name,
+    ...(p.icon ? { icon: p.icon } : {}),
+    panel: paneToPanel(p),
+    pane: p,
+  }));
+  const declaresMore = layoutPanels.some((p) => word(p.name) === 'more');
+  const moreTabs: Tab[] =
+    !declaresMore && hasSpare
+      ? [
+          {
+            name: 'More',
+            label: 'More',
+            icon: 'more',
+            panel: morePanel(allClaimed, ladderLists, screenDecls.length > 0),
+          },
+        ]
+      : [];
 
-  const tabs: Tab[] = sheetPanel
-    ? [
-        { name: 'Sheet', icon: 'sheet', panel: sheetPanel },
-        ...screenDecls.map((s) => ({ name: s.name, icon: s.icon, panel: carriedPanel(s, screenDecls) })),
-        ...panes.map((p) => ({
-          name: p.label ?? p.name,
+  let tabs: Tab[];
+  if (composite) {
+    // The composite drives. Its `tabs` list is the ORDER, and a stray —
+    // an entity-subject surface it never named — APPENDS rather than
+    // vanishing (the `rest` law, applied to navigation). `omit` is the
+    // way out for the author who means it.
+    const pool: Tab[] = [
+      ...layoutPanels
+        .filter(surfaceable)
+        .filter((p) => word(p.name) !== word(composite.name))
+        .map((p) => ({
+          name: p.name,
+          label: p.label ?? p.name,
           ...(p.icon ? { icon: p.icon } : {}),
-          panel: paneToPanel(p),
-          pane: p,
+          panel: p,
         })),
-        ...(hasSpare
-          ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed, ladderLists, spendDoor, screenDecls.length > 0) }]
-          : []),
-      ]
-    : [];
+      ...screenTabs,
+      ...paneTabs,
+      ...moreTabs,
+    ];
+    const by = new Map(pool.map((t) => [word(t.name), t]));
+    const listed = composite.tabs!.map((n) => by.get(word(n)) ?? missingTab(n));
+    const claimed = new Set(composite.tabs!.map(word));
+    const omitted = new Set((composite.omit ?? []).map(word));
+    const strays = pool.filter((t) => !claimed.has(word(t.name)) && !omitted.has(word(t.name)));
+    tabs = [...listed, ...strays];
+  } else {
+    // No composite: the floor, and the floor is exactly what the seat
+    // did before any of this — the assigned arrangement as the first
+    // tab (always worded 'Sheet', whatever the layout is called), then
+    // the carried screens, the panes, and More for the strays.
+    const sheetPanel = named ?? layoutPanels.find((p) => word(p.name) === 'sheet');
+    tabs = sheetPanel
+      ? [
+          { name: 'Sheet', label: 'Sheet', icon: 'sheet', panel: sheetPanel },
+          ...screenTabs,
+          ...paneTabs,
+          ...moreTabs,
+        ]
+      : [];
+  }
   const tab = tabs.find((t) => t.name === current) ?? tabs[0];
 
+  const { Header, ScreenBar, TurnCall, NoteBanner, SeatFrame } = seams;
+  const mounted = glass === 'mounted';
+
   return (
-    <div
-      className={`relative flex min-h-0 flex-col gap-2 ${glass === 'mounted' ? 'h-full' : 'min-h-full'}`}
-      style={{ '--sheet-accent': accent ?? '#f59e0b' } as React.CSSProperties}
-    >
-      <TurnRing on={call.up} />
-
-      <PassedNoteOverlay notes={passed.notes} onDismiss={passed.dismiss} />
-
-      <TopBar
-        entity={entity}
-        seatName={seatName}
-        records={records}
-        mounted={glass === 'mounted'}
-        onWrite={ctx.write ? (edit) => ctx.write!(edit) : undefined}
-        flag={calling(call) ? <TurnFlag call={call} /> : undefined}
-      />
-
-      {spends && spendsOpen && (
-        <SpendOverlay
-          spends={spends}
-          entity={entity}
-          entityId={entityId}
-          records={records}
-          catalog={catalog}
-          accent={accent}
-          note={note(spends.label ?? spends.counter)}
-          onWrote={load}
-          onClose={() => setSpendsOpen(false)}
+    <PanelCollection panels={panels}>
+      <SeatFrame glass={glass} accent={accent}>
+        <NoteBanner
+          note={passed.notes[0]}
+          waiting={Math.max(0, passed.notes.length - 1)}
+          onDismiss={passed.dismiss}
+          glass={glass}
         />
-      )}
 
-      <div className={`flex min-h-0 flex-1 flex-col ${glass === 'mounted' ? 'overflow-hidden' : ''}`}>
-        {tab ? (
-          <PanelSurface
-            panel={tab.panel}
-            ctx={tab.pane ? { ...ctx, plugin: pluginCtx(tab.pane) } : ctx}
-            fallback={
-              <p className="p-8 text-sm text-stone-500">
-                '{tab.name}' failed to render — the floor has it
-              </p>
-            }
+        {/* Identity and the order's call, side by side on mounted glass
+            (a fixed 515px has no row to spare) and stacked on held (a
+            phone can afford the line). The ring TurnCall draws is
+            absolute and costs neither. */}
+        <div className={mounted ? 'flex shrink-0 items-center gap-3' : 'flex shrink-0 flex-col gap-1.5'}>
+          <div className={mounted ? 'min-w-0 flex-1' : 'contents'}>
+            <Header
+              entity={entity}
+              seatName={seatName}
+              records={records}
+              glass={glass}
+              write={(edit) => void ctx.write?.(edit)}
+            />
+          </div>
+          <TurnCall
+            up={call.up}
+            onDeck={call.onDeck}
+            rolling={call.rolling}
+            {...(typeof call.entry?.score === 'number' ? { myScore: call.entry.score } : {})}
+            {...(call.entry
+              ? {
+                  submitScore: (score: number) =>
+                    scoreEntry(call.entry!.id, score).then(() => call.reload()),
+                }
+              : {})}
+            glass={glass}
           />
-        ) : (
-          <p className="p-8 text-sm text-stone-500">no seat layout declared</p>
-        )}
-      </div>
+        </div>
 
-      {/* Sticky only where the card scrolls — held glass. Mounted glass
-          never scrolls (rule 6), so there is nothing for the bar to
-          stick to. */}
-      <div className={`z-10 shrink-0 ${glass === 'mounted' ? '' : 'sticky bottom-0'}`}>
-        <TabBar tabs={tabs} current={tab?.name ?? current} onGo={setCurrent} />
-      </div>
-    </div>
+        <div className={`flex min-h-0 flex-1 flex-col ${mounted ? 'overflow-hidden' : ''}`}>
+          {tab ? (
+            <PanelSurface
+              panel={tab.panel}
+              ctx={tab.pane ? { ...ctx, plugin: pluginCtx(tab.pane) } : ctx}
+              fallback={
+                <p className="p-8 text-sm text-stone-500">
+                  '{tab.label}' failed to render — the floor has it
+                </p>
+              }
+            />
+          ) : (
+            <p className="p-8 text-sm text-stone-500">no seat layout declared</p>
+          )}
+        </div>
+
+        {/* Sticky only where the card scrolls — held glass. Mounted glass
+            never scrolls (rule 6), so there is nothing for the bar to
+            stick to. */}
+        <div className={`z-10 shrink-0 ${mounted ? '' : 'sticky bottom-0'}`}>
+          <ScreenBar
+            tabs={tabs.map(({ name, label, icon }) => ({ name, label, ...(icon ? { icon } : {}) }))}
+            current={tab?.name ?? current}
+            onGo={setCurrent}
+            glass={glass}
+          />
+        </div>
+      </SeatFrame>
+    </PanelCollection>
   );
 }
