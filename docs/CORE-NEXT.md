@@ -1824,8 +1824,12 @@ as everything else: **facts stay teller's, rendering is summonable.**
   zero composite edits.
 - Consequences: `More` stops being code and becomes a system `.panel`
   file; the carried screens enter the same tab namespace; and with NO
-  composite declared the floor is exactly the old behavior — every
-  entity panel a tab — so a data-only system loses nothing.
+  composite declared the floor is exactly the SHIPPED old behavior —
+  the assigned arrangement as 'Sheet', the declared carried screens,
+  provided panes, and More — so a data-only system loses nothing.
+  (First drafted as "every entity panel a tab", which was a paraphrase
+  the build correctly declined to invent; the floor is what was, not
+  what a summary said. Corrected 2026-08-20.)
 
 **5a′ · The include — panels nest, atoms stay atoms** (2026-08-20,
 Brian: "everything becomes just modular levels of nested panels…

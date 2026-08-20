@@ -5,16 +5,10 @@
   "subject": "entity",
   "mounted": [
     {
-      "block": "header"
-    },
-    {
       "block": "rest"
     }
   ],
   "held": [
-    {
-      "block": "header"
-    },
     {
       "block": "rest"
     }
