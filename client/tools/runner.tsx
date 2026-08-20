@@ -390,6 +390,16 @@ function RunnerTool() {
   const acting = turn.data?.turn !== null && turn.data ? order[turn.data.turn!] : undefined;
   const actingSheet = sheetOf(acting?.entityId);
 
+  // The op() clear above only covers walks THIS screen made. The turn
+  // can also move under us — another console, a drag across the index,
+  // a score reshuffle — and an action armed for the last actor must
+  // never stand for the next one (it's how a creature ends up swinging
+  // somebody else's attack). Whoever is acting changes, the arm drops.
+  const actingId = acting?.id;
+  useEffect(() => {
+    setArmed(undefined);
+  }, [actingId]);
+
   // ------------------------------------------------------------- the order
 
   const rosterRow = (entry: TurnEntry, i: number) => {

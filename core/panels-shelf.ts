@@ -135,7 +135,7 @@ export function defaultPanels(): PanelDef[] {
  * mtime answers honestly. An unstattable file gets no stamp rather than
  * a made-up one.
  */
-function stamp(outPath: string): string {
+export function stamp(outPath: string): string {
   try {
     return `?v=${Math.floor(statSync(outPath).mtimeMs).toString(36)}`;
   } catch {

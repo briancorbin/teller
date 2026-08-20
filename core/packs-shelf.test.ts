@@ -371,8 +371,8 @@ describe('sweepPacks — the system carries code (§L phase 2)', () => {
     const { packs, problems } = sweepPacks(dir, shelf);
     expect(problems).toEqual([]);
     expect(packs[0].codePending).toBeUndefined();
-    expect(packs[0].code?.presentations.TestFace).toBe(
-      '/pack-code/pak_folder01/presentations/TestFace.js',
+    expect(packs[0].code?.presentations.TestFace).toMatch(
+      /^\/pack-code\/pak_folder01\/presentations\/TestFace\.js\?v=[a-z0-9]+$/,
     );
 
     const built = readFileSync(
@@ -535,9 +535,10 @@ describe('the `system` specifier — one index module over the whole stack', () 
     // Declared order IS precedence order; the later one wins.
     const campaign = campaignOn('sys_test', ['pak_base', 'pak_extra']);
     const loaded = loadCampaign(shelf, campaign, dir);
-    expect(loaded.presentations()).toEqual({
-      TestFace: '/pack-code/pak_extra/presentations/TestFace.js',
-    });
+    expect(Object.keys(loaded.presentations())).toEqual(['TestFace']);
+    expect(loaded.presentations().TestFace).toMatch(
+      /^\/pack-code\/pak_extra\/presentations\/TestFace\.js\?v=[a-z0-9]+$/,
+    );
     expect(systemIndexModule(loaded.presentations())).toContain('pak_extra');
     campaign.close();
   });

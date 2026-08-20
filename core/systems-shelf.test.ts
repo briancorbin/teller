@@ -119,8 +119,8 @@ describe('sweepSystems — a system carries code, on the pack terms', () => {
     const { systems, problems } = sweepSystems(dir, shelf);
     expect(problems).toEqual([]);
     expect(systems[0].codePending).toBeUndefined();
-    expect(systems[0].code?.presentations.TestFace).toBe(
-      '/pack-code/sys_test/presentations/TestFace.js',
+    expect(systems[0].code?.presentations.TestFace).toMatch(
+      /^\/pack-code\/sys_test\/presentations\/TestFace\.js\?v=[a-z0-9]+$/,
     );
     expect(
       readFileSync(join(sysDir, '.build', 'presentations', 'TestFace.js'), 'utf8'),
@@ -272,8 +272,12 @@ describe('loadCampaign — systems-dir beats pack-embedded beats row (§M)', () 
     const campaign = campaignOn('sys_test', ['pak_book']);
     const loaded = loadCampaign(shelf, campaign, dir);
     const presentations = loaded.presentations();
-    expect(presentations.HealthPanel).toBe('/pack-code/sys_test/presentations/HealthPanel.js');
-    expect(presentations.Dial).toBe('/pack-code/pak_book/presentations/Dial.js');
+    expect(presentations.HealthPanel).toMatch(
+      /^\/pack-code\/sys_test\/presentations\/HealthPanel\.js\?v=[a-z0-9]+$/,
+    );
+    expect(presentations.Dial).toMatch(
+      /^\/pack-code\/pak_book\/presentations\/Dial\.js\?v=[a-z0-9]+$/,
+    );
     campaign.close();
   });
 

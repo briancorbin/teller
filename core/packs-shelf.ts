@@ -106,7 +106,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { compileFolder, PACK_IMPORTS } from './compile.ts';
-import { panelDirIn, sweepPanelsIn } from './panels-shelf.ts';
+import { panelDirIn, stamp, sweepPanelsIn } from './panels-shelf.ts';
 import type { PanelDef } from './panels.ts';
 import type { Shelf } from './store.ts';
 
@@ -286,7 +286,8 @@ export function compilePackCode(
       );
       continue;
     }
-    presentations[name] = `/pack-code/${packId}/presentations/${name}.js`;
+    const out = join(dir, '.build', 'presentations', `${name}.js`);
+    presentations[name] = `/pack-code/${packId}/presentations/${name}.js${stamp(out)}`;
   }
   return {
     presentations: Object.keys(presentations).length ? presentations : undefined,
