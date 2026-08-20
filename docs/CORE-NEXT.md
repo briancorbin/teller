@@ -499,7 +499,10 @@ automatically.
 A plugin is a **folder on the shelf** — `~/.teller/plugins/<name>/` —
 manifest beside code: `plugin.json` (`plg_` id, name, version, tiers,
 `provides`, `needs`) + `host.mjs` (proposer/effectful entry) +
-`panel.mjs` (surface entry, served to the browser).
+`panel.mjs` (surface entry, served to the browser). *(That last name
+was a sketch; when the surface tier was actually built it became a
+`pane.*` provision naming any `.tsx` in the folder, compiled at load
+— see the contact log below.)*
 
 **The sweep DISCOVERS; only a human ENABLES.** Discovery lists it as
 available in the console; enabling is an explicit per-plugin act where
@@ -557,6 +560,11 @@ generic counter stays generic (currency record + catalog in, no WiW
 words), so WiW's flavor rides data and pack panels over it, the same
 way the sheet wears its book.
 
+**DONE, 2026-08-20 — both halves, the day after the plan was written.**
+The tier is built and the store is extracted whole; the squatter moved
+out. The contract AS BUILT is the contact log at the end of this
+section, and that is the thing to read before adding a point.
+
 **Plugin №1 is the assistant.** It already passes the three-question
 test, already has the config precedent (`assistant.json` — absent means
 no button), and already is two proposers: `suggestTurn` and
@@ -589,6 +597,168 @@ exist in the new core until the server layer ports (DO → class, step
 assistant is the proof of the SNAPSHOT CONTRACT, and that contract has
 nothing to describe until there's a session to describe. Step 2's
 machinery half is done; its proof half lands with step 3.
+
+#### Contact log — the UI tier, and the store extracted *(2026-08-20)*
+
+The designated first customer arrived and the tier was built against
+it, exactly as the block above said it would be. What follows is the
+contract AS BUILT — the newest settled ground in this section, and the
+thing to read before adding a point.
+
+**Two new families, and a family is a new kind of registry entry.**
+`core/registry.ts` used to hold fixed names only, each owning its own
+payload contract. `pane.` and `door.` are FAMILIES: the registry fixes
+the SHAPE, the plugin brings the word (`pane.store`, `door.cart`), and
+the suffix is checked as a usable one (`^[a-z0-9][a-z0-9-]*$` — a door
+name becomes a path segment). The `panes.ts` law is untouched: a
+family that isn't declared there isn't a point, and a claim against
+one is refused out loud at load with its own name in the report.
+`control.*` still isn't a point, because nothing has asked.
+
+**`pane.*` — surfaces come from the REGISTRY, never the merge.** A
+pane provision carries what a tool declaration carries — `name`,
+`label`, `blurb`, `order`, `subject`, plus `icon` for a seat's tab bar
+— and one thing a declaration never needs: `entry`, the source file,
+compiled at load by the same esbuild pass a `.panel` folder gets
+(`PLUGIN_IMPORTS`, into `.build/panes/`, served at
+`/plugin-code/<plg_id>/…`, `?v=<mtime>`-stamped like everything else).
+A pane is always a TAKEOVER (§E rung 5): it brought a component, not
+an arrangement, so `client/lib/panes.ts` turns a provision into a
+`PanelDef` carrying `code.takeover` and the existing renderer draws it
+without having learned that plugins exist.
+
+Every consumer of the merged `panels` slot now reads TWO sources and
+sorts the union with the one comparator (`byPanelOrder`): the console
+tab bar, the `#panel=` route, the Screens assignment picker, and the
+seat's screen bar. **§M-2 stays crisp** — the merge is content and
+provisions are function — and the consequence is the one that matters:
+a provision cannot override a declaration by restating its name,
+because it was never in that argument. A plugin providing `store`
+while a system declares `store` yields two tabs with one word. That
+reads odd exactly once and it reads TRUE; the fix is to stop declaring
+the one you replaced, which is what this day did to the system-layer
+store panels.
+
+**`when` — the conditional surface, generalised.** The seat's shop tab
+existed while a shop was open and not otherwise: a fact about the
+moment, hard-coded into `SeatChrome`. A pane may now name a door in
+`when`, and the surface offers it only while that door answers
+non-null. One declared word replaced a hard-coded screen, and the next
+plugin wanting a tab that comes and goes writes `when` instead of a
+patch to the seat chrome.
+
+**`system` IS importable from a pane, and the call is deliberate.** A
+plugin is the one container that is system-agnostic (§M-2), which
+makes `import … from 'system'` read like a contradiction. It isn't: a
+pane is client code rendering AT A TABLE, and a table always has a
+system (§M-6). The specifier resolves to a module the host generates,
+empty when nothing supplies a presentation, so importing it never 404s
+and never REQUIRES anything. Leaving it out would have banned the good
+case — a pane dressing itself in the book's face — to prevent no bad
+one.
+
+**Found by building it, and it will bite every pane author once: a
+pane may only wear the utility classes teller's own client already
+uses.** Tailwind builds teller's stylesheet by SCANNING teller's
+source; a plugin's pane is compiled separately and a shelf folder is in
+nobody's scan, so a utility no file under `client/` mentions any more
+simply does not exist in the served CSS. The store's panes were the
+proof: `w-[19rem]` and `text-[11px]` were deleted along with the files
+that used them, and the seat's shelf came back as unstyled vertical
+slivers — a diagnostic that points nowhere near its cause. The rule
+that falls out is the one the shelf already lived by (`wiw-sheet` ships
+a `style.css` and uses plain `grid gap-3`): **ordinary utilities are
+fine, arbitrary values ride an inline style or rung 3's own
+stylesheet.** A pane may declare `style` beside `entry` for exactly
+that, served and linked like a panel's own.
+
+**`door.*` — request in, effects out.** A door handler is an ordinary
+provide in `host.mjs`, and everything that makes it a door is on the
+host's side of the existing `structuredClone` boundary
+(`server/plugin-bridge.ts`). The request is data:
+
+```
+{ door, method, path[], body, who: { actor, role, entityId? },
+  table: <the snapshot>, state: <this plugin's memory for this table> }
+```
+
+**Authority is resolved by the SERVER, first, and the plugin is handed
+facts rather than headers** — it cannot re-derive authority because it
+is given nothing to derive it from (rule 7). Which of teller's gates a
+door sits behind is DECLARED per door (`role: 'dm' | 'prep' |
+'table'`) and enforced before the handler runs; **absent means `dm`**,
+the only safe default. Anything finer is the plugin's own law, decided
+against `who` — the store's whose-cart-is-whose is exactly that, and
+it is right that it lives there rather than in teller.
+
+**The result vocabulary** is `{ status?, body?, state?, effects?,
+changed? }`, and **the effects vocabulary is the whole of what a
+plugin may ask for**:
+
+```
+entity.create { draft, parentId?, as? }   entity.save { entity }
+entity.remove { id }                      entry.write { entityId, list, name, value?, max?, remove? }
+template.save { slot, template, as? }     template.remove { slot, id }
+log { entityId?, kind, payload? }
+```
+
+Every member maps onto a door teller already had (`Session.create`,
+`save`, `remove`, `writeEntry`, `Campaign.putTemplate`,
+`removeTemplate`, `append`), which is what makes **rule 1 and rule 3
+structural here rather than promised**: a plugin's write is an
+ordinary write — logged, invertible, typed over afterwards — and there
+is no other way for a plugin to change anything. The effects run as
+actor **`plugin:<plg_id>`**, so history says the counter moved the
+money rather than that "dm" mysteriously did. `as` + `{{label}}` is
+the one piece of plumbing: an effect that mints something may label
+it, and later effects — plus the answer on its way out — get the
+minted id substituted in. It exists because the first sale
+instantiates the vendor and then names it in the receipt.
+
+**`needs` stopped being decorative.** The grammar is
+`<read|write>:<subject>[/<slot>] — note`, the note is what a human
+reads at the enable gate, and both halves are enforced: `read:` decides
+what the snapshot CONTAINS (a slot nobody asked for simply isn't
+there), and `write:` decides which effects are allowed. **The whole
+effect list is checked before any of it runs**, so a plugin asking for
+one thing it never declared doesn't get the other three through the
+door first; the refusal is a 403 with the plugin's name on it. A need
+that doesn't parse grants nothing and is still shown, because an
+author's typo must never widen what a plugin may touch and must never
+silently narrow the sentence they wrote either.
+
+**State lifetime: per Session, and it dies with the campaign.** A door
+receives its plugin's memory and may replace it; the bridge holds it in
+a `WeakMap<Session, …>`. That is the carts' own precedent kept exactly
+(`server/notes.ts`) — a campaign switch builds a new Session, so every
+plugin's memory of the old table is unreferenced without anything
+having to remember to clear it. The boundary is CALL SHAPE, not
+statelessness: a plugin may remember, it just may not remember across
+tables, and losing it on a reboot is fine because it holds what nobody
+is owed.
+
+**What the store proved.** It is the whole tier's justification and it
+exercised every piece: two panes (a console tool and a conditional seat
+screen), four doors across three access levels, per-table memory
+(carts), five of the seven effects, and a first sale that mints an
+entity and names it in the same answer. `server/store-flow.ts` and its
+routes are DELETED, the client's store tool and shop block with them,
+`client/lib/money.ts` with them, and the system-layer `store` panel
+declarations went too — the pane supersedes them, and a panel naming a
+`tool` teller no longer registers would have rendered a refusal.
+**teller ships with no store again**, and the compliance test is the
+one it has always been: uninstall and look.
+
+Two things stayed behind, both on purpose and both named here so they
+don't get lost. The public snapshot's `shop` line is GONE — a passive
+board no longer announces that the store is open, because knowing that
+was store knowledge living in teller, and half a store left behind
+would be worse than the loss. And `server/public.ts` still knows the
+word `vendor`, as a CONVENTION rather than machinery: an entity typed
+`vendor` is furniture, not somebody at the table, and stays out of the
+public roster the same way `foe` is a word that file already reads.
+Whether a plugin should be able to contribute to the public snapshot
+is a real question and an open one.
 
 ### 16 · One runtime — Cloudflare is a brochure
 
