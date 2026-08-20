@@ -12,6 +12,7 @@
 // displays are on the shelf and are never touched by any of this.
 
 import { useState } from 'react';
+import { ImportStory } from '../components/story/ImportStory.tsx';
 import { api, ApiError } from '../lib/api.ts';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
@@ -132,6 +133,7 @@ function StartOne({ onStarted }: { onStarted: () => void }) {
  */
 export function CampaignScreen({ onBack }: { onBack?: () => void }) {
   const { data, error, reload } = useLive(() => api<CampaignsOut>('/api/campaigns'), []);
+  const [opening, setOpening] = useState(false);
 
   return (
     <div className="flex min-h-dvh items-center justify-center p-6">
@@ -169,12 +171,35 @@ export function CampaignScreen({ onBack }: { onBack?: () => void }) {
           <StartOne onStarted={reload} />
         </section>
 
+        {/*
+          The third way in, beside "start a new one" and "play this": a
+          campaign somebody wrote out as a file. It belongs HERE because
+          starting one fresh needs no table to be running — it IS the
+          door (TEL-87).
+        */}
+        <section className={`${card} space-y-2`}>
+          <span className={sectionLabel}>Start from a .story</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button className={btn} onClick={() => setOpening(true)}>
+              open a file…
+            </button>
+            <span className="text-[11px] text-stone-600">
+              a backup, or someone else’s campaign. you’ll see what’s inside before
+              anything is applied.
+            </span>
+          </div>
+        </section>
+
         <p className="text-[11px] text-stone-600">
           one campaign at a time, and every screen in the room follows this choice.
           the screens themselves belong to the table, not to any campaign — they stay
           adopted across a switch.
         </p>
       </div>
+
+      {opening && (
+        <ImportStory canLayer={false} onClose={() => setOpening(false)} onImported={reload} />
+      )}
     </div>
   );
 }

@@ -501,3 +501,132 @@ export function passedNotes(): Promise<PassedNote[]> {
 export function myNotes(): Promise<PassedNote[]> {
   return api<PassedNote[]>('/api/notes/mine');
 }
+
+// ---- `.story` — the campaign as a file, and the doors back in --------
+//
+// Four calls, and three of them send or receive BYTES rather than
+// JSON, so they are hand-rolled beside `uploadHandout` for the same
+// reason: `api()` serializes everything it's given, and an archive is
+// a file.
+
+export type Rights = { basis: 'homebrew' | 'personal' | 'licensed'; holder?: string; terms?: string };
+
+export type StorySections = {
+  templates: boolean;
+  entities: boolean;
+  turn: boolean;
+  boards: boolean;
+  assets: boolean;
+  events: boolean;
+  undo: boolean;
+};
+
+export type StoryIdentity = { id: string; version: number; rights: Rights };
+
+/** What this campaign remembers about its own file. Null until the first export. */
+export function storyIdentity(): Promise<{ name: string; identity: StoryIdentity | null }> {
+  return api<{ name: string; identity: StoryIdentity | null }>('/api/story');
+}
+
+function bytesHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream' };
+  if (stored.key) headers['x-teller-key'] = stored.key;
+  if (stored.display) headers['x-teller-display'] = stored.display;
+  return headers;
+}
+
+async function jsonOrThrow<T>(res: Response): Promise<T> {
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      typeof (body as { error?: string }).error === 'string'
+        ? (body as { error: string }).error
+        : res.statusText,
+    );
+  }
+  return body as T;
+}
+
+/**
+ * Write the campaign out, and hand the browser the download.
+ *
+ * POST, unlike `download()` above, because the switches are an object
+ * and a query string is a worse JSON. Same blob trick for the same
+ * reason: a bare `<a download>` sends no auth header (rule 7).
+ * Anything the server left out comes back in a header, since the body
+ * is the file itself.
+ */
+export async function exportStory(opts: {
+  sections?: Partial<StorySections>;
+  rights?: Rights;
+}): Promise<{ filename: string; skipped: string[] }> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (stored.key) headers['x-teller-key'] = stored.key;
+  if (stored.display) headers['x-teller-display'] = stored.display;
+  const res = await fetch('/api/story/export', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(opts),
+  });
+  if (!res.ok) return jsonOrThrow(res);
+  const named = /filename="([^"]+)"/.exec(res.headers.get('Content-Disposition') ?? '');
+  const filename = named?.[1] ?? 'campaign.story';
+  const skipped: string[] = JSON.parse(
+    decodeURIComponent(res.headers.get('x-story-skipped') ?? '%5B%5D'),
+  );
+  const url = URL.createObjectURL(await res.blob());
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+  return { filename, skipped };
+}
+
+export type StorySummary = {
+  manifest: { story: string; version: number; name: string; rights: Rights; exportedAt?: string };
+  kind: string;
+  sections: { name: string; count: number; label: string }[];
+  missing: { slot: 'system' | 'pack' | 'book'; ref: { id: string; name: string } }[];
+};
+
+/** Look in the box before opening it. Changes nothing. */
+export async function inspectStory(file: File | Blob): Promise<StorySummary> {
+  const res = await fetch('/api/story/inspect', {
+    method: 'POST',
+    headers: bytesHeaders(),
+    body: file,
+  });
+  return jsonOrThrow<StorySummary>(res);
+}
+
+export type ImportReport = {
+  applied: string[];
+  skipped: string[];
+  missing: StorySummary['missing'];
+};
+
+/** Door (a): a NEW campaign, stamped from the file, and played. */
+export async function campaignFromStory(
+  file: File | Blob,
+  name?: string,
+): Promise<ImportReport & { slug: string; from: string; name: string }> {
+  const q = name?.trim() ? `?name=${encodeURIComponent(name.trim())}` : '';
+  const res = await fetch(`/api/campaigns/from-story${q}`, {
+    method: 'POST',
+    headers: bytesHeaders(),
+    body: file,
+  });
+  return jsonOrThrow(res);
+}
+
+/** Door (b): layer it onto the table already being played. */
+export async function importStory(file: File | Blob): Promise<ImportReport> {
+  const res = await fetch('/api/story/import', {
+    method: 'POST',
+    headers: bytesHeaders(),
+    body: file,
+  });
+  return jsonOrThrow<ImportReport>(res);
+}

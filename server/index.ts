@@ -90,6 +90,14 @@ import {
   toWidthInches,
 } from './boards.ts';
 import { calibrationFor, setCalibration, toCalibration } from './calibration.ts';
+import {
+  exportStory,
+  importFresh,
+  importLayer,
+  inspectStory,
+  STORY_SLOT,
+} from './story.ts';
+import { toRights } from '../core/bundle.ts';
 import { notesOf, passNote, visibleTo, type NoteHandout } from './notes.ts';
 import { publicBoardState, publicSnapshot } from './public.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
@@ -196,6 +204,17 @@ async function rawBody(
   }
   return Buffer.concat(chunks);
 }
+
+/**
+ * How big a `.story` may be on the way IN.
+ *
+ * Generous on purpose: a backup of a real campaign carries its
+ * handouts, its battlemaps and (if you kept them) the undo snapshots,
+ * and the whole point of the format is that the file you wrote last
+ * month opens again. The limit exists so a wrong POST can't be buffered
+ * forever, not to have an opinion about anyone's table.
+ */
+const STORY_MAX_BYTES = 256 * 1024 * 1024;
 
 /**
  * Content code a human has ENABLED — the systems, packs and panels
@@ -742,6 +761,27 @@ export async function handleApi(
       }
     }
 
+    // Door (a): start a story fresh — the third way in, beside "start a
+    // new one" and "play this". Bytes as the body and the name in the
+    // query, because a name is not a secret and multipart for one
+    // string is ceremony. It CREATES rather than merges, and then plays
+    // it: you imported it to run it, exactly as creating does.
+    if (method === 'POST' && a === 'from-story' && !b) {
+      const bytes = await rawBody(req, STORY_MAX_BYTES);
+      if (!bytes) return reply(413, { error: `a story may be ${STORY_MAX_BYTES} bytes at most` });
+      try {
+        const out = importFresh(shelf, host.dataDir, bytes, {
+          name: url.searchParams.get('name') ?? undefined,
+          slug: url.searchParams.get('slug') ?? undefined,
+          actor: 'dm',
+        });
+        host.activate(out.slug);
+        return reply(201, { ...out, name: host.session?.campaign.root().name, active: true });
+      } catch (err) {
+        return reply(400, { error: String(err) });
+      }
+    }
+
     if (method === 'POST' && a && b === 'activate') {
       if (!validSlug(a) || !listCampaigns(host.dataDir).includes(a)) {
         return reply(404, { error: `no campaign ${a} on this host` });
@@ -904,6 +944,112 @@ export async function handleApi(
       return fileReply(panelArchive(dir), `${basename(dir)}.panel`);
     } catch (err) {
       return reply(500, { error: `did not archive: ${String(err)}` });
+    }
+  }
+
+  // -- `.story` — the campaign as a file, and the door back in (TEL-87).
+  //
+  // Above the campaign gate with the shelf routes, because two of the
+  // four are meaningful on a host with nothing running: you can look
+  // inside a file, and you can start a campaign from one. The two that
+  // touch the table (export, layer) say so themselves with `noCampaign`
+  // rather than by living below a gate the other two can't pass.
+  //
+  // DM only, all four. An export is the whole campaign — notes, NPC
+  // numbers, the lot — and an import writes to it.
+  if (head === 'story') {
+    if (!canDm(auth)) return denied();
+
+    // What the export dialog prefills from: the identity this campaign
+    // remembers, which is a templates row (`STORY_SLOT`) and is
+    // therefore just read, not recomputed. Null until the first export
+    // mints one — the dialog reads that as "personal", the default.
+    if (method === 'GET' && !a) {
+      const session = host.session;
+      if (!session) return noCampaign();
+      const held = session.campaign.templatesIn(STORY_SLOT)[0] as
+        | Record<string, unknown>
+        | undefined;
+      return reply(200, {
+        name: session.campaign.root().name,
+        identity:
+          held && typeof held.id === 'string'
+            ? {
+                id: held.id,
+                version: typeof held.version === 'number' ? held.version : 1,
+                rights: toRights(held.rights),
+              }
+            : null,
+      });
+    }
+
+    // POST rather than GET, and with a JSON body: the switches are a
+    // seven-way section object plus a rights declaration, and
+    // query-encoding that would be a worse version of the thing JSON
+    // already is. The bytes come back the way a `.pack` does.
+    if (method === 'POST' && a === 'export' && !b) {
+      const session = host.session;
+      if (!session) return noCampaign();
+      const body = await bodyOf(req);
+      const out = exportStory(session, {
+        sections: body.sections,
+        rights: body.rights,
+        actor: 'dm',
+      });
+      const file = fileReply(out.bytes, out.filename);
+      return {
+        ...file,
+        headers: {
+          ...file.headers,
+          // A header, because the body is a file. Percent-encoded: these
+          // are sentences with em dashes in them and a header is latin-1.
+          'x-story-skipped': encodeURIComponent(JSON.stringify(out.skipped)),
+          'x-story-version': String(out.manifest.version),
+        },
+      };
+    }
+
+    // Look in the box before opening it. Needs no campaign and changes
+    // nothing — the step both import doors start from.
+    if (method === 'POST' && a === 'inspect' && !b) {
+      const bytes = await rawBody(req, STORY_MAX_BYTES);
+      if (!bytes) return reply(413, { error: `a story may be ${STORY_MAX_BYTES} bytes at most` });
+      try {
+        return reply(200, inspectStory(bytes, shelf));
+      } catch (err) {
+        return reply(400, { error: String(err) });
+      }
+    }
+
+    // Door (b): layer onto the table already being played. The stored
+    // value wins on every collision (rule 1) and the report says what
+    // was left alone.
+    if (method === 'POST' && a === 'import' && !b) {
+      const session = host.session;
+      if (!session) return noCampaign();
+      const bytes = await rawBody(req, STORY_MAX_BYTES);
+      if (!bytes) return reply(413, { error: `a story may be ${STORY_MAX_BYTES} bytes at most` });
+      let sections: unknown;
+      const raw = url.searchParams.get('sections');
+      if (raw) {
+        try {
+          sections = JSON.parse(raw);
+        } catch {
+          return reply(400, { error: 'sections is not JSON' });
+        }
+      }
+      try {
+        const report = importLayer(session, bytes, { sections, actor: 'dm' });
+        // A layer can touch any of them, and which it touched is the
+        // report's business rather than the stream's — say everything
+        // moved and let each screen refetch what it renders.
+        for (const what of ['entities', 'templates', 'board', 'turn']) {
+          host.room.changed(what);
+        }
+        return reply(200, report);
+      } catch (err) {
+        return reply(400, { error: String(err) });
+      }
     }
   }
 

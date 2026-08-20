@@ -13,6 +13,8 @@ import { useState } from 'react';
 import { registerTool } from './index.ts';
 import { api } from '../lib/api.ts';
 import { Export } from './export.tsx';
+import { ExportStory } from '../components/story/ExportStory.tsx';
+import { ImportStory } from '../components/story/ImportStory.tsx';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui.ts';
 
@@ -52,6 +54,8 @@ function ThisCampaign({
 }) {
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState('');
+  const [writing, setWriting] = useState(false);
+  const [opening, setOpening] = useState(false);
   const declared = campaign.packs.map((p) => p.id);
   // No declared list is the default reading; the endpoint answers with
   // what actually LOADED either way, so telling them apart needs the
@@ -200,6 +204,37 @@ function ThisCampaign({
           missing {m.slot}: {m.ref.name} ({m.ref.id})
         </p>
       ))}
+      {/*
+        The campaign as a FILE, and it lives here because this card is
+        where this campaign is managed. Both doors, unlike the campaign
+        screen's one: there is a table running, so layering onto it is a
+        thing you can actually mean.
+      */}
+      <div className="space-y-1 border-t border-stone-800 pt-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm text-stone-400">this campaign, as a file</span>
+          <button className={btn} onClick={() => setWriting(true)}>
+            save as .story
+          </button>
+          <button className={btnGhost} onClick={() => setOpening(true)}>
+            open one…
+          </button>
+        </div>
+        <p className="text-[11px] text-stone-600">
+          the backup, and the only copy there is — packs and books are referenced, so
+          back the data dir's packs up alongside it.
+        </p>
+      </div>
+
+      {writing && <ExportStory onClose={() => setWriting(false)} />}
+      {opening && (
+        <ImportStory
+          canLayer
+          onClose={() => setOpening(false)}
+          onImported={onChanged}
+        />
+      )}
+
       <p className="text-[11px] text-stone-600">
         installing is still the sweep's job — drop a system or pack in the data dir and it
         shows up here on its own. there is no upload from the console.
