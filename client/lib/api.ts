@@ -501,7 +501,12 @@ export type Vendor = {
   id: string;
   name: string;
   blurb?: string;
-  lines: VendorLine[];
+  /** Explicit stock. ABSENT — not empty — means the shelf is derived. */
+  lines?: VendorLine[];
+  /** Derived stock: the catalogue shelves he carries. Absent = all of them. */
+  groups?: string[];
+  /** Derived stock: a catalogue stat's name → the values he carries. */
+  filters?: Record<string, string[]>;
   /** This campaign authored it, so this console may edit it. */
   own?: boolean;
 };
@@ -510,6 +515,8 @@ export type StockLine = {
   ref: string;
   name: string;
   type?: string;
+  /** The catalogue's shelf label — what the chip row narrows by. */
+  group?: string;
   stats: PublicEntry[];
   price: string | null;
   /** null = unlimited, and that is the ordinary case. */

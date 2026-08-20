@@ -110,6 +110,9 @@ function VendorCard({
 }) {
   const [adding, setAdding] = useState('');
   const lines = vendor.lines ?? [];
+  // He wrote no list at all, so his shelf is DERIVED off the catalogue.
+  // Not the same as an empty one: "he has nothing" is a statement.
+  const derived = vendor.lines === undefined;
   const patch = (next: Partial<Vendor>) => onSave({ ...vendor, ...next });
 
   return (
@@ -118,7 +121,7 @@ function VendorCard({
         <button className="min-w-0 flex-1 truncate text-left" onClick={onToggle}>
           <span className="text-sm text-stone-100">{vendor.name}</span>
           <span className="ml-2 font-mono text-[11px] text-stone-600">
-            {lines.length} line{lines.length === 1 ? '' : 's'}
+            {derived ? 'off the catalogue' : `${lines.length} line${lines.length === 1 ? '' : 's'}`}
           </span>
           {!vendor.own && (
             <span className="ml-2 font-mono text-[11px] text-stone-600">from a pack</span>
@@ -157,6 +160,18 @@ function VendorCard({
             <span className={sectionLabel}>Behind the counter</span>
             <span className="text-[11px] text-stone-600">price · stock (blank = unlimited)</span>
           </div>
+          {derived && (
+            <p className="text-[12px] text-stone-500">
+              No list written, so he carries everything the catalogue prices
+              {vendor.groups?.length ? ` on ${vendor.groups.join(', ')}` : ''}
+              {vendor.filters
+                ? `, ${Object.entries(vendor.filters)
+                    .map(([name, values]) => `${name} ${values.join(' or ')}`)
+                    .join(' · ')}`
+                : ''}
+              . Write a line below and the shelf becomes that list instead.
+            </p>
+          )}
           <ul className="space-y-1">
             {lines.map((line, i) => (
               <LineRow
@@ -169,7 +184,7 @@ function VendorCard({
                 onRemove={() => patch({ lines: lines.filter((_, j) => j !== i) })}
               />
             ))}
-            {lines.length === 0 && (
+            {lines.length === 0 && !derived && (
               <li className="text-sm text-stone-600">nothing on the shelves yet</li>
             )}
           </ul>

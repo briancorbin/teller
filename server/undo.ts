@@ -43,8 +43,24 @@ import { toTurnState } from './turn.ts';
  */
 export const UNDO_WINDOW = 500;
 
-/** Records: they say what happened, they didn't change anything. */
-const RECORDS = new Set(['dice.rolled', 'turn.resolved']);
+/**
+ * Records: they say what happened, they didn't change anything.
+ *
+ * The shop's three are here by INTENT, not by accident of their payload
+ * shape. Opening and closing a shop store nothing at all — they're
+ * table history, logged so a Warden can read back where the posse spent
+ * the afternoon. `shop.sold` is the receipt, and everything the sale
+ * MOVED — the vendor going live, its stock coming down, the money and
+ * the goods on the buyer — has its own invertible row beside it, so
+ * undoing the receipt would either do nothing or undo the sale twice.
+ */
+const RECORDS = new Set([
+  'dice.rolled',
+  'turn.resolved',
+  'shop.opened',
+  'shop.closed',
+  'shop.sold',
+]);
 
 /** What `/undo` would do, or just did — enough for a console to say it. */
 export type Undoable = {

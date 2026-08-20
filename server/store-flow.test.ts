@@ -43,6 +43,7 @@ const SYSTEM = {
   version: 1,
   data: {
     store: { costField: 'cost', consumes: ['service'] },
+    growth: { field: 'quality', unstocked: ['Legendary'] },
     currency: {
       symbol: '$',
       denominations: [
@@ -55,18 +56,56 @@ const SYSTEM = {
         id: 'wpn_rifle',
         name: 'Used Rifle',
         type: 'weapon',
-        lists: { stats: [{ name: 'Cost', value: '$20.00' }, { name: 'Grit', value: 4 }] },
+        group: 'Guns',
+        slots: 4,
+        lists: {
+          stats: [
+            { name: 'Cost', value: '$20.00' },
+            { name: 'Grit', value: 4 },
+            { name: 'Quality', value: 'Used' },
+          ],
+        },
+      },
+      {
+        id: 'wpn_shiny',
+        name: 'Shiny Rifle',
+        type: 'weapon',
+        group: 'Guns',
+        lists: {
+          stats: [{ name: 'Cost', value: '$25.00' }, { name: 'Quality', value: 'Basic' }],
+        },
+      },
+      {
+        id: 'wpn_relic',
+        name: 'The Widowmaker',
+        type: 'weapon',
+        group: 'Guns',
+        lists: {
+          stats: [{ name: 'Cost', value: '$500.00' }, { name: 'Quality', value: 'Legendary' }],
+        },
+      },
+      {
+        id: 'abl_free',
+        name: 'Steady Hand',
+        type: 'ability',
+        group: 'Guns',
+        lists: { stats: [{ name: 'Effect', value: 'you are steady' }] },
       },
       {
         id: 'amo_rounds',
         name: 'Plain Rounds',
         type: 'ammo',
+        group: 'Sundries',
+        // The old world's spelling, still arriving from the converter:
+        // counters authored beside the lists rather than in them.
+        counters: [{ name: 'Rounds', current: 3, max: null }],
         lists: { stats: [{ name: 'Cost', value: '$0.50' }] },
       },
       {
         id: 'svc_bath',
         name: 'A Hot Bath',
         type: 'service',
+        group: 'Services',
         lists: { stats: [{ name: 'Cost', value: '$0.30' }] },
       },
     ],
@@ -83,6 +122,19 @@ const SYSTEM = {
           // The shop's own price, over the book's.
           { ref: 'svc_bath', price: '$0.50' },
         ],
+      },
+      // Wrote no list at all: the shelf is DERIVED off the catalogue.
+      {
+        id: 'ven_emporium',
+        name: 'The Emporium',
+        groups: ['Guns', 'Sundries'],
+      },
+      // The same, narrowed to the grades he carries.
+      {
+        id: 'ven_secondhand',
+        name: 'Secondhand Sal',
+        groups: ['Guns'],
+        filters: { quality: ['Used'] },
       },
     ],
   },
@@ -162,8 +214,26 @@ describe('the vendor, read defensively', () => {
 
   it('keeps a finite count and lets an absent one mean unlimited', () => {
     const v = toVendor({ id: 'v', name: 'S', lines: [{ ref: 'a', qty: 3 }, { ref: 'b' }] })!;
-    expect(v.lines[0].qty).toBe(3);
-    expect(v.lines[1].qty).toBeUndefined();
+    expect(v.lines![0].qty).toBe(3);
+    expect(v.lines![1].qty).toBeUndefined();
+  });
+
+  it('tells an authored shelf from a derived one — absent lines, not empty ones', () => {
+    // "He has nothing" is a statement; only a shop that never wrote a
+    // list derives its shelf.
+    expect(toVendor({ id: 'v', name: 'S', lines: [] })!.lines).toEqual([]);
+    expect(toVendor({ id: 'v', name: 'S' })!.lines).toBeUndefined();
+  });
+
+  it('keeps the derived rule — the shelves he carries and the grades he stocks', () => {
+    const v = toVendor({
+      id: 'v',
+      name: 'S',
+      groups: ['Rifles', ' ', 'Pistols'],
+      filters: { quality: ['Used', 'Basic'], nothing: [] },
+    })!;
+    expect(v.groups).toEqual(['Rifles', 'Pistols']);
+    expect(v.filters).toEqual({ quality: ['Used', 'Basic'] });
   });
 });
 
@@ -288,7 +358,7 @@ describe('the doors', () => {
 
   it('lists the merged vendors and says which are the campaign’s own', async () => {
     const listed = await call('GET', '/api/vendors', { key: true });
-    expect(listed.body).toHaveLength(1);
+    expect(listed.body).toHaveLength(3);
     expect(listed.body[0]).toMatchObject({ id: 'ven_general', own: false });
 
     await call('POST', '/api/templates/vendors', {
@@ -296,8 +366,45 @@ describe('the doors', () => {
       body: { template: { name: 'The Saloon', lines: [{ ref: 'svc_bath' }] } },
     });
     const after = await call('GET', '/api/vendors', { key: true });
-    expect(after.body).toHaveLength(2);
+    expect(after.body).toHaveLength(4);
     expect(after.body.find((v: { name: string }) => v.name === 'The Saloon').own).toBe(true);
+  });
+
+  it('DERIVES a shelf for a shop that wrote no lines — the shelves he keeps, priced things only', async () => {
+    const shop = (
+      await call('POST', '/api/shop/open', { key: true, body: { vendorId: 'ven_emporium' } })
+    ).body;
+    const refs = shop.shelf.map((l: { ref: string }) => l.ref);
+    // In: the two guns he can sell, and the rounds off the other shelf.
+    expect(refs).toContain('wpn_rifle');
+    expect(refs).toContain('wpn_shiny');
+    expect(refs).toContain('amo_rounds');
+    // Out: a shelf he doesn't keep, a thing with no price, and the
+    // grade the system says nobody simply has in stock.
+    expect(refs).not.toContain('svc_bath');
+    expect(refs).not.toContain('abl_free');
+    expect(refs).not.toContain('wpn_relic');
+    // Derived stock is unlimited, and it carries the catalogue's own
+    // shelf label so a chip row has something to narrow by.
+    const rifle = shop.shelf.find((l: { ref: string }) => l.ref === 'wpn_rifle');
+    expect(rifle).toMatchObject({ name: 'Used Rifle', price: '$20.00', qty: null, group: 'Guns' });
+  });
+
+  it('narrows a derived shelf by the grades he carries, and passes anything without that stat', async () => {
+    const shop = (
+      await call('POST', '/api/shop/open', { key: true, body: { vendorId: 'ven_secondhand' } })
+    ).body;
+    expect(shop.shelf.map((l: { ref: string }) => l.ref)).toEqual(['wpn_rifle']);
+  });
+
+  it('never instantiates a derived shop’s stock — nothing was counted', async () => {
+    await call('POST', '/api/shop/open', { key: true, body: { vendorId: 'ven_emporium' } });
+    await call('POST', '/api/shop/sell', {
+      key: true,
+      body: { sale: { entityId: barrett, lines: [{ ref: 'wpn_rifle', qty: 1 }] } },
+    });
+    const live = vendorEntity(session, 'ven_emporium')!;
+    expect(live.lists.stock).toBeUndefined();
   });
 
   it('resolves the shelf through the catalogue: the shop’s price beats the book’s', async () => {
@@ -491,6 +598,11 @@ describe('the doors', () => {
     // …and the reading fills the stats in from the catalogue.
     const read = session.reading(buyer);
     expect(read.children![0].lists.stats).toEqual([{ name: 'Cost', value: '$0.50' }]);
+    // …counter and all. A box of rounds that arrives with nothing to
+    // count is a box of rounds nobody can spend: the catalogue entry
+    // carries the counter, the thin child derives it, and the first
+    // decrement is what stores anything (the thin-stamp law).
+    expect(read.children![0].lists.counters).toEqual([{ name: 'Rounds', value: 3 }]);
   });
 
   it('refuses an empty cart, an unopened shop, and everyone but the DM', async () => {

@@ -77,13 +77,33 @@ export type VendorLine = {
   qty?: number | null;
 };
 
-/** The shop as written — prep, and the campaign's or a pack's to author. */
+/**
+ * The shop as written — prep, and the campaign's or a pack's to author.
+ *
+ * STOCK IS DERIVED UNLESS DECLARED. With no `lines` at all, the vendor
+ * carries everything in the catalogue that has a price, narrowed by the
+ * shelves he keeps (`groups`) and the grades he stocks (`filters`).
+ * That's the general store for free; an explicit list is the curiosity
+ * shop, line by line. The law is the old world's (`worker/items.ts`),
+ * ported unchanged — five of Brian's six shops are written this way.
+ */
 export type VendorTemplate = {
   id: string;
   name: string;
   /** One line of fiction for the masthead. */
   blurb?: string;
-  lines: VendorLine[];
+  /** Explicit stock. ABSENT — not empty — means derived. */
+  lines?: VendorLine[];
+  /** Derived stock: the catalogue shelves he carries. Absent = all of them. */
+  groups?: string[];
+  /**
+   * Derived stock: a catalogue stat's name → the values carried, e.g.
+   * `{ quality: ['Used', 'Basic'] }` — the book's own availability dial.
+   * The KEY is something the DM read off the catalogue, never a word
+   * this code knows (rule 2), and it's matched the way every stat is:
+   * by name, case-insensitively.
+   */
+  filters?: Record<string, string[]>;
 };
 
 /** `/api/stack/record/store` — how buying works here, in the system's words. */
@@ -94,6 +114,23 @@ export type StoreRecord = {
   costField?: string;
   /** Kinds consumed at the counter and never carried away — a meal, a bath, a night's lodging. */
   consumes?: string[];
+};
+
+/**
+ * `/api/stack/record/growth` — read here for ONE thing: which grades
+ * are off the shelf.
+ *
+ * Derived stock leaves them out so the top of a system's ladder isn't
+ * for sale by accident. Explicit stock ignores this entirely, and the
+ * asymmetry is the point: a curated list is a DM saying exactly what's
+ * behind this counter, and teller does not overrule a person who typed
+ * something (rule 1). A guess is allowed to be conservative.
+ */
+export type GrowthRecord = {
+  /** The stat holding a grade — matched by name, like every stat here. */
+  field?: string;
+  /** Grades a shop never simply has in stock. */
+  unstocked?: string[];
 };
 
 /** `/api/stack/record/currency` — coins, as ordinary counters. */
@@ -125,8 +162,8 @@ export function toVendor(raw: unknown): VendorTemplate | undefined {
   // file authored against a past model can arrive at any time, and a
   // migration cannot reach one that doesn't exist yet. Nothing writes
   // `stock`.
-  const authored = Array.isArray(o.lines) ? o.lines : Array.isArray(o.stock) ? o.stock : [];
-  for (const item of authored) {
+  const authored = Array.isArray(o.lines) ? o.lines : Array.isArray(o.stock) ? o.stock : null;
+  for (const item of authored ?? []) {
     const line = asRecord(item);
     const ref = String(line.ref ?? '').trim();
     if (!ref) continue;
@@ -140,9 +177,28 @@ export function toVendor(raw: unknown): VendorTemplate | undefined {
     }
     lines.push(out);
   }
-  const vendor: VendorTemplate = { id, name, lines };
+  // An authored list that came back empty is still an authored list —
+  // "he has nothing" is a statement, and only a shop that never wrote
+  // one derives its shelf.
+  const vendor: VendorTemplate = { id, name };
+  if (authored) vendor.lines = lines;
   const blurb = String(o.blurb ?? '').trim();
   if (blurb) vendor.blurb = blurb;
+  const groups = Array.isArray(o.groups)
+    ? o.groups.map((g) => String(g ?? '').trim()).filter(Boolean)
+    : [];
+  if (groups.length) vendor.groups = groups;
+  if (o.filters && typeof o.filters === 'object' && !Array.isArray(o.filters)) {
+    const filters: Record<string, string[]> = {};
+    for (const [key, held] of Object.entries(o.filters as Record<string, unknown>)) {
+      const name = key.trim();
+      const values = Array.isArray(held)
+        ? held.map((v) => String(v ?? '').trim()).filter(Boolean)
+        : [];
+      if (name && values.length) filters[name] = values;
+    }
+    if (Object.keys(filters).length) vendor.filters = filters;
+  }
   return vendor;
 }
 
@@ -160,6 +216,10 @@ export function vendorOf(session: Session, id: string): VendorTemplate | undefin
 
 export function storeRecord(session: Session): StoreRecord {
   return session.loaded.record('store') as StoreRecord;
+}
+
+export function growthRecord(session: Session): GrowthRecord {
+  return session.loaded.record('growth') as GrowthRecord;
 }
 
 export function currencyRecord(session: Session): CurrencyRecord | undefined {
@@ -203,6 +263,8 @@ export type StockLine = {
   type?: string;
   /** The catalogue entry's own stats, in its own order — what a tile draws. */
   stats: Entry[];
+  /** The catalogue's shelf label — what a chip row narrows by ("Rifles"). */
+  group?: string;
   /** The asking price — the vendor's override, else the entry's own. */
   price: string | null;
   /** What's left. null = unlimited. */
@@ -227,6 +289,19 @@ function statsOf(template: Template | undefined): Entry[] {
   return Object.values(template.lists ?? {}).flat();
 }
 
+/** What the entry asks, in the system's own words for "what a thing costs". */
+function priceOf(template: Template | undefined, store: StoreRecord): string | null {
+  return statNamed(template, store.costField)?.value?.toString() ?? null;
+}
+
+/** A line from a catalogue entry, with everything the entry can answer. */
+function lineFrom(template: Template, price: string | null, qty: number | null): StockLine {
+  const out: StockLine = { ref: template.id, name: template.name, stats: statsOf(template), price, qty };
+  if (template.type) out.type = template.type;
+  if (template.group) out.group = template.group;
+  return out;
+}
+
 /**
  * What's behind the counter right now.
  *
@@ -234,12 +309,16 @@ function statsOf(template: Template | undefined): Entry[] {
  * (if the shop has ever transacted) restates a `qty` per line it has
  * sold down. A line the entity says nothing about is still at its
  * written count — that absence IS the thin instantiation (§14).
+ *
+ * A shop that wrote no lines at all doesn't have an empty shelf, it has
+ * a DERIVED one — see below.
  */
 export function shelfOf(
   session: Session,
   vendor: VendorTemplate,
   live?: Entity,
 ): StockLine[] {
+  if (!vendor.lines) return derivedShelf(session, vendor);
   const catalog = session.loaded.templateOf(CATALOG_SLOT);
   const store = storeRecord(session);
   const depleted = new Map(
@@ -250,18 +329,72 @@ export function shelfOf(
   return vendor.lines.map((line) => {
     const template = catalog(line.ref);
     const written = line.qty ?? null;
-    const out: StockLine = {
-      ref: line.ref,
-      name: template?.name ?? line.name ?? line.ref,
-      stats: statsOf(template),
-      price: line.price ?? statNamed(template, store.costField)?.value?.toString() ?? null,
-      // Depletion only ever applies to a line the DM chose to count.
-      qty: written === null ? null : (depleted.get(line.ref) ?? written),
-    };
-    if (template?.type) out.type = template.type;
-    if (!template) out.missing = true;
+    // Depletion only ever applies to a line the DM chose to count.
+    const qty = written === null ? null : (depleted.get(line.ref) ?? written);
+    if (!template) {
+      return {
+        ref: line.ref,
+        name: line.name ?? line.ref,
+        stats: [],
+        price: line.price ?? null,
+        qty,
+        missing: true,
+      };
+    }
+    const out = lineFrom(template, line.price ?? priceOf(template, store), qty);
     return out;
   });
+}
+
+/**
+ * THE SHELF A SHOP DIDN'T HAVE TO WRITE — everything in the catalogue
+ * with a price, narrowed three ways. Ported from `worker/items.ts`,
+ * which had the law right:
+ *
+ *   * GROUPS — the shelves he keeps. No list means every shelf.
+ *   * FILTERS — a stat's name against the values he carries. An entry
+ *     that doesn't have the stat PASSES: a filter narrows the things it
+ *     describes, it doesn't banish everything else — quality tiers
+ *     exist on weapons, and the general store still sells flour.
+ *   * OFF LIMITS — the grades the system says nobody simply stocks.
+ *
+ * Everything here is UNLIMITED, so nothing derived ever depletes and a
+ * derived shop stays a shop that never instantiated. That falls out of
+ * the same §14 rule the explicit shelf follows: only a finite count the
+ * DM chose to keep is state worth storing.
+ */
+function derivedShelf(session: Session, vendor: VendorTemplate): StockLine[] {
+  const store = storeRecord(session);
+  const growth = growthRecord(session);
+  const groups = vendor.groups?.length ? new Set(vendor.groups) : null;
+  const offLimits =
+    growth.field && growth.unstocked?.length
+      ? { field: growth.field, grades: new Set(growth.unstocked) }
+      : null;
+
+  const out: StockLine[] = [];
+  for (const template of session.loaded.templates(CATALOG_SLOT)) {
+    const price = priceOf(template, store);
+    // No price is no offer: an ability, a trade feature, anything the
+    // catalogue holds that a shop can't sell.
+    if (parsePrice(price) === null) continue;
+    if (groups && !groups.has(template.group ?? '')) continue;
+    if (offLimits) {
+      const grade = statNamed(template, offLimits.field)?.value;
+      if (grade !== undefined && offLimits.grades.has(String(grade))) continue;
+    }
+    let carried = true;
+    for (const [name, values] of Object.entries(vendor.filters ?? {})) {
+      const value = statNamed(template, name)?.value;
+      if (value !== undefined && !values.includes(String(value))) carried = false;
+    }
+    if (carried) out.push(lineFrom(template, price, null));
+  }
+  return out.sort(
+    (a, b) =>
+      (a.group ?? '').localeCompare(b.group ?? '') ||
+      (parsePrice(a.price) ?? 0) - (parsePrice(b.price) ?? 0),
+  );
 }
 
 /** A cart against a shelf: line prices resolved, the book's total. */
@@ -630,7 +763,9 @@ export function sell(
     );
   }
   const shelf = shelfOf(session, vendor, live);
-  const written = new Map(vendor.lines.map((l) => [l.ref, l.qty ?? null]));
+  // Derived stock counts nothing, so a derived shop writes no stock and
+  // its entity stays as empty as the day it went live.
+  const written = new Map((vendor.lines ?? []).map((l) => [l.ref, l.qty ?? null]));
   const stock = [...(live.lists[STOCK_LIST] ?? [])];
   let depleted = false;
   for (const line of lines) {

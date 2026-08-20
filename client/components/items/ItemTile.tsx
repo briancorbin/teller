@@ -20,12 +20,24 @@ function numberOf(entry: Entry | undefined): number {
 }
 
 /** The child's own resource entry — ammo's Rounds/Arrows, an ability's
- * Uses, a Medical Kit's Supplies. Only the `resources` list, never
- * `stats` — a weapon's Grit is a stat (its cost, drawn as a row above),
- * not something this stepper should also offer to decrement. */
+ * Uses, a Medical Kit's Supplies. Never `stats` — a weapon's Grit is a
+ * stat (its cost, drawn as a row above), not something this stepper
+ * should also offer to decrement.
+ *
+ * `resources` first because that's where this system files them, and
+ * `counters` after because that's the word a catalogue entry authored
+ * its own with (`toTemplate` keeps the author's key rather than
+ * renaming it, so a box of rounds bought at the counter reads its pool
+ * through the template like everything else a thin stamp derives). The
+ * ordered-preference shape is `vitalIn`'s, for the same reason. */
+const POOL_LISTS = ['resources', 'counters'];
+
 function poolEntryOf(child: Entity): { list: string; entry: Entry } | undefined {
-  const entry = (child.lists.resources ?? []).find((e) => typeof e.value === 'number');
-  return entry ? { list: 'resources', entry } : undefined;
+  for (const list of POOL_LISTS) {
+    const entry = (child.lists[list] ?? []).find((e) => typeof e.value === 'number');
+    if (entry) return { list, entry };
+  }
+  return undefined;
 }
 
 /** A stepper for the item's own countdown — Rounds, Arrows, Uses, Supplies. */

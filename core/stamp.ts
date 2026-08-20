@@ -22,6 +22,7 @@
 import {
   refIn,
   toEntity,
+  toEntries,
   type Entity,
   type Entry,
   type Ref,
@@ -47,6 +48,22 @@ export type Template = {
    * child of the FOE TEMPLATE, never authored on the instance.
    */
   children?: Template[];
+  /**
+   * The author's own shelf label — "Rifles", "Perishables". Filing,
+   * not a mechanic: it groups a picker and it is what a shop's derived
+   * stock names when it says which shelves this vendor carries.
+   */
+  group?: string;
+  /** The page it's printed on, when it came from a book — the same enrichment a blueprint carries. */
+  page?: number;
+  /** How many upgrades the thing takes. A number the author wrote down; nothing here reads it. */
+  slots?: number;
+  /**
+   * A BUNDLE: template ids this entry unpacks into when acquired — an
+   * outfit that is really eight things. Carried so whoever unpacks one
+   * can; the stamp itself unpacks nothing.
+   */
+  contents?: string[];
 };
 
 /** Where resolution looks templates up — the caller brings the merge. */
@@ -133,19 +150,51 @@ export function resolve(entity: Entity, templateOf: TemplateOf): Entity {
   return out;
 }
 
-/** A template from anything entity-shaped — a blueprint row, a catalogue line. Forgiving, like every read. */
+/**
+ * A template from anything entity-shaped — a blueprint row, a catalogue
+ * line. Forgiving, like every read.
+ *
+ * IT CARRIES WHAT THE AUTHOR WROTE. The template half is a
+ * serialization, and a lossy serialization was always a bug: a
+ * catalogue entry's shelf label, its page, its slots and its bundle
+ * used to fall off here, so five of six shops read as empty and a box
+ * of rounds arrived at the table with nothing to count. `children` was
+ * the same gap, fixed first (§I); these are the rest of it.
+ *
+ * The one coercion: an old-world `counters` authored BESIDE the lists
+ * rather than in them becomes a list — under the author's own word,
+ * never renamed. Which list a system files its counters in is the
+ * system's business (rule 2), so Core preserves the key and decides
+ * nothing.
+ */
 export function toTemplate(raw: unknown): Template | undefined {
   const entity = toEntity(raw);
   if (!entity) return undefined;
-  return templateFromEntity(entity);
-}
+  const o = raw as Record<string, unknown>;
 
-/** `toTemplate`'s recursive step — an already-coerced entity, never re-parsed. */
-function templateFromEntity(entity: Entity): Template {
   const out: Template = { id: entity.id, name: entity.name };
   if (entity.type) out.type = entity.type;
-  if (Object.keys(entity.lists).length) out.lists = entity.lists;
+  const lists = { ...entity.lists };
+  const counters = toEntries(o.counters);
+  if (counters.length && !lists.counters) lists.counters = counters;
+  if (Object.keys(lists).length) out.lists = lists;
   if (entity.notes) out.notes = entity.notes;
-  if (entity.children?.length) out.children = entity.children.map(templateFromEntity);
+
+  // Children are re-read from the RAW child rather than from the
+  // coerced entity's, because a child carries these same limbs and
+  // reading the entity back would drop them all over again.
+  const children = Array.isArray(o.children)
+    ? o.children.map(toTemplate).filter((t): t is Template => t !== undefined)
+    : [];
+  if (children.length) out.children = children;
+
+  const group = String(o.group ?? '').trim();
+  if (group) out.group = group;
+  if (typeof o.page === 'number' && Number.isFinite(o.page)) out.page = o.page;
+  if (typeof o.slots === 'number' && Number.isFinite(o.slots)) out.slots = o.slots;
+  const contents = Array.isArray(o.contents)
+    ? o.contents.map((id) => String(id ?? '').trim()).filter(Boolean)
+    : [];
+  if (contents.length) out.contents = contents;
   return out;
 }

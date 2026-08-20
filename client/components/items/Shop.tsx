@@ -241,16 +241,18 @@ export function ShopShelf({
     [mine],
   );
 
-  // The store's own shelves. The old app grouped by the catalogue
-  // entry's `group`; the entity-shaped catalogue doesn't carry one
-  // through `toTemplate`, so this groups by KIND — which is the axis a
-  // player actually browses on ("show me the rifles") and is a field
-  // the model kept.
+  // The store's own shelves — the catalogue entry's `group`, which is
+  // the axis a player browses on ("show me the rifles") and is the same
+  // word a derived shop names when it says which shelves it keeps. A
+  // catalogue that files nothing falls back to KIND, so a shelf without
+  // labels still narrows instead of presenting one undifferentiated
+  // wall.
+  const shelfOf = (l: StockLine) => l.group ?? l.type ?? '';
   const kinds = useMemo(
-    () => [...new Set(view.shelf.map((l) => l.type ?? '').filter(Boolean))],
+    () => [...new Set(view.shelf.map(shelfOf).filter(Boolean))],
     [view.shelf],
   );
-  const shown = kind ? view.shelf.filter((l) => (l.type ?? '') === kind) : view.shelf;
+  const shown = kind ? view.shelf.filter((l) => shelfOf(l) === kind) : view.shelf;
 
   const total = cart.reduce((sum, l) => {
     const each = parsePrice(view.shelf.find((s) => s.ref === l.ref)?.price);

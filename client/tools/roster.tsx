@@ -80,7 +80,17 @@ const FILTERS: {
   // 'foe' for anything stamped from the bestiary — so that's what these
   // filter on. A pack using a different word for its foes reads as
   // "party" here; there's no generic signal left to tell the two apart.
-  { key: 'party', label: 'party', match: (e) => !!e.type && e.type !== 'foe' },
+  // …and a live vendor is neither. It's an entity like any other — it
+  // has to be, so its depleted shelf is a stored value a human can
+  // retype — but it is nobody's posse member, and it turned up under
+  // 'party' the moment a shop first transacted. The store stamps it
+  // with a type saying so (`VENDOR_TYPE`, `server/store-flow.ts`), so
+  // this excludes something declared rather than guessing at a name.
+  {
+    key: 'party',
+    label: 'party',
+    match: (e) => !!e.type && e.type !== 'foe' && e.type !== 'vendor',
+  },
   { key: 'foes', label: 'foes', match: (e) => e.type === 'foe' },
 ];
 

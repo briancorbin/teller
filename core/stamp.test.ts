@@ -216,6 +216,67 @@ describe('toTemplate', () => {
       ],
     });
   });
+
+  it('carries the whole authored entry — a lossy serialization was always the bug', () => {
+    expect(
+      toTemplate({
+        id: 'itm_pack',
+        name: "Explorer's Pack",
+        type: 'gear',
+        lists: { stats: [{ name: 'Cost', value: '$12.50' }] },
+        group: 'Outfits',
+        page: 8,
+        slots: 4,
+        contents: ['itm_rope', ' ', 'itm_compass'],
+      }),
+    ).toEqual({
+      id: 'itm_pack',
+      name: "Explorer's Pack",
+      type: 'gear',
+      lists: { stats: [{ name: 'Cost', value: '$12.50' }] },
+      group: 'Outfits',
+      page: 8,
+      slots: 4,
+      contents: ['itm_rope', 'itm_compass'],
+    });
+  });
+
+  it('takes the old world’s `counters` in as a list — under the author’s own word, never renamed', () => {
+    // Which list a system files its counters in is the SYSTEM's
+    // business (rule 2). Core preserves the key it was handed and
+    // decides nothing.
+    expect(
+      toTemplate({
+        id: 'amo_knockback',
+        name: 'Knockback Rounds',
+        lists: { stats: [{ name: 'Cost', value: '$1.00' }] },
+        counters: [{ id: 'ctr_knockback', name: 'Rounds', current: 3, max: null }],
+      })!.lists,
+    ).toEqual({
+      stats: [{ name: 'Cost', value: '$1.00' }],
+      counters: [{ name: 'Rounds', value: 3 }],
+    });
+    // An entry that already files them itself is left alone.
+    expect(
+      toTemplate({
+        id: 'a',
+        name: 'A',
+        lists: { counters: [{ name: 'Rounds', value: 6 }] },
+        counters: [{ name: 'Rounds', value: 3 }],
+      })!.lists!.counters,
+    ).toEqual([{ name: 'Rounds', value: 6 }]);
+  });
+
+  it('carries a child’s limbs too — reading it back as an entity would drop them again', () => {
+    expect(
+      toTemplate({
+        id: 'npc_x',
+        name: 'Bark Watcher',
+        lists: {},
+        children: [{ id: 'atk_1', name: 'Bark Slash', lists: {}, page: 12 }],
+      })!.children,
+    ).toEqual([{ id: 'atk_1', name: 'Bark Slash', page: 12 }]);
+  });
 });
 
 describe('resolve — template children (§I: attacks are entities)', () => {
