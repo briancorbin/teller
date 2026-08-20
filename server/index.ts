@@ -678,9 +678,15 @@ export async function handleApi(
       });
     }
     const { manifest, system, packs, missing } = session.loaded;
+    // `loaded.manifest` is a boot-time snapshot, and a refs edit that
+    // changes nothing loaded (the active board) deliberately skips
+    // reload() — so refs are read off the LIVE root, the same call
+    // `server/public.ts` makes, or a board swap serves yesterday's
+    // scene to anyone reading this route.
+    const live = session.campaign.root();
     return reply(200, {
       slug: session.campaign.slug,
-      manifest,
+      manifest: { ...manifest, refs: live.refs ?? {} },
       system: system ?? null,
       packs,
       missing,
