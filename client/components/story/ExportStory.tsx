@@ -64,8 +64,11 @@ export function ExportStory({ onClose }: { onClose: () => void }) {
   const held = useLive(() => storyIdentity(), []);
   const [sections, setSections] = useState<StorySections>({ ...ALL });
   const [basis, setBasis] = useState<Rights['basis'] | ''>('');
-  const [holder, setHolder] = useState('');
-  const [terms, setTerms] = useState('');
+  // `null` is UNTOUCHED, and empty string is a deliberate clearing —
+  // the two are different answers, and collapsing them would make a
+  // remembered holder impossible to remove.
+  const [holder, setHolder] = useState<string | null>(null);
+  const [terms, setTerms] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [done, setDone] = useState<{ filename: string; skipped: string[] } | null>(null);
@@ -74,10 +77,12 @@ export function ExportStory({ onClose }: { onClose: () => void }) {
   // declaration is stated once and then kept (`toRights`), so an
   // untouched dialog re-states the same thing.
   const remembered = held.data?.identity?.rights;
+  const heldHolder = holder ?? remembered?.holder ?? '';
+  const heldTerms = terms ?? remembered?.terms ?? '';
   const shown: Rights = {
     basis: (basis || remembered?.basis || 'personal') as Rights['basis'],
-    ...(holder.trim() ? { holder: holder.trim() } : remembered?.holder ? { holder: remembered.holder } : {}),
-    ...(terms.trim() ? { terms: terms.trim() } : remembered?.terms ? { terms: remembered.terms } : {}),
+    ...(heldHolder.trim() ? { holder: heldHolder.trim() } : {}),
+    ...(heldTerms.trim() ? { terms: heldTerms.trim() } : {}),
   };
 
   const preset = (kind: 'everything' | 'starting-point') =>
@@ -202,13 +207,13 @@ export function ExportStory({ onClose }: { onClose: () => void }) {
               <input
                 className={`${input} min-w-0 flex-1`}
                 placeholder="holder (optional)"
-                value={holder || remembered?.holder || ''}
+                value={heldHolder}
                 onChange={(e) => setHolder(e.target.value)}
               />
               <input
                 className={`${input} min-w-0 flex-1`}
                 placeholder="terms (optional)"
-                value={terms || remembered?.terms || ''}
+                value={heldTerms}
                 onChange={(e) => setTerms(e.target.value)}
               />
             </div>
