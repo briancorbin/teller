@@ -129,7 +129,18 @@ export function toVendor(raw) {
   // nothing" is a statement, and only a shop that wrote no list at all
   // takes its shelf off the catalogue.
   const written = Array.isArray(raw.lines) ? raw.lines : Array.isArray(raw.stock) ? raw.stock : undefined;
-  if (written) {
+  // An EMPTY written list on a vendor that declares groups or filters
+  // reads as derived: the groups exist only to derive a shelf, and the
+  // `[]` beside them is an editor's artifact, not a statement (found
+  // live 2026-08-20 — six ported rows carried it and five shops stood
+  // empty). "He has nothing" stays expressible: a vendor with no
+  // groups and no filters and `[]` is exactly that.
+  const meantDerived =
+    written &&
+    written.length === 0 &&
+    ((Array.isArray(raw.groups) && raw.groups.length > 0) ||
+      (raw.filters && typeof raw.filters === 'object'));
+  if (written && !meantDerived) {
     out.lines = written
       .map((raw_) => {
         const line = raw_ && typeof raw_ === 'object' ? raw_ : {};
