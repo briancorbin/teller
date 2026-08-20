@@ -368,10 +368,15 @@ function TabBar({
   onGo: (name: string) => void;
 }) {
   if (tabs.length <= 1) return null;
+  // `@container` + the label's `@[30rem]:inline`: on glass too narrow
+  // for five worded tabs the words go and the glyphs stay, because the
+  // PAGE never pans sideways (rule 6) and a wrapping tab bar is worse
+  // than an iconic one. A tab with no glyph keeps its word — a row of
+  // blank buttons isn't a bar, it's a mystery.
   return (
     <nav
       aria-label="screens"
-      className="flex shrink-0 gap-1 rounded-lg bg-stone-950/85 p-1 backdrop-blur-sm"
+      className="@container flex min-w-0 gap-1 rounded-lg bg-stone-950/85 p-1 backdrop-blur-sm"
     >
       {tabs.map((t) => (
         <button
@@ -387,7 +392,9 @@ function TabBar({
           style={t.name === current ? { background: 'var(--sheet-accent, #f59e0b)' } : undefined}
         >
           {t.icon && <Glyph name={t.icon} className="h-[1.15rem] w-[1.15rem] shrink-0" />}
-          <span className="min-w-0 break-words">{t.name}</span>
+          <span className={`min-w-0 break-words ${t.icon ? 'hidden @[30rem]:inline' : ''}`}>
+            {t.name}
+          </span>
         </button>
       ))}
     </nav>
