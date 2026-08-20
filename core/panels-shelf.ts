@@ -58,10 +58,11 @@
 // If one ever grows a block, it takes the same route every other
 // code-carrying panel takes: a human enables it.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildOne, compileFolder, newerThan, PANEL_IMPORTS } from './compile.ts';
+import { newId } from './id.ts';
 import { toPanel, type PanelDef } from './panels.ts';
 import type { Shelf } from './store.ts';
 
@@ -256,6 +257,70 @@ export function panelDir(dataDir: string, panelId: string): string | undefined {
 /** The same lookup over teller's shipped defaults, for a default that grows code. */
 export function defaultPanelDir(panelId: string): string | undefined {
   return panelDirIn(defaultsRoot(), panelId);
+}
+
+/**
+ * Where the table's own copy of a panel called `name` would live. One
+ * folder per name, because the NAME is the merge key — a table that
+ * restates `log` puts it in `panels/log/`, and a second folder for the
+ * same word would be two answers to one question.
+ */
+export function tablePanelDir(dataDir: string, name: string): string {
+  return join(dataDir, 'panels', name);
+}
+
+/**
+ * A folder name safe to write into `<data>/panels/`. Panel names are
+ * the merge's own words (`log`, `wiw-sheet`), and this is the only
+ * place one of them becomes a PATH — so it is the only place that has
+ * to say no to a name with a slash in it.
+ */
+export function usableFolderName(name: string): boolean {
+  return /^[a-z0-9][a-z0-9._-]*$/i.test(name) && !name.includes('..');
+}
+
+/** What a copy left behind, for the console to say and the route to log. */
+export type PanelCopy = { dir: string; id: string; carriesCode: boolean };
+
+/**
+ * Copy one panel folder UP to the table's layer — §M-6's owed
+ * concession, so customizing a shipped default never means finding the
+ * install directory by hand. The source is wherever the merge says the
+ * winning declaration came from (teller's install, a system's
+ * `panels/`, a pack's); the destination is `<data>/panels/<name>/`,
+ * which the merge stacks above everything, so the copy wins the moment
+ * the sweep sees it.
+ *
+ * Two deliberate details:
+ *
+ *   * A NEW `pan_` id is minted into the copy. Identity is the id
+ *     (rule 4a), and two panels sharing one would make the trust row
+ *     that switches a panel off ambiguous about which one it meant.
+ *   * `.build/` is left behind. It is compile output keyed to the
+ *     source, and the sweep regenerates it against the copy's own
+ *     mtimes — carrying it over would be copying an answer instead of
+ *     the question.
+ *
+ * The caller checks for an existing folder first; this throws rather
+ * than clobber, because the table's own file is the one thing above
+ * everything else in the merge and nothing may write over it.
+ */
+export function copyPanelToTable(dataDir: string, from: string, name: string): PanelCopy {
+  if (!usableFolderName(name)) throw new Error(`'${name}' is not a folder name`);
+  const dir = tablePanelDir(dataDir, name);
+  if (existsSync(dir)) throw new Error(`panels/${name}/ already exists`);
+  cpSync(from, dir, { recursive: true, filter: (src) => basename(src) !== '.build' });
+
+  const path = join(dir, 'panel.json');
+  const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  const id = newId('pan');
+  writeFileSync(path, `${JSON.stringify({ ...raw, id }, null, 2)}\n`);
+
+  const carriesCode =
+    existsSync(join(dir, 'blocks')) ||
+    existsSync(join(dir, 'panel.tsx')) ||
+    existsSync(join(dir, 'style.css'));
+  return { dir, id, carriesCode };
 }
 
 /** The same lookup over any root of panel folders — a system's `panels/` too (§M). */

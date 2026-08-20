@@ -46,7 +46,14 @@ import {
 } from './auth.ts';
 import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
 import { isPoint, POINTS, type Point } from '../core/registry.ts';
-import { defaultPanelDir, panelDir } from '../core/panels-shelf.ts';
+import {
+  copyPanelToTable,
+  defaultPanelDir,
+  panelDir,
+  tablePanelDir,
+  usableFolderName,
+  type PanelCopy,
+} from '../core/panels-shelf.ts';
 import { packDir, packPanelDir, sweepPacks, systemIndexModule } from '../core/packs-shelf.ts';
 import { sweepSystems, systemDir, systemPanelDir } from '../core/systems-shelf.ts';
 import { publicBoardState, publicSnapshot } from './public.ts';
@@ -894,6 +901,87 @@ export async function handleApi(
       packProblems: loaded.packProblems,
       panelProblems: loaded.panelProblems,
     });
+  }
+
+  // -- copy a panel UP to the table's layer (§M-6's owed concession).
+  //
+  // The merge is `teller < system < packs < campaign < table`, so
+  // customizing anything below the top means restating its name in
+  // `<data>/panels/` — which until now meant finding the install
+  // directory by hand and knowing which of four places the winning
+  // version came from. This is that walk, done by the server, which is
+  // the only party that already knows the answer.
+  //
+  // The SOURCE is the merge's own answer (`sourceOf`), not a guess: the
+  // folder copied is the one whose declaration this table is actually
+  // rendering, so what you get to edit is what you were looking at.
+  //
+  // Trust: a table's own files are its own (rule 7), and §M-6 is
+  // explicit that the gate is consent for code arriving from OUTSIDE —
+  // so a copy of teller's shipped furniture, or of code this table had
+  // already said yes to, arrives already on. A copy of code nobody has
+  // enabled yet does NOT: pressing copy is a decision about where a
+  // file lives, and letting it double as the answer to "may this code
+  // run" would launder an unanswered question through a button that
+  // never asked it.
+  if (method === 'POST' && head === 'panels' && a && b === 'copy-to-table') {
+    if (!canDm(auth)) return denied();
+    const dataDir = session.dataDir;
+    if (!dataDir) return reply(501, { error: 'this host has no data dir' });
+    const name = decodeURIComponent(a);
+    if (!usableFolderName(name)) return reply(400, { error: `'${name}' is not a folder name` });
+
+    const from = session.loaded.sourceOf('panels', name);
+    if (!from) return reply(404, { error: `no panel called ${name}` });
+    if (from === 'table') {
+      return reply(409, { error: `'${name}' is already this table's own` });
+    }
+    if (from === 'campaign') {
+      return reply(409, {
+        error: `'${name}' is the campaign's own stored declaration — there is no folder to copy`,
+      });
+    }
+    const declared = session.loaded
+      .sourced('panels')
+      .find((layer) => layer.source === from)
+      ?.items.map((item) => item as { id?: string; name?: string })
+      .find((item) => String(item.name ?? '').trim().toLowerCase() === name.trim().toLowerCase());
+    const panelId = declared?.id;
+    // A panel with no id has no folder to find it by — and no identity
+    // to copy, which is the same problem wearing a different hat.
+    if (!panelId) return reply(409, { error: `'${name}' carries no pan_ id to copy from` });
+    const dir = from.startsWith('system:')
+      ? systemPanelDir(dataDir, panelId)
+      : from.startsWith('pack:')
+        ? packPanelDir(dataDir, panelId)
+        : defaultPanelDir(panelId);
+    if (!dir) return reply(404, { error: `'${name}' has no folder on this host to copy` });
+    if (existsSync(tablePanelDir(dataDir, name))) {
+      return reply(409, { error: `panels/${name}/ already exists — nothing was touched` });
+    }
+
+    let copied: PanelCopy;
+    try {
+      copied = copyPanelToTable(dataDir, dir, name);
+    } catch (err) {
+      return reply(409, { error: String(err) });
+    }
+    let code: 'none' | 'pending' | 'enabled' = 'none';
+    if (copied.carriesCode) {
+      const inherited = from === 'teller' || shelf.pluginTrust(panelId)?.enabled === true;
+      if (inherited) shelf.setPluginEnabled(copied.id, true);
+      code = inherited ? 'enabled' : 'pending';
+    }
+
+    const body = await bodyOf(req);
+    session.campaign.append(null, actorOf(auth, String(body.actor ?? '')), 'panel.copied', {
+      name,
+      from,
+      id: copied.id,
+      copiedFrom: panelId,
+    });
+    session.reload();
+    return reply(200, { ok: true, name, from, id: copied.id, dir: copied.dir, code });
   }
 
   // -- plugins over HTTP: §15's "enablement is a human act in the

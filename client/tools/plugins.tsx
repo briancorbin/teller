@@ -194,17 +194,63 @@ function PanelSwitch({
   );
 }
 
+/**
+ * Duplicate a panel into `<data>/panels/<name>/` — §M-6's owed
+ * concession, so customizing something teller (or a system, or a pack)
+ * ships never means finding the install directory by hand.
+ *
+ * Offered only on rows the table hasn't already restated: the table's
+ * own layer is the top of the merge, so copying onto it would be
+ * copying a thing onto itself, and the campaign's stored declarations
+ * are not folders at all.
+ */
+function CopyToTable({ name, onChanged }: { name: string; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const copy = async () => {
+    setBusy(true);
+    setErr('');
+    try {
+      await api(`/api/panels/${encodeURIComponent(name)}/copy-to-table`, { method: 'POST' });
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        className={btnGhost}
+        disabled={busy}
+        title="duplicate into this table's panels folder, where your edit wins"
+        onClick={copy}
+      >
+        copy to this table
+      </button>
+      {err && <span className="w-full text-[11px] text-amber-500/80">{err}</span>}
+    </>
+  );
+}
+
 /** One panel a container ships. Its provenance, when it needs one, is the caller's to pass. */
 function PanelLine({
   panel,
   from,
+  layer,
   onChanged,
 }: {
   panel: PanelRow;
   from?: string;
+  /** Which layer shipped it — the copy affordance is for the ones below the table's. */
+  layer: Container['kind'];
   onChanged: () => void;
 }) {
   const off = panel.disabled === true;
+  const copyable = layer !== 'table' && layer !== 'campaign';
   return (
     <li className={`flex flex-wrap items-center gap-2 px-3 py-1.5 ${rowClass} ${off ? 'opacity-50' : ''}`}>
       <span className={`text-sm ${off ? 'text-stone-400 line-through' : 'text-stone-200'}`}>
@@ -223,7 +269,8 @@ function PanelLine({
         </span>
       )}
       {!off && panel.code === 'none' && <span className={dim}>data only</span>}
-      <span className="ml-auto">
+      <span className="ml-auto flex items-center gap-2">
+        {copyable && <CopyToTable name={panel.name} onChanged={onChanged} />}
         <PanelSwitch id={panel.id} disabled={off} onChanged={onChanged} />
       </span>
     </li>
@@ -287,7 +334,12 @@ function ContainerCard({ container, onChanged }: { container: Container; onChang
           ) : (
             <ul className="space-y-1">
               {container.panels.map((p) => (
-                <PanelLine key={p.id ?? p.name} panel={p} onChanged={onChanged} />
+                <PanelLine
+                  key={p.id ?? p.name}
+                  panel={p}
+                  layer={container.kind}
+                  onChanged={onChanged}
+                />
               ))}
             </ul>
           )}
@@ -496,7 +548,7 @@ function PluginsTool() {
       <TypeSection
         label="Panels"
         count={`${standalone.reduce((n, c) => n + c.panels.length, 0)} standalone`}
-        note="teller's five are the floor — a table overrides one by restating its name in <data>/panels/, or switches it off here."
+        note="teller's five are the floor — copy one to this table to edit it in <data>/panels/, or switch it off here."
       >
         {standalone.every((c) => c.panels.length === 0) ? (
           <p className="text-sm text-stone-600">nothing of your own yet</p>
@@ -508,6 +560,7 @@ function PluginsTool() {
                   key={`${c.kind}:${p.id ?? p.name}`}
                   panel={p}
                   from={label(c)}
+                  layer={c.kind}
                   onChanged={reload}
                 />
               )),
