@@ -2290,8 +2290,13 @@ export function serve(what: Session | Host, port: number, key: string) {
 
 // ---------------------------------------------------------------------
 // `node server/index.ts --data ~/.teller-next --campaign <slug>`
+//
+// Booting is a function so `teller host` and a bare `node
+// server/index.ts` are the SAME code path (`server/cli.ts` parses the
+// friendlier surface and calls this). A CLI that reimplements the boot
+// is a CLI that drifts from it.
 
-function parseArgs(argv: string[]): Record<string, string> {
+export function parseArgs(argv: string[]): Record<string, string> {
   const out: Record<string, string> = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -2300,8 +2305,7 @@ function parseArgs(argv: string[]): Record<string, string> {
   return out;
 }
 
-if (import.meta.main) {
-  const args = parseArgs(process.argv.slice(2));
+export async function boot(args: Record<string, string>) {
   const dataDir = resolvePath(
     (args.data ?? join(homedir(), '.teller-next')).replace(/^~/, homedir()),
   );
@@ -2442,3 +2446,5 @@ if (import.meta.main) {
   // The host's own terminal is the DM's device — this is `teller key`.
   console.log(`  DM key: ${key}  (open /?console and paste it)`);
 }
+
+if (import.meta.main) await boot(parseArgs(process.argv.slice(2)));

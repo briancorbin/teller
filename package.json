@@ -15,7 +15,7 @@
     "deploy": "npm run build && wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply teller --local",
     "db:migrate:remote": "wrangler d1 migrations apply teller --remote",
-    "pack": "npm run build && node scripts/pack.mjs",
+    "pack": "npm run client:build && node scripts/pack.mjs",
     "test": "vitest run"
   },
   "dependencies": {
