@@ -226,8 +226,10 @@ describe('GET /api/public', () => {
     expect(foe.lists.features).toBeUndefined();
     expect(foe.lists.conditions).toEqual([{ name: 'Poisoned', value: 2 }]);
     // 3 of 12, and the 12 lives only in the template it was stamped from.
+    // The sweep excludes the minted id — random hex can spell any digits.
     expect(foe.vitality).toBe('critical');
-    expect(JSON.stringify(body)).not.toContain('12');
+    const { id: _, ...redacted } = foe;
+    expect(JSON.stringify(redacted)).not.toContain('12');
     expect(JSON.stringify(body)).not.toContain('Bark Skin');
   });
 
