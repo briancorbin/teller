@@ -15,7 +15,7 @@
 // store boundary, so a route never sees a raw row.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { createReadStream, readFileSync, existsSync } from 'node:fs';
+import { createReadStream, readFileSync, existsSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, join, normalize, resolve as resolvePath } from 'node:path';
 import process from 'node:process';
@@ -75,6 +75,14 @@ import {
   systemIndexModule,
 } from '../core/packs-shelf.ts';
 import { sweepSystems, systemDir, systemPanelDir } from '../core/systems-shelf.ts';
+import {
+  extFor,
+  handoutOf,
+  handoutsOf,
+  MAX_BYTES,
+  saveHandoutBytes,
+} from './handouts.ts';
+import { notesOf, passNote, visibleTo, type NoteHandout } from './notes.ts';
 import { publicBoardState, publicSnapshot } from './public.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
 import { peekUndo, undo } from './undo.ts';
@@ -157,6 +165,28 @@ async function bodyOf(req: IncomingMessage): Promise<Record<string, unknown>> {
   } catch {
     return {};
   }
+}
+
+/**
+ * The body as BYTES — the one door that takes a file rather than JSON
+ * (a handout's picture). Refuses by returning nothing rather than by
+ * throwing, and refuses while reading rather than after: a client that
+ * sends a hundred megabytes should stop being read at the limit, not
+ * be buffered whole and then told no.
+ */
+async function rawBody(
+  req: IncomingMessage,
+  limit: number,
+): Promise<Buffer | undefined> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buf = chunk as Buffer;
+    size += buf.length;
+    if (size > limit) return undefined;
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks);
 }
 
 /**
@@ -944,11 +974,43 @@ export async function handleApi(
       }
     }
 
-    session.save({ ...manifest, refs }, actorOf(auth, String(body.actor ?? '')));
-    // A board swap changes nothing about what's LOADED, so it nudges
-    // the room instead of re-resolving the whole content stack.
+    // Which handout the art frame is showing — the same shape as the
+    // board, one ordinary manifest ref, because "the picture the table
+    // is looking at" is a fact about this campaign in exactly the way
+    // "the active scene" is. Absent means the frame rests.
+    //
+    // The REVEAL is its own event row rather than being left implicit
+    // in the manifest's `entity.updated` (rule 3): "what has the table
+    // been shown, and when" is a question about the session, and it
+    // should read as one line in the log instead of a diff of a refs
+    // object nobody can scan.
+    const actor = actorOf(auth, String(body.actor ?? ''));
+    let revealed: { kind: string; payload?: unknown } | undefined;
+    if ('handout' in body) {
+      if (body.handout === null || body.handout === '') {
+        if (refs.handout) revealed = { kind: 'handout.cleared' };
+        delete refs.handout;
+      } else if (typeof body.handout === 'string') {
+        const handout = handoutOf(session, body.handout);
+        if (!handout) return reply(400, { error: `no handout ${body.handout}` });
+        refs.handout = { id: handout.id, name: handout.name };
+        revealed = {
+          kind: 'handout.shown',
+          payload: { id: handout.id, name: handout.name },
+        };
+      } else {
+        return reply(400, { error: 'handout must be a template id or null' });
+      }
+    }
+
+    session.save({ ...manifest, refs }, actor);
+    if (revealed) {
+      session.campaign.append(null, actor, revealed.kind, revealed.payload);
+    }
+    // A board or handout swap changes nothing about what's LOADED, so
+    // it nudges the room instead of re-resolving the content stack.
     if ('system' in body || 'packs' in body) session.reload();
-    else session.changed('board');
+    else session.changed('handout' in body ? 'handout' : 'board');
     const { system, packs, missing } = session.loaded;
     return reply(200, {
       ok: true,
@@ -956,6 +1018,7 @@ export async function handleApi(
       packs,
       missing,
       board: refs.board ?? null,
+      handout: refs.handout ?? null,
     });
   }
 
@@ -1366,6 +1429,130 @@ export async function handleApi(
       session.campaign.removeTemplate(b, actorOf(auth, url.searchParams.get('actor') ?? ''));
       session.changed('templates');
       return reply(200, { ok: true });
+    }
+  }
+
+  // -- handouts: the gallery, and the door bytes come in through ------
+  //
+  // The ROWS are ordinary templates and go through the ordinary
+  // templates doors (`POST /api/templates/handouts` to author or
+  // rename) — there is no second CRUD here, only the two things the
+  // slot cannot do for itself: take a file, and take one away
+  // completely. Reading has its own door because a list of rows with a
+  // dead `data` wrapper is not what a gallery wants to render.
+  //
+  // The read gate is `canPrep`, matching the templates door it shadows
+  // — a seat already reads this slot legitimately through that one, and
+  // a gate here that disagreed would be a difference without a reason.
+  if (head === 'handouts') {
+    if (method === 'GET' && !a) {
+      if (!canPrep(auth)) return denied();
+      return reply(200, handoutsOf(session));
+    }
+
+    // Bytes in, key out. Raw body rather than JSON: a photograph
+    // base64'd into a JSON string is a third bigger for nothing, and
+    // the client has to hand-roll the fetch either way (the shared
+    // `api()` helper is JSON-only, by design).
+    if (method === 'POST' && a === 'upload' && !b) {
+      if (!canDm(auth)) return denied();
+      if (!host.dataDir) return reply(501, { error: 'this host has no data dir' });
+      const ext = extFor(String(req.headers['content-type'] ?? ''));
+      if (!ext) return reply(415, { error: 'a handout is a picture — png, jpg, webp, gif or avif' });
+      const bytes = await rawBody(req, MAX_BYTES);
+      if (!bytes) return reply(413, { error: `a handout may be ${MAX_BYTES} bytes at most` });
+      if (!bytes.length) return reply(400, { error: 'no bytes' });
+      return reply(201, { key: saveHandoutBytes(host.dataDir, bytes, ext) });
+    }
+
+    // Take one away for good. Its own door rather than the templates
+    // DELETE because two things have to happen beside the row going:
+    // the frame must stop showing a picture that no longer exists, and
+    // the bytes must go — but only when nothing else names them, since
+    // the key is a content hash and two rows may honestly share one.
+    if (method === 'DELETE' && a && !b) {
+      if (!canDm(auth)) return denied();
+      const handout = handoutOf(session, a);
+      if (!handout) return reply(404, { error: `no handout ${a}` });
+      const actor = actorOf(auth, url.searchParams.get('actor') ?? '');
+      const manifest = session.campaign.root();
+      const ref = manifest.refs?.handout;
+      const showing = (Array.isArray(ref) ? ref[0]?.id : ref?.id) === handout.id;
+      session.campaign.removeTemplate(handout.id, actor);
+      if (showing) {
+        const refs = { ...(manifest.refs ?? {}) };
+        delete refs.handout;
+        session.save({ ...manifest, refs }, actor);
+        session.campaign.append(null, actor, 'handout.cleared');
+      }
+      const stillUsed = handoutsOf(session).some((h) => h.key === handout.key);
+      if (!stillUsed && host.dataDir) {
+        const path = normalize(join(host.dataDir, handout.key));
+        if (path.startsWith(join(host.dataDir, 'art') + '/') && existsSync(path)) {
+          rmSync(path, { force: true });
+        }
+      }
+      session.changed('templates');
+      return reply(200, { ok: true });
+    }
+  }
+
+  // -- passing a note ---------------------------------------------------
+  //
+  // The law of who sees what is `server/notes.ts`; these are its three
+  // doors. Note the asymmetry, which is the whole design: the DM WRITES
+  // through one door and READS the lot through another, while every
+  // other screen has exactly one door that answers about ITSELF —
+  // `mine` is resolved from the asking screen's assignment, so a seat
+  // cannot ask for somebody else's mail by asking differently.
+  if (head === 'notes') {
+    if (method === 'GET' && a === 'mine' && !b) {
+      if (!canWatch(auth)) return notAtTable();
+      return reply(200, visibleTo(notesOf(session), auth));
+    }
+    if (method === 'GET' && !a) {
+      if (!canDm(auth)) return denied();
+      return reply(200, notesOf(session));
+    }
+    if (method === 'POST' && !a) {
+      if (!canDm(auth)) return denied();
+      const body = await bodyOf(req);
+      const text = typeof body.text === 'string' ? body.text.trim() : '';
+
+      let handout: NoteHandout | undefined;
+      if (typeof body.handoutId === 'string' && body.handoutId.trim()) {
+        const found = handoutOf(session, body.handoutId.trim());
+        if (!found) return reply(400, { error: `no handout ${body.handoutId}` });
+        handout = { id: found.id, name: found.name, key: found.key };
+      }
+      if (!text && !handout) return reply(400, { error: 'a note needs words or a handout' });
+
+      // An empty list is the whole table, deliberately — that is the
+      // DM notice, and it is the same act as passing one scrap round.
+      // A named recipient must EXIST, though: a note addressed to a
+      // typo would be delivered to nobody and reported as sent.
+      const to: string[] = [];
+      for (const raw of Array.isArray(body.to) ? body.to : []) {
+        const id = String(raw ?? '').trim();
+        if (!id || to.includes(id)) continue;
+        if (!session.campaign.get(id)) return reply(400, { error: `no one here is ${id}` });
+        to.push(id);
+      }
+
+      const note = passNote(session, {
+        to,
+        ...(text ? { text } : {}),
+        ...(handout ? { handout } : {}),
+      });
+      // Rule 3: the pending copy is ephemeral, the record is not. The
+      // log is the DM's own reading, so the words go in whole.
+      session.campaign.append(null, actorOf(auth, String(body.actor ?? '')), 'note.passed', {
+        to,
+        ...(text ? { text } : {}),
+        ...(handout ? { handoutId: handout.id, handoutName: handout.name } : {}),
+      });
+      session.changed('notes');
+      return reply(201, note);
     }
   }
 

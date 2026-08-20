@@ -43,6 +43,7 @@ import type { Entity, Entry } from '../core/entity.ts';
 import { numberOf } from '../core/entity.ts';
 import { kindFor, toKindDef, type KindDef } from '../core/kind.ts';
 import type { Board } from '../core/store.ts';
+import { activeHandout, type Handout } from './handouts.ts';
 import type { Session } from './session.ts';
 import type { TurnState } from './turn.ts';
 
@@ -70,11 +71,27 @@ export type PublicBoard = {
   state: unknown;
 };
 
+/**
+ * What the art frame is showing — the ACTIVE handout and nothing else.
+ *
+ * The gallery is not in here and never will be: the snapshot is what a
+ * passive screen renders whole, and the DM's shelf of pictures is prep
+ * (`GET /api/handouts`, behind the prep gate). Its `notes` are stripped
+ * for the same reason nobody's notes travel — the frame draws a
+ * picture, not the Warden's reminder about it.
+ *
+ * A PASSED note is not here either, and that is the load-bearing
+ * absence: this payload goes to the whole room, so anything aimed at
+ * one player is answered per-screen instead (`server/notes.ts`).
+ */
+export type PublicHandout = { id: string; name: string; key: string };
+
 export type PublicSnapshot = {
   campaign: { slug: string; name: string };
   roster: PublicEntity[];
   turn: TurnState;
   board: PublicBoard | null;
+  handout: PublicHandout | null;
 };
 
 /** §M-6's convention, and the client's: a foe says so on its type. */
@@ -218,5 +235,11 @@ export function publicSnapshot(session: Session): PublicSnapshot {
       .map((entity) => publicEntity(session.reading(entity), kinds)),
     turn: session.turnState(),
     board: activeBoard(session),
+    handout: publicHandout(activeHandout(session)),
   };
+}
+
+/** The active handout, stripped to what a frame needs to draw it. */
+export function publicHandout(handout: Handout | null): PublicHandout | null {
+  return handout ? { id: handout.id, name: handout.name, key: handout.key } : null;
 }
