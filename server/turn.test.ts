@@ -59,6 +59,34 @@ describe('the op machine', () => {
     expect(s.turn).toBe(0); // still Sal
   });
 
+  it('a rearrangement follows the acting row, wherever it lands', () => {
+    let s = three();
+    s = applyTurnOp(s, { op: 'next' });
+    s = applyTurnOp(s, { op: 'next' }); // Sal is up (index 1)
+    // Drag the Watcher to the top — straight across the pointer.
+    const [t1, t2, t3] = s.order;
+    s = applyTurnOp(s, { op: 'set', order: [t3, t1, t2] });
+    expect(s.order.map((e) => e.id)).toEqual(['t3', 't1', 't2']);
+    expect(s.turn).toBe(2); // still Sal
+    // And back the other way: Sal to the front.
+    s = applyTurnOp(s, { op: 'set', order: [t2, t3, t1] });
+    expect(s.turn).toBe(0); // still Sal
+  });
+
+  it('a set that drops the acting row falls back the way remove does', () => {
+    let s = three();
+    s = applyTurnOp(s, { op: 'next' });
+    s = applyTurnOp(s, { op: 'next' }); // Sal is up (index 1)
+    const [t1, , t3] = s.order;
+    s = applyTurnOp(s, { op: 'set', order: [t1, t3] });
+    expect(s.turn).toBe(1); // whoever slid into Sal's slot
+    // Off the end, and then empty.
+    s = applyTurnOp(s, { op: 'set', order: [t1] });
+    expect(s.turn).toBe(0);
+    s = applyTurnOp(s, { op: 'set', order: [] });
+    expect(s.turn).toBe(null);
+  });
+
   it('reads anything forgivingly and clamps a stale pointer', () => {
     expect(toTurnState(undefined)).toEqual(EMPTY_TURN);
     expect(toTurnState({ order: [{ label: 'x' }], turn: 9, round: 0 })).toMatchObject({

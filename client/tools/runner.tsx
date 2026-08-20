@@ -197,8 +197,18 @@ function RunnerTool() {
     return await api<BoardState | null>(`/api/board-state/${id}`);
   }, []);
   const [draft, setDraft] = useState('');
-  /** What the acting thing is about to do. Cleared when the turn moves. */
+  /** What the thing ON STAGE is about to do. Cleared when the stage changes. */
   const [armed, setArmed] = useState<Armed | undefined>(undefined);
+  /**
+   * A DETOUR: which row the DM clicked to look at, if it isn't the one
+   * acting (Brian, 2026-08-20 — "switch which thing I'm looking at
+   * during the encounter just by clicking its row"). `null` means the
+   * fight, which is the stage's default job; a click is a look aside,
+   * and the moment acting changes it snaps back on its own. View-local
+   * and nobody else's business — a screen deciding what IT is looking
+   * at is not state anyone argues about (rule 9).
+   */
+  const [viewing, setViewing] = useState<string | null>(null);
   const [rollingFoes, setRollingFoes] = useState(false);
   /** Setup, while a fight is running — closed by default, on purpose. */
   const [setupOpen, setSetupOpen] = useState(false);
@@ -388,17 +398,33 @@ function RunnerTool() {
   };
 
   const acting = turn.data?.turn !== null && turn.data ? order[turn.data.turn!] : undefined;
-  const actingSheet = sheetOf(acting?.entityId);
-
-  // The op() clear above only covers walks THIS screen made. The turn
-  // can also move under us — another console, a drag across the index,
-  // a score reshuffle — and an action armed for the last actor must
-  // never stand for the next one (it's how a creature ends up swinging
-  // somebody else's attack). Whoever is acting changes, the arm drops.
   const actingId = acting?.id;
+
+  // Whoever is ON the stage: the detour if there is one and it's still
+  // in the order, otherwise the fight.
+  const detour = viewing ? order.find((e) => e.id === viewing) : undefined;
+  const staged = detour ?? acting;
+  const stagedId = staged?.id;
+  const stagedSheet = sheetOf(staged?.entityId);
+  const stagedIndex = staged ? order.findIndex((e) => e.id === staged.id) : -1;
+  /** Looking at something other than the fight — the only time the way back is offered. */
+  const asideFrom = detour && detour.id !== actingId ? detour : undefined;
+
+  // Acting changes, the stage goes back to the fight. A click is a
+  // detour and a detour has a natural end: the turn passing.
+  useEffect(() => {
+    setViewing(null);
+  }, [actingId]);
+
+  // The op() clear above only covers walks THIS screen made. The stage
+  // can also change under us — another console, a score reshuffle, or
+  // this screen's own detour — and an action armed for the last thing
+  // on stage must never stand for the next one (it's how a creature
+  // ends up swinging somebody else's attack). What's staged changes,
+  // the arm drops.
   useEffect(() => {
     setArmed(undefined);
-  }, [actingId]);
+  }, [stagedId]);
 
   // ------------------------------------------------------------- the order
 
@@ -420,6 +446,10 @@ function RunnerTool() {
     const pending = pendingEvents(sheet);
     const lifting = drag?.entryId === entry.id;
     const onTable = entry.entityId ? placed.has(entry.entityId) : false;
+    // Two different facts, two different looks: the acting row keeps its
+    // amber whatever anyone is looking at, and the row being LOOKED at
+    // gets a quiet outline that never competes with it.
+    const isAside = asideFrom?.id === entry.id;
 
     // The line the row would land on. Drawn INSIDE the row rather than
     // between rows, because a list that grows a gap while you drag is a
@@ -437,7 +467,9 @@ function RunnerTool() {
               : foe
                 ? 'border-l-red-900/70 bg-stone-900/40 hover:bg-stone-900'
                 : 'border-l-stone-700 bg-stone-900/40 hover:bg-stone-900'
-        } ${lifting ? 'relative z-10 scale-[1.02] shadow-lg shadow-stone-950/60' : ''}`}
+        } ${isAside ? 'ring-1 ring-inset ring-stone-500/70' : ''} ${
+          lifting ? 'relative z-10 scale-[1.02] shadow-lg shadow-stone-950/60' : ''
+        }`}
         style={{
           ...(!isTurn && !owed && !foe && accent ? { borderLeftColor: accent } : {}),
           ...(lifting && drag ? { transform: `translateY(${drag.y - drag.startY}px)` } : {}),
@@ -495,13 +527,18 @@ function RunnerTool() {
               </span>
             ))}
 
-          <span
-            className={`min-w-0 flex-1 truncate text-[13px] ${
+          {/* The NAME is the way onto the stage — the handle still drags,
+              the steppers still edit, and clicking what a row IS puts
+              that thing under the light. Clicking it again lets go. */}
+          <button
+            className={`min-w-0 flex-1 truncate text-left text-[13px] ${
               isTurn ? 'text-amber-100' : 'text-stone-300'
-            }`}
+            } hover:text-amber-200`}
+            title="put on the stage"
+            onClick={() => setViewing((v) => (v === entry.id ? null : entry.id))}
           >
             {label}
-          </span>
+          </button>
 
           {/* The one thing on this row that can't wait for a turn. */}
           {pending.length > 0 && (
@@ -785,17 +822,35 @@ function RunnerTool() {
           </div>
 
           <div className="space-y-3">
-            {running && acting && actingSheet ? (
+            {/* The stage's default job is the fight, so a detour says so
+                quietly and hands back the way out. Nothing else changes
+                — the acting row is still amber over in the order. */}
+            {running && asideFrom && (
+              <button
+                className="w-full rounded-md bg-stone-900/70 px-2 py-1 text-left text-[11px] text-stone-500 transition-colors hover:bg-stone-900 hover:text-stone-300"
+                onClick={() => setViewing(null)}
+              >
+                viewing{' '}
+                <span className="text-stone-300">
+                  {asideFrom.label ??
+                    (asideFrom.entityId && names.get(asideFrom.entityId)) ??
+                    '?'}
+                </span>{' '}
+                — ◂ back to the fight
+              </button>
+            )}
+
+            {running && staged && stagedSheet ? (
               <>
                 <TurnStage
-                  key={actingSheet.id}
-                  acting={actingSheet}
-                  index={turn.data!.turn!}
+                  key={stagedSheet.id}
+                  acting={stagedSheet}
+                  index={stagedIndex}
                   total={order.length}
                   round={turn.data!.round}
                   statuses={statuses.data ?? []}
-                  accent={actingSheet.type ? accents.data?.[actingSheet.type] : undefined}
-                  onWrite={(edit) => writeEntry(actingSheet.id, edit)}
+                  accent={stagedSheet.type ? accents.data?.[stagedSheet.type] : undefined}
+                  onWrite={(edit) => writeEntry(stagedSheet.id, edit)}
                   armed={armed}
                   onArm={setArmed}
                   costCounter={use.data?.costCounter}
@@ -815,7 +870,7 @@ function RunnerTool() {
                 <ProviderSlot
                   point="propose.turn"
                   plain="the exchange"
-                  offer={actingSheet.type === 'foe'}
+                  offer={stagedSheet.type === 'foe'}
                   ask="what would they do?"
                   placeholder="…or tell it what they do, and press enter"
                   // Arming something IS a decision, so it goes over as
@@ -837,7 +892,7 @@ function RunnerTool() {
                     // last one's dice.
                     <Exchange
                       key={armed.id}
-                      actor={actingSheet}
+                      actor={stagedSheet}
                       armed={armed}
                       order={order
                         .filter((e) => e.entityId)
@@ -863,15 +918,16 @@ function RunnerTool() {
                 {/* A player's turn gets no proposal, and the stage says
                     why rather than going blank. teller does not play
                     player characters. */}
-                {actingSheet.type !== 'foe' && (
+                {stagedSheet.type !== 'foe' && (
                   <p className="px-1 text-[12px] italic text-stone-600">
-                    {actingSheet.name} plays themselves.
+                    {stagedSheet.name} plays themselves.
                   </p>
                 )}
               </>
-            ) : running && acting ? (
+            ) : running && staged ? (
               <p className="text-sm text-stone-600">
-                {acting.label ?? 'unlabeled'} is up — an ad-hoc entry, so there's no sheet to show.
+                {staged.label ?? 'unlabeled'} {asideFrom ? 'is' : 'is up —'} an ad-hoc entry, so
+                there's no sheet to show.
               </p>
             ) : running ? (
               <p className="text-sm text-stone-600">no one is up</p>

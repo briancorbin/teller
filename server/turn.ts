@@ -75,12 +75,26 @@ const scored = (e: TurnEntry) => (typeof e.score === 'number' ? e.score : null);
 export function applyTurnOp(state: TurnState, op: TurnOp): TurnState {
   const s: TurnState = { ...state, order: [...state.order] };
   switch (op.op) {
-    case 'set':
+    case 'set': {
+      // Whose turn it is follows the ROW, not the slot (Brian,
+      // 2026-08-20). Rearranging the list is bookkeeping; who is acting
+      // is table truth, and a drag past the pointer must not quietly
+      // hand the turn to somebody else. `next`/`prev`/`end` are the
+      // verbs that pass a turn, and they stay the only ones.
+      const acting = s.turn === null ? undefined : s.order[s.turn];
+      const was = s.turn;
       s.order = toTurnState({ order: op.order }).order;
-      if (s.turn !== null && s.turn >= s.order.length) {
-        s.turn = s.order.length ? s.order.length - 1 : null;
+      if (was !== null) {
+        const still = acting ? s.order.findIndex((e) => e.id === acting.id) : -1;
+        if (still !== -1) s.turn = still;
+        // Dropped out of the new order — fall back the way `remove`
+        // does: the row that slid into that slot, or nobody at all.
+        else if (!s.order.length) s.turn = null;
+        else if (was >= s.order.length) s.turn = 0;
+        else s.turn = was;
       }
       break;
+    }
     case 'add': {
       if (!op.entityId && !op.label?.trim()) break;
       const entry: TurnEntry = { id: newId('trn'), score: null };
