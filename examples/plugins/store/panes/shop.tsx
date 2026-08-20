@@ -113,6 +113,23 @@ const GRID: Record<Glass, React.CSSProperties> = {
   },
 };
 
+/**
+ * The STRIP is a third fact about glass, not a synonym for mounted (the
+ * old app's own line: strip = ratio >= 2.5). The rail's column-march
+ * and sideways snap exist because 515px cannot stack; an iPad is
+ * mounted too, but it HAS height, so the shelf wraps like held glass
+ * and the REGION scrolls down -- the store is the one screen whose
+ * content is genuinely unbounded (rule 6, 2026-08-14; restored
+ * 2026-08-20 after the port flattened three glasses into two).
+ */
+function isStrip(): boolean {
+  return window.innerWidth / window.innerHeight >= 2.5;
+}
+
+function shelfGrid(glass: Glass): React.CSSProperties {
+  return glass === 'mounted' && isStrip() ? GRID.mounted : GRID.held;
+}
+
 /** How many of this line are already in the cart. */
 function inCart(cart: CartLine[], ref: string): number {
   return cart.find((l) => l.ref === ref)?.qty ?? 0;
@@ -120,7 +137,7 @@ function inCart(cart: CartLine[], ref: string): number {
 
 /** The rule between shelves, when the whole store is on display. */
 function GroupRule({ label, glass }: { label: string; glass: Glass }) {
-  if (glass === 'mounted') {
+  if (glass === 'mounted' && isStrip()) {
     // On the panning bar the rule stands UP, so a shelf change is
     // visible as you sweep past it.
     return (
@@ -245,7 +262,7 @@ function StockTile({
     <div
       className={`flex h-full flex-col rounded-lg border bg-stone-900/60 transition-colors ${
         have > 0 ? '' : 'border-stone-800'
-      } ${glass === 'mounted' ? 'snap-start' : ''} ${soldOut ? 'opacity-50' : ''}`}
+      } ${glass === 'mounted' && isStrip() ? 'snap-start' : ''} ${soldOut ? 'opacity-50' : ''}`}
       style={have > 0 ? { borderColor: ACCENT } : undefined}
     >
       {/* The whole upper card opens it. A shelf label is a thing you
@@ -613,14 +630,18 @@ function ShopShelf({
             </div>
           )}
 
-          {/* The shelf. On mounted glass it PANS sideways, the deliberate
-              gesture the item shelves already taught; in a hand it
-              stacks and the card scrolls, as it always did. */}
+          {/* The shelf. On the STRIP it PANS sideways, the deliberate
+              gesture the item shelves already taught; on other mounted
+              touch glass (an iPad on the table) it wraps into rows and
+              the REGION scrolls down; in a hand it stacks and the card
+              scrolls, as it always did. */}
           <div
             key={`shop:${kind}`}
             className={`flex min-h-0 min-w-0 flex-1 gap-2 ${
-              mounted
+              mounted && isStrip()
                 ? 'snap-x snap-mandatory flex-nowrap items-stretch overflow-x-auto overflow-y-hidden'
+                : mounted
+                  ? 'flex-col overflow-y-auto'
                 : 'flex-col'
             }`}
           >
@@ -630,8 +651,8 @@ function ShopShelf({
                     chosen, the chip above already named it. */}
                 {!kind && <GroupRule label={section.name} glass={glass} />}
                 <div
-                  className={`grid gap-2 ${mounted ? 'shrink-0' : ''}`}
-                  style={GRID[glass]}
+                  className={`grid gap-2 ${mounted && isStrip() ? 'shrink-0' : ''}`}
+                  style={shelfGrid(glass)}
                 >
                   {section.lines.map((line) => (
                     <StockTile

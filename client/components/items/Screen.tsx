@@ -28,15 +28,36 @@ function findWithList(e: Entity, name: string): { list: string; entry: Entry } |
   return undefined;
 }
 
-const TILE_WIDTH = { mounted: 'w-[22rem] shrink-0 snap-start self-stretch', held: 'min-w-[15rem] flex-1 self-start' };
+/**
+ * The STRIP is a third fact about glass, not a synonym for mounted —
+ * the old app's own line (src/views/SeatView.tsx: `strip = ratio >=
+ * 2.5`). The rail's fixed 22rem tiles and sideways snap exist because
+ * 515px of height cannot stack; an iPad is mounted too, but it HAS
+ * height, so its shelf wraps into fluid tiles and the REGION scrolls
+ * down — rule 6's 2026-08-14 amendment, restored 2026-08-20 after the
+ * port flattened three glasses into two and Brian's iPad got the
+ * rail's pan.
+ */
+export function isStrip(): boolean {
+  return window.innerWidth / window.innerHeight >= 2.5;
+}
+
+function tileWidth(glass: Glass): string {
+  return glass === 'mounted' && isStrip()
+    ? 'w-[22rem] shrink-0 snap-start self-stretch'
+    : 'min-w-[15rem] flex-1 self-start';
+}
 
 function Shelf({ glass, children }: { glass: Glass; children: React.ReactNode }) {
+  const strip = glass === 'mounted' && isStrip();
   return (
     <div
       className={`flex min-h-0 gap-2 ${
-        glass === 'mounted'
+        strip
           ? 'flex-1 snap-x snap-mandatory flex-nowrap items-stretch overflow-x-auto overflow-y-hidden'
-          : 'flex-wrap content-start'
+          : glass === 'mounted'
+            ? 'flex-1 flex-wrap content-start overflow-y-auto'
+            : 'flex-wrap content-start'
       }`}
     >
       {children}
@@ -176,7 +197,7 @@ export function CarriedScreen({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
         <Shelf glass={ctx.glass}>
           {tallies.map(({ entry, list }) => (
-            <div key={entry.name} className={`flex flex-col gap-2 ${TILE_WIDTH[ctx.glass]}`}>
+            <div key={entry.name} className={`flex flex-col gap-2 ${tileWidth(ctx.glass)}`}>
               <BigGauge entry={entry} onWrite={(v) => ctx.write?.({ list, name: entry.name, value: v })} />
             </div>
           ))}
@@ -193,7 +214,7 @@ export function CarriedScreen({
               return amount > 0 ? [{ counter: c.counter, amount }] : [];
             });
             return (
-              <div key={item.id} className={`flex flex-col gap-2 ${TILE_WIDTH[ctx.glass]}`}>
+              <div key={item.id} className={`flex flex-col gap-2 ${tileWidth(ctx.glass)}`}>
                 <ItemTile
                   characterId={entity.id}
                   child={item}
