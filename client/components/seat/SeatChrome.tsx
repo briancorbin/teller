@@ -36,6 +36,7 @@ import { entriesOf, entryNamed, shaped } from '../../panels/blocks.tsx';
 import { Glyph } from '../sheet/glyphs.tsx';
 import { PanelSurface, type BlockCtx, type Glass } from '../../panels/render.tsx';
 import type { ScreenDecl } from '../items/types.ts';
+import { calling, TurnFlag, TurnRing, useTurnCall } from './TurnCall.tsx';
 
 type Records = Record<string, Record<string, unknown>>;
 
@@ -238,6 +239,7 @@ function TopBar({
   spends,
   onOpenSpends,
   onWrite,
+  flag,
 }: {
   entity?: Entity;
   seatName?: string;
@@ -246,6 +248,10 @@ function TopBar({
   spends?: SpendsDecl;
   onOpenSpends?: () => void;
   onWrite?: (edit: Record<string, unknown>) => void;
+  /** What the order is asking of this seat, if anything (`TurnCall.tsx`).
+   *  It rides HERE rather than in a row of its own because mounted glass
+   *  has no row to spare — the bar's hairlines had the width already. */
+  flag?: React.ReactNode;
 }) {
   const accent = entity?.type
     ? ((records.accents?.[entity.type] as string | undefined) ?? '#f59e0b')
@@ -308,6 +314,9 @@ function TopBar({
             <div className="flex shrink-0 items-center gap-3">{chips}</div>
           </div>
         )}
+        {/* Held glass is elastic, so the flag gets its own line here —
+            a phone can afford the row a rail panel can't. */}
+        {flag && <div className="flex items-center justify-center">{flag}</div>}
       </div>
     );
   }
@@ -330,6 +339,7 @@ function TopBar({
 
       <div className="flex min-w-0 items-center gap-3">
         <span className="h-px flex-1" style={{ background: `${accent}55` }} />
+        {flag}
         {chips}
       </div>
     </div>
@@ -503,6 +513,9 @@ export function SeatChrome({
   const [spendsOpen, setSpendsOpen] = useState(false);
   useSystemFaces(); // re-render when the system module lands (url-loaded, async)
   const note = usePanelNote();
+  // Where this seat stands in the fight, and the one thing it may say
+  // back into it (`TurnCall.tsx`).
+  const call = useTurnCall(entityId);
 
   const load = useCallback(() => {
     api<PanelDef[]>('/api/stack/declarations/panels').then(setPanels).catch(() => setPanels([]));
@@ -591,9 +604,11 @@ export function SeatChrome({
 
   return (
     <div
-      className={`flex min-h-0 flex-col gap-2 ${glass === 'mounted' ? 'h-full' : 'min-h-full'}`}
+      className={`relative flex min-h-0 flex-col gap-2 ${glass === 'mounted' ? 'h-full' : 'min-h-full'}`}
       style={{ '--sheet-accent': accent ?? '#f59e0b' } as React.CSSProperties}
     >
+      <TurnRing on={call.up} />
+
       <TopBar
         entity={entity}
         seatName={seatName}
@@ -602,6 +617,7 @@ export function SeatChrome({
         spends={spends}
         onOpenSpends={spends ? () => setSpendsOpen(true) : undefined}
         onWrite={ctx.write ? (edit) => ctx.write!(edit) : undefined}
+        flag={calling(call) ? <TurnFlag call={call} /> : undefined}
       />
 
       {spends && spendsOpen && (
