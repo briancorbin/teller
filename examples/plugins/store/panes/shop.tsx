@@ -92,24 +92,37 @@ const ACCENT = 'var(--sheet-accent, #f59e0b)';
 /**
  * The SHELF GRID, both families (rule 6).
  *
+ * The row height is MEASURED off the framed tile, not chosen. At a
+ * 16rem column the frame costs 20px of padding and 2px of rule, its
+ * heading block runs 20px a line and wraps to three on the longest
+ * goods in the catalogue, and the pinned price row is 36px with its
+ * gutter: 122px at the worst, 82px at the best. **7.75rem** is
+ * therefore the floor — the smallest row that never guillotines a
+ * name. The old 6.7rem/5.5rem were sized for a flat card with no frame
+ * and would cut every heading that took two lines.
+ *
  * Mounted glass PANS: the shelf fills DOWN a column and then marches
- * right, one 6.7rem card per row and 16rem per column, because one
+ * right, one 7.75rem card per row and 16rem per column, because one
  * full-height card per item would spend the whole rail on four goods.
  * How many fit per column is derived from the card's own height against
- * the glass — `auto-fill` decides it, nothing declares it.
+ * the glass — `auto-fill` decides it, nothing declares it; on the
+ * 515px rail that is two, which is what the last 18px of the old
+ * blank stock line were spent buying back.
  *
- * Held glass WRAPS: as many columns as fit at a 15rem floor, one column
- * in a hand, every row the same height.
+ * Held glass WRAPS: as many columns as fit at a 16rem floor (a rem
+ * wider than before, because a centred display-face heading needs more
+ * room between the darts than a left-aligned name did), one column in a
+ * hand, every row the same height.
  */
 const GRID: Record<Glass, React.CSSProperties> = {
   mounted: {
     gridAutoFlow: 'column',
-    gridTemplateRows: 'repeat(auto-fill, 6.7rem)',
+    gridTemplateRows: 'repeat(auto-fill, 7.75rem)',
     gridAutoColumns: '16rem',
   },
   held: {
-    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 15rem), 1fr))',
-    gridAutoRows: 'minmax(5.5rem, auto)',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 16rem), 1fr))',
+    gridAutoRows: 'minmax(7.75rem, auto)',
   },
 };
 
@@ -200,8 +213,14 @@ function Stepper({
       <button
         type="button"
         aria-label={`one fewer ${line.name}`}
-        className={`${STEP_BTN} ${have === 0 ? 'invisible' : ''}`}
-        style={size}
+        className={STEP_BTN}
+        // `invisible` was a class here, and it did nothing: teller's
+        // client never uses that utility, so the stylesheet a shelf pane
+        // borrows has no rule for it and every tile on the shelf wore a
+        // minus it had no business offering. The same trap the header
+        // warns about for bracketed values — a utility teller doesn't
+        // use is a utility this file doesn't have.
+        style={{ ...size, ...(have === 0 ? { visibility: 'hidden' as const } : {}) }}
         onClick={() => onSet(have - 1)}
       >
         −
@@ -234,15 +253,26 @@ function Stepper({
 
 /**
  * One thing on the shelf: a name, what it's off, its price, and the
- * count you're taking.
+ * count you're taking — **wearing the same frame the things you already
+ * own wear** (Brian, 2026-08-20). The port said the sheet's corner ticks
+ * and darts were the chrome of a BLOCK and that thirty side by side
+ * would read as a jumble; on the glass they don't. They read as goods
+ * laid out on a counter, and the shelf stops looking like a different
+ * application from the pack the goods are about to join. So the tile is
+ * a `SheetPanel` now, exactly as `ItemTile` is, and a thing keeps its
+ * frame from the shelf to the pocket.
  *
- * **A shelf is a TABLE, so every card is the same card.** `h-full`
- * hands it the grid row's height, so a row of goods lines up whatever
- * the names did; two lines of room for the name means nearly every card
- * is the same height without a single name being cut (nothing
- * truncates, ever). NOT a `SheetPanel` — the sheet's corner ticks and
- * darts are the chrome of a BLOCK, and thirty of them side by side read
- * as a jumble rather than as stock.
+ * **A shelf is a TABLE, so every card is the same card.** `fill` hands
+ * the panel the grid row's height and `mt-auto` pins the price row to
+ * its foot, so every price and every stepper on the shelf sits at one
+ * height whatever the headings above them got up to — the same pinned
+ * bottom cluster that makes a row of `ItemTile`s line up. Nothing
+ * truncates, ever; a three-line name pushes into the room the row
+ * height already allows for it.
+ *
+ * What stays the shop's, because it is what a shelf is for: the meta
+ * line (what's left, or that the host hasn't got it), the price in
+ * accent mono, and the −/+ with the invisible-minus rule.
  */
 function StockTile({
   line,
@@ -259,61 +289,78 @@ function StockTile({
 }) {
   const soldOut = line.qty !== null && line.qty <= 0;
   return (
-    <div
-      className={`flex h-full flex-col rounded-lg border bg-stone-900/60 transition-colors ${
-        have > 0 ? '' : 'border-stone-800'
-      } ${glass === 'mounted' && isStrip() ? 'snap-start' : ''} ${soldOut ? 'opacity-50' : ''}`}
-      style={have > 0 ? { borderColor: ACCENT } : undefined}
+    <SheetPanel
+      title={line.name}
+      fill
+      className={`bg-stone-900/60 transition-colors ${
+        glass === 'mounted' && isStrip() ? 'snap-start' : ''
+      } ${soldOut ? 'opacity-50' : ''}`}
+      // In the cart is a state of the FRAME, not a badge inside it —
+      // the frame is the biggest thing on the tile, so lighting it is
+      // legible across a table where a chip would not be.
+      //
+      // An INSET RING rather than a `borderColor`, and the reason is
+      // worth writing down because it will catch the next pane too:
+      // teller's stylesheet is built `important`, so a utility beats an
+      // inline property, and `SheetPanel` spells its own rule as
+      // `border-stone-600/80`. An inline `borderColor` here computes to
+      // the grey and the cart state vanishes — silently, since nothing
+      // errors. `outline` loses the same argument one level down
+      // (`outline-color` stays `currentcolor`). `box-shadow` is a
+      // property nothing on that section touches, it takes no part in
+      // layout, and it follows the frame's radius — so a tile joining
+      // the cart lights its rule and nudges nothing.
+      style={have > 0 ? { boxShadow: `inset 0 0 0 2px ${ACCENT}` } : undefined}
     >
-      {/* The whole upper card opens it. A shelf label is a thing you
-          point at, so the target is the card, not a chevron. */}
-      <button
-        type="button"
-        className="flex min-h-0 flex-1 flex-col items-start gap-1 px-3 pt-2 text-left"
-        onClick={onOpen}
-        aria-label={`${line.name} — look closer`}
-        disabled={line.missing}
-      >
-        <span
-          className="break-words font-serif leading-tight text-stone-100"
-          style={{ minHeight: '2.4em', fontSize: '0.9rem' }}
-        >
-          {line.name}
-        </span>
-        {/* Always a LINE, even with nothing to say — a card with no
-            count would otherwise stand a line shorter than the rifle
-            beside it, and that, not the names, is what makes a shelf
-            ragged. The blank is a real line of this exact type, so it
-            can't drift from one. */}
-        <span
-          className="flex flex-wrap gap-x-2 uppercase tracking-widest text-stone-500"
-          style={{ fontSize: '0.6rem' }}
-        >
-          {/* A stocked ref whose catalogue entry isn't on this host is a
-              hole to REPORT, never to hide (rule 9). */}
-          {line.missing && (
-            <span style={{ color: 'rgb(180 83 9 / 0.8)' }}>not on this host</span>
-          )}
-          {line.qty !== null && (
-            <span style={soldOut ? { color: 'rgb(248 113 113 / 0.8)' } : undefined}>
-              {soldOut ? 'sold out' : `${line.qty} left`}
-            </span>
-          )}
-          {!line.missing && line.qty === null && <span>&nbsp;</span>}
-        </span>
-      </button>
-      {/* The price and the count, on the same line at the same height on
-          every card — the row of them reads as one price list. */}
-      <div className="flex items-center gap-2 px-3 pb-2 pt-1">
-        <span
-          className="min-w-0 flex-1 font-mono text-sm tabular-nums"
-          style={{ color: ACCENT }}
-        >
-          {line.price ?? '—'}
-        </span>
-        <Stepper line={line} have={have} onSet={onSet} />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* The whole tile opens it, heading included. A shelf label is a
+            thing you point at, so the target is the card, not a chevron
+            — and now that the name lives in the frame's own heading, the
+            target has to be the frame. It sits UNDER the price row,
+            which carries `relative` for exactly that reason, so the
+            stepper still takes its own taps. */}
+        <button
+          type="button"
+          className="absolute inset-0 rounded-md"
+          onClick={onOpen}
+          aria-label={`${line.name} — look closer`}
+          disabled={line.missing}
+        />
+        {/* The price, what's left of it, and the count — one row, pinned
+            (`mt-auto`) to the foot of every tile on the shelf, so the
+            row of them reads as one price list however many lines the
+            headings above them took.
+
+            The stock note used to be a line of its own, kept even when
+            it had nothing to say, because on a flat card a tile with no
+            count stood a line shorter than the rifle beside it. The
+            frame retired that trick: the bottom cluster is pinned now,
+            so a blank line buys nothing and costs every tile on the rail
+            18px of the height its heading wants. What's left of a thing
+            was always part of its price anyway. */}
+        <div className="relative mt-auto flex items-center gap-x-2 pt-1">
+          <span className="whitespace-nowrap font-mono text-sm tabular-nums" style={{ color: ACCENT }}>
+            {line.price ?? '—'}
+          </span>
+          <span
+            className="min-w-0 flex-1 uppercase tracking-widest text-stone-500"
+            style={{ fontSize: '0.6rem' }}
+          >
+            {/* A stocked ref whose catalogue entry isn't on this host is
+                a hole to REPORT, never to hide (rule 9). */}
+            {line.missing && (
+              <span style={{ color: 'rgb(180 83 9 / 0.8)' }}>not on this host</span>
+            )}
+            {line.qty !== null && (
+              <span style={soldOut ? { color: 'rgb(248 113 113 / 0.8)' } : undefined}>
+                {soldOut ? 'sold out' : `${line.qty} left`}
+              </span>
+            )}
+          </span>
+          <Stepper line={line} have={have} onSet={onSet} />
+        </div>
       </div>
-    </div>
+    </SheetPanel>
   );
 }
 
