@@ -1,11 +1,12 @@
-// The 'boards' tool — battlemap assets, ported in the old app's card/
-// list grammar (src/views/DmView.tsx). The vanilla client
-// (`server/public/app.js`) links each board to a separate `#board=`
-// route with its own placements table; the new client has no such
-// route to link to, so this tool folds board picker + placements table
-// into one card, matching the vanilla `boardView`'s functionality (who,
-// u, v, remove) without reaching for the full battlemap editor —
-// SceneEditor's fog/grid/token authoring is out of scope here.
+// The 'boards' tool — the shelf of battlemaps, and the way onto one.
+//
+// Two halves, and the seam between them is §4. The LIST is the asset
+// half: shelf rows carrying a picture, a physical width and a grid
+// style, reusable across campaigns, added here and taken away here.
+// Opening one drops into `BoardEditor`, which is the WORKSHOP — the
+// fullscreen canvas where the fight is arranged, the ground is painted
+// and the fog is shaped, all of it board STATE belonging to the
+// campaign rather than to the board.
 //
 // It also carries the one control that aims the table: `show` writes
 // `refs.board`, and the table TV picks the swap up over the stream.
@@ -15,88 +16,134 @@
 
 import { useState } from 'react';
 import { registerTool } from './index.ts';
-import { api } from '../lib/api.ts';
+import {
+  api,
+  boards as fetchBoards,
+  createBoard,
+  deleteBoard,
+  fileUrl,
+  patchBoard,
+  showBoard,
+  uploadBoardImage,
+  type Board,
+  type DisplayInfo,
+} from '../lib/api.ts';
 import { useLive } from '../lib/use-session.ts';
-import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui.ts';
+import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
+import { BoardEditor, type RosterRow } from '../components/board/BoardEditor.tsx';
+import type { BoardState } from '../components/board/model.ts';
 
-type BoardMeta = { id: string; name: string };
 /** Only the half of the snapshot this tool asks about: which board the
  *  table is showing. Read live rather than off the loaded manifest — a
  *  board swap doesn't re-resolve the stack, so the manifest the console
  *  holds would answer with yesterday's scene. */
 type ActiveBoard = { board: { board: { id: string } } | null };
-type RosterRow = { id: string; name: string; type?: string };
-type Placement = { entityId?: string; label?: string; u: number; v: number; sizeInches?: number };
-type BoardState = { placements?: Placement[] } & Record<string, unknown>;
-
-function whoOf(p: Placement, names: Map<string, string>): string {
-  if (p.label) return p.label;
-  if (p.entityId) return names.get(p.entityId) ?? `missing: ${p.entityId}`;
-  return '?';
-}
 
 function BoardsTool() {
-  const { data: boards } = useLive(() => api<BoardMeta[]>('/api/boards'), []);
+  const { data: boards, reload: reloadBoards } = useLive(fetchBoards, []);
   const { data: roster } = useLive(() => api<RosterRow[]>('/api/entities'), []);
+  const { data: displays } = useLive(() => api<DisplayInfo[]>('/api/displays'), []);
   const { data: active, reload: reloadActive } = useLive(
     () => api<ActiveBoard>('/api/public'),
     [],
   );
-  const [selected, setSelected] = useState<string | null>(null);
+  const { data: turn } = useLive(() => api<{ turn: number | null }>('/api/turn'), []);
 
-  const { data: state, reload } = useLive(
-    () => (selected ? api<BoardState | null>(`/api/board-state/${selected}`) : Promise.resolve(null)),
-    [selected],
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  const { data: state, reload: reloadState } = useLive(
+    () => (openId ? api<BoardState | null>(`/api/board-state/${openId}`) : Promise.resolve(null)),
+    [openId],
   );
-
-  const [entityId, setEntityId] = useState('');
-  const [label, setLabel] = useState('');
-  const [u, setU] = useState('0');
-  const [v, setV] = useState('0');
-  const [size, setSize] = useState('1');
+  const [mapUrl, setMapUrl] = useState<string | null>(null);
 
   if (!boards || !roster) return null;
 
-  const board = boards.find((b) => b.id === selected);
-  const placements = state?.placements ?? [];
-  const names = new Map(roster.map((r) => [r.id, r.name]));
-
   const activeId = active?.board?.board.id ?? null;
+  const open = boards.find((b) => b.id === openId) ?? null;
 
-  // What the table is showing. One ordinary manifest ref, written the
-  // same way the system and the packs are — and the only control in
-  // this whole client that aims a passive surface at anything, because
-  // the table itself has none (rule 6).
+  // Whichever screen is the table — its calibration is what makes the
+  // frame box in the editor mean anything, and without one the editor
+  // simply doesn't draw one rather than drawing a guess.
+  const table = (displays ?? []).find((d) => d.role === 'table');
+
   const show = async (id: string | null) => {
-    await api('/api/campaign/refs', { method: 'PUT', body: { board: id } });
+    await showBoard(id);
     reloadActive();
   };
 
-  const save = async (next: Placement[]) => {
-    if (!selected) return;
-    await api(`/api/board-state/${selected}`, {
-      method: 'PUT',
-      body: { data: { ...(state ?? {}), placements: next } },
-    });
-    reload();
+  /**
+   * Bytes first, row second. Two calls rather than one multipart door:
+   * the picture is content-hashed on the way in, so a second board over
+   * the same map — a lit version and a dark one — costs no second copy
+   * and no second upload.
+   */
+  const addBoard = async (file: File) => {
+    setError('');
+    setBusy(`reading ${file.name}…`);
+    try {
+      const { key } = await uploadBoardImage(file);
+      const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+      const board = await createBoard({ key, name: name || 'new board' });
+      reloadBoards();
+      openBoard(board);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy('');
+    }
   };
 
-  const addPlacement = () => {
-    const placement: Placement = {
-      u: Number(u) || 0,
-      v: Number(v) || 0,
-      sizeInches: Number(size) || 1,
-    };
-    if (entityId) placement.entityId = entityId;
-    else if (label.trim()) placement.label = label.trim();
-    else return;
-    save([...placements, placement]);
-    setLabel('');
-    setEntityId('');
+  const openBoard = (board: Board) => {
+    setOpenId(board.id);
+    setMapUrl(null);
+    fileUrl(board.key)
+      .then(setMapUrl)
+      .catch(() => setMapUrl(null));
+  };
+
+  const remove = async (board: Board) => {
+    if (
+      !window.confirm(
+        `Delete "${board.name}"? Everything placed on it goes too${
+          activeId === board.id ? ', and the table lets go of it' : ''
+        }.`,
+      )
+    )
+      return;
+    await deleteBoard(board.id);
+    if (openId === board.id) setOpenId(null);
+    reloadBoards();
+    reloadActive();
   };
 
   return (
     <div className="space-y-3">
+      {open && (
+        <BoardEditor
+          board={open}
+          state={state ?? {}}
+          roster={roster}
+          mapUrl={mapUrl}
+          live={activeId === open.id}
+          ppi={table?.ppi}
+          ppiY={table?.ppiY}
+          tableViewport={table?.viewport}
+          combatRunning={turn?.turn !== null && turn?.turn !== undefined}
+          onState={(next) => {
+            api(`/api/board-state/${open.id}`, { method: 'PUT', body: { data: next } })
+              .then(reloadState)
+              .catch(() => reloadState());
+          }}
+          onBoard={(patch) => {
+            patchBoard(open.id, patch).then(reloadBoards).catch(reloadBoards);
+          }}
+          onClose={() => setOpenId(null)}
+        />
+      )}
+
       <section className={`${card} space-y-2`}>
         <div className="flex items-center justify-between">
           <span className={sectionLabel}>Boards</span>
@@ -107,18 +154,20 @@ function BoardsTool() {
           {boards.map((b) => (
             <li key={b.id} className="flex items-center gap-2">
               <button
-                className={`min-w-0 flex-1 rounded-md px-2 py-1.5 text-left text-sm transition-colors ${
-                  selected === b.id
-                    ? 'bg-stone-800 text-stone-50'
-                    : 'bg-stone-900 text-stone-200 hover:bg-stone-800'
-                }`}
-                onClick={() => setSelected(b.id)}
+                className="min-w-0 flex-1 rounded-md bg-stone-900 px-2 py-1.5 text-left text-sm text-stone-200 transition-colors hover:bg-stone-800"
+                onClick={() => openBoard(b)}
+                title="open the workshop"
               >
                 {b.name}
-                {activeId === b.id && (
-                  <span className="ml-2 font-mono text-[11px] text-amber-500">
-                    on the table
+                {b.widthInches ? (
+                  <span className="ml-2 font-mono text-[11px] text-stone-600">
+                    {b.widthInches}"
                   </span>
+                ) : (
+                  <span className="ml-2 font-mono text-[11px] text-stone-700">no width</span>
+                )}
+                {activeId === b.id && (
+                  <span className="ml-2 font-mono text-[11px] text-amber-500">on the table</span>
                 )}
               </button>
               <button
@@ -127,95 +176,40 @@ function BoardsTool() {
               >
                 {activeId === b.id ? 'clear' : 'show'}
               </button>
+              <button
+                className={`${btnGhost} hover:text-red-300`}
+                onClick={() => remove(b)}
+                aria-label={`delete ${b.name}`}
+                title="take it off the shelf"
+              >
+                ✕
+              </button>
             </li>
           ))}
         </ul>
-      </section>
 
-      {board && (
-        <section className={`${card} space-y-3`}>
-          <div className="flex items-center justify-between">
-            <span className={sectionLabel}>{board.name} — placements</span>
-            <span className="font-mono text-[11px] text-stone-600">{placements.length}</span>
-          </div>
-
-          <ul className="space-y-1">
-            {placements.map((p, i) => (
-              <li key={i} className="flex items-center gap-2 rounded-md bg-stone-900 px-2 py-1.5">
-                <span className="min-w-0 flex-1 truncate text-sm text-stone-100" title={p.entityId ?? ''}>
-                  {whoOf(p, names)}
-                </span>
-                <span className="font-mono text-[11px] text-stone-600">
-                  u{p.u} v{p.v}
-                </span>
-                <button
-                  className={`${btnGhost} hover:text-red-300`}
-                  onClick={() => save(placements.filter((_, j) => j !== i))}
-                  aria-label={`remove ${whoOf(p, names)}`}
-                >
-                  ✕
-                </button>
-              </li>
-            ))}
-            {placements.length === 0 && (
-              <li className="text-sm text-stone-600">nothing placed yet</li>
-            )}
-          </ul>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              className={`${input} min-w-0 flex-1 text-xs`}
-              value={entityId}
+        <div className="flex flex-wrap items-center gap-2 pt-1">
+          <label className={`${btnPrimary} cursor-pointer`}>
+            add a map
+            <input
+              className="hidden"
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
               onChange={(e) => {
-                setEntityId(e.target.value);
-                if (e.target.value) setLabel('');
+                const file = e.target.files?.[0];
+                e.target.value = '';
+                if (file) addBoard(file);
               }}
-            >
-              <option value="">a label instead…</option>
-              {roster.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-            <input
-              className={`${input} w-32 text-xs`}
-              placeholder="or a label"
-              value={label}
-              disabled={!!entityId}
-              onChange={(e) => setLabel(e.target.value)}
             />
-            <input
-              className={`${input} w-14 text-right font-mono`}
-              placeholder="u"
-              value={u}
-              onChange={(e) => setU(e.target.value)}
-              aria-label="u"
-            />
-            <input
-              className={`${input} w-14 text-right font-mono`}
-              placeholder="v"
-              value={v}
-              onChange={(e) => setV(e.target.value)}
-              aria-label="v"
-            />
-            <input
-              className={`${input} w-14 text-right font-mono`}
-              placeholder="in"
-              value={size}
-              onChange={(e) => setSize(e.target.value)}
-              aria-label="size, inches"
-            />
-            <button className={btn} disabled={!entityId && !label.trim()} onClick={addPlacement}>
-              + place
-            </button>
-          </div>
-
-          <p className="text-[11px] text-stone-600">
-            quick edits only — the full battlemap editor (fog, grid, tokens) isn't ported here.
-          </p>
-        </section>
-      )}
+          </label>
+          {busy && <span className="text-xs text-stone-500">{busy}</span>}
+          {error && <span className="text-xs text-red-400">{error}</span>}
+        </div>
+        <p className="text-[11px] text-stone-600">
+          Tell it how many inches wide the map really is, inside the workshop — that one
+          number is what makes a drawn square a real inch on a calibrated table.
+        </p>
+      </section>
     </div>
   );
 }

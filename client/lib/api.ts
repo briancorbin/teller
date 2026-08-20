@@ -93,6 +93,8 @@ export type DisplayInfo = {
   /** This screen's own calibration — px per true inch, per axis. */
   ppi?: number;
   ppiY?: number;
+  /** What the screen last reported about itself, for the frame box. */
+  viewport?: { w: number; h: number };
 };
 
 export async function hello(): Promise<{ display: DisplayInfo; handle: string }> {
@@ -102,6 +104,134 @@ export async function hello(): Promise<{ display: DisplayInfo; handle: string }>
   );
   stored.display = out.display.id;
   return out;
+}
+
+// ---- boards (the battlemap's asset half, §4) ---------------------------
+//
+// A board is a SHELF row — picture, physical width, grid style —
+// reusable across campaigns and referenced by id. What's on it right
+// now goes through `/api/board-state`, which is the campaign's, and the
+// split is the whole point of §4: exporting a `.story` mid-fight must
+// not ship token positions.
+
+export type Board = {
+  id: string;
+  key: string;
+  name: string;
+  widthInches?: number;
+  grid?: { on?: boolean; color?: string; opacity?: number };
+};
+
+export function boards(): Promise<Board[]> {
+  return api<Board[]>('/api/boards');
+}
+
+/**
+ * The second place the client sends bytes instead of JSON, and
+ * hand-rolled for the same reason as the handout door — with a bigger
+ * appetite, because a battlemap is print artwork rather than a
+ * photograph of a napkin.
+ */
+export async function uploadBoardImage(file: File): Promise<{ key: string }> {
+  const headers: Record<string, string> = { 'Content-Type': file.type };
+  if (stored.key) headers['x-teller-key'] = stored.key;
+  if (stored.display) headers['x-teller-display'] = stored.display;
+  const res = await fetch('/api/boards/upload', { method: 'POST', headers, body: file });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      typeof (body as { error?: string }).error === 'string'
+        ? (body as { error: string }).error
+        : res.statusText,
+    );
+  }
+  return body as { key: string };
+}
+
+/** Mint the row over an already-uploaded picture. */
+export function createBoard(board: {
+  key: string;
+  name: string;
+  widthInches?: number | null;
+  grid?: unknown;
+}): Promise<Board> {
+  return api<Board>('/api/boards', { body: board });
+}
+
+/** What a board IS, corrected after the fact (rule 1 — every stat is typed over). */
+export function patchBoard(
+  id: string,
+  patch: { name?: string; widthInches?: number | null; grid?: unknown },
+): Promise<Board> {
+  return api<Board>(`/api/boards/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch });
+}
+
+/** Off the shelf for good — the fight on it goes too, and the table lets go. */
+export function deleteBoard(id: string): Promise<{ ok: true }> {
+  return api<{ ok: true }>(`/api/boards/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/** Aim the table — one manifest ref, written like the handout's. Null clears it. */
+export function showBoard(id: string | null): Promise<unknown> {
+  return api('/api/campaign/refs', { method: 'PUT', body: { board: id } });
+}
+
+// ---- calibration -------------------------------------------------------
+//
+// The pattern a screen draws while it's being measured against something
+// physical. The console AIMS one at a named screen; every other screen
+// asks what IT should be drawing and is answered from its own identity
+// — there is no way to phrase the question about somebody else's glass.
+// The RESULT is written through the ordinary display PATCH, because
+// `ppi`/`ppiY` is where the durable fact already lives.
+
+export type CalibrationStep = 'corners' | 'across' | 'down' | 'verify';
+
+export type Calibration = {
+  step: CalibrationStep;
+  ppi: number;
+  ppiY: number;
+  inches: number;
+};
+
+/** Draw this on that screen — or (null) give it back to itself. */
+export function aimCalibration(
+  displayId: string,
+  pattern: Calibration | null,
+): Promise<{ ok: true }> {
+  return api<{ ok: true }>(`/api/displays/${encodeURIComponent(displayId)}/calibrate`, {
+    body: { pattern },
+  });
+}
+
+/** What THIS screen is being asked to draw. Null is the normal answer. */
+export function myCalibration(): Promise<Calibration | null> {
+  return api<Calibration | null>('/api/displays/calibration');
+}
+
+/**
+ * A screen telling the host how big it is.
+ *
+ * Telemetry about the caller itself and nothing else — the server
+ * clamps it and only ever writes the asking screen's own row. It is
+ * load-bearing for exactly two things, both of which were dead without
+ * it: the amber frame box in the board editor (what the table can
+ * actually SHOW, at true scale, needs the table's pixel count), and the
+ * wizard's warning that a drawn strip is longer than the glass. The
+ * vanilla client reported this and the new one never did, so both
+ * features looked implemented and drew nothing.
+ */
+export function reportViewport(): Promise<unknown> {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  // A browser that isn't drawing this tab answers with something absurd
+  // (1×1 in a background tab, found live). No real screen is 200px, and
+  // a stored 1×1 would silently shrink the console's frame box to
+  // nothing — so a nonsense measurement is not reported at all, and the
+  // last honest one stands.
+  if (w < 200 || h < 200) return Promise.resolve(undefined);
+  return api('/api/displays/viewport', { body: { w, h } }).catch(() => undefined);
 }
 
 // ---- permission slips (tickets) ---------------------------------------
