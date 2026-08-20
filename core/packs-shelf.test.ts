@@ -186,6 +186,29 @@ describe('sweepPacks — art reaches the serving path', () => {
     expect(existsSync(join(dir, 'art', 'pak_folder01', 'trades', 'gun.png'))).toBe(true);
   });
 
+  // §J's shape, and the reason it needs its own case: the pictures sit
+  // TWO levels down, under a slot that the system also states. A pack
+  // restating `dice` with nothing but `art` is how branded faces reach
+  // unbranded mechanics (§M-3) — the merge does the joining, and this
+  // only has to prove the keys arrive pointing at the served path.
+  it('rewrites art two levels down — a pack restating `dice` with only `art`', () => {
+    const packDir = writePack('guidebook', {
+      ...GUIDEBOOK,
+      'dice.json': { art: { hit: 'art/wiw/die_hit.png', ace: 'art/wiw/die_ace.png' } },
+    });
+    writeArt(packDir, 'wiw/die_hit.png', 'HIT');
+    writeArt(packDir, 'wiw/die_ace.png', 'ACE');
+
+    const { packs } = sweepPacks(dir);
+    expect(packs[0].data.dice).toEqual({
+      art: {
+        hit: 'art/pak_folder01/wiw/die_hit.png',
+        ace: 'art/pak_folder01/wiw/die_ace.png',
+      },
+    });
+    expect(existsSync(join(dir, 'art', 'pak_folder01', 'wiw', 'die_hit.png'))).toBe(true);
+  });
+
   it('the rewrite is idempotent — an already-installed key is left alone', () => {
     writePack('guidebook', {
       ...GUIDEBOOK,
@@ -454,7 +477,12 @@ describe('sweepPacks — a pack may ship panels', () => {
       code?: { blocks?: Record<string, string> };
     }[];
     expect(panels[0].codePending).toBeUndefined();
-    expect(panels[0].code?.blocks?.Row).toBe('/panel-code/pan_pak01/blocks/Row.js');
+    // Stamped with the artifact's mtime (`stamp` in `panels-shelf.ts`)
+    // so a recompile changes the url — a pack's panel takes the same
+    // route a table's does, because it is the same compile.
+    expect(panels[0].code?.blocks?.Row).toMatch(
+      /^\/panel-code\/pan_pak01\/blocks\/Row\.js\?v=[0-9a-z]+$/,
+    );
   });
 });
 

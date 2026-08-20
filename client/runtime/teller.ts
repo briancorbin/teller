@@ -15,6 +15,12 @@ export * from '../lib/ui.ts';
 
 // -- api + live data ----------------------------------------------------------
 export { api, fileUrl } from '../lib/api.ts';
+// `fileUrl` with a React shape on it: the pictures a record names, as
+// ticketed urls. A system's own face draws its art off its own record,
+// and without this it would have to hand-roll the ticket dance that
+// `/files/…` requires (rule 7) — one hook is cheaper than every
+// presentation reimplementing it slightly differently.
+export { useArtMap } from '../lib/art.ts';
 export { useLive } from '../lib/use-session.ts';
 
 // The two declaration readers every standard sheet block already uses:

@@ -21,8 +21,24 @@
 // Recording first, rolling second (rule 1): `onRoll` is offered only
 // where teller is allowed to throw at all, and every die it fills stays
 // one tap from being overruled.
+//
+// **The floor DOES draw face art** (§J, 2026-08-19), and the reason is
+// the same one that lets it draw `unit`: art arrives as DATA on the
+// `dice` record, keyed by a face the record itself named. Rendering a
+// picture the record points at teaches this file nothing about the game
+// — it still cannot tell a hit from a spur, only that face #3 has a
+// picture and face #4 doesn't. That is precisely the line the tint
+// failed: `letter === 'G'` was teller HOLDING an opinion about which die
+// is special, where `art[face]` is teller holding none.
+//
+// The other half is the compatibility law: this must degrade to text
+// with zero art, so the chain is art → glyph key → face name, and a
+// record carrying no `art` renders exactly what it rendered before. A
+// picture that fails to load falls back the same way, because the label
+// is drawn underneath rather than replaced by the image.
 
 import { expandPool, tallyFaces, type DiceRecord } from '../lib/dice.ts';
+import { useArtMap } from '../lib/art.ts';
 
 /** What every dice face — teller's floor and a system's own — is handed. */
 export type DicePoolProps = {
@@ -46,6 +62,9 @@ export function DiceFloor({
   onRoll,
   size = 'md',
 }: DicePoolProps) {
+  // Before the early return: a hook may not be skipped, and the record
+  // being absent is exactly when this one has nothing to resolve.
+  const art = useArtMap(dice?.art);
   const letters = expandPool(pool);
   if (!letters.length || !dice) return null;
   const box = size === 'sm' ? 'h-8 w-8' : 'h-11 w-11';
@@ -60,6 +79,7 @@ export function DiceFloor({
         // same label twice.
         const order = [...new Set(dice.faces[letter] ?? [])];
         const label = face ? (icons?.[face] ?? face) : letter;
+        const picture = face ? art[face] : undefined;
         return (
           <button
             key={i}
@@ -76,6 +96,15 @@ export function DiceFloor({
             }}
           >
             <span className="font-mono text-[10px] text-stone-300">{label}</span>
+            {picture && (
+              <img
+                src={picture}
+                alt={face ?? ''}
+                // Over the label, not instead of it — a picture that
+                // never arrives leaves the text standing.
+                className="absolute inset-0 h-full w-full rounded-lg object-contain p-0.5"
+              />
+            )}
             <span className="absolute -bottom-1 -right-1 rounded bg-stone-600 px-0.5 font-mono text-[8px] leading-tight text-stone-100">
               {letter}
             </span>

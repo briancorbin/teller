@@ -57,7 +57,14 @@ import {
 } from '../../../core/exchange.ts';
 import type { NarrationProposal } from '../../../core/registry.ts';
 import { api } from '../../lib/api.ts';
-import { combinePools, isPool, rollPool, tallyFaces, type DiceRecord } from '../../lib/dice.ts';
+import {
+  combinePools,
+  countFace,
+  isPool,
+  rollPool,
+  tallyFaces,
+  type DiceRecord,
+} from '../../lib/dice.ts';
 import { btn, btnPrimary } from '../../lib/ui.ts';
 import { DiceFloor, type DicePoolProps } from '../DiceFloor.tsx';
 import { presentationOf, useSystemFaces } from '../../lib/presentations.ts';
@@ -405,6 +412,8 @@ export function Exchange({
   const [tolFaces, setTolFaces] = useState<Record<string, (string | null)[]>>({});
   const [spend, setSpend] = useState<number | undefined>(undefined);
   const [moved, setMoved] = useState(0);
+  /** A banked counter the Warden overruled, by name. Absent = as counted. */
+  const [banks, setBanks] = useState<Record<string, number>>({});
   const [applied, setApplied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -486,6 +495,44 @@ export function Exchange({
   /** ONE throw, however many it caught — the action was taken once. */
   const hits = tallyFaces(faces ?? [], dice).total;
   const rolled = (faces ?? []).some(Boolean) || !armed.damage;
+
+  /**
+   * WHAT THE ROLL BANKED (§J). A `banks` entry wires a face to a counter
+   * — "this face showed, so that counter goes up" — and it names both
+   * halves, which is what keeps this file ignorant: teller counts a face
+   * it cannot identify into a counter it cannot name.
+   *
+   * Three things decide whether a line appears, and each is a rule:
+   *
+   *  * **Counted off the FACES, never off the total.** `hits` is a sum
+   *    through `values` and a sum cannot be un-summed — a bank pays on
+   *    how many times the face SHOWED, so it is counted where the faces
+   *    still are (the chips the table just tapped). Retype a die and the
+   *    proposal follows, because it is derived, not stored.
+   *  * **Foes don't bank.** The runner already skips this for them and
+   *    the reason is the table's, not the code's: a foe has nobody to
+   *    hand the beat to. One condition, stated once, in the one place
+   *    that offers the line.
+   *  * **A destination has to exist.** §M-8 says an absent counter reads
+   *    as zero, so a sheet that has never banked one still deserves the
+   *    proposal — but a write needs a LIST, and inventing a list name
+   *    here would be teller filing somebody's sheet for them (rule 2).
+   *    So: the counter's own list where it is already kept, otherwise
+   *    wherever this sheet keeps the counter actions are paid out of —
+   *    read off the sheet either way, never a literal.
+   */
+  const bankLines = (foe ? [] : (dice?.banks ?? []))
+    .map(({ face, counter }) => {
+      const at = locate(actor.lists, counter);
+      const list = at?.list ?? (costCounter ? locate(actor.lists, costCounter)?.list : undefined);
+      return {
+        counter,
+        list,
+        held: at ? (numberOf(at.entry) ?? 0) : 0,
+        amount: banks[counter] ?? countFace(faces ?? [], face),
+      };
+    })
+    .filter((b) => b.list !== undefined);
 
   const typedOn = (id: string): number | undefined => {
     const raw = stateOf(id).typed.trim();
@@ -659,6 +706,21 @@ export function Exchange({
         }
       }
 
+      // What the dice banked, paid the same way the cost is: one
+      // ordinary entry write, through the same door, so it lands in the
+      // log (rule 3) and comes straight back off with a stepper on the
+      // sheet (rule 1). It does NOT ride in the record's `spend` lines —
+      // those are read everywhere as "N off this counter for that", and
+      // a gain filed as a spend is a mechanic hiding in a sign.
+      for (const bank of bankLines) {
+        if (bank.amount <= 0) continue;
+        await onWrite(actor.id, {
+          list: bank.list!,
+          name: bank.counter,
+          value: bank.held + bank.amount,
+        });
+      }
+
       // A one-shot has now happened, so it says so — through the same
       // entry door as everything else, which is what makes it an
       // ordinary value the Warden can take straight back off (rule 1)
@@ -757,6 +819,9 @@ export function Exchange({
         })
         .filter(Boolean);
       if (hung.length) parts.push(`and is left ${hung.join(', ')}`);
+    }
+    for (const bank of bankLines) {
+      if (bank.amount > 0) parts.push(`${actor.name} banks ${bank.amount} ${bank.counter}`);
     }
     return parts.join('. ');
   };
@@ -1127,6 +1192,23 @@ export function Exchange({
                 />
               </>
             )}
+
+            {/* What the dice banked, beside what the action cost —
+                proposed, and a stepper before it is a fact like every
+                other number in this row. Nudged to zero it simply isn't
+                paid, which is the delete. */}
+            {bankLines.map((bank) => (
+              <Stepper
+                key={bank.counter}
+                label="banked"
+                value={bank.amount}
+                unit={bank.counter}
+                onSet={(n) => {
+                  setBanks((prior) => ({ ...prior, [bank.counter]: n }));
+                  touched();
+                }}
+              />
+            ))}
 
             <button
               className={`ml-auto ${applied ? btn : btnPrimary} text-xs ${busy ? 'animate-pulse' : ''}`}

@@ -24,7 +24,36 @@ export type DiceRecord = {
   trackBonus?: number;
   /** A face that also bumps a named counter when it lands — Ace → Aces. */
   banks?: { face: string; counter: string }[];
+  /**
+   * Face name → the picture of that face, keyed into the data dir
+   * (`art/<pak_id>/…`, rewritten at install — rule 4a).
+   *
+   * It lives on the SAME record as the mechanics but arrives from a
+   * different layer, and that split is the point: the system declares
+   * what faces exist and what they're worth (freely shareable, §M-3),
+   * and the book restates `dice` carrying nothing but `art` — records
+   * shallow-merge per key, so branded pictures land on unbranded
+   * function without either half knowing about the other.
+   *
+   * Absent is not an error and never will be: every face that draws one
+   * falls back to a glyph and then to the face's own name.
+   */
+  art?: Record<string, string>;
 };
+
+/**
+ * How many of a roll landed on a BANKED face — the `banks` entry's own
+ * question, answered off the recorded faces and never off the total.
+ *
+ * The distinction is load-bearing: a total is a sum through `values`,
+ * and two faces worth 2 each are indistinguishable from one worth 4 once
+ * summed. What a bank pays out on is how many times the face SHOWED, so
+ * it can only be counted where the faces still are — the tapped chips,
+ * which are what the table actually saw.
+ */
+export function countFace(faces: (string | null | undefined)[], face: string): number {
+  return faces.filter((f) => f === face).length;
+}
 
 // Reading the NOTATION moved to `core/pool.ts` — a frenzy that says
 // "all attacks by 1G" is pool arithmetic with nobody rolling, so the
