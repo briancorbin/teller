@@ -376,6 +376,29 @@ export class Campaign {
     return rows.map((r) => parseJson(r.data)).filter((d) => d !== undefined);
   }
 
+  /**
+   * The whole template half, slot and all — what a `.story` has to
+   * carry, and the one reading that cannot be spelled with
+   * `templatesIn`.
+   *
+   * A slot is the FORMAT's word, not Core's (§10), so nothing in core
+   * knows the list of them; asking for "every slot" by naming them
+   * would put 'bestiary' and 'encounters' in a file whose whole point
+   * is that it doesn't know what those mean. So the table answers
+   * instead, and the export stays as ignorant as the store is.
+   */
+  allTemplates(): { id: string; slot: string; name: string; data: unknown }[] {
+    const rows = this.#db
+      .prepare('SELECT id, slot, name, data FROM templates ORDER BY created_at, id')
+      .all() as Row[];
+    return rows.map((r) => ({
+      id: String(r.id),
+      slot: String(r.slot),
+      name: String(r.name),
+      data: parseJson(r.data),
+    }));
+  }
+
   removeTemplate(id: string, actor: string): void {
     const before = this.templateRaw(id);
     if (before === undefined) return;
@@ -392,15 +415,33 @@ export class Campaign {
   // -- live board state -----------------------------------------------
   //
   // Placements, fog and view for one board — the session-state half of
-  // §4. It lives HERE, next to the entities the placements point at,
-  // and never inside a `.story`: exporting a campaign mid-fight must
-  // not ship token positions and revealed fog.
+  // §4. It lives HERE, next to the entities the placements point at.
+  //
+  // It DOES travel in a `.story`, as a section like every other, on by
+  // default (TEL-87, 2026-08-19). This comment used to say "never",
+  // reasoning that exporting mid-fight must not ship token positions
+  // and revealed fog — which was teller deciding what somebody's export
+  // was for. An export is equally a BACKUP, and a backup that forgets
+  // where everyone was standing restores the wrong table. So the
+  // format stopped having an opinion and the person got a switch:
+  // untick the live sections for anything you hand somebody.
 
   boardState(boardId: string): unknown {
     const row = this.#db
       .prepare('SELECT data FROM board_state WHERE board_id = ?')
       .get(boardId) as Row | undefined;
     return row ? parseJson(row.data) : undefined;
+  }
+
+  /** Every board this campaign has state for — the boards it has actually played on. */
+  boardStates(): { boardId: string; data: unknown }[] {
+    const rows = this.#db
+      .prepare('SELECT board_id, data FROM board_state ORDER BY board_id')
+      .all() as Row[];
+    return rows.map((r) => ({
+      boardId: String(r.board_id),
+      data: parseJson(r.data),
+    }));
   }
 
   putBoardState(boardId: string, data: unknown, actor: string): void {
