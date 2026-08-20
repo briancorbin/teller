@@ -305,12 +305,22 @@ export function resetStream(): void {
   if (alive()) open();
 }
 
-/** Subscribe to nudges. Returns an unsubscribe. */
-export function onNudge(fn: Listener): () => void {
-  listeners.add(fn);
+/**
+ * Subscribe to nudges. Returns an unsubscribe.
+ *
+ * `on` is the same honest interest `useLive` takes, for the handful of
+ * places that hold their own fetches rather than a hook's.
+ */
+export function onNudge(fn: Listener, on?: string[]): () => void {
+  const listener: Listener = on
+    ? (what) => {
+        if (ALWAYS.includes(what) || wanted(on, what)) fn(what);
+      }
+    : fn;
+  listeners.add(listener);
   ensureStream();
   return () => {
-    listeners.delete(fn);
+    listeners.delete(listener);
     teardown();
   };
 }
@@ -326,18 +336,106 @@ export function onIdentify(fn: () => void): () => void {
 }
 
 /**
- * Fetch + refetch on any nudge. The server tells us WHAT changed as a
- * string; v1 refetches on everything (the vanilla client's behavior),
- * except while the user is mid-keystroke in a field.
+ * Words every hook refetches on, whatever it declared an interest in.
+ *
+ * - `sync` is the post-drop catch-up: the wire was down, nobody knows
+ *   what was missed, so everything is suspect.
+ * - `campaign` is a different table underneath the same screens.
+ * - `reload` is the content stack re-resolving — a pack sweep changes
+ *   declarations, records, templates AND what a `?resolved=1` entity
+ *   reads as, so there is no honest hook that can sit it out.
+ */
+const ALWAYS = ['sync', 'campaign', 'reload'];
+
+/**
+ * Every word teller itself says (`session.changed` / `room.notify`),
+ * which makes it also the way to recognise a word it DOESN'T say.
+ *
+ * A plugin nudges whatever it likes (`changed: ['shop']`), and no hook
+ * in this repo can enumerate those — so a hook that reads a plugin's
+ * door declares the pseudo-word `plugin`, which matches any word
+ * outside this list. That keeps the seat's conditional tabs honest
+ * about a shop opening without teaching teller the word "shop".
+ */
+const VOCABULARY = [
+  'assign',
+  'board',
+  'boards',
+  'books',
+  'calibration',
+  'campaign',
+  'displays',
+  'entities',
+  'events',
+  'handout',
+  'identify',
+  'notes',
+  'plugins',
+  'reload',
+  'sync',
+  'templates',
+  'turn',
+];
+
+/** The interest that means "any word a plugin said". */
+export const PLUGIN_WORD = 'plugin';
+
+/**
+ * The three interests that come up often enough to be spelled once.
+ *
+ * `DECLARED` covers the merged content stack — declarations, records,
+ * the vocabulary a table renders from. None of it moves during play:
+ * it re-resolves on a sweep (`reload`, always) and it grows when a
+ * plugin is enabled. A tap on a counter cannot change it, which is the
+ * whole of why a tap used to cost thirty-eight requests.
+ *
+ * `PROVIDED` is the pane list — the same, plus the plugins' own.
+ *
+ * `PUBLIC` is the player-safe snapshot, which is a view over almost
+ * everything the table can see and is therefore deliberately wide.
+ */
+export const DECLARED = ['plugins'];
+export const PROVIDED = ['plugins'];
+export const PUBLIC = ['board', 'boards', 'handout', 'templates', 'entities', 'turn'];
+
+function wanted(want: string[], what: string): boolean {
+  if (want.includes(what)) return true;
+  return want.includes(PLUGIN_WORD) && !VOCABULARY.includes(what);
+}
+
+/**
+ * A burst of nudges is one refetch. The server nudges per MUTATION, so
+ * an import or a resolved exchange says four words in a millisecond;
+ * without this each one costs every listening hook a request, on a link
+ * with six connections to spend.
+ */
+const COALESCE_MS = 50;
+
+/**
+ * Fetch + refetch on a nudge. The server tells us WHAT changed as a
+ * string; `on` is this hook's honest interest in those words, and
+ * without one the hook refetches on everything (the original
+ * behaviour — an omitted interest is never a silent narrowing).
+ *
+ * A too-wide interest is merely slow; a too-narrow one is WRONG, and
+ * shows up as a number that stopped moving. When in doubt, widen — or
+ * declare nothing, which is the honest way to say "anything could
+ * change this" (the undo peek and the event log both mean it).
  */
 export function useLive<T>(
   fetcher: () => Promise<T>,
   deps: unknown[],
+  opts?: { on?: string[] },
 ): { data: T | undefined; error: Error | undefined; reload: () => void } {
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<Error | undefined>(undefined);
   const fetchRef = useRef(fetcher);
   fetchRef.current = fetcher;
+  // Held in a ref because callers write the list inline: a fresh array
+  // every render must not re-run the effect, and `deps` is what decides
+  // that, exactly as before.
+  const wantRef = useRef(opts?.on);
+  wantRef.current = opts?.on;
 
   const load = () => {
     fetchRef
@@ -351,16 +449,38 @@ export function useLive<T>(
 
   useEffect(() => {
     load();
-    const off = onNudge(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const flush = () => {
+      if (!timer) return;
+      clearTimeout(timer);
+      timer = null;
+      load();
+    };
+    const off = onNudge((what) => {
+      const want = wantRef.current;
+      if (want && !ALWAYS.includes(what) && !wanted(want, what)) return;
       const active = document.activeElement;
       if (
         active instanceof HTMLInputElement ||
         active instanceof HTMLTextAreaElement
       )
         return;
-      load();
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = null;
+        load();
+      }, COALESCE_MS);
     });
-    return off;
+    // A hidden tab's TIMERS are throttled while its socket is not (the
+    // same asymmetry the leader heartbeat above is built around), so a
+    // coalescing window can outlast the tab being hidden. Whatever is
+    // still owed is paid the moment somebody looks at the screen.
+    document.addEventListener('visibilitychange', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', flush);
+      if (timer) clearTimeout(timer);
+      off();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 
