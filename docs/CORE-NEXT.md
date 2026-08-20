@@ -376,7 +376,7 @@ entities (
   created_at, updated_at
 )
 events      ( id, entity_id, actor, kind, payload, created_at )   -- unchanged shape
-board_state ( board_id PRIMARY KEY, data )                        -- placements + fog + view; NEVER in a .story
+board_state ( board_id PRIMARY KEY, data )                        -- placements + fog + view; a .story SECTION, on for a backup, off for a handout (TEL-87 2026-08-16/20 — "everything, live state is fine" superseded the old NEVER)
 templates   ( id, slot, name, data, … )                           -- the template half; slot is a COLUMN (contact log)
 ```
 
