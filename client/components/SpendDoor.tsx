@@ -23,6 +23,7 @@ import { api } from '../lib/api.ts';
 import { presentationOf, useSystemFaces } from '../lib/presentations.ts';
 import { usePanelNote } from '../lib/rules.ts';
 import { applyPlan, loadCatalog, spendWorld } from '../lib/spend.ts';
+import { writeEntry } from '../lib/entry.ts';
 import { card, sectionLabel } from '../lib/ui.ts';
 import type { BlockCtx } from '../panels/render.tsx';
 import { SpendFloor, type SpendMenuProps } from './SpendFloor.tsx';
@@ -70,7 +71,7 @@ function SpendOverlay({
     note: note(spends.label ?? spends.counter),
     accent,
     onSet: (write) => {
-      void api(`/api/entities/${entity.id}/entry`, { body: write });
+      void writeEntry(entity.id, write);
     },
     onBuy: (plan: SpendPlan) =>
       applyPlan(entity.id, plan, catalog).then(

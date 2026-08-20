@@ -30,7 +30,8 @@ import { toSpends } from '../../../core/effects.ts';
 import { ladderList, toLadder } from '../LadderFloor.tsx';
 import { api, panes as fetchPanes, scoreEntry, type Pane } from '../../lib/api.ts';
 import { paneToPanel, pluginCtx, showing } from '../../lib/panes.ts';
-import { onNudge } from '../../lib/use-session.ts';
+import { DECLARED, onNudge, PLUGIN_WORD, PROVIDED } from '../../lib/use-session.ts';
+import { useOptimistic, writeEntry, type EntryEdit } from '../../lib/entry.ts';
 import { entriesOf, shaped } from '../../panels/blocks.tsx';
 import { PanelCollection, PanelSurface, type BlockCtx, type Glass } from '../../panels/render.tsx';
 import type { ScreenDecl } from '../items/types.ts';
@@ -173,7 +174,13 @@ export function SeatChrome({
   // (`PassedNote.tsx`). Asked on the same nudge as everything else.
   const passed = usePassedNotes();
 
-  const load = useCallback(() => {
+  // THREE loads, not one, because they answer to three different words.
+  //
+  // This used to be a single `load()` on every nudge — eleven requests
+  // each time, for a screen whose vocabulary cannot change during play.
+  // Over a link with six connections to spend (rule 6) that is what a
+  // tap on a counter felt like.
+  const loadStack = useCallback(() => {
     api<PanelDef[]>('/api/stack/declarations/panels').then(setPanels).catch(() => setPanels([]));
     api<ScreenDecl[]>('/api/stack/declarations/screens').then(setScreenDecls).catch(() => setScreenDecls([]));
     api<unknown[]>('/api/stack/declarations/ladders')
@@ -183,10 +190,6 @@ export function SeatChrome({
         ),
       )
       .catch(() => setLadderLists([]));
-    fetchPanes()
-      .then((all) => showing(all.filter((p) => p.subject === 'entity')))
-      .then(setPanes)
-      .catch(() => setPanes([]));
     Promise.all(
       RECORD_SLOTS.map((slot) =>
         api<Record<string, unknown>>(`/api/stack/record/${slot}`).then((r) => [slot, r] as const),
@@ -194,21 +197,42 @@ export function SeatChrome({
     )
       .then((pairs) => setRecords(Object.fromEntries(pairs)))
       .catch(() => {});
+  }, []);
+
+  /** Which plugin tabs are SHOWING — `when` is a fact about the moment,
+   *  so this answers to the plugins' own words as well as to `plugins`. */
+  const loadPanes = useCallback(() => {
+    fetchPanes()
+      .then((all) => showing(all.filter((p) => p.subject === 'entity')))
+      .then(setPanes)
+      .catch(() => setPanes([]));
+  }, []);
+
+  const loadEntity = useCallback(() => {
     api<Entity>(`/api/entities/${entityId}?resolved=1`)
       .then(setEntity)
       .catch(() => setEntity(undefined));
   }, [entityId]);
 
-  useEffect(load, [load]);
-  useEffect(() => onNudge(load), [load]);
+  useEffect(loadStack, [loadStack]);
+  useEffect(loadPanes, [loadPanes]);
+  useEffect(loadEntity, [loadEntity]);
+  useEffect(() => onNudge(loadStack, DECLARED), [loadStack]);
+  useEffect(() => onNudge(loadPanes, [...PROVIDED, PLUGIN_WORD]), [loadPanes]);
+  useEffect(() => onNudge(loadEntity, ['entities']), [loadEntity]);
 
-  const accent = entity?.type ? ((records.accents?.[entity.type] as string | undefined) ?? undefined) : undefined;
+  // Stored, plus whatever a tap is still asking for. Every block on
+  // this screen reads the same overlay, so the gauge and the ledger
+  // can't disagree about a number mid-flight (`client/lib/entry.ts`).
+  const shown = useOptimistic(entity);
+
+  const accent = shown?.type ? ((records.accents?.[shown.type] as string | undefined) ?? undefined) : undefined;
 
   const ctx: BlockCtx = {
     glass,
-    entity,
+    entity: shown,
     records,
-    write: (edit) => api(`/api/entities/${entityId}/entry`, { body: edit }).then(() => {}),
+    write: (edit) => writeEntry(entityId, edit as EntryEdit),
   };
 
   // What `params.layout` resolves to, and whether it declares the seat.
@@ -226,18 +250,18 @@ export function SeatChrome({
   // else is either claimed by a declared carried-screen (Aces on
   // Abilities, Dollars/Supplies on Inventory) or falls to 'More' —
   // nothing silently drops (the old app's holding-pen promise).
-  const resourceEntries = entriesOf(entity, 'resources');
+  const resourceEntries = entriesOf(shown, 'resources');
   const claimedBySheet = new Set(
-    resourceEntries.filter((en) => shaped(ctx, entity, en)).map((en) => en.name.toLowerCase()),
+    resourceEntries.filter((en) => shaped(ctx, shown, en)).map((en) => en.name.toLowerCase()),
   );
   const claimedByScreens = screenClaims(screenDecls);
   const allClaimed = new Set([...claimedBySheet, ...claimedByScreens]);
   const spareResources = resourceEntries.filter((en) => !allClaimed.has(en.name.toLowerCase()));
-  const strayLists = Object.keys(entity?.lists ?? {}).some(
+  const strayLists = Object.keys(shown?.lists ?? {}).some(
     (l) =>
       !PLACED.includes(l.toLowerCase()) &&
       !ladderLists.some((n) => n.toLowerCase() === l.toLowerCase()) &&
-      entriesOf(entity, l).length > 0,
+      entriesOf(shown, l).length > 0,
   );
   // The advancement menu, if the system declares one. The affordance,
   // the overlay and the whole feature exist only because `spends` is in
@@ -249,8 +273,8 @@ export function SeatChrome({
     strayLists ||
     ladderLists.length > 0 ||
     Boolean(spends) ||
-    Boolean(entity?.notes) ||
-    Boolean(entity?.children?.length);
+    Boolean(shown?.notes) ||
+    Boolean(shown?.children?.length);
 
   // Everything that COULD be a tab, in one namespace, because §M-5a puts
   // the carried screens and the plugins' panes in the same one the
@@ -356,7 +380,7 @@ export function SeatChrome({
         <div className={mounted ? 'flex shrink-0 items-center gap-3' : 'flex shrink-0 flex-col gap-1.5'}>
           <div className={mounted ? 'min-w-0 flex-1' : 'contents'}>
             <Header
-              entity={entity}
+              entity={shown}
               seatName={seatName}
               records={records}
               glass={glass}

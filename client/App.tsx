@@ -16,9 +16,11 @@ import {
   type Pane,
 } from './lib/api.ts';
 import { pluginCtx, paneToPanel, surfaces } from './lib/panes.ts';
-import { onIdentify, resetStream, useLive } from './lib/use-session.ts';
+import { useOptimistic, writeEntry, type EntryEdit } from './lib/entry.ts';
+import { DECLARED, onIdentify, PROVIDED, resetStream, useLive } from './lib/use-session.ts';
 import { btnPrimary, card, input, sectionLabel } from './lib/ui.ts';
 import type { PanelDef } from '../core/panels.ts';
+import type { Entity } from '../core/entity.ts';
 import { PanelCollection, PanelSurface, type BlockCtx, type Glass } from './panels/render.tsx';
 import { SeatChrome } from './components/seat/SeatChrome.tsx';
 import { CampaignScreen } from './views/campaigns.tsx';
@@ -138,11 +140,12 @@ function PanelRoute({
   const panels = useLive(
     () => api<PanelDef[]>('/api/stack/declarations/panels'),
     [],
+    { on: DECLARED },
   );
   // Provisions, beside the declarations (§M-2) — a screen may be
   // assigned to a plugin's pane exactly as to a system's panel, and
   // this route is what a `#panel=` hash resolves through.
-  const panes = useLive(() => fetchPanes(), []);
+  const panes = useLive(() => fetchPanes(), [], { on: PROVIDED });
   const records = useLive(
     () =>
       Promise.all(
@@ -153,17 +156,28 @@ function PanelRoute({
         ),
       ).then(Object.fromEntries),
     [],
+    { on: DECLARED },
   );
-  const entity = useLive(
-    () =>
-      entityId
-        ? api(`/api/entities/${entityId}?resolved=1`)
-        : Promise.resolve(undefined),
-    [entityId],
-  );
-
   const provided = panes.data?.find((p) => p.name === name);
   const panel = panels.data?.find((p) => p.name === name) ?? (provided ? paneToPanel(provided) : undefined);
+  // An entity-subject panel is rendered by `SeatChrome`, which fetches
+  // the sheet itself — so this route asking for the same one is two
+  // requests where the wire only needed one. It asks only when the ctx
+  // it builds is the one that gets used.
+  const ownEntity = Boolean(entityId) && panel?.subject !== 'entity';
+  const entity = useLive(
+    () =>
+      ownEntity
+        ? api(`/api/entities/${entityId}?resolved=1`)
+        : Promise.resolve(undefined),
+    [entityId, ownEntity],
+    { on: ['entities'] },
+  );
+  // What's stored, plus whatever a tap is still asking for — the tapped
+  // number moves in the same frame and the server's answer lands on top
+  // of it (rule 1, `client/lib/entry.ts`).
+  const shown = useOptimistic(entity.data as Entity | undefined);
+
   if (panels.error)
     return <p className="p-8 text-sm text-red-500">{panels.error.message}</p>;
   if (!panels.data) return null;
@@ -180,12 +194,9 @@ function PanelRoute({
 
   const ctx: BlockCtx = {
     glass,
-    entity: entity.data,
+    entity: shown,
     records: (records.data ?? {}) as BlockCtx['records'],
-    write: entityId
-      ? (edit) =>
-          api(`/api/entities/${entityId}/entry`, { body: edit }).then(() => {})
-      : undefined,
+    write: entityId ? (edit) => writeEntry(entityId, edit as EntryEdit) : undefined,
     ...(provided ? { plugin: pluginCtx(provided) } : {}),
   };
   // Glass discipline (rule 6): mounted is fixed-height and never scrolls
@@ -248,18 +259,22 @@ function Console() {
   const campaign = useLive(
     () => api<{ slug: string | null; manifest: { name: string } | null }>('/api/campaign'),
     [],
+    // Nothing narrower than the always-words: which campaign is at the
+    // table changes on 'campaign' and on nothing else.
+    { on: [] },
   );
   const [picking, setPicking] = useState(false);
   const panels = useLive(
     () => api<PanelDef[]>('/api/stack/declarations/panels'),
     [],
+    { on: DECLARED },
   );
   // The tab bar reads TWO sources and always has, since the day a
   // plugin could put a screen up (§15's UI tier): the merged `panels`
   // slot, and whatever the enabled plugins provide. `surfaces()` is
   // where they become one list, ordered by the one comparator. A host
   // with no plugins gets `[]` back and the bar is exactly what it was.
-  const panes = useLive(() => fetchPanes(), []);
+  const panes = useLive(() => fetchPanes(), [], { on: PROVIDED });
   const records = useLive(
     () =>
       Promise.all(
@@ -270,6 +285,7 @@ function Console() {
         ),
       ).then(Object.fromEntries),
     [],
+    { on: DECLARED },
   );
   // A PREFERENCE, not a declaration: 'roster' is where a table wants to
   // land, but it's a system-layer panel now (2026-08-19) and a bare host
@@ -358,7 +374,7 @@ function Console() {
 // ---- pairing -----------------------------------------------------------
 
 function PairScreen() {
-  const me = useLive(() => hello(), []);
+  const me = useLive(() => hello(), [], { on: ['displays', 'assign'] });
   const display = me.data?.display;
   // Heartbeat: quick while a code is showing (the DM is typing it),
   // slow forever after — an adopted screen that never says hello reads
@@ -431,7 +447,7 @@ function PairScreen() {
 export default function App() {
   const hash = useHash();
   const [unlocked, setUnlocked] = useState(() => Boolean(stored.key));
-  const me = useLive(() => hello(), []);
+  const me = useLive(() => hello(), [], { on: ['displays', 'assign'] });
 
   // How big this glass is, told once and again when it changes. The
   // console reads it back to draw what the table can actually SHOW at

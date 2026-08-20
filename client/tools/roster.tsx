@@ -14,6 +14,7 @@ import { api } from '../lib/api.ts';
 import { presentationOf, useSystemFaces } from '../lib/presentations.ts';
 import { addChild } from '../lib/refs.ts';
 import { useLive } from '../lib/use-session.ts';
+import { writeEntry } from '../lib/entry.ts';
 import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui.ts';
 import { Refusal } from '../panels/render.tsx';
 import { EntityCard, usePanelRecords, useSheetPanel } from '../components/roster/EntityCard.tsx';
@@ -64,7 +65,7 @@ const doors: Omit<CreationDialogProps, 'onDone' | 'onClose'> = {
   // §K: a carried thing is an INLINE child of the character's own blob,
   // never a stamped row under it in the campaign's parent tree.
   carry: (entityId, child) => addChild(entityId, child),
-  entry: (entityId, write) => api(`/api/entities/${entityId}/entry`, { body: write }),
+  entry: (entityId, write) => writeEntry(entityId, write),
 };
 
 const FILTERS: {
@@ -95,7 +96,7 @@ const FILTERS: {
 ];
 
 function RosterTool() {
-  const list = useLive(() => api<RosterEntry[]>('/api/entities'), []);
+  const list = useLive(() => api<RosterEntry[]>('/api/entities'), [], { on: ['entities'] });
   const panel = useSheetPanel();
   const records = usePanelRecords();
 

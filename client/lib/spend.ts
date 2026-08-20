@@ -21,6 +21,7 @@ import type { Entity } from '../../core/entity.ts';
 import { stamp, type Template } from '../../core/stamp.ts';
 import { api } from './api.ts';
 import { addChild } from './refs.ts';
+import { writeEntry } from './entry.ts';
 
 /** Slots a purchase may draw a carried thing from. The catalogue is the one that stamps today. */
 export const CATALOG_SLOT = 'catalog';
@@ -77,7 +78,7 @@ export async function applyPlan(
   catalog: Template[] = [],
 ): Promise<void> {
   for (const write of plan.entries) {
-    await api(`/api/entities/${entityId}/entry`, { body: write });
+    await writeEntry(entityId, write);
   }
   for (const wanted of plan.stamps) {
     const template = catalog.find((t) => t.id === wanted.templateId);

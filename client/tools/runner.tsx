@@ -43,17 +43,13 @@ import type { Entity } from '../../core/entity.ts';
 import { pendingEvents } from '../../core/frenzy.ts';
 import { api } from '../lib/api.ts';
 import { rollPool, tallyFaces, type DiceRecord } from '../lib/dice.ts';
-import { useLive } from '../lib/use-session.ts';
+import { DECLARED, useLive } from '../lib/use-session.ts';
+import { useOptimisticAll, writeEntry } from '../lib/entry.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
 import { registerBlock, type BlockCtx } from '../panels/render.tsx';
 import { ProviderSlot } from '../components/ProviderSlot.tsx';
 import { VitalBar } from '../components/Vitals.tsx';
-import {
-  Exchange,
-  type Armed,
-  type EntryWrite,
-  type StatusDecl,
-} from '../components/encounters/Exchange.tsx';
+import { Exchange, type Armed, type StatusDecl } from '../components/encounters/Exchange.tsx';
 import { TurnStage } from '../components/encounters/TurnStage.tsx';
 import { registerTool } from './index.ts';
 
@@ -176,18 +172,38 @@ function vitalOf(entity: Entity | undefined) {
 }
 
 function RunnerTool() {
-  const turn = useLive(() => api<TurnState>('/api/turn'), []);
-  const roster = useLive(() => api<RosterEntry[]>('/api/entities'), []);
-  const dice = useLive(() => api<DiceRecord>('/api/stack/record/dice'), []);
-  const initiative = useLive(() => api<InitiativeRecord>('/api/stack/record/initiative'), []);
-  const statuses = useLive(() => api<StatusDecl[]>('/api/stack/declarations/statuses'), []);
-  const accents = useLive(() => api<Record<string, string>>('/api/stack/record/accents'), []);
-  const icons = useLive(() => api<Record<string, string>>('/api/stack/record/icons'), []);
-  const pins = useLive(() => api<Record<string, string[]>>('/api/stack/record/pins'), []);
-  const defenses = useLive(() => api<Record<string, unknown>>('/api/stack/record/defenses'), []);
-  const use = useLive(() => api<UseRecord>('/api/stack/record/use'), []);
-  const kinds = useLive(() => api<KindDecl[]>('/api/stack/declarations/kinds'), []);
-  const displays = useLive(() => api<Display[]>('/api/displays'), []);
+  const turn = useLive(() => api<TurnState>('/api/turn'), [], { on: ['turn'] });
+  const roster = useLive(() => api<RosterEntry[]>('/api/entities'), [], { on: ['entities'] });
+  // The system's own vocabulary, all of it: dice, statuses, accents,
+  // icons, pins, defenses, kinds. None of it moves while a fight runs —
+  // it re-resolves on a sweep and grows when a plugin is enabled, and
+  // that is the whole of its interest (`client/lib/use-session.ts`).
+  const dice = useLive(() => api<DiceRecord>('/api/stack/record/dice'), [], { on: DECLARED });
+  const initiative = useLive(() => api<InitiativeRecord>('/api/stack/record/initiative'), [], {
+    on: DECLARED,
+  });
+  const statuses = useLive(() => api<StatusDecl[]>('/api/stack/declarations/statuses'), [], {
+    on: DECLARED,
+  });
+  const accents = useLive(() => api<Record<string, string>>('/api/stack/record/accents'), [], {
+    on: DECLARED,
+  });
+  const icons = useLive(() => api<Record<string, string>>('/api/stack/record/icons'), [], {
+    on: DECLARED,
+  });
+  const pins = useLive(() => api<Record<string, string[]>>('/api/stack/record/pins'), [], {
+    on: DECLARED,
+  });
+  const defenses = useLive(() => api<Record<string, unknown>>('/api/stack/record/defenses'), [], {
+    on: DECLARED,
+  });
+  const use = useLive(() => api<UseRecord>('/api/stack/record/use'), [], { on: DECLARED });
+  const kinds = useLive(() => api<KindDecl[]>('/api/stack/declarations/kinds'), [], {
+    on: DECLARED,
+  });
+  const displays = useLive(() => api<Display[]>('/api/displays'), [], {
+    on: ['displays', 'assign'],
+  });
   // Which board the table is looking at, then what is standing on it.
   // No board active means no markers and no noise.
   const board = useLive(async () => {
@@ -195,7 +211,9 @@ function RunnerTool() {
     const id = snapshot.board?.board?.id;
     if (!id) return null;
     return await api<BoardState | null>(`/api/board-state/${id}`);
-  }, []);
+    // Which board is up and what stands on it — neither of which the
+    // turn moving can change.
+  }, [], { on: ['board', 'boards'] });
   const [draft, setDraft] = useState('');
   /** What the thing ON STAGE is about to do. Cleared when the stage changes. */
   const [armed, setArmed] = useState<Armed | undefined>(undefined);
@@ -259,8 +277,13 @@ function RunnerTool() {
         ),
       ) as Record<string, Entity>,
     [ids.join(',')],
+    { on: ['entities'] },
   );
-  const sheetOf = (id: string | undefined) => (id ? sheets.data?.[id] : undefined);
+  // Stored, plus whatever a tap is still asking for — the stage, the
+  // rows and the exchange all read this one map, so a stepper on the
+  // stage moves in the same frame everywhere it shows.
+  const shown = useOptimisticAll(sheets.data);
+  const sheetOf = (id: string | undefined) => (id ? shown?.[id] : undefined);
 
   /** The declared ceiling for hung conditions, presented and never enforced. */
   const conditionCap = (kinds.data ?? []).find((k) => k.name.toLowerCase() === CONDITIONS)?.domain
@@ -320,8 +343,6 @@ function RunnerTool() {
     op({ op: 'set', order: next }).catch(() => setSettled(null));
   };
 
-  const writeEntry = (entityId: string, edit: EntryWrite) =>
-    api(`/api/entities/${entityId}/entry`, { body: edit }).then(sheets.reload);
 
   const names = new Map((roster.data ?? []).map((e) => [e.id, e.name]));
   const roles = new Map((roster.data ?? []).map((e) => [e.id, e.type]));
@@ -900,7 +921,7 @@ function RunnerTool() {
                           id: e.entityId!,
                           label: e.label ?? names.get(e.entityId!) ?? '?',
                         }))}
-                      sheetOf={(id) => sheets.data?.[id]}
+                      sheetOf={(id) => shown?.[id]}
                       dice={dice.data}
                       icons={icons.data}
                       pins={pins.data}
@@ -951,7 +972,7 @@ registerTool('runner', () => <RunnerTool />);
 
 function TurnBlock({ ctx }: { ctx: BlockCtx }) {
   const e = ctx.entity as Entity | undefined;
-  const turn = useLive(() => api<TurnState>('/api/turn'), []);
+  const turn = useLive(() => api<TurnState>('/api/turn'), [], { on: ['turn'] });
   if (!e || !turn.data) return null;
   const idx = turn.data.order.findIndex((entry) => entry.entityId === e.id);
   if (idx === -1) return null;

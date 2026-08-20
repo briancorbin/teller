@@ -19,7 +19,8 @@ import type { ReactNode } from 'react';
 import type { Entity } from '../../../core/entity.ts';
 import type { PanelDef } from '../../../core/panels.ts';
 import { api } from '../../lib/api.ts';
-import { useLive } from '../../lib/use-session.ts';
+import { DECLARED, useLive } from '../../lib/use-session.ts';
+import { useOptimistic, writeEntry, type EntryEdit } from '../../lib/entry.ts';
 import { card } from '../../lib/ui.ts';
 import { PanelSurface, Refusal, type BlockCtx } from '../../panels/render.tsx';
 
@@ -37,12 +38,15 @@ export function usePanelRecords() {
         ),
       ).then(Object.fromEntries),
     [],
+    { on: DECLARED },
   );
 }
 
 /** The 'sheet' panel declaration — the one every entity card is drawn from. */
 export function useSheetPanel() {
-  const panels = useLive(() => api<PanelDef[]>('/api/stack/declarations/panels'), []);
+  const panels = useLive(() => api<PanelDef[]>('/api/stack/declarations/panels'), [], {
+    on: DECLARED,
+  });
   return panels.data?.find((p) => p.name === 'sheet');
 }
 
@@ -58,13 +62,16 @@ export function EntityCard({
   /** Buttons in the card's top-right corner — delete, etc. Tool's call. */
   actions?: ReactNode;
 }) {
-  const entity = useLive(() => api<Entity>(`/api/entities/${id}?resolved=1`), [id]);
-  if (!entity.data) return null;
+  const entity = useLive(() => api<Entity>(`/api/entities/${id}?resolved=1`), [id], {
+    on: ['entities'],
+  });
+  const shown = useOptimistic(entity.data);
+  if (!shown) return null;
   const ctx: BlockCtx = {
     glass: 'held',
-    entity: entity.data as unknown,
+    entity: shown as unknown,
     records,
-    write: (edit) => api(`/api/entities/${id}/entry`, { body: edit }).then(() => {}),
+    write: (edit) => writeEntry(id, edit as EntryEdit),
   };
   return (
     <article className={`${card} space-y-3`}>
