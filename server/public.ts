@@ -45,7 +45,6 @@ import { kindFor, toKindDef, type KindDef } from '../core/kind.ts';
 import type { Board } from '../core/store.ts';
 import { activeHandout, type Handout } from './handouts.ts';
 import type { Session } from './session.ts';
-import { publicShop, VENDOR_TYPE } from './store-flow.ts';
 import type { TurnState } from './turn.ts';
 
 /**
@@ -88,15 +87,27 @@ export type PublicBoard = {
 export type PublicHandout = { id: string; name: string; key: string };
 
 /**
- * The name over the door, when a shop is open (§14 / `server/store-flow.ts`).
+ * FURNITURE, not somebody at the table.
  *
- * The MINIMUM that is useful, deliberately. A cart is a conversation
- * between one seat and the DM and this payload goes to the whole room,
- * so carts are answered per-screen through `/api/shop` instead — the
- * notes law, applied to shopping. What a passive surface can honestly
- * do with a shop is say the store is open, and that's what this is.
+ * A live shop is an entity like everything else (§14 — "the shop went
+ * live"), and it is not a person: it carries no sheet, no vitality and
+ * nothing a passive screen draws, only the counts it has sold down. So
+ * it stays out of the public roster rather than arriving as a nameless
+ * party member with one odd list.
+ *
+ * `vendor` is a convention WORD, the way `foe` above it is — not store
+ * machinery, and nothing here knows what a shop is or does. It survived
+ * the store's extraction into a plugin (§15) for that reason: the type
+ * word is the entity's own, the plugin merely writes it, and a second
+ * plugin that mints bookkeeping entities says the same word to get the
+ * same courtesy. What went with the store is the SHOP LINE this
+ * snapshot used to carry — a passive screen no longer announces that
+ * the general store is open, because knowing that was store knowledge
+ * living in teller. Whether a plugin should be able to contribute to
+ * the public snapshot is a real question and an open one; it is not
+ * answered by leaving half a store behind.
  */
-export type PublicShop = { id: string; name: string; blurb?: string };
+const FURNITURE_TYPES = ['vendor'];
 
 export type PublicSnapshot = {
   campaign: { slug: string; name: string };
@@ -104,7 +115,6 @@ export type PublicSnapshot = {
   turn: TurnState;
   board: PublicBoard | null;
   handout: PublicHandout | null;
-  shop: PublicShop | null;
 };
 
 /** §M-6's convention, and the client's: a foe says so on its type. */
@@ -243,19 +253,13 @@ export function publicSnapshot(session: Session): PublicSnapshot {
   const manifest = session.campaign.root();
   return {
     campaign: { slug: session.campaign.slug, name: manifest.name },
-    // A live VENDOR is an entity like everything else (§14 — the shop
-    // went live), and it is not somebody at the table. It carries no
-    // sheet, no vitality and nothing a passive screen draws — only the
-    // counts it has sold down — so it stays out of the roster rather
-    // than arriving as a nameless party member with one odd list.
     roster: session.campaign
       .children(manifest.id)
-      .filter((entity) => entity.type !== VENDOR_TYPE)
+      .filter((entity) => !FURNITURE_TYPES.includes(entity.type ?? ''))
       .map((entity) => publicEntity(session.reading(entity), kinds)),
     turn: session.turnState(),
     board: activeBoard(session),
     handout: publicHandout(activeHandout(session)),
-    shop: publicShop(session),
   };
 }
 

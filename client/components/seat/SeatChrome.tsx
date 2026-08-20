@@ -30,7 +30,8 @@ import { ladderList, toLadder } from '../LadderFloor.tsx';
 import { applyPlan, loadCatalog, spendWorld } from '../../lib/spend.ts';
 import { presentationOf, useSystemFaces } from '../../lib/presentations.ts';
 import { usePanelNote } from '../../lib/rules.ts';
-import { api, shop as fetchShop, type ShopView } from '../../lib/api.ts';
+import { api, panes as fetchPanes, type Pane } from '../../lib/api.ts';
+import { paneToPanel, pluginCtx, showing } from '../../lib/panes.ts';
 import { onNudge } from '../../lib/use-session.ts';
 import { entriesOf, entryNamed, shaped } from '../../panels/blocks.tsx';
 import { Glyph } from '../sheet/glyphs.tsx';
@@ -64,16 +65,15 @@ function carriedPanel(screen: ScreenDecl, allScreens: ScreenDecl[]): PanelDef {
   return { name: screen.name, subject: 'entity', mounted: blocks, held: blocks };
 }
 
-/** The shop, while one is open (§14) — a synthetic panel like the
- * carried screens above, and present only when `/api/shop` answered
- * with something. The tab appears when the Warden opens the general
- * store and goes when it shuts, which is exactly the behaviour a table
- * expects and the reason this is not a declared screen: what a seat may
- * shop is a fact about the moment, not about the system. */
-function shopPanel(view: ShopView, onChanged: () => void): PanelDef {
-  const blocks: PanelBlock[] = [{ block: 'shop', view, onChanged }];
-  return { name: 'Shop', subject: 'entity', mounted: blocks, held: blocks };
-}
+// The SHOP tab used to be synthesized right here, off `/api/shop`, and
+// it was the strongest argument in the pane tier's favour: a tab that
+// comes and goes with a fact about the moment, wanted by a feature that
+// had no business being in teller. It is a provided pane now — the
+// store plugin declares `pane.shop` with `when: 'shop'`, and the loop
+// below offers it exactly while that door answers with something. One
+// declared word replaced a hard-coded screen, and the next plugin that
+// wants a tab that comes and goes writes `when` instead of a patch to
+// this file.
 
 /** The old app's holding pen ('More'): every resource the Sheet screen
  * and every declared carried-screen didn't claim, plus the strays the
@@ -363,7 +363,13 @@ function TopBar({
  * 'Sheet' whatever layout `params.layout` names underneath it, exactly
  * as the old app's `Screens` array hardcoded `{ name: 'Sheet', … }`
  * regardless of which `COUNTER_VIEWS` arrangement was picked). */
-type Tab = { name: string; icon?: string; panel: PanelDef };
+type Tab = {
+  name: string;
+  icon?: string;
+  panel: PanelDef;
+  /** Set for a PLUGIN's pane — what binds its door caller into the ctx. */
+  pane?: Pane;
+};
 
 /** The segmented bar — one button per SCREEN the system declares, not
  * per entity-subject panel (fix 1: those six were the DM's own layout
@@ -529,8 +535,10 @@ export function SeatChrome({
   const [ladderLists, setLadderLists] = useState<string[]>([]);
   /** What a purchase may hand you. Loaded once; empty on a host with no pack. */
   const [catalog, setCatalog] = useState<Template[]>([]);
-  /** The open shop, or nothing. Refetched on the same nudge as the rest. */
-  const [shopView, setShopView] = useState<ShopView | null>(null);
+  /** The plugins' entity-subject panes that are SHOWING right now —
+   * asked on the same nudge as everything else, because `when` is a
+   * fact about the moment (`client/lib/panes.ts`). */
+  const [panes, setPanes] = useState<Pane[]>([]);
   const [spendsOpen, setSpendsOpen] = useState(false);
   useSystemFaces(); // re-render when the system module lands (url-loaded, async)
   const note = usePanelNote();
@@ -552,7 +560,10 @@ export function SeatChrome({
       )
       .catch(() => setLadderLists([]));
     loadCatalog().then(setCatalog);
-    fetchShop().then(setShopView).catch(() => setShopView(null));
+    fetchPanes()
+      .then((all) => showing(all.filter((p) => p.subject === 'entity')))
+      .then(setPanes)
+      .catch(() => setPanes([]));
     Promise.all(
       RECORD_SLOTS.map((slot) =>
         api<Record<string, unknown>>(`/api/stack/record/${slot}`).then((r) => [slot, r] as const),
@@ -622,9 +633,12 @@ export function SeatChrome({
     ? [
         { name: 'Sheet', icon: 'sheet', panel: sheetPanel },
         ...screenDecls.map((s) => ({ name: s.name, icon: s.icon, panel: carriedPanel(s, screenDecls) })),
-        ...(shopView
-          ? [{ name: 'Shop', icon: 'coin', panel: shopPanel(shopView, load) }]
-          : []),
+        ...panes.map((p) => ({
+          name: p.label ?? p.name,
+          ...(p.icon ? { icon: p.icon } : {}),
+          panel: paneToPanel(p),
+          pane: p,
+        })),
         ...(hasSpare ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed, ladderLists) }] : []),
       ]
     : [];
@@ -668,7 +682,7 @@ export function SeatChrome({
         {tab ? (
           <PanelSurface
             panel={tab.panel}
-            ctx={ctx}
+            ctx={tab.pane ? { ...ctx, plugin: pluginCtx(tab.pane) } : ctx}
             fallback={
               <p className="p-8 text-sm text-stone-500">
                 '{tab.name}' failed to render — the floor has it

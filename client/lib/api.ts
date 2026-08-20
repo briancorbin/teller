@@ -408,8 +408,6 @@ export type PublicSnapshot = {
   turn: PublicTurn;
   board: PublicBoard | null;
   handout: PublicHandout | null;
-  /** The name over the door when a shop is open — never anyone's cart. */
-  shop: { id: string; name: string; blurb?: string } | null;
 };
 
 export function publicSnapshot(): Promise<PublicSnapshot> {
@@ -481,132 +479,64 @@ export function showHandout(id: string | null): Promise<unknown> {
   return api('/api/campaign/refs', { method: 'PUT', body: { handout: id } });
 }
 
-// ---- the counter (§14) -------------------------------------------------
+// ---- what the plugins put on screen, and how a pane knocks back ------
 //
-// Shapes mirrored from `server/store-flow.ts` rather than imported, for
-// the same reason everything else here is: the server module is not
-// part of the client's graph.
+// §15's UI tier (2026-08-20). Two doors and no third: the list of panes
+// the running plugins provide, and the way to call one plugin's own
+// door. Everything a plugin adds to this client arrives through those.
 //
-// The asymmetry to keep in mind is the notes doors' again. `GET
-// /api/shop` answers ONE payload to everybody who may read it, and the
-// `carts` in it are already filtered by the asking screen's own
-// assignment — the DM's answer carries the whole counter, a seat's
-// carries its own row, and there is no way to phrase the question about
-// somebody else's. Writing a cart is `canEditEntity`, which says the
-// same thing from the other side.
+// The STORE used to live here — `vendors()`, `shop()`, `writeCart()`,
+// `sell()` and their shapes, mirrored off `server/store-flow.ts`. All
+// of it is the store plugin's now (`examples/plugins/store/`), and its
+// panes call `pluginCall` instead. That deletion is the point of the
+// extraction, not a side effect of it: teller ships no store, so
+// teller's api client knows no word of one.
 
-export type VendorLine = { ref: string; name?: string; price?: string; qty?: number | null };
-
-export type Vendor = {
-  id: string;
+export type Pane = {
+  point: string;
   name: string;
+  label?: string;
   blurb?: string;
-  /** Explicit stock. ABSENT — not empty — means the shelf is derived. */
-  lines?: VendorLine[];
-  /** Derived stock: the catalogue shelves he carries. Absent = all of them. */
-  groups?: string[];
-  /** Derived stock: a catalogue stat's name → the values he carries. */
-  filters?: Record<string, string[]>;
-  /** This campaign authored it, so this console may edit it. */
-  own?: boolean;
+  order?: number;
+  subject?: 'entity' | 'none';
+  icon?: string;
+  /** The door whose non-null answer means this pane is showing right now. */
+  when?: string;
+  /** Which plugin provided it — what its own doors are addressed by. */
+  plugin: string;
+  code: { takeover: string; style?: string };
 };
 
-export type StockLine = {
-  ref: string;
-  name: string;
-  type?: string;
-  /** The catalogue's shelf label — what the chip row narrows by. */
-  group?: string;
-  stats: PublicEntry[];
-  price: string | null;
-  /** null = unlimited, and that is the ordinary case. */
-  qty: number | null;
-  missing?: true;
-};
-
-export type CartLine = { ref: string; qty: number };
-
-export type ShopQuote = {
-  entityId: string;
-  name: string;
-  lines: (CartLine & { name: string; price: string | null; each: number | null })[];
-  offered: boolean;
-  total: number;
-  symbol: string;
-  missing: string[];
-  purse?: { name: string; value: number; held: number }[];
-  held?: number;
-  payment?: { counters: { name: string; value: number }[]; paid: number; change: number };
-  counter?: { name: string; value: number };
-};
-
-export type ShopView = {
-  vendor: { id: string; name: string; blurb?: string; live: boolean };
-  shelf: StockLine[];
-  carts: ShopQuote[];
-};
-
-export type Receipt = {
-  vendor: { id: string; name: string; entityId: string };
-  buyer: { id: string; name: string };
-  total: number;
-  lines: { ref: string; name: string; qty: number }[];
-  carried: { id: string; name: string }[];
-  refused: string[];
-};
-
-/** Every shop this table knows about — system, packs and the campaign's own. */
-export function vendors(): Promise<Vendor[]> {
-  return api<Vendor[]>('/api/vendors');
-}
-
-/** Author or amend one of the campaign's own — the ordinary templates door. */
-export function saveVendor(
-  vendor: Omit<Vendor, 'own' | 'id'> & { id?: string },
-): Promise<{ id: string }> {
-  return api<{ id: string }>('/api/templates/vendors', { body: { template: vendor } });
-}
-
-export function deleteVendor(id: string): Promise<{ ok: true }> {
-  return api<{ ok: true }>(`/api/templates/vendors/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  });
-}
-
-/** What's open, and whatever of the counter this screen may see. Null = shut. */
-export function shop(): Promise<ShopView | null> {
-  return api<ShopView | null>('/api/shop');
-}
-
-/** Open a vendor for the table, or (null) shut the shop. Instantiates nothing. */
-export function openShop(vendorId: string | null): Promise<ShopView | null> {
-  return api<ShopView | null>('/api/shop/open', { body: { vendorId } });
-}
-
-/** One cart, replaced whole. A seat may write its own; the DM may write anyone's. */
-export function writeCart(
-  entityId: string,
-  lines: CartLine[],
-  offered?: boolean,
-): Promise<ShopView | null> {
-  return api<ShopView | null>(`/api/shop/cart/${encodeURIComponent(entityId)}`, {
-    method: 'PUT',
-    body: { lines, ...(offered === undefined ? {} : { offered }) },
-  });
+/**
+ * Every pane the running plugins provide. `[]` on a host with none, and
+ * `[]` is not an error — a teller with no plugins isn't degraded, it's
+ * complete (§15).
+ */
+export function panes(): Promise<Pane[]> {
+  return api<Pane[]>('/api/panes').catch(() => []);
 }
 
 /**
- * THE TRANSACTION. Every figure in `sale` is one the DM saw and could
- * type over first — the server proposes through `shop()`, a human
- * confirms here, and rule 1 is satisfied by the shape of the door.
+ * Knock on one plugin's door.
+ *
+ * The pane never writes its own plugin id: it is handed one of these
+ * bound to the plugin that provided it (`BlockCtx.plugin`), so a pane
+ * cannot address anybody else's doors by typo, and moving a pane
+ * between plugins changes nothing in its code.
  */
-export function sell(sale: {
-  entityId: string;
-  lines?: CartLine[];
-  counters?: { name: string; value: number }[];
-  total?: number;
-}): Promise<Receipt> {
-  return api<Receipt>('/api/shop/sell', { body: { sale } });
+export function pluginCall<T>(
+  pluginId: string,
+  door: string,
+  opts: { method?: string; path?: string[]; body?: unknown } = {},
+): Promise<T> {
+  const tail = (opts.path ?? []).map(encodeURIComponent).join('/');
+  return api<T>(
+    `/api/plugin/${encodeURIComponent(pluginId)}/${encodeURIComponent(door)}${tail ? `/${tail}` : ''}`,
+    {
+      ...(opts.method ? { method: opts.method } : {}),
+      ...(opts.body === undefined ? {} : { body: opts.body }),
+    },
+  );
 }
 
 export type PassedNote = {

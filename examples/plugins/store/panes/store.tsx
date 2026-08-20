@@ -1,6 +1,7 @@
-// The 'store' tool — the DM's side of the counter, ported from the old
-// app's `src/components/StorePanel.tsx`. Two sections, and the split is
-// §13's prep/play seam wearing its plainest clothes:
+// The store's console pane — the DM's side of the counter, ported from
+// teller's own `client/tools/store.tsx` when the store left the repo
+// (§15's UI tier). Two sections, and the split is §13's prep/play seam
+// wearing its plainest clothes:
 //
 //   VENDORS — prep. The shop AS WRITTEN: a name, a line of fiction, and
 //   the lines behind the counter, each a catalogue entry with an
@@ -18,27 +19,113 @@
 // The vendor becomes an entity at the first sale, which is one event
 // the log carries and `/undo` steps back, and the "live" chip beside the
 // name is how this screen says so.
+//
+// ONE CONSTRAINT THIS PANE DOESN'T SHARE WITH THE FILE IT CAME FROM.
+// Tailwind builds teller's stylesheet by scanning teller's OWN source,
+// and a shelf folder isn't in it — so a pane may only wear the
+// utilities teller's client already uses somewhere. Arbitrary values
+// (`text-[11px]`, `w-[19rem]`) compile to nothing, and this file was
+// their only user before it moved: it rendered as unstyled slivers the
+// first time it ran outside the repo. So every bracketed utility here
+// is an inline `style` instead, pixel for pixel. A pane wanting more
+// than that brings its own stylesheet (rung 3).
+//
+// Every figure it reads comes back through `plugin.call` — the pane's
+// only way to reach its own doors, and the reason nothing here spells a
+// url or the plugin's id. The one exception is the CATALOGUE, which is
+// teller's own public door: the goods are the table's, not the store's,
+// and a plugin that owned them would be a plugin nothing else could
+// price against.
 
 import { useState } from 'react';
-import { registerTool } from './index.ts';
-import type { Template } from '../../core/stamp.ts';
 import {
   api,
-  deleteVendor,
-  openShop,
-  saveVendor,
-  sell,
-  shop as fetchShop,
-  vendors as fetchVendors,
-  writeCart,
-  type ShopQuote,
-  type ShopView,
-  type Vendor,
-  type VendorLine,
-} from '../lib/api.ts';
-import { formatPrice, makePayment, parsePrice } from '../lib/money.ts';
-import { useLive } from '../lib/use-session.ts';
-import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
+  btn,
+  btnGhost,
+  btnPrimary,
+  card,
+  input,
+  sectionLabel,
+  useLive,
+  type BlockCtx,
+} from 'teller';
+import { formatPrice, makePayment, parsePrice } from '../store.mjs';
+
+// ---- what the doors answer with ---------------------------------------
+//
+// Declared here rather than imported: `store.mjs` is arithmetic, not
+// types, and these are the shapes of the wire between the two halves of
+// this plugin. One spelling of a payload, on both sides.
+
+type Entry = { name: string; value?: unknown };
+
+/** Only what this screen reads off a catalogue row — the goods are teller's. */
+type Template = { id: string; name: string };
+
+type VendorLine = { ref: string; name?: string; price?: string; qty?: number | null };
+
+type Vendor = {
+  id: string;
+  name: string;
+  blurb?: string;
+  /** Explicit stock. ABSENT — not empty — means the shelf is derived. */
+  lines?: VendorLine[];
+  /** Derived stock: the catalogue shelves he carries. Absent = all of them. */
+  groups?: string[];
+  /** Derived stock: a catalogue stat's name → the values he carries. */
+  filters?: Record<string, string[]>;
+  /** This campaign authored it, so this console may edit it. */
+  own?: boolean;
+};
+
+type StockLine = {
+  ref: string;
+  name: string;
+  type?: string;
+  /** The catalogue's shelf label — what the seat's chip row narrows by. */
+  group?: string;
+  stats: Entry[];
+  price: string | null;
+  /** null = unlimited, and that is the ordinary case. */
+  qty: number | null;
+  missing?: true;
+};
+
+type CartLine = { ref: string; qty: number };
+
+type ShopQuote = {
+  entityId: string;
+  name: string;
+  lines: (CartLine & { name: string; price: string | null; each: number | null })[];
+  offered: boolean;
+  total: number;
+  symbol: string;
+  missing: string[];
+  purse?: { name: string; value: number; held: number }[];
+  held?: number;
+  payment?: { counters: { name: string; value: number }[]; paid: number; change: number };
+  counter?: { name: string; value: number };
+};
+
+type ShopView = {
+  vendor: { id: string; name: string; blurb?: string; live: boolean };
+  shelf: StockLine[];
+  carts: ShopQuote[];
+};
+
+type Receipt = {
+  vendor: { id: string; name: string; entityId: string };
+  buyer: { id: string; name: string };
+  total: number;
+  lines: { ref: string; name: string; qty: number }[];
+  carried: { id: string; name: string }[];
+  refused: string[];
+};
+
+type Sale = { entityId: string; total: number; counters: { name: string; value: number }[] };
+
+/** A pane always has its plugin — that is what makes it a pane (§15). */
+type PaneProps = BlockCtx & { plugin: NonNullable<BlockCtx['plugin']> };
 
 // ---- prep: the shop as written ----------------------------------------
 
@@ -58,7 +145,9 @@ function LineRow({
       <span className="min-w-0 flex-1 truncate text-sm text-stone-100">
         {template?.name ?? line.name ?? line.ref}
         {!template && (
-          <span className="ml-2 font-mono text-[11px] text-amber-500/80">not on this host</span>
+          <span className="ml-2 font-mono text-amber-500/80" style={{ fontSize: '11px' }}>
+            not on this host
+          </span>
         )}
       </span>
       <input
@@ -120,11 +209,13 @@ function VendorCard({
       <div className="flex items-center gap-2 p-2">
         <button className="min-w-0 flex-1 truncate text-left" onClick={onToggle}>
           <span className="text-sm text-stone-100">{vendor.name}</span>
-          <span className="ml-2 font-mono text-[11px] text-stone-600">
+          <span className="ml-2 font-mono text-stone-600" style={{ fontSize: '11px' }}>
             {derived ? 'off the catalogue' : `${lines.length} line${lines.length === 1 ? '' : 's'}`}
           </span>
           {!vendor.own && (
-            <span className="ml-2 font-mono text-[11px] text-stone-600">from a pack</span>
+            <span className="ml-2 font-mono text-stone-600" style={{ fontSize: '11px' }}>
+              from a pack
+            </span>
           )}
         </button>
         <button className={isOpen ? btn : btnPrimary} onClick={onOpen}>
@@ -135,7 +226,7 @@ function VendorCard({
       {expanded && (
         <div className="space-y-3 border-t border-stone-800 p-2">
           {!vendor.own && (
-            <p className="text-[12px] text-stone-500">
+            <p className="text-stone-500" style={{ fontSize: '12px' }}>
               A pack wrote this one. Restate it as the campaign's own to change it — the campaign
               wins the merge.
             </p>
@@ -158,10 +249,12 @@ function VendorCard({
 
           <div className="flex items-baseline gap-2">
             <span className={sectionLabel}>Behind the counter</span>
-            <span className="text-[11px] text-stone-600">price · stock (blank = unlimited)</span>
+            <span className="text-stone-600" style={{ fontSize: '11px' }}>
+              price · stock (blank = unlimited)
+            </span>
           </div>
           {derived && (
-            <p className="text-[12px] text-stone-500">
+            <p className="text-stone-500" style={{ fontSize: '12px' }}>
               No list written, so he carries everything the catalogue prices
               {vendor.groups?.length ? ` on ${vendor.groups.join(', ')}` : ''}
               {vendor.filters
@@ -215,7 +308,8 @@ function VendorCard({
                 add
               </button>
               <button
-                className={`${btnGhost} ml-auto text-[11px] hover:text-red-300`}
+                className={`${btnGhost} ml-auto hover:text-red-300`}
+                style={{ fontSize: '11px' }}
                 onClick={onDelete}
               >
                 delete this shop
@@ -239,11 +333,7 @@ function CounterRow({
 }: {
   quote: ShopQuote;
   symbol: string;
-  onSold: (sale: {
-    entityId: string;
-    total: number;
-    counters: { name: string; value: number }[];
-  }) => void;
+  onSold: (sale: Sale) => void;
   onHandBack: () => void;
 }) {
   // The book's total is the OPENING figure, never the last word — a
@@ -251,9 +341,11 @@ function CounterRow({
   const [asked, setAsked] = useState<string | null>(null);
   const final = asked === null ? quote.total : (parsePrice(asked) ?? 0);
 
-  // Re-proposed as the figure moves. The server proposed the first one;
-  // this keeps up with the typing (`client/lib/money.ts` says why the
-  // arithmetic exists twice).
+  // Re-proposed as the figure moves. The door proposed the first one;
+  // this keeps up with the typing, out of the plugin's OWN arithmetic —
+  // `store.mjs` is bundled into this pane, so there is one spelling of
+  // a payment rather than a mirrored copy, and no round trip per
+  // keystroke to re-propose change for a haggled price.
   const proposal = quote.purse ? makePayment(quote.purse, final) : undefined;
   const counters =
     proposal
@@ -272,16 +364,25 @@ function CounterRow({
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="text-sm text-stone-100">{quote.name}</span>
         {quote.offered && (
-          <span className="text-[11px] uppercase tracking-widest text-amber-400">on the counter</span>
+          <span
+            className="uppercase tracking-widest text-amber-400"
+            style={{ fontSize: '11px' }}
+          >
+            on the counter
+          </span>
         )}
-        <span className="ml-auto font-mono text-[11px] text-stone-600">
+        <span className="ml-auto font-mono text-stone-600" style={{ fontSize: '11px' }}>
           the book says {formatPrice(quote.total, symbol)}
         </span>
       </div>
 
       <ul className="space-y-0.5">
         {quote.lines.map((l) => (
-          <li key={l.ref} className="flex items-baseline gap-2 text-[12px] text-stone-300">
+          <li
+            key={l.ref}
+            className="flex items-baseline gap-2 text-stone-300"
+            style={{ fontSize: '12px' }}
+          >
             <span className="font-mono text-stone-500">{l.qty}×</span>
             <span className="min-w-0 flex-1 truncate">{l.name}</span>
             <span className="font-mono text-stone-500">{l.price ?? '—'}</span>
@@ -289,14 +390,16 @@ function CounterRow({
         ))}
       </ul>
       {quote.missing.length > 0 && (
-        <p className="font-mono text-[11px] text-amber-500/80">
+        <p className="font-mono text-amber-500/80" style={{ fontSize: '11px' }}>
           {quote.missing.length} line{quote.missing.length === 1 ? '' : 's'} the catalogue can't
           price
         </p>
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-[11px] uppercase tracking-widest text-stone-500">asking</label>
+        <label className="uppercase tracking-widest text-stone-500" style={{ fontSize: '11px' }}>
+          asking
+        </label>
         <input
           className={`${input} w-24 text-right font-mono text-sm`}
           value={asked ?? formatPrice(quote.total, symbol)}
@@ -304,12 +407,15 @@ function CounterRow({
           aria-label={`what ${quote.name} is being charged`}
         />
         {quote.held !== undefined && (
-          <span className={`text-[11px] ${short ? 'text-red-400' : 'text-stone-500'}`}>
+          <span
+            className={short ? 'text-red-400' : 'text-stone-500'}
+            style={{ fontSize: '11px' }}
+          >
             holds {formatPrice(quote.held, symbol)}
           </span>
         )}
         {proposal && proposal.change > 0 && (
-          <span className="text-[11px] text-stone-500">
+          <span className="text-stone-500" style={{ fontSize: '11px' }}>
             pays {formatPrice(proposal.paid, symbol)}, takes {formatPrice(proposal.change, symbol)}{' '}
             back
           </span>
@@ -321,7 +427,8 @@ function CounterRow({
           {counters.map((c) => (
             <span
               key={c.name}
-              className="rounded-md bg-stone-900 px-2 py-1 font-mono text-[11px] text-stone-400"
+              className="rounded-md bg-stone-900 px-2 py-1 font-mono text-stone-400"
+              style={{ fontSize: '11px' }}
             >
               {c.name} → {c.value}
             </span>
@@ -344,22 +451,45 @@ function CounterRow({
   );
 }
 
-function StoreTool() {
-  const { data: vendors, reload: reloadVendors } = useLive(() => fetchVendors(), []);
+export default function StorePane({ plugin }: PaneProps) {
+  const { data: vendors, reload: reloadVendors } = useLive(
+    () => plugin.call<Vendor[]>('vendors'),
+    [],
+  );
   const { data: catalog } = useLive(
     () => api<Template[]>('/api/stack/templates/catalog').catch(() => []),
     [],
   );
-  const { data: view, reload: reloadShop } = useLive<ShopView | null>(() => fetchShop(), []);
+  const { data: view, reload: reloadShop } = useLive<ShopView | null>(
+    () => plugin.call<ShopView | null>('shop'),
+    [],
+  );
   const [open, setOpen] = useState<string | null>(null);
   const [status, setStatus] = useState('');
+
+  // The four doors, spelled once. Nothing below knows a url or an id —
+  // `plugin.call` is the whole of a pane's reach (§15), and a door moved
+  // between plugins needs no edit here.
+  const saveVendor = (vendor: Omit<Vendor, 'own' | 'id'> & { id?: string }) =>
+    plugin.call<{ id: string }>('vendors', { method: 'POST', body: { template: vendor } });
+  const deleteVendor = (id: string) =>
+    plugin.call<{ ok: true }>('vendors', { method: 'DELETE', path: [id] });
+  const openShop = (vendorId: string | null) =>
+    plugin.call<ShopView | null>('shop', { method: 'POST', body: { vendorId } });
+  const writeCart = (entityId: string, lines: CartLine[], offered?: boolean) =>
+    plugin.call<ShopView | null>('cart', {
+      method: 'PUT',
+      path: [entityId],
+      body: { lines, ...(offered === undefined ? {} : { offered }) },
+    });
+  const sell = (sale: Sale) => plugin.call<Receipt>('sell', { method: 'POST', body: { sale } });
 
   if (!vendors || !catalog) return null;
   const byId = new Map(catalog.map((t) => [t.id, t]));
   const openId = view?.vendor.id;
 
   const save = async (next: Vendor) => {
-    // Everything the row carried goes back — the server hands the
+    // Everything the row carried goes back — the door hands the
     // campaign's own rows out raw underneath, so a key this form has
     // never heard of survives being edited here.
     const { own: _own, ...rest } = next;
@@ -389,11 +519,7 @@ function StoreTool() {
     reloadShop();
   };
 
-  const confirm = async (sale: {
-    entityId: string;
-    total: number;
-    counters: { name: string; value: number }[];
-  }) => {
+  const confirm = async (sale: Sale) => {
     try {
       const receipt = await sell(sale);
       const carried = receipt.carried.length;
@@ -419,8 +545,8 @@ function StoreTool() {
             <span className="text-sm text-stone-100">{view.vendor.name}</span>
             {view.vendor.live && (
               <span
-                className="rounded-full border px-2 py-0.5 text-[0.6rem] uppercase tracking-wider"
-                style={{ borderColor: '#b45309', color: '#f59e0b' }}
+                className="rounded-full border px-2 py-0.5 uppercase tracking-wider"
+                style={{ borderColor: '#b45309', color: '#f59e0b', fontSize: '0.6rem' }}
                 title="this shop has transacted — it exists as an entity, and its stock is tracked"
               >
                 live
@@ -484,5 +610,3 @@ function StoreTool() {
     </div>
   );
 }
-
-registerTool('store', () => <StoreTool />);

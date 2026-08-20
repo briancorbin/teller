@@ -17,8 +17,9 @@
 // points at whoever the roster already has).
 
 import { useState } from 'react';
-import { api } from '../lib/api.ts';
+import { api, panes as fetchPanes } from '../lib/api.ts';
 import { CalibrationWizard } from '../components/board/CalibrationWizard.tsx';
+import { surfaces } from '../lib/panes.ts';
 import { useLive } from '../lib/use-session.ts';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
 import { registerTool } from './index.ts';
@@ -76,6 +77,10 @@ function isLive(display: Display): boolean {
 function ScreensTool() {
   const displays = useLive(() => api<Display[]>('/api/displays'), []);
   const panels = useLive(() => api<PanelDecl[]>('/api/stack/declarations/panels'), []);
+  // The provisions, beside the declarations (§15's UI tier, §M-2): a
+  // pane nobody can be assigned to is a pane that doesn't exist, and
+  // that law never said which of the two sources a pane came from.
+  const provided = useLive(() => fetchPanes(), []);
   const roster = useLive(() => api<RosterEntry[]>('/api/entities'), []);
 
   const [code, setCode] = useState('');
@@ -125,8 +130,8 @@ function ScreensTool() {
       .then(displays.reload)
       .catch(displays.reload);
   };
-  const panes = (panels.data ?? []).filter((p) => p.subject !== 'entity');
-  const layouts = (panels.data ?? []).filter((p) => p.subject === 'entity');
+  const panes = surfaces(panels.data as PanelDecl[] | undefined, provided.data, 'none');
+  const layouts = surfaces(panels.data as PanelDecl[] | undefined, provided.data, 'entity');
   // core-next has no reliable PC/NPC signal left on an entity (rule 2 —
   // `type` is free text, a trade name here, and often absent on a fresh
   // character). The old app could restrict this to `kind === 'pc'`;

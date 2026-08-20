@@ -41,7 +41,15 @@ import { Export } from './export.tsx';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
 
-type PluginManifest = { id: string; name: string; version: number; provides: string[]; needs: string[] };
+type PluginManifest = {
+  id: string;
+  name: string;
+  version: number;
+  /** A point per claim — a bare string in the file, an object for a pane. */
+  provides: { point: string }[];
+  /** The needs as WRITTEN, which is what a human is being asked to agree to. */
+  wants: string[];
+};
 type Found = { dir: string; manifest: PluginManifest; enabled: boolean };
 type Problem = { dir: string; problem: string };
 /** Three states, so "no code" is something the console can SAY. */
@@ -415,9 +423,25 @@ function PluginRow({
           </button>
         </span>
       </div>
-      <div className={`px-3 pb-2 ${dim}`}>
-        provides {found.manifest.provides.join(', ') || '(nothing)'} · needs{' '}
-        {found.manifest.needs.join(', ') || '(nothing)'}
+      {/* The app-permissions moment (§15). `provides` is what it ADDS —
+          the panes it puts on screen, the doors it answers — and `wants`
+          is what it TOUCHES, in the author's own words, one line each.
+          Both are claims until a human says yes; `wants` is the half
+          that is then ENFORCED (`server/plugin-bridge.ts`), so it gets
+          the room to be read. */}
+      <div className={`space-y-1 px-3 pb-2 ${dim}`}>
+        <p>provides {found.manifest.provides.map((p) => p.point).join(', ') || '(nothing)'}</p>
+        {found.manifest.wants.length ? (
+          <ul className="space-y-0.5">
+            {found.manifest.wants.map((want) => (
+              <li key={want} className="font-mono text-[11px]">
+                · {want}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>needs nothing</p>
+        )}
       </div>
       {configuring && (
         <div className="space-y-2 border-t border-stone-800 px-3 py-2">

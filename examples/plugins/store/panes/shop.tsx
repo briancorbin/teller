@@ -1,8 +1,10 @@
 // THE SEAT'S SHELF — what a player sees when the Warden opens a shop.
 //
-// The last piece `Screen.tsx`'s header said "isn't part of this port".
-// Ported from the old app's `src/components/sheet/ShopScreen.tsx`, and
-// the grammar is kept whole because the grammar was the work:
+// Ported twice now: out of the old app's `src/components/sheet/
+// ShopScreen.tsx` into teller's own `client/components/items/Shop.tsx`,
+// and out of teller into the store plugin's own pane (§15) when the
+// counter left the repo. The grammar is kept whole through both moves,
+// because the grammar was the work:
 //
 //   * a CHIP ROW that narrows the whole store to one shelf, because
 //     three hundred goods in one undifferentiated run is a wall, not a
@@ -15,27 +17,87 @@
 //   * and a CART FOOTER pinned to the bottom, so what you've gathered
 //     and what it comes to is never something you scroll back to find.
 //
-// What's new is where the numbers live. The old screen resolved the
-// shelf itself out of packs the browser held; this one is handed a
-// resolved `ShopView` from `/api/shop` and does no arithmetic beyond
-// adding up the tiles it's showing. Stock, prices and who-sees-whose
-// cart are all the server's rulings (`server/store-flow.ts`).
+// Where the numbers live moved with it. The old screen resolved the
+// shelf itself out of packs the browser held; the block version was
+// handed a resolved `ShopView` by the seat chrome. This one ASKS for
+// its own, through the `shop` door and nothing else, and asks again on
+// every nudge — so the shelf keeps up when the DM sells something
+// without anybody wiring a prop through the chrome. Stock, prices and
+// who-sees-whose cart are all the plugin's rulings (`store.mjs`); this
+// does no arithmetic beyond adding up the tiles it's showing.
+//
+// ONE CONSTRAINT THIS PANE DOESN'T SHARE WITH THE FILE IT CAME FROM.
+// Tailwind builds teller's stylesheet by scanning teller's OWN source,
+// and a shelf folder isn't in it — so a pane may only wear the
+// utilities teller's client already uses somewhere. Arbitrary values
+// (`w-[19rem]`, `text-[11px]`) compile to nothing, and this file was
+// their only user before it moved: the shelf rendered as unstyled
+// vertical slivers the first time it ran outside the repo. So every
+// bracketed utility here is an inline `style` instead, pixel for pixel.
+// A pane wanting more than that brings its own stylesheet (rung 3).
 //
 // Nothing here BUYS. A cart is a proposal put on a counter; the sale is
 // the DM's, at the console. That is the same shape as everything else a
 // seat may do — it moves its own numbers and asks for the rest.
 
 import { useMemo, useState } from 'react';
-import type { Entity } from '../../../core/entity.ts';
-import { writeCart, type CartLine, type ShopView, type StockLine } from '../../lib/api.ts';
-import { formatPrice, parsePrice } from '../../lib/money.ts';
-import type { Glass } from '../../panels/render.tsx';
-import { SheetPanel } from '../sheet/SheetPanel.tsx';
-import { StatRow } from './Track.tsx';
+import { SheetPanel, StatRow, useLive, type BlockCtx, type Entity, type Glass } from 'teller';
+import { formatPrice, parsePrice } from '../store.mjs';
 
-const TILE_WIDTH = {
-  mounted: 'w-[19rem] shrink-0 snap-start self-stretch',
-  held: 'min-w-[13rem] flex-1 self-start',
+// ---- what the doors answer with ---------------------------------------
+// The same shapes the console pane names, and for the same reason: this
+// is the wire between the plugin's two halves, and `store.mjs` carries
+// arithmetic rather than types.
+
+type Entry = { name: string; value?: unknown };
+
+type StockLine = {
+  ref: string;
+  name: string;
+  type?: string;
+  /** The catalogue's shelf label — what the chip row narrows by. */
+  group?: string;
+  stats: Entry[];
+  price: string | null;
+  /** null = unlimited, and that is the ordinary case. */
+  qty: number | null;
+  missing?: true;
+};
+
+type CartLine = { ref: string; qty: number };
+
+type ShopQuote = {
+  entityId: string;
+  name: string;
+  lines: (CartLine & { name: string; price: string | null; each: number | null })[];
+  offered: boolean;
+  total: number;
+  symbol: string;
+  missing: string[];
+  held?: number;
+};
+
+type ShopView = {
+  vendor: { id: string; name: string; blurb?: string; live: boolean };
+  shelf: StockLine[];
+  carts: ShopQuote[];
+};
+
+/** A pane always has its plugin — that is what makes it a pane (§15). */
+type PaneProps = BlockCtx & { plugin: NonNullable<BlockCtx['plugin']> };
+
+/** The two families' tile (rule 6): fixed on mounted glass so the shelf
+ * pans, elastic on a phone so it wraps. The widths are inline for the
+ * reason the header gives — they are the classes that vanished. */
+const TILE = {
+  mounted: {
+    className: 'shrink-0 snap-start self-stretch',
+    style: { width: '19rem' },
+  },
+  held: {
+    className: 'flex-1 self-start',
+    style: { minWidth: '13rem' },
+  },
 };
 
 /** How many of this line are already in the cart. */
@@ -98,14 +160,17 @@ function StockTile({
       <div className={`flex flex-col gap-1 ${fill ? 'min-h-0 flex-1' : ''}`}>
         <button
           type="button"
-          className="text-left text-[0.65rem] uppercase tracking-widest text-stone-500 hover:text-stone-300"
+          className="text-left uppercase tracking-widest text-stone-500 hover:text-stone-300"
+          style={{ fontSize: '0.65rem' }}
           onClick={onOpen}
           aria-label={`look at ${line.name}`}
         >
           {line.type ?? 'goods'} · look closer
         </button>
         {line.missing && (
-          <span className="font-mono text-[11px] text-amber-500/80">not on this host</span>
+          <span className="font-mono text-amber-500/80" style={{ fontSize: '11px' }}>
+            not on this host
+          </span>
         )}
         <div className="mt-auto flex flex-wrap items-center gap-x-2 gap-y-1 pt-2">
           <span
@@ -115,7 +180,9 @@ function StockTile({
             {line.price ?? '—'}
           </span>
           {line.qty !== null && (
-            <span className="text-[11px] text-stone-500">{line.qty} left</span>
+            <span className="text-stone-500" style={{ fontSize: '11px' }}>
+              {line.qty} left
+            </span>
           )}
           <span className="ml-auto">
             <Stepper line={line} have={have} onSet={onSet} />
@@ -190,15 +257,24 @@ function Cart({
         offered ? 'border-amber-600/60 bg-amber-950/95' : 'border-stone-800 bg-stone-950/95'
       }`}
     >
-      <span className="text-[11px] uppercase tracking-widest text-stone-500">cart</span>
+      <span className="uppercase tracking-widest text-stone-500" style={{ fontSize: '11px' }}>
+        cart
+      </span>
       <span className="font-mono text-sm text-stone-100">{formatPrice(total, symbol)}</span>
-      {short && <span className="text-[11px] text-red-400">more than you're carrying</span>}
+      {short && (
+        <span className="text-red-400" style={{ fontSize: '11px' }}>
+          more than you're carrying
+        </span>
+      )}
       {offered ? (
         <>
-          <span className="text-[12px] text-amber-300">on the counter — waiting on the {gm}</span>
+          <span className="text-amber-300" style={{ fontSize: '12px' }}>
+            on the counter — waiting on the {gm}
+          </span>
           <button
             type="button"
-            className="ml-auto rounded-md bg-stone-800 px-3 py-1.5 text-[12px] text-stone-200 hover:bg-stone-700"
+            className="ml-auto rounded-md bg-stone-800 px-3 py-1.5 text-stone-200 hover:bg-stone-700"
+            style={{ fontSize: '12px' }}
             onClick={() => onOffer(false)}
           >
             take it back
@@ -207,8 +283,8 @@ function Cart({
       ) : (
         <button
           type="button"
-          className="ml-auto rounded-md px-3 py-1.5 text-[12px] font-medium text-stone-950"
-          style={{ background: 'var(--sheet-accent, #f59e0b)' }}
+          className="ml-auto rounded-md px-3 py-1.5 font-medium text-stone-950"
+          style={{ background: 'var(--sheet-accent, #f59e0b)', fontSize: '12px' }}
           onClick={() => onOffer(true)}
         >
           put it on the counter
@@ -218,19 +294,20 @@ function Cart({
   );
 }
 
-export function ShopShelf({
+function ShopShelf({
   view,
   entity,
   glass,
   gm,
-  onChanged,
+  onWrite,
 }: {
   view: ShopView;
   entity: Entity | undefined;
   glass: Glass;
   /** The system's word for the DM — 'Warden' at this table, `vocabulary.gm`. */
   gm: string;
-  onChanged: () => void;
+  /** One cart, replaced whole, through the plugin's own `cart` door. */
+  onWrite: (entityId: string, lines: CartLine[], offered?: boolean) => void;
 }) {
   const [kind, setKind] = useState('');
   const [detail, setDetail] = useState<string | null>(null);
@@ -263,9 +340,7 @@ export function ShopShelf({
 
   const write = (next: CartLine[], offered?: boolean) => {
     if (!entity) return;
-    writeCart(entity.id, next, offered)
-      .then(onChanged)
-      .catch(() => {});
+    onWrite(entity.id, next, offered);
   };
 
   const setQty = (ref: string, qty: number) => {
@@ -288,7 +363,9 @@ export function ShopShelf({
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="font-serif text-lg font-bold text-stone-100">{view.vendor.name}</span>
         {view.vendor.blurb && (
-          <span className="min-w-0 text-[12px] italic text-stone-500">{view.vendor.blurb}</span>
+          <span className="min-w-0 italic text-stone-500" style={{ fontSize: '12px' }}>
+            {view.vendor.blurb}
+          </span>
         )}
       </div>
 
@@ -313,12 +390,17 @@ export function ShopShelf({
                   type="button"
                   onClick={() => setKind(k)}
                   aria-pressed={kind === k}
-                  className={`max-w-[7rem] break-words rounded-md px-2 py-1.5 text-left text-[0.65rem] uppercase tracking-[0.14em] transition-colors ${
+                  className={`break-words rounded-md px-2 py-1.5 text-left uppercase transition-colors ${
                     kind === k
                       ? 'text-stone-950'
                       : 'bg-stone-900 text-stone-400 hover:bg-stone-800 hover:text-stone-100'
                   }`}
-                  style={kind === k ? { background: 'var(--sheet-accent, #f59e0b)' } : undefined}
+                  style={{
+                    maxWidth: '7rem',
+                    fontSize: '0.65rem',
+                    letterSpacing: '0.14em',
+                    ...(kind === k ? { background: 'var(--sheet-accent, #f59e0b)' } : {}),
+                  }}
                 >
                   {k || 'all'}
                 </button>
@@ -336,7 +418,11 @@ export function ShopShelf({
               <p className="p-4 text-sm text-stone-600 italic">the shelves are bare</p>
             )}
             {shown.map((line) => (
-              <div key={line.ref} className={`flex flex-col gap-2 ${TILE_WIDTH[glass]}`}>
+              <div
+                key={line.ref}
+                className={`flex flex-col gap-2 ${TILE[glass].className}`}
+                style={TILE[glass].style}
+              >
                 <StockTile
                   line={line}
                   have={inCart(cart, line.ref)}
@@ -360,5 +446,42 @@ export function ShopShelf({
         onOffer={(on) => write(cart, on)}
       />
     </div>
+  );
+}
+
+export default function ShopPane({ entity, glass, records, plugin }: PaneProps) {
+  // Its own fetch, on its own nudges. `useLive` re-runs on every SSE
+  // stir, so a sale at the console empties this cart without the seat
+  // chrome knowing the store exists.
+  const { data: view, reload } = useLive<ShopView | null>(
+    () => plugin.call<ShopView | null>('shop'),
+    [],
+  );
+
+  const write = (entityId: string, lines: CartLine[], offered?: boolean) => {
+    plugin
+      .call<ShopView | null>('cart', {
+        method: 'PUT',
+        path: [entityId],
+        body: { lines, ...(offered === undefined ? {} : { offered }) },
+      })
+      .then(reload)
+      .catch(() => {});
+  };
+
+  // Nothing while the answer's still coming; the shut shop says so. The
+  // tab is gated on this same door (`when: 'shop'` in plugin.json), so
+  // the second line is the rare race rather than the ordinary state.
+  if (view === undefined) return null;
+  if (!view) return <p className="p-4 text-sm text-stone-500">the shop is shut</p>;
+
+  return (
+    <ShopShelf
+      view={view}
+      entity={entity as Entity | undefined}
+      glass={glass}
+      gm={String(records.vocabulary?.gm ?? 'DM')}
+      onWrite={write}
+    />
   );
 }

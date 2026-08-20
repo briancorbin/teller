@@ -19,8 +19,6 @@ import { SheetPanel } from '../components/sheet/SheetPanel.tsx';
 import { presentationOf, useSystemFaces } from '../lib/presentations.ts';
 import { registerBlock, Refusal, RenderBlock, type BlockCtx } from './render.tsx';
 import { CarriedScreen } from '../components/items/Screen.tsx';
-import { ShopShelf } from '../components/items/Shop.tsx';
-import type { ShopView } from '../lib/api.ts';
 import type { ScreenDecl } from '../components/items/types.ts';
 
 // The faces this file summons by name (§L, phase 3.5 complete). They are
@@ -633,21 +631,11 @@ registerBlock('carried', (block, ctx) => (
   />
 ));
 
-// ---- shop (§14 — the seat's side of the counter) -----------------------
-// Synthesized the same way `carried` is, and only while a shop is open:
-// the seat chrome holds the `/api/shop` answer (one fetch on the same
-// nudge as everything else) and hands it down. The block has no door of
-// its own, so a seat with no shop open has no tab and no request.
-
-registerBlock('shop', (block, ctx) => (
-  <ShopShelf
-    view={block.view as ShopView}
-    entity={subject(ctx)}
-    glass={ctx.glass}
-    gm={String((ctx.records.vocabulary as Record<string, unknown> | undefined)?.gm ?? 'DM')}
-    onChanged={() => (block.onChanged as (() => void) | undefined)?.()}
-  />
-));
+// The `shop` block lived here — the seat's side of the counter, handed
+// a `/api/shop` answer by the chrome above it. It is the store plugin's
+// own pane now (§15's UI tier), which is why there is no block for it
+// and no import of one: a plugin's surface is a TAKEOVER, so it needs
+// no noun in teller's grammar to hang itself on.
 
 // ---- notes -------------------------------------------------------------
 
@@ -936,7 +924,11 @@ import '../tools/handouts.tsx';
 import '../tools/log.tsx';
 import '../tools/rules.tsx';
 import '../tools/books.tsx';
-import '../tools/store.tsx';
+// `store` was here and is GONE (§15, 2026-08-20): it was a squatter's
+// residence from the day it landed and it moved out to the plugin it
+// was always going to be. A system declaring `tool: store` now gets the
+// registry's ordinary refusal — which is correct, and is why the
+// system-layer store panels went with it.
 
 registerBlock('tool', (block, ctx) => {
   const name = typeof block.tool === 'string' ? block.tool : '';

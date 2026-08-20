@@ -158,6 +158,9 @@ export default defineConfig({
       '/api': { target: process.env.TELLER_DEV ?? 'http://localhost:4526' },
       '/files': { target: process.env.TELLER_DEV ?? 'http://localhost:4526' },
       '/panel-code': { target: process.env.TELLER_DEV ?? 'http://localhost:4526' },
+      // …and a plugin's compiled panes (§15's UI tier), which are panel
+      // code by every property that matters to a dev server.
+      '/plugin-code': { target: process.env.TELLER_DEV ?? 'http://localhost:4526' },
       // …and the pack's, including the generated `/pack-code/system.js`
       // the import map points `system` at (§L phase 2).
       '/pack-code': { target: process.env.TELLER_DEV ?? 'http://localhost:4526' },

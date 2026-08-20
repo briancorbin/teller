@@ -56,7 +56,14 @@ import {
   withPresence,
 } from './books.ts';
 import { isBookId } from '../core/books-shelf.ts';
-import { discoverPlugins, loadPlugins, providersOf } from '../core/plugins.ts';
+import {
+  discoverPlugins,
+  loadPlugins,
+  panesOf,
+  pluginOf,
+  providersOf,
+} from '../core/plugins.ts';
+import { callDoor, whoOf } from './plugin-bridge.ts';
 import { isPoint, POINTS, type Point } from '../core/registry.ts';
 import {
   copyPanelToTable,
@@ -99,18 +106,6 @@ import {
 } from './story.ts';
 import { toRights } from '../core/bundle.ts';
 import { notesOf, passNote, visibleTo, type NoteHandout } from './notes.ts';
-import {
-  closeShop,
-  openShop,
-  sell,
-  setCart,
-  shopOf,
-  shopView,
-  vendorOf,
-  vendorsOf,
-  VENDOR_SLOT,
-  type Sale,
-} from './store-flow.ts';
 import { publicBoardState, publicSnapshot } from './public.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
 import { peekUndo, undo } from './undo.ts';
@@ -1506,6 +1501,59 @@ export async function handleApi(
     }
   }
 
+  // -- what the running plugins PUT ON SCREEN (§15's pane tier) --------
+  //
+  // Read BESIDE the merged `panels` slot, never merged into it (§M-2: a
+  // plugin never touches the merge). Two sources, one bar — the console
+  // concatenates this list with the declarations and sorts the lot with
+  // the one comparator (`byPanelOrder`), and the Screens picker offers
+  // both for assignment. A plugin nobody enabled provides nothing, so
+  // this answers `[]` and every surface reading it is simply shorter:
+  // the degradation contract, and the whole point of the tier.
+  //
+  // Gated like the declarations it sits beside — which is to say barely.
+  // A pane is furniture: it names a word, a label and a url whose bytes
+  // are gated by the trust row at `/plugin-code/`. Nothing here is a
+  // secret, and a seat needs it to draw its own tab bar.
+  if (method === 'GET' && head === 'panes' && !a) {
+    if (!canWatch(auth)) return notAtTable();
+    return reply(200, panesOf(session.plugins));
+  }
+
+  // -- a plugin's own doors (§15). One route for every plugin that ever
+  // ships, because the path IS the addressing: `/api/plugin/<plg_id>/
+  // <door>/<anything else>` finds the plugin by id, the door by name,
+  // and hands the rest to the handler as path segments.
+  //
+  // Everything that matters happens in `server/plugin-bridge.ts`; what
+  // lives here is what must live in a ROUTE and nowhere else — resolving
+  // who is asking against teller's own gates (rule 7: the server
+  // decides, and a plugin is never given a header to re-decide from),
+  // and refusing at the same three doors teller refuses at.
+  //
+  // A disabled plugin isn't in `session.plugins`, so its doors 404 by
+  // the ordinary path rather than by a special case. That is the
+  // degradation being the feature: switch the plugin off and the tab is
+  // gone, the doors are gone, and nothing crashes.
+  if (head === 'plugin' && a && b) {
+    const plugin = pluginOf(session.plugins, a);
+    if (!plugin) return reply(404, { error: `no plugin ${a} is running` });
+    const access = plugin.doors[b];
+    if (!access) return reply(404, { error: `${plugin.manifest.name} has no door '${b}'` });
+    const allowed =
+      access === 'dm' ? canDm(auth) : access === 'prep' ? canPrep(auth) : canWatch(auth);
+    if (!allowed) return access === 'table' ? notAtTable() : denied();
+    const body = method === 'GET' || method === 'DELETE' ? {} : await bodyOf(req);
+    const who = whoOf(auth, actorOf(auth, String(body.actor ?? '')));
+    const out = await callDoor(session, plugin, b, {
+      method,
+      path: parts.slice(4),
+      body,
+      who,
+    });
+    return reply(out.status, out.body);
+  }
+
   // -- what this build can be ASKED for, and whether anybody answers.
   //
   // The registry is the list of points; the running plugins are who
@@ -1516,6 +1564,11 @@ export async function handleApi(
   // be assigned to is a pane that doesn't exist).
   if (method === 'GET' && head === 'points' && !a) {
     if (!canDm(auth)) return denied();
+    // The FIXED points only, and deliberately: a family's members are a
+    // plugin's own words, and this endpoint exists so a surface can ask
+    // "does anybody answer this?" without learning who. Panes are
+    // listed where a surface can actually use them (`/api/panes`), and
+    // doors are addressed by name or not at all.
     return reply(
       200,
       Object.entries(POINTS).map(([point, blurb]) => ({
@@ -1703,122 +1756,15 @@ export async function handleApi(
     }
   }
 
-  // -- the counter: shops, carts, and the sale ---------------------------
-  //
-  // The law lives in `server/store-flow.ts`; these are its doors, and
-  // they split the way that file splits. Opening a vendor and moving a
-  // cart touch NOTHING durable — browsing must never instantiate (§14).
-  // Selling is the transaction, is DM-only, and is the one door here
-  // that writes.
-  //
-  // Reading takes `canPrep`, matching the templates door a seat already
-  // shops the catalogue through: a shelf is prices and stock, which is
-  // prep, and a passive screen learns only that the store is open (the
-  // `/public` snapshot's one line).
-  //
-  // Writing a CART goes through `canEditEntity`, which is rule 7's
-  // existing law and says exactly the right thing without a new one:
-  // the DM may put anything on anyone's counter (handing a cart back is
-  // the DM's own move), and a seat may touch its own and nothing else.
-  if (head === 'shop') {
-    if (method === 'GET' && !a) {
-      if (!canPrep(auth)) return denied();
-      const shop = shopOf(session);
-      if (!shop) return reply(200, null);
-      return reply(200, shopView(session, shop, auth) ?? null);
-    }
-    if (method === 'POST' && a === 'open' && !b) {
-      if (!canDm(auth)) return denied();
-      const body = await bodyOf(req);
-      const actor = actorOf(auth, String(body.actor ?? ''));
-      const id = typeof body.vendorId === 'string' ? body.vendorId.trim() : '';
-      const was = shopOf(session);
-      if (!id) {
-        // Closing. Logged even though it stored nothing: "the shop shut"
-        // is table history worth reading back, and the log is the only
-        // history there is (rule 3).
-        if (was) {
-          const vendor = vendorOf(session, was.vendorId);
-          closeShop(session);
-          session.campaign.append(null, actor, 'shop.closed', {
-            vendorId: was.vendorId,
-            ...(vendor ? { vendorName: vendor.name } : {}),
-          });
-        }
-        session.changed('shop');
-        return reply(200, null);
-      }
-      const vendor = vendorOf(session, id);
-      if (!vendor) return reply(404, { error: `no vendor ${id}` });
-      openShop(session, id);
-      session.campaign.append(null, actor, 'shop.opened', {
-        vendorId: vendor.id,
-        vendorName: vendor.name,
-      });
-      session.changed('shop');
-      return reply(200, shopView(session, shopOf(session)!, auth) ?? null);
-    }
-    if (method === 'PUT' && a === 'cart' && b) {
-      if (!canEditEntity(auth, b)) return denied();
-      const shop = shopOf(session);
-      if (!shop) return reply(409, { error: 'no shop is open' });
-      const body = await bodyOf(req);
-      const lines: { ref: string; qty: number }[] = [];
-      for (const raw of Array.isArray(body.lines) ? body.lines : []) {
-        const line = (raw ?? {}) as { ref?: unknown; qty?: unknown };
-        const ref = String(line.ref ?? '').trim();
-        const qty = Math.floor(Number(line.qty ?? 0));
-        if (ref && qty > 0) lines.push({ ref, qty: Math.min(qty, 99) });
-      }
-      setCart(shop, b, lines, typeof body.offered === 'boolean' ? body.offered : undefined);
-      session.changed('shop');
-      return reply(200, shopView(session, shop, auth) ?? null);
-    }
-    if (method === 'POST' && a === 'sell' && !b) {
-      if (!canDm(auth)) return denied();
-      const shop = shopOf(session);
-      if (!shop) return reply(409, { error: 'no shop is open' });
-      const vendor = vendorOf(session, shop.vendorId);
-      if (!vendor) return reply(404, { error: `no vendor ${shop.vendorId}` });
-      const body = await bodyOf(req);
-      const out = sell(
-        session,
-        vendor,
-        (body.sale ?? {}) as Sale,
-        actorOf(auth, String(body.actor ?? '')),
-      );
-      if ('error' in out) return reply(400, out);
-      session.changed('shop');
-      return reply(200, out);
-    }
-  }
-
-  // Every shop this table knows about — the merged `vendors` slot.
-  // Authoring one is the ordinary templates door (`/api/templates/vendors`);
-  // this is the READ, and it says which layer each came from so the
-  // console can offer "edit" only on the campaign's own.
-  if (method === 'GET' && head === 'vendors' && !a) {
-    if (!canPrep(auth)) return denied();
-    // The campaign's own rows go out RAW underneath the normalised
-    // reading, so whatever else was authored on them — an old world's
-    // `groups`/`filters`, a key this build has never heard of — survives
-    // the console's edit-and-save round trip instead of being quietly
-    // deleted by a form that only knew about four fields.
-    const own = new Map(
-      session.campaign
-        .templatesIn(VENDOR_SLOT)
-        .map((t) => [String((t as { id?: string }).id ?? ''), t] as const),
-    );
-    return reply(
-      200,
-      vendorsOf(session).map((v) => ({
-        ...(own.get(v.id) as object | undefined),
-        ...v,
-        own: own.has(v.id),
-      })),
-    );
-  }
-
+  // THE COUNTER used to be here — `/api/shop`, `/api/shop/open`,
+  // `/api/shop/cart/<id>`, `/api/shop/sell` and `/api/vendors`, against
+  // the law in `server/store-flow.ts`. Both are GONE (§15, 2026-08-20).
+  // The store is plugin №2, extracted whole, and its doors are its own:
+  // `/api/plugin/<plg_store>/shop`, `/cart`, `/sell`, `/vendors`,
+  // bridged by the one route above. teller ships with no store again,
+  // and this comment is the only trace of one — kept because a reader
+  // looking for the counter deserves to be told where it went rather
+  // than to find nothing and conclude it was never built.
   // -- passing a note ---------------------------------------------------
   //
   // The law of who sees what is `server/notes.ts`; these are its three
@@ -2221,6 +2167,32 @@ export function serve(what: Session | Host, port: number, key: string) {
       return;
     }
 
+    // A plugin's compiled panes (§15's UI tier) — the third code door,
+    // on exactly the terms of the other two. The trust gate is the
+    // strictest of the three and needs no special reasoning: a plugin
+    // that isn't RUNNING isn't in `host.plugins` at all, so its bytes
+    // are unreachable by the same fact that makes its doors 404 and its
+    // tab vanish. One switch, everything it added, gone together.
+    if (url.pathname.startsWith('/plugin-code/')) {
+      const rel = decodeURIComponent(url.pathname.slice('/plugin-code/'.length));
+      const [pluginId, ...fileParts] = rel.split('/').filter(Boolean);
+      const plugin = pluginId ? pluginOf(host.plugins, pluginId) : undefined;
+      const buildRoot = plugin ? join(plugin.dir, '.build') : undefined;
+      const path =
+        buildRoot && fileParts.length ? normalize(join(buildRoot, ...fileParts)) : undefined;
+      if (!path || !buildRoot || !path.startsWith(buildRoot) || !existsSync(path)) {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('not here');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': MIME[extname(path)] ?? 'application/octet-stream',
+        'Cache-Control': codeCache(url),
+      });
+      res.end(readFileSync(path));
+      return;
+    }
+
     // A pack's compiled presentations (§L phase 2) — served plain, on
     // the same terms as `/panel-code/`, including the trust gate: no
     // byte leaves for a pack or system nobody enabled.
@@ -2461,8 +2433,13 @@ export async function boot(args: Record<string, string>) {
       for (const p of found) {
         console.log(
           `${p.enabled ? '[on] ' : '[off]'} ${p.manifest.id} · ${p.manifest.name}` +
-            ` v${p.manifest.version} · provides ${p.manifest.provides.join(', ') || '(nothing)'}` +
-            ` · needs ${p.manifest.needs.join(', ') || '(nothing)'}`,
+            ` v${p.manifest.version} · provides ${p.manifest.provides.map((x) => x.point).join(', ') || '(nothing)'}`,
+        );
+        // The needs, one per line and in the author's own words: this is
+        // the app-permissions moment on a terminal, and a list of nine
+        // sentences run together with commas is not one.
+        for (const want of p.manifest.wants) console.log(`         needs ${want}`);
+        if (!p.manifest.wants.length) console.log('         needs nothing',
         );
       }
       for (const p of problems) console.log(`  PROBLEM ${p.dir}: ${p.problem}`);

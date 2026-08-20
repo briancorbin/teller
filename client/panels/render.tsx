@@ -28,6 +28,24 @@ export type BlockCtx = {
   records: Record<string, Record<string, unknown>>;
   /** Sparse write to the subject (list, name, value/max/remove). */
   write?: (edit: Record<string, unknown>) => Promise<void>;
+  /**
+   * Present only when what's rendering is a PLUGIN's pane (§15's UI
+   * tier): its own id, and a call bound to it. A pane reaches its
+   * plugin's doors through this and nothing else — it never writes the
+   * id, so it cannot address another plugin's, and a pane moved between
+   * plugins needs no edit.
+   *
+   * Absent for every declared panel, which is the honest shape: a block
+   * in teller's own `sheet` has no plugin behind it and must not be
+   * handed a way to pretend otherwise.
+   */
+  plugin?: {
+    id: string;
+    call: <T>(
+      door: string,
+      opts?: { method?: string; path?: string[]; body?: unknown },
+    ) => Promise<T>;
+  };
 };
 
 export type BlockRenderer = (block: PanelBlock, ctx: BlockCtx) => ReactNode;

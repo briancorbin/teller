@@ -8,11 +8,14 @@ import {
   api,
   displaySlot,
   hello,
+  panes as fetchPanes,
   reportViewport,
   stored,
   forgetSlips,
   type DisplayInfo,
+  type Pane,
 } from './lib/api.ts';
+import { pluginCtx, paneToPanel, surfaces } from './lib/panes.ts';
 import { onIdentify, resetStream, useLive } from './lib/use-session.ts';
 import { btnPrimary, card, input, sectionLabel } from './lib/ui.ts';
 import type { PanelDef } from '../core/panels.ts';
@@ -136,6 +139,10 @@ function PanelRoute({
     () => api<PanelDef[]>('/api/stack/declarations/panels'),
     [],
   );
+  // Provisions, beside the declarations (§M-2) — a screen may be
+  // assigned to a plugin's pane exactly as to a system's panel, and
+  // this route is what a `#panel=` hash resolves through.
+  const panes = useLive(() => fetchPanes(), []);
   const records = useLive(
     () =>
       Promise.all(
@@ -155,7 +162,8 @@ function PanelRoute({
     [entityId],
   );
 
-  const panel = panels.data?.find((p) => p.name === name);
+  const provided = panes.data?.find((p) => p.name === name);
+  const panel = panels.data?.find((p) => p.name === name) ?? (provided ? paneToPanel(provided) : undefined);
   if (panels.error)
     return <p className="p-8 text-sm text-red-500">{panels.error.message}</p>;
   if (!panels.data) return null;
@@ -178,6 +186,7 @@ function PanelRoute({
       ? (edit) =>
           api(`/api/entities/${entityId}/entry`, { body: edit }).then(() => {})
       : undefined,
+    ...(provided ? { plugin: pluginCtx(provided) } : {}),
   };
   // Glass discipline (rule 6): mounted is fixed-height and never scrolls
   // — overflow is CLIPPED, the diagnostic that a layout doesn't fit that
@@ -239,6 +248,12 @@ function Console() {
     () => api<PanelDef[]>('/api/stack/declarations/panels'),
     [],
   );
+  // The tab bar reads TWO sources and always has, since the day a
+  // plugin could put a screen up (§15's UI tier): the merged `panels`
+  // slot, and whatever the enabled plugins provide. `surfaces()` is
+  // where they become one list, ordered by the one comparator. A host
+  // with no plugins gets `[]` back and the bar is exactly what it was.
+  const panes = useLive(() => fetchPanes(), []);
   const records = useLive(
     () =>
       Promise.all(
@@ -271,8 +286,11 @@ function Console() {
       // Storage full or blocked — the click still works for this visit.
     }
   };
-  const tools = (panels.data ?? []).filter((p) => p.subject !== 'entity');
+  const tools = surfaces(panels.data, panes.data, 'none');
   const current = tools.find((p) => p.name === pane) ?? tools[0];
+  const currentPane = (panes.data ?? []).find(
+    (p) => p.subject !== 'entity' && p.name === current?.name,
+  );
 
   // In-place view state, never a route: the console is ONE stable url
   // (rule 6), and a bookmark into "the campaign screen" would be a
@@ -284,6 +302,7 @@ function Console() {
   const ctx: BlockCtx = {
     glass: 'held',
     records: (records.data ?? {}) as BlockCtx['records'],
+    ...(currentPane ? { plugin: pluginCtx(currentPane) } : {}),
   };
   return (
     <div className="min-h-dvh p-4">
