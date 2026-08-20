@@ -23,11 +23,22 @@
 // runner hands down is what the fight needs and this file doesn't know —
 // the order, the sheets, and the system's own records (dice, pins, use).
 //
+// The order DRAGS (rule 5 — "the DM can always drag, and dragging beats
+// anything teller worked out"). The handle is the position number,
+// which costs the row no width, and the gesture is POINTER-based rather
+// than the browser's own drag-and-drop: this console is an iPad as
+// often as it's a laptop, and HTML5 dnd does not exist under a finger.
+// The drop settles instantly and then goes through the same door the
+// arrows use — `{op:'set'}` — so the optimistic list is only ever
+// standing in for a round trip that's already on its way. The arrows
+// stay: a drag is a gesture, and a gesture wants an affordance that
+// isn't one.
+//
 // Also owns the 'turn' BLOCK (entity panels' slice of the same state):
 // a seat's own sheet can show "you're up" without importing this whole
 // tool.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState, type PointerEvent as PointerEvt } from 'react';
 import type { Entity } from '../../core/entity.ts';
 import { pendingEvents } from '../../core/frenzy.ts';
 import { api } from '../lib/api.ts';
@@ -104,6 +115,24 @@ type TurnOp =
 
 type RosterEntry = { id: string; name: string; type: string | null };
 
+/**
+ * Enough of the live board to answer one question per row: is this
+ * creature ON the table? A placement links an entity the same way a
+ * turn entry does, so the answer is set membership and nothing more.
+ *
+ * Read in two hops, and the split is deliberate. WHICH board is active
+ * comes off the public snapshot, because that is the one endpoint that
+ * reads the live manifest — `/api/campaign` answers from the LOADED
+ * one, which a board swap pointedly does not re-resolve, so it would
+ * still be naming yesterday's map. WHAT is standing on it comes off
+ * `/api/board-state`, because the runner is DM glass and a hidden
+ * placement is still a mini somebody put down; the public copy has it
+ * stripped, correctly, for screens the table can see.
+ */
+type Placement = { entityId?: string };
+type BoardState = { placements?: Placement[] };
+type PublicBoard = { board: { board?: { id?: string } } | null };
+
 /** Mirrors `Display` (core/store.ts) — same reasoning as `TurnState`. */
 type Display = {
   id: string;
@@ -159,14 +188,51 @@ function RunnerTool() {
   const use = useLive(() => api<UseRecord>('/api/stack/record/use'), []);
   const kinds = useLive(() => api<KindDecl[]>('/api/stack/declarations/kinds'), []);
   const displays = useLive(() => api<Display[]>('/api/displays'), []);
+  // Which board the table is looking at, then what is standing on it.
+  // No board active means no markers and no noise.
+  const board = useLive(async () => {
+    const snapshot = await api<PublicBoard>('/api/public');
+    const id = snapshot.board?.board?.id;
+    if (!id) return null;
+    return await api<BoardState | null>(`/api/board-state/${id}`);
+  }, []);
   const [draft, setDraft] = useState('');
   /** What the acting thing is about to do. Cleared when the turn moves. */
   const [armed, setArmed] = useState<Armed | undefined>(undefined);
   const [rollingFoes, setRollingFoes] = useState(false);
   /** Setup, while a fight is running — closed by default, on purpose. */
   const [setupOpen, setSetupOpen] = useState(false);
+  /**
+   * A drag in flight. `rects` is the list's layout as it stood when the
+   * finger went down: the dragged row is transformed while it lifts, so
+   * hit-testing against live rectangles would have the row chasing
+   * itself down the list.
+   */
+  const [drag, setDrag] = useState<{
+    entryId: string;
+    from: number;
+    startY: number;
+    y: number;
+    rects: DOMRect[];
+  } | null>(null);
+  /** Where the row would land — an insertion point, 0…order.length. */
+  const [over, setOver] = useState<number | null>(null);
+  /**
+   * The order as the drop left it, held only until the host says the
+   * same thing back. Optimism with an expiry date: the drop still goes
+   * through `{op:'set'}` like the arrows do, and this only stands in for
+   * the round trip it started.
+   */
+  const [settled, setSettled] = useState<TurnEntry[] | null>(null);
+  const listRef = useRef<HTMLOListElement | null>(null);
 
-  const order = turn.data?.order ?? [];
+  const served = turn.data?.order ?? [];
+  const servedIds = served.map((e) => e.id).join(',');
+  useEffect(() => {
+    if (settled && settled.map((e) => e.id).join(',') === servedIds) setSettled(null);
+  }, [servedIds, settled]);
+
+  const order = settled ?? served;
   const running = turn.data?.turn !== null && turn.data !== undefined;
   const rolling = turn.data?.rolling ?? false;
 
@@ -198,6 +264,52 @@ function RunnerTool() {
     return api('/api/turn', { body: o }).then(turn.reload);
   };
 
+  // The drag, in three handlers. The pointer is captured by the handle
+  // it went down on, so the gesture survives the row moving out from
+  // under it, and the drop is one `{op:'set'}` — a move is a move, and
+  // it goes through the door the arrows already use.
+  const startDrag = (entryId: string, from: number, e: PointerEvt<HTMLElement>) => {
+    const rows = listRef.current ? Array.from(listRef.current.children) : [];
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setDrag({
+      entryId,
+      from,
+      startY: e.clientY,
+      y: e.clientY,
+      rects: rows.map((el) => el.getBoundingClientRect()),
+    });
+    setOver(null);
+  };
+
+  const moveDrag = (e: PointerEvt<HTMLElement>) => {
+    if (!drag) return;
+    let at = drag.rects.length;
+    for (let i = 0; i < drag.rects.length; i++) {
+      if (e.clientY < drag.rects[i].top + drag.rects[i].height / 2) {
+        at = i;
+        break;
+      }
+    }
+    setDrag({ ...drag, y: e.clientY });
+    // Either side of where it already sits is not a move, and an
+    // indicator that says otherwise is a lie about what a drop will do.
+    setOver(at === drag.from || at === drag.from + 1 ? null : at);
+  };
+
+  const endDrag = () => {
+    if (!drag) return;
+    const insert = over;
+    const from = drag.from;
+    setDrag(null);
+    setOver(null);
+    if (insert === null) return;
+    const to = insert > from ? insert - 1 : insert;
+    if (to === from) return;
+    const next = move(order, from, to);
+    setSettled(next);
+    op({ op: 'set', order: next }).catch(() => setSettled(null));
+  };
+
   const writeEntry = (entityId: string, edit: EntryWrite) =>
     api(`/api/entities/${entityId}/entry`, { body: edit }).then(sheets.reload);
 
@@ -211,6 +323,17 @@ function RunnerTool() {
     (displays.data ?? [])
       .filter((d) => d.role === 'seat' && typeof d.params?.entityId === 'string')
       .map((d) => [String(d.params.entityId), d]),
+  );
+
+  /**
+   * Who is standing on the live board. A marker and never a control —
+   * where a mini goes is decided by a hand, and this only says the hand
+   * already went there.
+   */
+  const placed = new Set(
+    (board.data?.placements ?? [])
+      .map((p) => p.entityId)
+      .filter((id): id is string => Boolean(id)),
   );
 
   const addEntry = (label: string, entityId: string | null) => {
@@ -285,6 +408,13 @@ function RunnerTool() {
     // showing somebody else. It only ever proposes: crossing it is still
     // a tap, over on that creature's own turn (rule 1).
     const pending = pendingEvents(sheet);
+    const lifting = drag?.entryId === entry.id;
+    const onTable = entry.entityId ? placed.has(entry.entityId) : false;
+
+    // The line the row would land on. Drawn INSIDE the row rather than
+    // between rows, because a list that grows a gap while you drag is a
+    // list whose rows move away from the finger holding one.
+    const marker = <div className="pointer-events-none -mx-1.5 h-0.5 rounded bg-amber-400" />;
 
     return (
       <li
@@ -297,14 +427,30 @@ function RunnerTool() {
               : foe
                 ? 'border-l-red-900/70 bg-stone-900/40 hover:bg-stone-900'
                 : 'border-l-stone-700 bg-stone-900/40 hover:bg-stone-900'
-        }`}
-        style={!isTurn && !owed && !foe && accent ? { borderLeftColor: accent } : undefined}
+        } ${lifting ? 'relative z-10 scale-[1.02] shadow-lg shadow-stone-950/60' : ''}`}
+        style={{
+          ...(!isTurn && !owed && !foe && accent ? { borderLeftColor: accent } : {}),
+          ...(lifting && drag ? { transform: `translateY(${drag.y - drag.startY}px)` } : {}),
+        }}
       >
+        {over === i && marker}
         <div className="flex items-center gap-1.5">
+          {/* The position number IS the handle — it costs the row no
+              width, and the thing you grab to move a row to third is the
+              thing that says which place it's in. */}
           <span
-            className={`w-4 shrink-0 text-right font-mono text-[10px] ${
+            className={`w-4 shrink-0 cursor-grab touch-none select-none text-right font-mono text-[10px] ${
               isTurn ? 'text-amber-300' : 'text-stone-600'
-            }`}
+            } ${lifting ? 'cursor-grabbing text-amber-200' : ''}`}
+            title="drag to reorder"
+            onPointerDown={(e) => {
+              if (e.button !== 0 && e.pointerType === 'mouse') return;
+              e.preventDefault();
+              startDrag(entry.id, i, e);
+            }}
+            onPointerMove={moveDrag}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
           >
             {i + 1}
           </span>
@@ -354,6 +500,18 @@ function RunnerTool() {
               title={`${pending.map((f) => f.name).join(', ')} — happens now, once`}
             >
               ◈
+            </span>
+          )}
+
+          {/* There's a mini for this one on the live board. A GLYPH, not
+              a dot, so it can't be read as one more condition — and
+              nothing at all when no board is up. */}
+          {onTable && (
+            <span
+              className="shrink-0 font-mono text-[10px] leading-none text-emerald-500/80"
+              title="on the table"
+            >
+              ▣
             </span>
           )}
 
@@ -458,6 +616,7 @@ function RunnerTool() {
         </div>
 
         {vital && <VitalBar entry={vital} className="mt-1.5" />}
+        {over === order.length && i === order.length - 1 && marker}
       </li>
     );
   };
@@ -585,7 +744,12 @@ function RunnerTool() {
         <div className="grid items-start gap-4 @2xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)]">
           <div className="space-y-2">
             {order.length > 0 ? (
-              <ol className="divide-y divide-stone-800/60 overflow-hidden rounded-lg">
+              <ol
+                ref={listRef}
+                className={`divide-y divide-stone-800/60 rounded-lg ${
+                  drag ? 'select-none' : 'overflow-hidden'
+                }`}
+              >
                 {order.map(rosterRow)}
               </ol>
             ) : (
