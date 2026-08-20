@@ -48,6 +48,34 @@
 // rather than `templates` — merged by NAME across the stack, campaign
 // winning, like every other vocabulary-coupled slot.
 //
+// A DERIVED SHELF IS STILL THE DM'S, LINE BY LINE (2026-08-20). A shop
+// that writes no lines takes its shelf off the catalogue, and until now
+// that was all or nothing: the whole list was the book's, and the only
+// way to charge one dollar more for one rifle was to write the other
+// twenty-seven lines out by hand. So a vendor grows an `overrides` list
+// beside its groups and filters — SPARSE, exactly the way the live
+// vendor's `stock` is sparse (§14's defaultStep): derivation proposes
+// every line, an entry exists only once a human has moved that line off
+// what was proposed, and a touched line's stored value wins (rule 1,
+// per line). `out: true` is the third thing a human can say about a
+// line, and it means "not in THIS shop" — the catalogue keeps it.
+//
+// Nothing about that freezes the shelf: the derivation still runs on
+// every render, so a price corrected in the pack still reaches the
+// twenty-seven lines nobody touched.
+//
+// AND THE HAMMER, for when a DM wants the list itself (Brian,
+// 2026-08-20). `materialize` writes the resolved shelf DOWN — every
+// derived line, overrides folded in, into explicit `lines` — and the
+// shop stops deriving. That IS a freeze, and it is chosen: from then on
+// the list is the DM's, edited row by row like any authored shop, and
+// the pack's new items no longer walk in. The road back is the same one
+// the forgiving read below already paves — empty the written list and a
+// shop that still declares groups or filters returns to the book.
+//
+// Two rungs, neither of them required: override one number, or own the
+// whole list.
+//
 // NO GAME WORDS. "Vendor", "cart", "price" and "stock" are English. The
 // name of the money is not: which counter a purchase debits, and which
 // stat on a catalogue entry holds the asking price, both arrive from
@@ -158,6 +186,11 @@ export function toVendor(raw) {
       .filter((l) => l !== undefined);
   }
 
+  const overrides = Array.isArray(raw.overrides)
+    ? raw.overrides.map(toOverride).filter((o) => o !== undefined)
+    : undefined;
+  if (overrides?.length) out.overrides = overrides;
+
   const groups = Array.isArray(raw.groups)
     ? raw.groups.map((g) => String(g).trim()).filter(Boolean)
     : undefined;
@@ -172,6 +205,26 @@ export function toVendor(raw) {
     if (Object.keys(filters).length) out.filters = filters;
   }
   return out;
+}
+
+/**
+ * One line a human moved off what the shelf proposed.
+ *
+ * SPARSE, so it is read strictly: an entry that says nothing is a line
+ * back at its default and therefore isn't an entry at all. `out`
+ * swallows the rest — a line this shop doesn't carry has no price here
+ * — and a count is a COUNT, never null: unlimited is the ABSENCE of a
+ * count, which is the absence of the override.
+ */
+function toOverride(raw) {
+  const o = raw && typeof raw === 'object' ? raw : {};
+  const ref = String(o.ref ?? '').trim();
+  if (!ref) return undefined;
+  if (o.out === true) return { ref, out: true };
+  const out = { ref };
+  if (typeof o.price === 'string' && o.price.trim()) out.price = o.price.trim();
+  if (typeof o.qty === 'number' && Number.isFinite(o.qty)) out.qty = Math.max(0, Math.floor(o.qty));
+  return out.price === undefined && out.qty === undefined ? undefined : out;
 }
 
 // ---------------------------------------------------------------------
@@ -229,6 +282,58 @@ function lineFrom(template, price, qty) {
   return out;
 }
 
+/** What the live vendor says it has sold down to, keyed by ref. */
+function depletionOf(live) {
+  return new Map(
+    (live?.lists?.[STOCK_LIST] ?? [])
+      .filter((e) => typeof e.value === 'number')
+      .map((e) => [e.name, e.value]),
+  );
+}
+
+/** One line of the shop AS WRITTEN, resolved through the catalogue. */
+function writtenLine(table, line, depleted) {
+  const store = storeRecord(table);
+  const template = templateOf(table, line.ref);
+  const written = line.qty ?? null;
+  // Depletion only ever applies to a line the DM chose to count.
+  const qty = written === null ? null : (depleted.get(line.ref) ?? written);
+  if (!template) {
+    return {
+      ref: line.ref,
+      name: line.name ?? line.ref,
+      stats: [],
+      price: line.price ?? null,
+      qty,
+      missing: true,
+    };
+  }
+  return lineFrom(template, line.price ?? priceOf(template, store), qty);
+}
+
+/**
+ * THE WHOLE SHELF, including the lines an override took OUT — each of
+ * those marked `out`, so the console can show a human what they removed
+ * and hand it back. Every player-facing surface takes `shelfOf`, which
+ * is this minus those.
+ *
+ * The order of resolution is the law, and it is one sentence: the shop
+ * as written (or the catalogue, when nothing was written) PROPOSES every
+ * line, and a line a human touched carries what they typed (rule 1, per
+ * line).
+ *
+ * A live vendor's depletion applies underneath both — an overridden
+ * count makes a line COUNTED, and a counted line's stock is whatever the
+ * entity has sold it down to, exactly as for a written one.
+ */
+export function shelfRows(table, vendor, live) {
+  const depleted = depletionOf(live);
+  const base = vendor.lines
+    ? vendor.lines.map((line) => writtenLine(table, line, depleted))
+    : derivedShelf(table, vendor);
+  return overlay(table, vendor, base, depleted);
+}
+
 /**
  * What's behind the counter right now.
  *
@@ -238,31 +343,82 @@ function lineFrom(template, price, qty) {
  * written count — that absence IS the thin instantiation (§14).
  */
 export function shelfOf(table, vendor, live) {
-  if (!vendor.lines) return derivedShelf(table, vendor);
+  return shelfRows(table, vendor, live).filter((line) => !line.out);
+}
+
+/** One proposed line, with what a human said about it laid over the top. */
+function overridden(line, over, depleted) {
+  if (over.out) return { ...line, out: true };
+  const out = { ...line };
+  if (over.price !== undefined) out.price = over.price;
+  if (over.qty !== undefined) out.qty = depleted.get(line.ref) ?? over.qty;
+  return out;
+}
+
+/**
+ * The sparse list, over the proposed shelf.
+ *
+ * The interesting half is the tail: an override whose ref the shelf no
+ * longer proposes — the pack dropped the item, the shop's groups
+ * changed, a filter narrowed past it. It does NOT vanish. A human
+ * stating a price for a thing is a human stocking it, so the line stands
+ * on its own, marked `dangling` for the console to flag; only an `out`
+ * with nothing left to remove is inert, because it was already a
+ * statement of absence and the absence arrived by itself.
+ *
+ * Never silently dropped is rule 9's tail, and a price a DM typed
+ * evaporating because a pack was updated is exactly the shape it warns
+ * about.
+ */
+function overlay(table, vendor, base, depleted) {
+  if (!vendor.overrides?.length) return base;
   const store = storeRecord(table);
-  const depleted = new Map(
-    ((live?.lists?.[STOCK_LIST] ?? []).filter((e) => typeof e.value === 'number')).map((e) => [
-      e.name,
-      e.value,
-    ]),
-  );
-  return vendor.lines.map((line) => {
-    const template = templateOf(table, line.ref);
-    const written = line.qty ?? null;
-    // Depletion only ever applies to a line the DM chose to count.
-    const qty = written === null ? null : (depleted.get(line.ref) ?? written);
-    if (!template) {
-      return {
-        ref: line.ref,
-        name: line.name ?? line.ref,
-        stats: [],
-        price: line.price ?? null,
-        qty,
-        missing: true,
-      };
-    }
-    return lineFrom(template, line.price ?? priceOf(template, store), qty);
+  const left = new Map(vendor.overrides.map((o) => [o.ref, o]));
+  const rows = base.map((line) => {
+    const over = left.get(line.ref);
+    if (!over) return line;
+    left.delete(line.ref);
+    return overridden(line, over, depleted);
   });
+  for (const over of left.values()) {
+    if (over.out) continue;
+    const template = templateOf(table, over.ref);
+    const line = template
+      ? lineFrom(template, priceOf(template, store), null)
+      : { ref: over.ref, name: over.ref, stats: [], price: null, qty: null, missing: true };
+    rows.push({ ...overridden(line, over, depleted), dangling: true });
+  }
+  return rows;
+}
+
+/**
+ * THE SHELF, WRITTEN DOWN — the `lines` a derived shop becomes when its
+ * DM takes the list over.
+ *
+ * Everything the shelf resolves to right now, overrides folded in and
+ * the lines an override took out left out, each carrying its own price
+ * so the book can no longer move it. That is a freeze and it is the
+ * point: what comes back is a list the DM owns, edited row by row like
+ * any authored shop. The overrides are spent in the making of it — a
+ * line that carries its own price has nothing left to override — so the
+ * caller writes them away with the same save.
+ *
+ * Depletion is deliberately NOT folded in: this is the shop as written,
+ * and what the table has already bought off it stays where it lives, on
+ * the live vendor. Reading it in here would sell the same rifle twice.
+ */
+export function materialize(table, vendor) {
+  return shelfRows(table, vendor)
+    .filter((line) => !line.out)
+    .map((line) => {
+      const out = { ref: line.ref };
+      // Only a line the catalogue can't resolve needs to carry its name;
+      // every other one still reads it off the entry it points at.
+      if (line.missing) out.name = line.name;
+      if (line.price !== null) out.price = line.price;
+      if (line.qty !== null) out.qty = line.qty;
+      return out;
+    });
 }
 
 /**
@@ -542,6 +698,24 @@ export function quote(table, shelf, entityId, lines, offered) {
   return out;
 }
 
+/**
+ * Which lines this shop COUNTS, and at what — a number, or null for the
+ * ordinary unlimited. A ref this doesn't mention is unlimited too, which
+ * is every line of a derived shelf nobody has touched.
+ *
+ * The one place the two ways of counting a line meet: what the shop
+ * wrote, and what a human overrode. A line taken out of the shop is
+ * neither, so it comes out of the map entirely.
+ */
+function countsOf(vendor) {
+  const out = new Map((vendor.lines ?? []).map((l) => [l.ref, l.qty ?? null]));
+  for (const over of vendor.overrides ?? []) {
+    if (over.out) out.delete(over.ref);
+    else if (over.qty !== undefined) out.set(over.ref, over.qty);
+  }
+  return out;
+}
+
 /** A thin child (§K): a ref to the template and nothing else, so a correction reaches it forever. */
 function thinChild(template) {
   const child = {
@@ -597,8 +771,9 @@ export function sell(table, vendor, sale, shop) {
   const live = vendorEntity(table, vendor.id);
   const shelf = shelfOf(table, vendor, live);
   // Derived stock counts nothing, so a derived shop writes no stock and
-  // its entity stays as empty as the day it went live.
-  const written = new Map((vendor.lines ?? []).map((l) => [l.ref, l.qty ?? null]));
+  // its entity stays as empty as the day it went live — unless a human
+  // put a count on a line, which is what an override's `qty` IS.
+  const written = countsOf(vendor);
   const stock = [...(live?.lists?.[STOCK_LIST] ?? [])];
   let depleted = false;
   for (const line of lines) {

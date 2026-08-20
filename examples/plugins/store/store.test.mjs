@@ -28,11 +28,13 @@ import {
   cartTotal,
   formatPrice,
   makePayment,
+  materialize,
   parsePrice,
   priceSymbol,
   quote,
   sell,
   shelfOf,
+  shelfRows,
   toVendor,
   vendorOf,
   visibleCarts,
@@ -147,11 +149,17 @@ function buyer(overrides = {}) {
  * The slice of the table the store's `needs` name — nothing else is in
  * here, because nothing else is in the real one either.
  */
-function tableOf({ own = [], entities = [buyer()], records = {} } = {}) {
+function tableOf({
+  own = [],
+  entities = [buyer()],
+  records = {},
+  vendors = VENDORS,
+  catalog = CATALOG,
+} = {}) {
   return {
     campaign: { slug: 'duo', name: 'The Unlikely Duo', rootId: 'ent_root' },
-    declarations: { vendors: { merged: VENDORS, own } },
-    templates: { catalog: CATALOG },
+    declarations: { vendors: { merged: vendors, own } },
+    templates: { catalog },
     records: {
       store: { costField: 'cost', consumes: ['service'] },
       growth: { field: 'quality', unstocked: ['Legendary'] },
@@ -366,6 +374,170 @@ describe('the shelf, resolved through the catalogue', () => {
     // The uncounted line stays unlimited however loudly the entity
     // claims otherwise: absence is what "unlimited" IS here.
     expect(shelf.amo_rounds.qty).toBe(null);
+  });
+});
+
+describe('a derived shelf, overridden line by line', () => {
+  /** The Emporium, with a hand laid on one or two of his lines. */
+  const withOverrides = (overrides) =>
+    toVendor({ ...VENDORS[1], overrides });
+
+  it('keeps only the entries that SAY something — a line at its default is no entry', () => {
+    const v = toVendor({
+      id: 'v',
+      name: 'S',
+      overrides: [
+        { ref: 'a', price: '$9.00' },
+        { ref: 'b', qty: 2 },
+        { ref: 'c', out: true },
+        // Nothing stated, no ref at all, and a count that isn't one.
+        { ref: 'd' },
+        { price: '$1.00' },
+        { ref: 'e', qty: 'lots' },
+      ],
+    });
+    expect(v.overrides).toEqual([
+      { ref: 'a', price: '$9.00' },
+      { ref: 'b', qty: 2 },
+      { ref: 'c', out: true },
+    ]);
+  });
+
+  it('lets the overridden line’s price win and leaves every other line the book’s', () => {
+    const shelf = byRef(shelfOf(TABLE, withOverrides([{ ref: 'wpn_rifle', price: '$29.00' }])));
+    expect(shelf.wpn_rifle.price).toBe('$29.00');
+    // The twenty-seven nobody touched still come off the catalogue, so a
+    // price corrected in the pack still reaches them.
+    expect(shelf.wpn_shiny.price).toBe('$25.00');
+    expect(shelf.amo_rounds.price).toBe('$0.50');
+  });
+
+  it('makes an overridden count COUNTED — derived stock has none until a human says so', () => {
+    expect(byRef(shelfOf(TABLE, vendorOf(TABLE, 'ven_emporium'))).wpn_rifle.qty).toBe(null);
+    expect(byRef(shelfOf(TABLE, withOverrides([{ ref: 'wpn_rifle', qty: 2 }]))).wpn_rifle.qty).toBe(2);
+  });
+
+  it('depletes an overridden count exactly as it depletes a written one', () => {
+    const vendor = withOverrides([{ ref: 'wpn_rifle', qty: 2 }]);
+    const out = sell(
+      TABLE,
+      vendor,
+      { entityId: 'ent_barrett' },
+      { vendorId: 'ven_emporium', carts: { ent_barrett: [{ ref: 'wpn_rifle', qty: 1 }] }, offered: {} },
+    );
+    // Thin, as ever: the one line that moved off its default.
+    expect(out.effects[0].draft.lists.stock).toEqual([{ name: 'wpn_rifle', value: 1 }]);
+    // …and read back, the shelf says one left rather than the two the
+    // override wrote — stock is the live count (§14).
+    const live = {
+      id: 'ent_shop',
+      name: 'The Emporium',
+      type: 'vendor',
+      lists: { stock: [{ name: 'wpn_rifle', value: 1 }] },
+      refs: { from: { id: 'ven_emporium', name: 'The Emporium' } },
+    };
+    expect(byRef(shelfOf(TABLE, vendor, live)).wpn_rifle.qty).toBe(1);
+    // The line beside it was never counted, so nothing about it moved.
+    expect(byRef(shelfOf(TABLE, vendor, live)).wpn_shiny.qty).toBe(null);
+  });
+
+  it('takes a line OUT of this shop and nowhere else', () => {
+    const vendor = withOverrides([{ ref: 'wpn_shiny', out: true }]);
+    expect(shelfOf(TABLE, vendor).map((l) => l.ref)).not.toContain('wpn_shiny');
+    // The console still sees it, marked — you can only hand back what
+    // you can still find.
+    const row = shelfRows(TABLE, vendor).find((l) => l.ref === 'wpn_shiny');
+    expect(row).toMatchObject({ name: 'Shiny Rifle', out: true });
+    // And the catalogue never heard about any of it.
+    expect(shelfOf(TABLE, vendorOf(TABLE, 'ven_emporium')).map((l) => l.ref)).toContain('wpn_shiny');
+  });
+
+  it('hands the line back to the book when the override goes', () => {
+    const shelf = byRef(shelfOf(TABLE, withOverrides([])));
+    expect(shelf.wpn_rifle.price).toBe('$20.00');
+    expect(shelf.wpn_rifle.qty).toBe(null);
+    expect(Object.keys(shelf)).toContain('wpn_shiny');
+  });
+
+  it('leaves a shop that WROTE its lines exactly as it found it', () => {
+    expect(shelfOf(TABLE, curly())).toEqual(shelfOf(TABLE, toVendor({ ...VENDORS[0] })));
+    // …and still overrides one of them if somebody asks it to, because
+    // the law is per line and not per kind of shop.
+    const written = toVendor({ ...VENDORS[0], overrides: [{ ref: 'wpn_rifle', price: '$1.00' }] });
+    expect(byRef(shelfOf(TABLE, written)).wpn_rifle.price).toBe('$1.00');
+  });
+
+  it('never drops an override the derivation stopped proposing — it stands on its own', () => {
+    // Sal carries Used guns only; the Shiny one is filtered out from
+    // under a price somebody typed for it.
+    const vendor = toVendor({ ...VENDORS[2], overrides: [{ ref: 'wpn_shiny', price: '$9.00' }] });
+    const line = shelfOf(TABLE, vendor).find((l) => l.ref === 'wpn_shiny');
+    expect(line).toMatchObject({ name: 'Shiny Rifle', price: '$9.00', dangling: true });
+    // A ref this host has no entry for at all is kept the same way, and
+    // says which hole it is.
+    const ghost = toVendor({ ...VENDORS[1], overrides: [{ ref: 'itm_ghost', price: '$3.00' }] });
+    expect(shelfOf(TABLE, ghost).find((l) => l.ref === 'itm_ghost')).toMatchObject({
+      name: 'itm_ghost',
+      price: '$3.00',
+      missing: true,
+      dangling: true,
+    });
+  });
+
+  it('lets a dangling `out` be inert — the absence it asked for already arrived', () => {
+    const vendor = toVendor({ ...VENDORS[2], overrides: [{ ref: 'wpn_shiny', out: true }] });
+    expect(shelfRows(TABLE, vendor).map((l) => l.ref)).toEqual(['wpn_rifle']);
+  });
+});
+
+describe('writing the whole shelf down', () => {
+  const emporium = () => vendorOf(TABLE, 'ven_emporium');
+
+  it('writes the shelf as it stands, overrides folded in', () => {
+    const vendor = toVendor({
+      ...VENDORS[1],
+      overrides: [
+        { ref: 'wpn_rifle', price: '$29.00', qty: 2 },
+        { ref: 'wpn_shiny', out: true },
+      ],
+    });
+    const lines = materialize(TABLE, vendor);
+    // Every line the shelf resolves to, and only those: the one taken
+    // out is not written down.
+    expect(lines.map((l) => l.ref)).toEqual(
+      shelfOf(TABLE, vendor).map((l) => l.ref),
+    );
+    expect(lines).toContainEqual({ ref: 'wpn_rifle', price: '$29.00', qty: 2 });
+    // A line nobody touched carries the book's price VERBATIM, which is
+    // what makes this a freeze rather than a copy of the same question.
+    expect(lines).toContainEqual({ ref: 'amo_rounds', price: '$0.50' });
+    expect(lines.map((l) => l.ref)).not.toContain('wpn_shiny');
+  });
+
+  it('is a FREEZE, knowingly — the catalogue stops reaching it', () => {
+    const written = { ...VENDORS[1], lines: materialize(TABLE, emporium()), overrides: undefined };
+    // The pack corrects a price and adds an item.
+    const later = tableOf({
+      vendors: [written],
+      catalog: [
+        { ...CATALOG[0], lists: { stats: [{ name: 'Cost', value: '$99.00' }] } },
+        ...CATALOG.slice(1),
+        { id: 'wpn_new', name: 'A New Gun', group: 'Guns', lists: { stats: [{ name: 'Cost', value: '$7.00' }] } },
+      ],
+    });
+    const shelf = byRef(shelfOf(later, vendorOf(later, 'ven_emporium')));
+    expect(shelf.wpn_rifle.price).toBe('$20.00');
+    expect(shelf.wpn_new).toBeUndefined();
+  });
+
+  it('hands the shelf back to the book when the written list is emptied', () => {
+    // The road back is one affordance and no new field: a shop that
+    // still knows which shelves it keeps reads an empty list as derived.
+    const back = toVendor({ ...VENDORS[1], lines: [] });
+    expect(back.lines).toBeUndefined();
+    expect(shelfOf(TABLE, back).map((l) => l.ref)).toEqual(
+      shelfOf(TABLE, emporium()).map((l) => l.ref),
+    );
   });
 });
 

@@ -739,10 +739,16 @@ export default function ShopPane({ entity, glass, records, plugin }: PaneProps) 
   // word (`host.mjs` answers with `changed: ['shop']`), so a sale at the
   // console empties this cart without the seat chrome knowing the store
   // exists, and a tap on a counter costs this pane nothing.
+  //
+  // 'templates' is here because the shelf is RESOLVED, not stored: the
+  // Warden overriding a price mid-visit writes a vendor row and nudges
+  // 'templates', and a shelf that ignored that went on offering a gun at
+  // the old price until somebody reloaded the panel (found live,
+  // 2026-08-20).
   const { data: view, reload } = useLive<ShopView | null>(
     () => plugin.call<ShopView | null>('shop'),
     [],
-    { on: ['shop', 'entities'] },
+    { on: ['shop', 'entities', 'templates'] },
   );
 
   const write = (entityId: string, lines: CartLine[], offered?: boolean) => {

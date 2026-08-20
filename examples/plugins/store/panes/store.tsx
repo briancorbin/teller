@@ -9,6 +9,15 @@
 //   unlimited, which is the ordinary case: counting boxes of matches is
 //   bookkeeping nobody asked for.
 //
+//   A shop that wrote NO list is edited here too, as of 2026-08-20, and
+//   it is the same section wearing the shelf's own resolution: its
+//   twenty-eight derived lines are shown as rows whose prices and counts
+//   are the book's PROPOSALS, greyed in the placeholder, and typing over
+//   one stores an override for that line and nothing else. Two rungs,
+//   and the ladder is deliberate — override one number, or "write it all
+//   down" and own the whole list from then on. Neither is required, and
+//   the second is reversible by emptying the list it wrote.
+//
 //   THE COUNTER — play. Whoever has put a cart down, what it comes to,
 //   and the sell button. Nothing here computes past a human: the total,
 //   the coins and the change are all PROPOSALS in fields the Warden
@@ -49,7 +58,14 @@ import {
   useLive,
   type BlockCtx,
 } from 'teller';
-import { formatPrice, makePayment, parsePrice } from '../store.mjs';
+import {
+  formatPrice,
+  makePayment,
+  materialize,
+  parsePrice,
+  shelfRows,
+  toVendor,
+} from '../store.mjs';
 
 // ---- what the doors answer with ---------------------------------------
 //
@@ -84,6 +100,9 @@ function bookPrice(template: Template | undefined, costField: string): string | 
 
 type VendorLine = { ref: string; name?: string; price?: string; qty?: number | null };
 
+/** One line of a derived shelf a human moved off what the book proposed. */
+type Override = { ref: string; price?: string; qty?: number; out?: true };
+
 type Vendor = {
   id: string;
   name: string;
@@ -94,9 +113,14 @@ type Vendor = {
   groups?: string[];
   /** Derived stock: a catalogue stat's name → the values he carries. */
   filters?: Record<string, string[]>;
+  /** Sparse, over the derived shelf: an entry per line somebody touched. */
+  overrides?: Override[];
   /** This campaign authored it, so this console may edit it. */
   own?: boolean;
 };
+
+/** The slice of the table `store.mjs` reads to resolve a shelf — assembled here, for prep. */
+type Table = { templates: { catalog: Template[] }; records: Record<string, unknown> };
 
 type StockLine = {
   ref: string;
@@ -109,6 +133,10 @@ type StockLine = {
   /** null = unlimited, and that is the ordinary case. */
   qty: number | null;
   missing?: true;
+  /** An override took this line out of THIS shop. Only the console sees these. */
+  out?: true;
+  /** An override the derivation no longer proposes — kept, and flagged. */
+  dangling?: true;
 };
 
 type CartLine = { ref: string; qty: number };
@@ -207,8 +235,118 @@ function LineRow({
   );
 }
 
+/**
+ * ONE LINE OF A DERIVED SHELF, and the three things a human may say
+ * about it.
+ *
+ * The book PROPOSES, in the placeholder — the price and the count the
+ * shelf will use if nobody touches this row, greyed because a proposal
+ * is not a value (rule 1, and the same greyed-placeholder grammar the
+ * written shelf's rows already use for an unset price). Typing takes the
+ * line over; the ↺ hands it back; ✕ takes it out of this shop
+ * altogether, which the catalogue never hears about.
+ *
+ * An overridden field wears an inset rule rather than a border colour —
+ * teller's stylesheet is built `important`, so an inline `borderColor`
+ * loses to the `input` class's own and vanishes silently. `box-shadow`
+ * is the property that wins that argument (the shelf tile's cart ring
+ * learned it first).
+ */
+function OverrideRow({
+  line,
+  over,
+  own,
+  onOver,
+}: {
+  line: StockLine;
+  over: Override | undefined;
+  own: boolean;
+  /** A patch onto this line's override, or null to hand the line back to the book. */
+  onOver: (next: Partial<Override> | null) => void;
+}) {
+  const mine = { boxShadow: 'inset 0 0 0 1px #b45309' };
+  return (
+    <li
+      className="flex flex-wrap items-center gap-2 rounded-md bg-stone-900 px-2 py-1.5"
+      style={line.out ? { opacity: 0.5 } : undefined}
+    >
+      <span
+        className="min-w-0 flex-1 truncate text-sm text-stone-100"
+        style={line.out ? { textDecoration: 'line-through' } : undefined}
+      >
+        {line.name}
+        {line.missing && (
+          <span className="ml-2 font-mono text-amber-500/80" style={{ fontSize: '11px' }}>
+            not on this host
+          </span>
+        )}
+        {line.dangling && !line.missing && (
+          <span className="ml-2 font-mono text-amber-500/80" style={{ fontSize: '11px' }}>
+            no longer on the catalogue's shelf — yours is what's keeping it here
+          </span>
+        )}
+      </span>
+
+      {line.out ? (
+        <button className={btn} onClick={() => onOver(null)} disabled={!own}>
+          back on the shelf
+        </button>
+      ) : (
+        <>
+          <input
+            className={`${input} w-24 text-right font-mono text-xs`}
+            placeholder={line.price ?? "book's"}
+            defaultValue={over?.price ?? ''}
+            style={over?.price === undefined ? undefined : mine}
+            disabled={!own}
+            onBlur={(e) => onOver({ price: e.target.value.trim() || undefined })}
+            aria-label={`what ${line.name} costs here${
+              line.price ? ` (the book says ${line.price})` : ''
+            }`}
+          />
+          <input
+            className={`${input} w-20 text-right font-mono text-xs`}
+            type="number"
+            min={0}
+            placeholder={line.qty === null ? '∞' : String(line.qty)}
+            defaultValue={over?.qty ?? ''}
+            style={over?.qty === undefined ? undefined : mine}
+            disabled={!own}
+            onBlur={(e) => {
+              const raw = e.target.value.trim();
+              onOver({ qty: raw === '' ? undefined : Math.max(0, Math.floor(Number(raw) || 0)) });
+            }}
+            aria-label={`how many ${line.name} he has`}
+          />
+          {over && (
+            <button
+              className={btnGhost}
+              onClick={() => onOver(null)}
+              disabled={!own}
+              aria-label={`back to the book for ${line.name}`}
+              title="back to the book"
+            >
+              ↺
+            </button>
+          )}
+          <button
+            className={`${btnGhost} hover:text-red-300`}
+            onClick={() => onOver({ out: true })}
+            disabled={!own}
+            aria-label={`take ${line.name} out of this shop`}
+            title="not in this shop"
+          >
+            ✕
+          </button>
+        </>
+      )}
+    </li>
+  );
+}
+
 function VendorCard({
   vendor,
+  table,
   catalog,
   byId,
   costField,
@@ -220,6 +358,8 @@ function VendorCard({
   onOpen,
 }: {
   vendor: Vendor;
+  /** What a shelf is resolved against — the catalogue and the system's records. */
+  table: Table;
   catalog: Template[];
   byId: Map<string, Template>;
   /** The system's word for what a thing costs (`records.store.costField`). */
@@ -232,11 +372,64 @@ function VendorCard({
   onOpen: () => void;
 }) {
   const [adding, setAdding] = useState('');
-  const lines = vendor.lines ?? [];
+  // Read through the plugin's OWN reading of a row rather than the raw
+  // keys, so this screen and the shelf agree about what a shop is — an
+  // empty `lines` beside groups reads as derived in `store.mjs`, and a
+  // console that checked `lines === undefined` itself would call the same
+  // shop written and offer the wrong editor.
+  const shape: Vendor = toVendor(vendor) ?? vendor;
+  const lines = shape.lines ?? [];
   // He wrote no list at all, so his shelf is DERIVED off the catalogue.
   // Not the same as an empty one: "he has nothing" is a statement.
-  const derived = vendor.lines === undefined;
+  const derived = shape.lines === undefined;
+  const overrides = shape.overrides ?? [];
+  const rows: StockLine[] = derived && expanded ? shelfRows(table, shape) : [];
   const patch = (next: Partial<Vendor>) => onSave({ ...vendor, ...next });
+
+  /** One line's override, replaced or removed — the sparse write, from this end. */
+  const setOver = (ref: string, next: Partial<Override> | null) => {
+    const kept = overrides.filter((o) => o.ref !== ref);
+    if (next) {
+      const merged: Override = next.out
+        ? { ref, out: true }
+        : { ...overrides.find((o) => o.ref === ref), ...next, ref, out: undefined };
+      // An entry that says nothing is a line back at its default, and
+      // the sparse list holds no such thing.
+      if (merged.out || merged.price !== undefined || merged.qty !== undefined) kept.push(merged);
+    }
+    patch({ overrides: kept.length ? kept : undefined });
+  };
+
+  const writeItAllDown = () => {
+    const written = materialize(table, shape) as VendorLine[];
+    if (
+      !window.confirm(
+        `Write ${shape.name}'s shelf down as ${written.length} lines?\n\n` +
+          `The list becomes this shop's own: the catalogue stops adding to it and stops ` +
+          `correcting its prices, and you edit it row by row from here. Emptying the list ` +
+          `later hands the shelf back to the book.`,
+      )
+    ) {
+      return;
+    }
+    // The overrides were spent in the making of it — every line carries
+    // its own price now, so there is nothing left for them to override.
+    patch({ lines: written, overrides: undefined });
+  };
+
+  const backToTheBook = () => {
+    if (
+      !window.confirm(
+        `Hand ${shape.name}'s shelf back to the book?\n\n` +
+          `The ${lines.length} written line${lines.length === 1 ? '' : 's'} ` +
+          `${lines.length === 1 ? 'is' : 'are'} discarded, and he carries whatever the ` +
+          `catalogue prices on his shelves again.`,
+      )
+    ) {
+      return;
+    }
+    patch({ lines: [] });
+  };
 
   return (
     <li className="rounded-md border border-stone-800">
@@ -245,6 +438,7 @@ function VendorCard({
           <span className="text-sm text-stone-100">{vendor.name}</span>
           <span className="ml-2 font-mono text-stone-600" style={{ fontSize: '11px' }}>
             {derived ? 'off the catalogue' : `${lines.length} line${lines.length === 1 ? '' : 's'}`}
+            {overrides.length > 0 && `, ${overrides.length} yours`}
           </span>
           {!vendor.own && (
             <span className="ml-2 font-mono text-stone-600" style={{ fontSize: '11px' }}>
@@ -287,61 +481,113 @@ function VendorCard({
               price · stock (blank = unlimited)
             </span>
           </div>
-          {derived && (
-            <p className="text-stone-500" style={{ fontSize: '12px' }}>
-              No list written, so he carries everything the catalogue prices
-              {vendor.groups?.length ? ` on ${vendor.groups.join(', ')}` : ''}
-              {vendor.filters
-                ? `, ${Object.entries(vendor.filters)
-                    .map(([name, values]) => `${name} ${values.join(' or ')}`)
-                    .join(' · ')}`
-                : ''}
-              . Write a line below and the shelf becomes that list instead.
-            </p>
+          {derived ? (
+            <>
+              {/* The shelf, RESOLVED — what he actually has behind the
+                  counter right now, rather than a sentence describing
+                  where it came from. The sentence was the whole editor
+                  for a derived shop, which made "charge a dollar more
+                  for one rifle" mean writing the other twenty-seven
+                  lines out by hand. */}
+              <p className="text-stone-500" style={{ fontSize: '12px' }}>
+                Off the catalogue: everything it prices
+                {shape.groups?.length ? ` on ${shape.groups.join(', ')}` : ''}
+                {shape.filters
+                  ? `, ${Object.entries(shape.filters)
+                      .map(([name, values]) => `${name} ${values.join(' or ')}`)
+                      .join(' · ')}`
+                  : ''}
+                . Type over a price or a count and that line is this shop's; ✕ takes one out of
+                this shop and nowhere else. Everything you leave alone keeps up with the book.
+              </p>
+              <ul className="space-y-1">
+                {rows.map((line) => {
+                  const over = overrides.find((o) => o.ref === line.ref);
+                  return (
+                    <OverrideRow
+                      // The stored override is part of the identity: these
+                      // fields are uncontrolled, so a row whose override
+                      // changed underneath has to be a new row or it goes
+                      // on showing what was typed into the old one.
+                      key={`${line.ref}:${over?.price ?? ''}:${over?.qty ?? ''}:${over?.out ?? ''}`}
+                      line={line}
+                      over={over}
+                      own={vendor.own === true}
+                      onOver={(next) => setOver(line.ref, next)}
+                    />
+                  );
+                })}
+                {rows.length === 0 && (
+                  <li className="text-sm text-stone-600">
+                    the catalogue prices nothing he'd carry
+                  </li>
+                )}
+              </ul>
+            </>
+          ) : (
+            <ul className="space-y-1">
+              {lines.map((line, i) => (
+                <LineRow
+                  key={`${line.ref}-${i}`}
+                  line={line}
+                  template={byId.get(line.ref)}
+                  book={bookPrice(byId.get(line.ref), costField)}
+                  onChange={(p) =>
+                    patch({ lines: lines.map((l, j) => (j === i ? { ...l, ...p } : l)) })
+                  }
+                  onRemove={() => patch({ lines: lines.filter((_, j) => j !== i) })}
+                />
+              ))}
+              {lines.length === 0 && (
+                <li className="text-sm text-stone-600">nothing on the shelves yet</li>
+              )}
+            </ul>
           )}
-          <ul className="space-y-1">
-            {lines.map((line, i) => (
-              <LineRow
-                key={`${line.ref}-${i}`}
-                line={line}
-                template={byId.get(line.ref)}
-                book={bookPrice(byId.get(line.ref), costField)}
-                onChange={(p) =>
-                  patch({ lines: lines.map((l, j) => (j === i ? { ...l, ...p } : l)) })
-                }
-                onRemove={() => patch({ lines: lines.filter((_, j) => j !== i) })}
-              />
-            ))}
-            {lines.length === 0 && !derived && (
-              <li className="text-sm text-stone-600">nothing on the shelves yet</li>
-            )}
-          </ul>
 
           {vendor.own && (
             <div className="flex flex-wrap items-center gap-2">
-              <select
-                className={`${input} min-w-0 flex-1 text-xs`}
-                value={adding}
-                onChange={(e) => setAdding(e.target.value)}
-              >
-                <option value="">stock the shelf…</option>
-                {catalog.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                className={btn}
-                disabled={!adding}
-                onClick={() => {
-                  const t = byId.get(adding);
-                  patch({ lines: [...lines, { ref: adding, ...(t ? { name: t.name } : {}) }] });
-                  setAdding('');
-                }}
-              >
-                add
-              </button>
+              {derived ? (
+                // The other rung (Brian, 2026-08-20): own the whole list.
+                // Overriding one number and taking the list over are both
+                // first-class, and neither is the price of the other.
+                <button className={btn} onClick={writeItAllDown} disabled={rows.length === 0}>
+                  write it all down
+                </button>
+              ) : (
+                <>
+                  <select
+                    className={`${input} min-w-0 flex-1 text-xs`}
+                    value={adding}
+                    onChange={(e) => setAdding(e.target.value)}
+                  >
+                    <option value="">stock the shelf…</option>
+                    {catalog.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    className={btn}
+                    disabled={!adding}
+                    onClick={() => {
+                      const t = byId.get(adding);
+                      patch({ lines: [...lines, { ref: adding, ...(t ? { name: t.name } : {}) }] });
+                      setAdding('');
+                    }}
+                  >
+                    add
+                  </button>
+                  {/* The road back, and it only exists for a shop that
+                      still knows which shelves it keeps: emptying the
+                      written list is what returns him to the book. */}
+                  {(shape.groups?.length || shape.filters) && (
+                    <button className={btnGhost} style={{ fontSize: '11px' }} onClick={backToTheBook}>
+                      back to the book
+                    </button>
+                  )}
+                </>
+              )}
               <button
                 className={`${btnGhost} ml-auto hover:text-red-300`}
                 style={{ fontSize: '11px' }}
@@ -486,14 +732,37 @@ function CounterRow({
   );
 }
 
-export default function StorePane({ plugin, records }: PaneProps) {
+export default function StorePane({ plugin }: PaneProps) {
+  // THE TWO RECORDS A SHELF IS RESOLVED AGAINST, asked for by name.
+  //
+  // Not read off `records`: the ctx a block is handed carries the six
+  // slots the chrome fetches for the SHEET (accents, dials, brand,
+  // portraits, dice, marks), and 'store' has never been one of them —
+  // so `records.store?.costField ?? 'cost'` was the fallback every time
+  // and worked only because this system's stat happens to be called
+  // Cost. A derived shelf resolved with no `costField` prices nothing
+  // and comes back empty, which is how that was finally found.
+  //
+  // Teller's own public doors, like the catalogue below and for the same
+  // reason: what a thing costs and which grades nobody stocks are the
+  // TABLE's declarations, not the store's.
+  const { data: records } = useLive<Record<string, Record<string, unknown>>>(
+    () =>
+      Promise.all(
+        ['store', 'growth'].map((slot) =>
+          api<Record<string, unknown>>(`/api/stack/record/${slot}`)
+            .catch(() => ({}))
+            .then((r) => [slot, r] as const),
+        ),
+      ).then(Object.fromEntries),
+    [],
+    { on: ['templates'] },
+  );
   // The system's word for what a thing costs — the same declaration the
   // shelf reads, so an unset line's placeholder is exactly the number
   // the shelf will use. A system that declares nothing falls to 'cost',
   // which is what `store.mjs` does too.
-  const costField = String(
-    (records.store as { costField?: unknown } | undefined)?.costField ?? 'cost',
-  );
+  const costField = String(records?.store?.costField ?? 'cost');
   // Each on its own word: a vendor and the open shop are the store's
   // own ('shop'), the catalogue is the content stack's ('templates').
   const { data: vendors, reload: reloadVendors } = useLive(
@@ -509,7 +778,10 @@ export default function StorePane({ plugin, records }: PaneProps) {
   const { data: view, reload: reloadShop } = useLive<ShopView | null>(
     () => plugin.call<ShopView | null>('shop'),
     [],
-    { on: ['shop', 'entities'] },
+    // 'templates' too: the open shop's shelf is resolved off vendor rows
+    // that this very pane edits, so the counter has to hear about a
+    // price the Warden just typed on the shelf below it.
+    { on: ['shop', 'entities', 'templates'] },
   );
   const [open, setOpen] = useState<string | null>(null);
   const [status, setStatus] = useState('');
@@ -531,16 +803,30 @@ export default function StorePane({ plugin, records }: PaneProps) {
     });
   const sell = (sale: Sale) => plugin.call<Receipt>('sell', { method: 'POST', body: { sale } });
 
-  if (!vendors || !catalog) return null;
+  if (!vendors || !catalog || !records) return null;
   const byId = new Map(catalog.map((t) => [t.id, t]));
+  // The slice `store.mjs` resolves a shelf against, assembled here for
+  // PREP: the same two facts the host pushes a door, so the shelf this
+  // screen edits is the shelf the counter will serve. No live vendor —
+  // what the table has already bought off him is play, and the editor
+  // shows the shop as written.
+  const table: Table = { templates: { catalog }, records };
   const openId = view?.vendor.id;
 
   const save = async (next: Vendor) => {
     // Everything the row carried goes back — the door hands the
     // campaign's own rows out raw underneath, so a key this form has
     // never heard of survives being edited here.
+    //
+    // And `lines` goes back exactly as it arrived. This used to write
+    // `lines: next.lines ?? []` on every save, which meant editing a
+    // derived shop's BLURB declared it had nothing — survivable only
+    // because a row with groups reads an empty list as derived anyway.
+    // A shop that derives the whole catalogue has no groups to be
+    // rescued by, and now that a derived shop is edited rather than
+    // described, that save happens all the time.
     const { own: _own, ...rest } = next;
-    await saveVendor({ ...rest, lines: next.lines ?? [] });
+    await saveVendor(rest);
     reloadVendors();
     reloadShop();
   };
@@ -642,6 +928,7 @@ export default function StorePane({ plugin, records }: PaneProps) {
             <VendorCard
               key={vendor.id}
               vendor={vendor}
+              table={table}
               catalog={catalog}
               byId={byId}
               costField={costField}
