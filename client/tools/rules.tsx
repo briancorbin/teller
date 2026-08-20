@@ -9,7 +9,10 @@
 // shelf-source chips.
 
 import { useMemo, useState } from 'react';
+import { BookReader, type BookTarget } from '../components/BookReader.tsx';
+import { api } from '../lib/api.ts';
 import { useRuleSections, type RuleHit } from '../lib/rules.ts';
+import { useLive } from '../lib/use-session.ts';
 import { card, input, sectionLabel } from '../lib/ui.ts';
 import { registerTool } from './index.ts';
 
@@ -24,11 +27,47 @@ function matches(hit: RuleHit, needle: string): boolean {
   );
 }
 
+/**
+ * The distilled entry says what the rule DOES; the book says it the way
+ * the book says it, with the diagram. An entry that carries a page is
+ * a reference to somewhere, so it gets a way to go there.
+ *
+ * Which book: the entry's own `book` when it names one, otherwise the
+ * first book the packs at this table declare (`/api/books`, read from
+ * the pack manifests) — WiW's sections say "p.26" and the pack says
+ * which book page 26 lives in. A host that holds neither shows nothing
+ * at all rather than a link that opens an apology.
+ */
+function useBookFor(): (hit: RuleHit) => BookTarget | undefined {
+  const { data } = useLive(
+    () => api<{ books: { id: string; name: string; present?: boolean }[]; declared: string[] }>(
+      '/api/books',
+    ),
+    [],
+  );
+  return useMemo(() => {
+    const held = new Map(
+      (data?.books ?? [])
+        .filter((b) => b.present !== false)
+        .map((b) => [b.id, b.name] as const),
+    );
+    const fallback = (data?.declared ?? []).find((id) => held.has(id));
+    return (hit: RuleHit) => {
+      if (!hit.page) return undefined;
+      const id = hit.book && held.has(hit.book) ? hit.book : fallback;
+      if (!id) return undefined;
+      return { bookId: id, page: hit.page, name: held.get(id)! };
+    };
+  }, [data]);
+}
+
 function RulesTool() {
   const sections = useRuleSections();
+  const bookFor = useBookFor();
   const [query, setQuery] = useState('');
   const [section, setSection] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [reading, setReading] = useState<BookTarget | null>(null);
 
   const entries = useMemo<RuleHit[]>(
     () => sections.flatMap((s) => s.entries.map((e) => ({ ...e, section: s.name }))),
@@ -93,6 +132,7 @@ function RulesTool() {
             {found.map((hit) => {
               const key = `${hit.section}·${hit.name}`;
               const expanded = open === key;
+              const target = bookFor(hit);
               return (
                 <div
                   key={key}
@@ -119,6 +159,16 @@ function RulesTool() {
                       {hit.text}
                     </p>
                   </button>
+                  {expanded && target && (
+                    <div className="px-3 pb-2">
+                      <button
+                        className="font-mono text-[11px] text-amber-400 hover:text-amber-300"
+                        onClick={() => setReading(target)}
+                      >
+                        open the book · p.{target.page}
+                      </button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -128,6 +178,8 @@ function RulesTool() {
           </div>
         </>
       )}
+
+      {reading && <BookReader target={reading} onClose={() => setReading(null)} />}
     </section>
   );
 }

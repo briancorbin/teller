@@ -305,7 +305,7 @@ describe("teller's own furniture (§E)", () => {
 
     const loaded = loadCampaign(shelf, campaign); // no dataDir
     const names = loaded.declarations('panels').map((p: any) => p.name).sort();
-    expect(names).toEqual(['boards', 'log', 'plugins', 'screens', 'shelf']);
+    expect(names).toEqual(['boards', 'books', 'log', 'plugins', 'screens', 'shelf']);
     for (const name of names) expect(loaded.sourceOf('panels', name)).toBe('teller');
     campaign.close();
   });
@@ -399,14 +399,16 @@ describe('the order a bar of panels is drawn in', () => {
     const names = loadCampaign(openShelf(dir), campaign).declarations('panels').map(
       (p: any) => p.name,
     );
-    // Runner declared 10, roster declared nothing (50), the five
+    // Runner declared 10, roster declared nothing (50), the six
     // defaults 90-98. Alphabetical within a tie is the tiebreak, which
-    // is why the tools read screens · boards · shelf · plugins · log.
+    // is why the tools read screens · boards · books · shelf · plugins
+    // · log.
     expect(names).toEqual([
       'runner',
       'roster',
       'screens',
       'boards',
+      'books',
       'shelf',
       'plugins',
       'log',
@@ -624,7 +626,7 @@ describe('a panel switched off (§15 — a trust row is a switch)', () => {
     campaign.close();
   });
 
-  it("rejects one of teller's own five — the console tombstone, across a fresh load", () => {
+  it("rejects one of teller's own six — the console tombstone, across a fresh load", () => {
     const shelf = openShelf(dir);
     shelf.putSystem({ id: 'sys_off4', name: 'Off4', data: {} });
     const campaign = createCampaign(dir, 'off4', 'Off Four');
@@ -639,7 +641,7 @@ describe('a panel switched off (§15 — a trust row is a switch)', () => {
       .declarations('panels')
       .map((p: any) => p.name)
       .sort();
-    expect(names).toEqual(['boards', 'plugins', 'screens', 'shelf']);
+    expect(names).toEqual(['boards', 'books', 'plugins', 'screens', 'shelf']);
     campaign.close();
   });
 });

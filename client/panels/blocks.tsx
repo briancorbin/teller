@@ -916,6 +916,7 @@ import '../tools/plugins.tsx';
 import '../tools/boards.tsx';
 import '../tools/log.tsx';
 import '../tools/rules.tsx';
+import '../tools/books.tsx';
 
 registerBlock('tool', (block, ctx) => {
   const name = typeof block.tool === 'string' ? block.tool : '';
