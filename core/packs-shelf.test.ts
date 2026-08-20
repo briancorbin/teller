@@ -18,6 +18,8 @@ import {
   packDir,
   packPanelDir,
   sweepPacks,
+  refusalModule,
+  systemExportModule,
   systemIndexModule,
 } from './packs-shelf.ts';
 import { createCampaign, openShelf, type Campaign, type Shelf } from './store.ts';
@@ -550,6 +552,35 @@ describe('the `system` specifier — one index module over the whole stack', () 
     campaign.close();
   });
 
+  it('a pack presentation may import `system/<name>` — that one is not a cycle', () => {
+    writePack('guidebook', GUIDEBOOK);
+    writePresentation(
+      'guidebook',
+      'Builder',
+      "import { rung } from 'system/creation';\nexport default function Builder() { return rung; }\n",
+    );
+    shelf.setPluginEnabled('pak_folder01', true);
+
+    const swept = sweepPacks(dir, shelf);
+    expect(swept.problems).toEqual([]);
+    // …and the sweep wrote down what it asked for, so boot can check it
+    // without re-reading anyone's source.
+    expect(swept.packs[0].code?.needs).toEqual(['creation']);
+  });
+
+  it('bare `system` stays closed to a pack — importing the merge it rides is the cycle', () => {
+    writePack('guidebook', GUIDEBOOK);
+    writePresentation('guidebook', 'Cyclic', "export { Dial } from 'system';\n");
+    shelf.setPluginEnabled('pak_folder01', true);
+
+    const swept = sweepPacks(dir, shelf);
+    expect(swept.problems).toHaveLength(1);
+    expect(swept.problems[0].problem).toContain('presentations/Cyclic.tsx');
+    expect(swept.problems[0].problem).toContain('system');
+    // The pack's DATA loaded regardless, as ever.
+    expect(swept.packs[0].id).toBe('pak_folder01');
+  });
+
   it('an untrusted pack contributes nothing to the index', () => {
     writePack('guidebook', GUIDEBOOK);
     writePresentation(
@@ -562,6 +593,40 @@ describe('the `system` specifier — one index module over the whole stack', () 
     expect(loaded.packs[0].codePending).toBe(true);
     expect(systemIndexModule(loaded.presentations())).toBe('export {};\n');
     campaign.close();
+  });
+});
+
+describe('the `system/<name>` shim — exact re-exports, or a labeled throw (§M-4a)', () => {
+  const url = '/pack-code/sys_a/exports/creation.js?v=abc';
+
+  it('re-exports the named exports it actually has', () => {
+    expect(systemExportModule('creation', { url, names: ['compose', 'rung'] })).toBe(
+      `export { compose, rung } from '${url}';\n`,
+    );
+  });
+
+  it('a default export is re-exported EXPLICITLY — `export *` would drop it', () => {
+    const body = systemExportModule('creation', { url, names: ['default', 'compose'] });
+    expect(body).toContain(`export { compose } from '${url}';`);
+    expect(body).toContain(`export { default } from '${url}';`);
+  });
+
+  it('default ALONE never emits an empty named clause', () => {
+    expect(systemExportModule('creation', { url, names: ['default'] })).toBe(
+      `export { default } from '${url}';\n`,
+    );
+  });
+
+  it('a file that exports nothing refuses rather than pretending', () => {
+    const body = systemExportModule('creation', { url, names: [] });
+    expect(body).toMatch(/^throw new Error\(/);
+    expect(body).toContain('exports nothing');
+  });
+
+  it('a refusal is a module that THROWS, labeled — a 404 would name nothing', () => {
+    expect(refusalModule('Test System doesn\'t export `creation`')).toBe(
+      'throw new Error("teller: Test System doesn\'t export `creation`");\n',
+    );
   });
 });
 

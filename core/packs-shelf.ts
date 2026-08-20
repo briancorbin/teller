@@ -119,7 +119,7 @@ import {
   openArchive,
   unpackArchive,
 } from './archive.ts';
-import { compileFolder, PACK_IMPORTS } from './compile.ts';
+import { compileFolder, readBuildMeta, PACK_IMPORTS } from './compile.ts';
 import { panelDirIn, stamp, sweepPanelsIn, usableFolderName } from './panels-shelf.ts';
 import type { PanelDef } from './panels.ts';
 import type { Shelf } from './store.ts';
@@ -140,7 +140,11 @@ export type ShelfPack = {
    * One entry per `presentations/*.tsx`, named by its file, pointing at
    * `/pack-code/<pak_id>/presentations/<name>.js`.
    */
-  code?: { presentations: Record<string, string> };
+  code?: {
+    presentations: Record<string, string>;
+    /** `system/<name>` exports this pack's code imports (§M-4a) — checked at load. */
+    needs?: string[];
+  };
   /**
    * Set instead of `code` when a folder compiled presentations but no
    * human has enabled the pack yet — the console's cue to say "this
@@ -414,7 +418,7 @@ const IMPORTABLE = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 export function compilePackCode(
   dir: string,
   packId: string,
-): { presentations?: Record<string, string>; problems: string[] } {
+): { presentations?: Record<string, string>; needs?: string[]; problems: string[] } {
   const srcDir = join(dir, 'presentations');
   if (!existsSync(srcDir)) return { problems: [] };
 
@@ -429,6 +433,7 @@ export function compilePackCode(
   }
 
   const presentations: Record<string, string> = {};
+  const needs: string[] = [];
   for (const name of built) {
     if (!IMPORTABLE.test(name)) {
       problems.push(
@@ -438,9 +443,15 @@ export function compilePackCode(
     }
     const out = join(dir, '.build', 'presentations', `${name}.js`);
     presentations[name] = `/pack-code/${packId}/presentations/${name}.js${stamp(out)}`;
+    // What this presentation asked of the system it rides (§M-4a),
+    // read back off the build rather than out of the source — the
+    // mtime gate means the compile that learned it may have been days
+    // ago.
+    for (const need of readBuildMeta(out).needs) if (!needs.includes(need)) needs.push(need);
   }
   return {
     presentations: Object.keys(presentations).length ? presentations : undefined,
+    ...(needs.length ? { needs } : {}),
     problems,
   };
 }
@@ -509,6 +520,55 @@ export function systemIndexModule(presentations: Record<string, string>): string
     ([name, url]) => `export { default as ${name} } from '${url}';`,
   );
   return lines.length ? `${lines.join('\n')}\n` : 'export {};\n';
+}
+
+/**
+ * One file of a system's declared function (§M-4a): where its bytes
+ * live, and exactly what it exports. Declared HERE, beside the shim
+ * that consumes it and the index module it is a sibling of — the system
+ * shelf that produces one already imports this module.
+ */
+export type SystemExport = { url: string; names: string[] };
+
+/**
+ * The `system/<name>` specifier's body (§M-4a): a shim re-exporting one
+ * of the ACTIVE system's exports, by its exact names.
+ *
+ * Exact, because the two blind forms are each wrong half the time — a
+ * bare `export * from` silently drops `default`, and a bare
+ * `export { default } from` throws at parse time when the module hasn't
+ * got one. The names come off the build's own metafile, so the shim says
+ * precisely what the file said.
+ *
+ * The shim is no-store and the module it points at is immutably stamped:
+ * the indirection is what lets the ACTIVE SYSTEM change under a running
+ * table without a single cached url going stale — the bare-`system`
+ * trick, applied one export at a time.
+ */
+export function systemExportModule(name: string, entry: SystemExport): string {
+  const named = entry.names.filter((n) => n !== 'default' && IMPORTABLE.test(n));
+  const lines = [`export { ${named.join(', ')} } from '${entry.url}';`];
+  if (entry.names.includes('default')) {
+    lines.push(`export { default } from '${entry.url}';`);
+  }
+  if (!named.length) lines.shift();
+  if (!lines.length) {
+    return `${refusalModule(`\`${name}\` is on this system's shelf but exports nothing`)}`;
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+/**
+ * A module that THROWS, labeled, the moment something imports it —
+ * teller's refusal wearing a module's clothes (§M-4a, rule 1).
+ *
+ * A 404 would be the obvious answer and it is the worse one: a dynamic
+ * import of a missing url rejects with a generic network message that
+ * names nothing, while a module whose body throws rejects with exactly
+ * the sentence a person needs to read. Served 200 for the same reason.
+ */
+export function refusalModule(message: string): string {
+  return `throw new Error(${JSON.stringify(`teller: ${message}`)});\n`;
 }
 
 /**
@@ -624,11 +684,11 @@ export function sweepPacks(dataDir: string, shelf?: Shelf): PackSweep {
     }
 
     // Code last: it neither blocks nor is blocked by the data above.
-    const { presentations, problems: codeProblems } = compilePackCode(dir, id);
+    const { presentations, needs, problems: codeProblems } = compilePackCode(dir, id);
     for (const problem of codeProblems) problems.push({ dir, problem });
     if (presentations) {
       if (shelf?.pluginTrust(id)?.enabled) {
-        pack.code = { presentations };
+        pack.code = { presentations, ...(needs?.length ? { needs } : {}) };
       } else {
         pack.codePending = true;
       }

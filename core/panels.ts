@@ -77,6 +77,19 @@ export type PanelDef = {
   tabs?: string[];
   /** Names deliberately kept OUT of the tab bar — the stray append's opt-out. */
   omit?: string[];
+  /**
+   * **The composite's DRAFT takeover** (§M-4a's companion): the name of
+   * a panel that takes the whole seat while the subject entity still
+   * carries its draft mark — no tabs, no chrome seams, the strip whole.
+   * Absent, the floor is today's behavior unchanged.
+   *
+   * A `surface: false` panel is a legal target: a builder is nowhere
+   * anyone can be POINTED, it is where the seat goes on its own while a
+   * character is being made, and it hands the seat back the moment the
+   * mark clears. The outer glass clip is not part of the deal — that
+   * one law is structural and never yields (§M-5a).
+   */
+  draft?: string;
   /** Seam presentations, by seam. Only a composite reads them. */
   chrome?: PanelChrome;
   /**
@@ -107,7 +120,18 @@ export type PanelDef = {
    * carried in `panel.json` itself. URLs point at
    * `/panel-code/<pan_id>/…`, serving `<folder>/.build/` output only.
    */
-  code?: { style?: string; blocks?: Record<string, string>; takeover?: string };
+  code?: {
+    style?: string;
+    blocks?: Record<string, string>;
+    takeover?: string;
+    /**
+     * The `system/<name>` exports this panel's code imports (§M-4a),
+     * recorded by the compile and checked at load — a name the active
+     * system doesn't export is a labeled problem in the report, never a
+     * module that 404s at render time.
+     */
+    needs?: string[];
+  };
   /**
    * Set instead of `code` when a folder carries compiled code but no
    * human has enabled it yet — the client's cue to say "this panel
@@ -142,6 +166,7 @@ export function toPanel(raw: unknown): PanelDef | undefined {
   const omit = words(r.omit);
   if (tabs) out.tabs = tabs;
   if (omit) out.omit = omit;
+  if (typeof r.draft === 'string' && r.draft.trim()) out.draft = r.draft.trim();
   if (r.chrome && typeof r.chrome === 'object' && !Array.isArray(r.chrome)) {
     const raw = r.chrome as Record<string, unknown>;
     const chrome: PanelChrome = {};
@@ -236,6 +261,37 @@ export function includeProblems(panels: PanelDef[]): { dir: string; problem: str
     walk(panel, [key]);
   }
   return problems;
+}
+
+/**
+ * What a composite's `draft` key resolves to, given the merged
+ * collection and whether the subject is still a draft (§M-4a's
+ * companion).
+ *
+ * Three answers, and the third is why this is a function rather than a
+ * lookup: the panel (take the seat over), a REFUSAL (the name resolves
+ * to nothing — say so, and the caller carries on with the normal seat,
+ * because a blank strip would strand a player mid-creation), or nothing
+ * at all (no `draft` key, or the mark is already cleared — today's
+ * behavior, unchanged, which is the floor this key promises).
+ *
+ * The lookup is over EVERY declaration, `surface: false` included: a
+ * builder is exactly the kind of panel that should be a fragment — it
+ * is nowhere anyone can be POINTED, it's where the seat goes on its own
+ * — so refusing one here would ban the intended target.
+ */
+export function draftTakeover(
+  composite: PanelDef | undefined,
+  panels: PanelDef[],
+  drafting: boolean,
+): { panel: PanelDef } | { refusal: string } | undefined {
+  const name = composite?.draft?.trim();
+  if (!name || !drafting) return undefined;
+  const held = panels.find((p) => p.name.trim().toLowerCase() === name.toLowerCase());
+  if (held) return { panel: held };
+  return {
+    refusal: `no panel named '${name}' — this seat's draft takeover asked for it and nothing declares it`,
+  };
 }
 
 /**

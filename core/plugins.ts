@@ -43,7 +43,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { buildOne, newerThan, stamp, PLUGIN_IMPORTS } from './compile.ts';
+import { buildOne, newerThan, readBuildMeta, stamp, PLUGIN_IMPORTS } from './compile.ts';
 import {
   familyOf,
   isPoint,
@@ -102,7 +102,12 @@ export type PluginProblem = { dir: string; problem: string };
 export type LoadedPane = PaneProvision & {
   /** Which plugin provided it — how a surface calls its doors back. */
   plugin: string;
-  code: { takeover: string; style?: string };
+  code: {
+    takeover: string;
+    style?: string;
+    /** `system/<name>` exports this pane imports (§M-4a) — checked against the active system. */
+    needs?: string[];
+  };
 };
 
 export type LoadedPlugin = {
@@ -280,8 +285,10 @@ function compilePane(
     if (err) return { problem: `pane '${pane.name}' (${pane.entry}): ${err}` };
   }
   if (!existsSync(out)) return { problem: `pane '${pane.name}' compiled to nothing` };
+  const needs = readBuildMeta(out).needs;
   const code: LoadedPane['code'] = {
     takeover: `/plugin-code/${pluginId}/panes/${file}.js${stamp(out)}`,
+    ...(needs.length ? { needs } : {}),
   };
   if (pane.style) {
     const styleSrc = join(dir, pane.style);

@@ -83,7 +83,7 @@ import {
   openArchive,
   unpackArchive,
 } from './archive.ts';
-import { buildOne, compileFolder, newerThan, stamp, PANEL_IMPORTS } from './compile.ts';
+import { buildOne, compileFolder, newerThan, readBuildMeta, stamp, PANEL_IMPORTS } from './compile.ts';
 import { newId } from './id.ts';
 import { toPanel, type PanelDef } from './panels.ts';
 import type { Shelf } from './store.ts';
@@ -168,6 +168,11 @@ export function compilePanelCode(
 
   const buildRoot = join(dir, '.build');
   const code: NonNullable<PanelDef['code']> = {};
+  /** Every `system/<name>` any of this panel's files imported (§M-4a). */
+  const needs: string[] = [];
+  const noteNeeds = (out: string): void => {
+    for (const need of readBuildMeta(out).needs) if (!needs.includes(need)) needs.push(need);
+  };
 
   if (hasBlocks) {
     const { built, problems: blockProblems } = compileFolder(
@@ -180,6 +185,7 @@ export function compilePanelCode(
     for (const name of built) {
       const out = join(buildRoot, 'blocks', `${name}.js`);
       blocks[name] = `/panel-code/${panelId}/blocks/${name}.js${stamp(out)}`;
+      noteNeeds(out);
     }
     if (Object.keys(blocks).length) code.blocks = blocks;
   }
@@ -190,7 +196,10 @@ export function compilePanelCode(
       const err = buildOne(takeoverPath, out, PANEL_IMPORTS);
       if (err) problems.push(`panel.tsx: ${err}`);
     }
-    if (existsSync(out)) code.takeover = `/panel-code/${panelId}/panel.js${stamp(out)}`;
+    if (existsSync(out)) {
+      code.takeover = `/panel-code/${panelId}/panel.js${stamp(out)}`;
+      noteNeeds(out);
+    }
   }
 
   if (hasStyle) {
@@ -206,6 +215,7 @@ export function compilePanelCode(
     if (existsSync(out)) code.style = `/panel-code/${panelId}/style.css${stamp(out)}`;
   }
 
+  if (needs.length) code.needs = needs;
   return { code: Object.keys(code).length ? code : undefined, problems };
 }
 
