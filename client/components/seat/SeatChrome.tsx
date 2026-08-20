@@ -268,9 +268,21 @@ export function SeatChrome({
     panel: paneToPanel(p),
     pane: p,
   }));
-  const declaresMore = layoutPanels.some((p) => word(p.name) === 'more');
-  const moreTabs: Tab[] =
-    !declaresMore && hasSpare
+  // The holding pen. A system that ships `panels/more/` supplies it —
+  // §M-5a's "More stops being code" — and teller synthesizes one only
+  // when nobody did, and only when there is something spare to hold.
+  // Either way it is ONE tab and it is called More, on both paths.
+  const declaredMore = layoutPanels.find((p) => word(p.name) === 'more');
+  const moreTabs: Tab[] = declaredMore
+    ? [
+        {
+          name: 'More',
+          label: declaredMore.label ?? 'More',
+          icon: declaredMore.icon ?? 'more',
+          panel: declaredMore,
+        },
+      ]
+    : hasSpare
       ? [
           {
             name: 'More',
@@ -290,7 +302,7 @@ export function SeatChrome({
     const pool: Tab[] = [
       ...layoutPanels
         .filter(surfaceable)
-        .filter((p) => word(p.name) !== word(composite.name))
+        .filter((p) => word(p.name) !== word(composite.name) && word(p.name) !== 'more')
         .map((p) => ({
           name: p.name,
           label: p.label ?? p.name,

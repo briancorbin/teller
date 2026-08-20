@@ -40,6 +40,11 @@ export { TagSection } from '../components/TagSection.tsx';
 export { BigGauge, LedgerRow, SkillRow } from '../components/Counters.tsx';
 export { ClockFace } from '../components/ClockFace.tsx';
 export { SheetPanel } from '../components/sheet/SheetPanel.tsx';
+// The mark set is teller's; the ASSIGNMENT is the system's (`icons`, or
+// a screen's own `icon`). A shelf-side `ScreenBar` drawing its own tabs
+// needs the same glyphs the floor draws, or a themed bar costs a table
+// its icons — so the set is part of the import contract.
+export { Glyph } from '../components/sheet/glyphs.tsx';
 export { SheetGauge } from '../components/sheet/SheetGauge.tsx';
 
 // A system's dice, as DATA (§J) — the pool spelling, the tally, and the

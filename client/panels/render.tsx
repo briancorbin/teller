@@ -140,14 +140,16 @@ export function IncludeBlock({ name, ctx }: { name: string; ctx: BlockCtx }) {
     return <Refusal>'{word}' includes itself — {[...trail, key].join(' → ')}</Refusal>;
   const panel = panels?.find((p) => p.name.trim().toLowerCase() === key);
   if (!panel) return <Refusal>no panel named '{word}' to include</Refusal>;
+  // The trail is pushed by `PanelSurface` itself, not here, so a panel
+  // is on it from the first block it draws — which is what makes an
+  // immediate self-include refuse in place instead of drawing one more
+  // copy of itself before noticing.
   return (
-    <IncludeTrailContext.Provider value={[...trail, key]}>
-      <PanelSurface
-        panel={panel}
-        ctx={ctx}
-        fallback={<Refusal>'{word}' failed to render — the floor has it</Refusal>}
-      />
-    </IncludeTrailContext.Provider>
+    <PanelSurface
+      panel={panel}
+      ctx={ctx}
+      fallback={<Refusal>'{word}' failed to render — the floor has it</Refusal>}
+    />
   );
 }
 
@@ -283,6 +285,10 @@ export function PanelSurface({
 }) {
   useCodeStyle(panel.id, panel.code?.style);
   const codeState = usePanelCode(panel.code);
+  // What's already being drawn, this panel now included — an include
+  // below refuses any name already on it (§M-5a′'s cycle guard).
+  const outer = useContext(IncludeTrailContext);
+  const trail = [...outer, panel.name.trim().toLowerCase()];
 
   // Loading states render nothing — the arrangement (or refusal) below
   // is only ever drawn once the panel's own code has resolved one way
@@ -301,7 +307,9 @@ export function PanelSurface({
     const Takeover = codeState.Takeover;
     return (
       <Boundary fallback={fallback}>
-        <Takeover {...ctx} />
+        <IncludeTrailContext.Provider value={trail}>
+          <Takeover {...ctx} />
+        </IncludeTrailContext.Provider>
       </Boundary>
     );
   }
@@ -316,13 +324,15 @@ export function PanelSurface({
     );
   return (
     <Boundary fallback={fallback}>
-      <PanelBlocksContext.Provider
-        value={codeState.status === 'ready' ? codeState.blocks : undefined}
-      >
-        {blocks.map((b, i) => (
-          <RenderBlock key={i} block={b} ctx={ctx} />
-        ))}
-      </PanelBlocksContext.Provider>
+      <IncludeTrailContext.Provider value={trail}>
+        <PanelBlocksContext.Provider
+          value={codeState.status === 'ready' ? codeState.blocks : undefined}
+        >
+          {blocks.map((b, i) => (
+            <RenderBlock key={i} block={b} ctx={ctx} />
+          ))}
+        </PanelBlocksContext.Provider>
+      </IncludeTrailContext.Provider>
     </Boundary>
   );
 }

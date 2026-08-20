@@ -167,14 +167,19 @@ const GLYPHS: Record<string, React.ReactNode> = {
 export function Glyph({
   name,
   className = '',
+  style,
 }: {
   name: string;
   className?: string;
+  /** Sizing for a caller that can't reach teller's utilities — shelf
+   * code, whose classes are only styled if teller happens to use the
+   * same ones (§L's second landmine). */
+  style?: React.CSSProperties;
 }) {
   const art = GLYPHS[name];
   if (!art) return null;
   return (
-    <svg viewBox="0 0 24 24" aria-hidden className={className} {...STROKE}>
+    <svg viewBox="0 0 24 24" aria-hidden className={className} style={style} {...STROKE}>
       {art}
     </svg>
   );
