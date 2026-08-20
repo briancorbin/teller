@@ -1383,6 +1383,18 @@ this (warn when compiled shelf code carries class strings teller's CSS
 doesn't define), or whether packs grow their own `style.css` support
 the way panels already have one.
 
+**Client tests: deferred on purpose** (2026-08-20, Brian: "fine
+leaving out for now"). `vitest` covers `core/`, `server/` and
+`scripts/`; nothing tests the React client, and that is a DECISION,
+not an accident: component tests are real machinery for a pre-alpha UI
+still being reshaped weekly, and the browser-verification discipline
+(verify live, screenshot, restore state) is carrying that load for
+now. The giant-Grit incident is the cost of this posture, recorded
+above. Revisit when the client's shape settles — the first candidates
+are `client/lib/`'s pure logic (face counting, art maps, the stream
+election's timing rules), which need only a jsdom project, not a
+component harness.
+
 **Landmine found and fixed on the way through** (2026-08-19), because
 it would have made all of this dead on arrival in a released teller:
 `vite.client.config.ts` now sets `preserveEntrySignatures: 'strict'`.
