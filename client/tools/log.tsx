@@ -10,7 +10,7 @@
 import { useState } from 'react';
 import { api } from '../lib/api.ts';
 import { useLive } from '../lib/use-session.ts';
-import { card, input, sectionLabel } from '../lib/ui.ts';
+import { btnGhost, card, input, sectionLabel } from '../lib/ui.ts';
 import { Refusal } from '../panels/render.tsx';
 import { registerTool } from './index.ts';
 
@@ -68,6 +68,22 @@ function onEach(t: TargetLine): string {
   const moved = t.vital?.name ? ` (${t.vital.name} ${t.vital.from} → ${t.vital.to})` : '';
   return `${bits.length ? bits.join(', ') : 'nothing'} on ${t.targetName ?? t.target}${moved}`;
 }
+
+/**
+ * What one kind of row DID, in a word — for the rows whose payload
+ * carries no entry to name (a delete, a move, a turn shuffle) and for
+ * the undo button, which has to say what it is about to step back
+ * before it steps back it.
+ */
+const VERB: Record<string, string> = {
+  'entity.created': 'created',
+  'entity.updated': 'edited',
+  'entity.deleted': 'deleted',
+  'entity.moved': 'moved',
+  'template.updated': 'a template edit',
+  'template.deleted': 'a template removal',
+  'turn.updated': 'the turn order',
+};
 
 /** Kind → a human, mono-friendly summary of what happened (core/store.ts's `append` calls). */
 function describe(e: EventRow, names: Map<string, string>): string {
@@ -127,6 +143,13 @@ function describe(e: EventRow, names: Map<string, string>): string {
     }
     case 'turn.updated':
       return p.op ? `turn: ${String(p.op)}` : 'turn order changed';
+    // An undo is a mutation like any other (rule 1) and files its own
+    // row — naming what it stepped back, so the list reads as a history
+    // rather than as a thing that mysteriously happened twice.
+    case 'revert':
+      return `put back — ${VERB[String(p.kind ?? '')] ?? String(p.kind ?? 'an edit')}`;
+    case 'panel.copied':
+      return `panel ${String(p.name ?? '?')} copied from ${String(p.from ?? '?')} to this table`;
     case 'campaign.created':
       return `campaign created — ${String(p.name ?? '?')}`;
     default:
@@ -142,6 +165,82 @@ function when(createdAt: string): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
   return new Date(ms).toLocaleString();
+}
+
+/** What `/api/undo/peek` answers with — server/undo.ts's `Undoable`. */
+type Undoable = {
+  event: number;
+  kind: string;
+  actor: string;
+  at: string;
+  entityId: string | null;
+  name?: string;
+  changes?: { list: string; name: string; from?: number | string; to?: number | string }[];
+};
+
+/**
+ * The button's own sentence — 'Hattie Vargas — resources/Grit 3→4'.
+ *
+ * The peek carries every entry that moved; the label names the FIRST
+ * and counts the rest, because a button has one line and a row that
+ * touched four entries still has to be recognisable before you press
+ * it. Anything with no entries to name falls back to what the row did.
+ */
+function undoLabel(u: Undoable): string {
+  const changes = u.changes ?? [];
+  const first = changes[0];
+  const rest = changes.length > 1 ? ` +${changes.length - 1}` : '';
+  const at = (v: number | string | undefined) => (v === undefined ? '—' : String(v));
+  const what = first
+    ? `${first.list}/${first.name} ${at(first.from)}→${at(first.to)}${rest}`
+    : (VERB[u.kind] ?? u.kind);
+  return u.name ? `${u.name} — ${what}` : what;
+}
+
+/**
+ * Step the table back one mutation, from the screen that shows what
+ * there is to step back. The peek says what WOULD go before anything
+ * does — an undo you can't read before pressing is one you have to
+ * press to find out about — and nothing to undo is a plain disabled
+ * button, not an error: a fresh campaign has nothing behind it.
+ */
+function UndoButton({ onUndone }: { onUndone: () => void }) {
+  const { data, reload } = useLive(
+    () => api<{ undoable: Undoable | null }>('/api/undo/peek'),
+    [],
+  );
+  const [busy, setBusy] = useState(false);
+  const [said, setSaid] = useState('');
+  const undoable = data?.undoable ?? null;
+
+  const step = async () => {
+    setBusy(true);
+    try {
+      const { undone } = await api<{ undone: Undoable | null }>('/api/undo', { method: 'POST' });
+      setSaid(undone ? `put back ${undoLabel(undone)}` : 'nothing left to undo');
+      window.setTimeout(() => setSaid(''), 6_000);
+      reload();
+      onUndone();
+    } catch (e) {
+      setSaid(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        className={btnGhost}
+        disabled={busy || !undoable}
+        title={undoable ? 'step the table back one mutation' : 'nothing behind this table yet'}
+        onClick={step}
+      >
+        {undoable ? `undo: ${undoLabel(undoable)}` : 'nothing to undo'}
+      </button>
+      {said && <span className="text-[11px] text-stone-500">{said}</span>}
+    </>
+  );
 }
 
 function LogTool() {
@@ -162,6 +261,7 @@ function LogTool() {
     <div className="space-y-3">
       <div className={`${card} flex flex-wrap items-center gap-2`}>
         <span className={sectionLabel}>Log</span>
+        <UndoButton onUndone={events.reload} />
         <select
           className={`${input} ml-auto`}
           value={entityId}
@@ -189,8 +289,11 @@ function LogTool() {
         <ol className={`${card} divide-y divide-stone-800/70 p-0`}>
           {rows.map((e) => (
             <li key={e.id} className="flex items-baseline gap-3 px-3 py-2 text-sm">
+              {/* A revert reads as a glyph rather than a word: it is the
+                  one kind that is ABOUT another row, and the arrow says
+                  that faster than 'revert' does. */}
               <span className="w-16 shrink-0 truncate font-mono text-[10px] uppercase tracking-wider text-stone-600">
-                {e.kind.split('.')[0]}
+                {e.kind === 'revert' ? '↩ undo' : e.kind.split('.')[0]}
               </span>
               <span className="min-w-0 flex-1 truncate text-stone-300">
                 {describe(e, names)}
