@@ -1467,6 +1467,22 @@ game's identity; N plugins) and POSITION (the system rides the
 merge and owns vocabulary; a plugin never touches the merge and
 provides only at points). Do not collapse the concepts.
 
+**A pack CARRYING a plugin — deferred by contact rule, shape noted
+(2026-08-20, Brian: "a pack can probably contain whatever the author
+wants… maybe that's okay? idk").** The synthesis that keeps both laws:
+a pack may carry a plugin as CARGO, the way it carries panels — rule 4
+governs contents ("whatever its author has the right to put in it") —
+while the plugin still BEHAVES as a plugin: loads through the plugin
+machinery, provides at points, never rides the merge. The wrinkle that
+stops it being built casually is trust: pack-carried PANELS ride the
+pack's toggle because panel code runs in browsers, but a plugin runs
+on the HOST and declares `needs` — folding that into the pack's one
+checkbox would grant host-side capability nobody read about, so a
+carried plugin wants its own app-permissions moment. Decide when a
+real pack wants to ship one — the natural first customer is TEL-108's
+encounter-builder tuned to WiW. Until then, content REQUIRING a
+plugin by ref (§15 — a claim, never a grant) covers the actual need.
+
 **3 · The function/flavor line — CORRECTED (2026-08-19, the
 Cylinder).** The first sort used "function vs flavor" and put the
 revolver in the pack; Brian's correction exposed that as a PROXY for
