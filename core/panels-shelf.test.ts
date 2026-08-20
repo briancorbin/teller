@@ -13,7 +13,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { openShelf, type Shelf } from './store.ts';
-import { defaultPanelDir, defaultPanels, defaultsRoot, panelDir, sweepPanels } from './panels-shelf.ts';
+import { writeArchive } from './archive.ts';
+import {
+  defaultPanelDir,
+  defaultPanels,
+  defaultsRoot,
+  panelArchive,
+  panelDir,
+  sweepPanels,
+} from './panels-shelf.ts';
 
 let dir: string;
 
@@ -303,5 +311,118 @@ describe('panelDir — resolving a pan_ id back to its folder', () => {
   it('an unknown id resolves to nothing', () => {
     copyDefaultsOntoShelf();
     expect(panelDir(dir, 'pan_nope')).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------
+// Rule 4a's law, applied to the other kind of folder: a `.panel` is the
+// same thing, zipped.
+
+describe('panels on the shelf as ARCHIVES', () => {
+  /** A `.panel` dropped in the table's own panels folder. */
+  function dropArchive(name: string, files: Record<string, string>): string {
+    mkdirSync(join(dir, 'panels'), { recursive: true });
+    const path = join(dir, 'panels', `${name}.panel`);
+    writeFileSync(
+      path,
+      writeArchive(
+        Object.entries(files).map(([file, body]) => ({
+          name: file,
+          data: Buffer.from(body, 'utf8'),
+        })),
+      ),
+    );
+    return path;
+  }
+
+  const LOG = JSON.stringify(
+    { id: 'pan_dropped01', name: 'house-log', label: 'House Log', mounted: [] },
+    null,
+    2,
+  );
+
+  it('an archive unpacks to a folder the sweep then reads', () => {
+    dropArchive('house-log', { 'panel.json': LOG, 'style.css': '.x{}' });
+    const { panels, problems } = sweepPanels(dir);
+    expect(problems).toEqual([]);
+    expect(panels.map((p) => p.name)).toEqual(['house-log']);
+    expect(existsSync(join(dir, 'panels', 'house-log', 'panel.json'))).toBe(true);
+    expect(existsSync(join(dir, 'panels', 'house-log', 'style.css'))).toBe(true);
+  });
+
+  it('the minted pan_ id travels — this is the same panel, arriving', () => {
+    dropArchive('house-log', { 'panel.json': LOG });
+    expect(sweepPanels(dir).panels[0].id).toBe('pan_dropped01');
+  });
+
+  it('the archive file is kept, and a second sweep installs nothing again', () => {
+    const path = dropArchive('house-log', { 'panel.json': LOG });
+    sweepPanels(dir);
+    const manifest = join(dir, 'panels', 'house-log', 'panel.json');
+    const before = statSync(manifest).mtimeMs;
+    sweepPanels(dir);
+    expect(existsSync(path)).toBe(true);
+    expect(statSync(manifest).mtimeMs).toBe(before);
+  });
+
+  it('an existing folder is never written over — and the collision is SAID', () => {
+    mkdirSync(join(dir, 'panels', 'house-log'), { recursive: true });
+    writeFileSync(
+      join(dir, 'panels', 'house-log', 'panel.json'),
+      JSON.stringify({ id: 'pan_mine', name: 'house-log', label: 'Mine' }),
+    );
+    // Newly dropped over an existing panel: that is the news.
+    const path = dropArchive('house-log', { 'panel.json': LOG });
+    utimesSync(path, new Date(), new Date(Date.now() + 60_000));
+
+    const { panels, problems } = sweepPanels(dir);
+    expect(panels[0].label).toBe('Mine');
+    expect(problems).toHaveLength(1);
+    expect(problems[0].problem).toMatch(/already exists — the folder wins/);
+  });
+
+  it('but the archive that MADE the folder stops complaining about it', () => {
+    dropArchive('house-log', { 'panel.json': LOG });
+    expect(sweepPanels(dir).problems).toEqual([]);
+    // Second sweep, third, forever: the steady state is silent.
+    expect(sweepPanels(dir).problems).toEqual([]);
+    expect(sweepPanels(dir).problems).toEqual([]);
+  });
+
+  it('a file that is not a zip is a problem, never a crash', () => {
+    mkdirSync(join(dir, 'panels'), { recursive: true });
+    writeFileSync(join(dir, 'panels', 'broken.panel'), 'not a zip');
+    const { panels, problems } = sweepPanels(dir);
+    expect(panels).toEqual([]);
+    expect(problems[0].problem).toMatch(/did not open/);
+  });
+
+  it('an archive carrying no panel.json installs nothing and says why', () => {
+    dropArchive('nameless', { 'style.css': '.x{}' });
+    const { problems } = sweepPanels(dir);
+    expect(problems[0].problem).toMatch(/no panel.json with a name/);
+    expect(existsSync(join(dir, 'panels', 'nameless'))).toBe(false);
+  });
+
+  it('the round trip — export a panel here, drop it on another shelf', () => {
+    copyDefaultsOntoShelf();
+    const from = join(dir, 'panels', 'log');
+    // Compile output exists on the source shelf and must NOT travel.
+    mkdirSync(join(from, '.build'), { recursive: true });
+    writeFileSync(join(from, '.build', 'panel.js'), 'compiled');
+    const here = sweepPanels(dir).panels.find((p) => p.name === 'log');
+
+    const bytes = panelArchive(from);
+    const other = mkdtempSync(join(tmpdir(), 'teller-panels-there-'));
+    try {
+      mkdirSync(join(other, 'panels'), { recursive: true });
+      writeFileSync(join(other, 'panels', 'log.panel'), bytes);
+      const { panels, problems } = sweepPanels(other);
+      expect(problems).toEqual([]);
+      expect(panels).toEqual([here]);
+      expect(existsSync(join(other, 'panels', 'log', '.build'))).toBe(false);
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
   });
 });

@@ -37,6 +37,7 @@
 import { useState, type ReactNode } from 'react';
 import { registerTool } from './index.ts';
 import { api } from '../lib/api.ts';
+import { Export } from './export.tsx';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
 
@@ -270,6 +271,12 @@ function PanelLine({
       )}
       {!off && panel.code === 'none' && <span className={dim}>data only</span>}
       <span className="ml-auto flex items-center gap-2">
+        {panel.id && (
+          <Export
+            path={`/api/panels/${encodeURIComponent(panel.id)}/export`}
+            filename={`${panel.name}.panel`}
+          />
+        )}
         {copyable && <CopyToTable name={panel.name} onChanged={onChanged} />}
         <PanelSwitch id={panel.id} disabled={off} onChanged={onChanged} />
       </span>

@@ -12,7 +12,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadCampaign } from './boot.ts';
-import { packDir, packPanelDir, sweepPacks, systemIndexModule } from './packs-shelf.ts';
+import { archiveJson, openArchive, writeArchive } from './archive.ts';
+import {
+  packArchive,
+  packDir,
+  packPanelDir,
+  sweepPacks,
+  systemIndexModule,
+} from './packs-shelf.ts';
 import { createCampaign, openShelf, type Campaign, type Shelf } from './store.ts';
 
 let dir: string;
@@ -555,5 +562,180 @@ describe('the `system` specifier — one index module over the whole stack', () 
     expect(loaded.packs[0].codePending).toBe(true);
     expect(systemIndexModule(loaded.presentations())).toBe('export {};\n');
     campaign.close();
+  });
+});
+
+// ---------------------------------------------------------------------
+// Rule 4a's other half: a pack is an ARCHIVE, and equally a FOLDER.
+
+describe('packs on the shelf as ARCHIVES', () => {
+  /** Write a `.pack` beside the folders, the way someone dropping one in would. */
+  function dropArchive(name: string, files: Record<string, unknown>): string {
+    mkdirSync(join(dir, 'packs'), { recursive: true });
+    const path = join(dir, 'packs', `${name}.pack`);
+    writeFileSync(
+      path,
+      writeArchive(
+        Object.entries(files).map(([file, value]) => ({
+          name: file,
+          data: Buffer.from(`${JSON.stringify(value, null, 2)}\n`, 'utf8'),
+        })),
+      ),
+    );
+    return path;
+  }
+
+  it('an archive unpacks to a folder, and the sweep reads the folder', () => {
+    dropArchive('guidebook', GUIDEBOOK);
+    const swept = sweepPacks(dir, shelf);
+    expect(swept.problems).toEqual([]);
+    expect(swept.packs.map((p) => p.id)).toEqual(['pak_folder01']);
+    expect(swept.systems.map((s) => s.id)).toEqual(['sys_test']);
+    // The FOLDER is the installed form — that's what you edit next.
+    expect(existsSync(join(dir, 'packs', 'guidebook', 'pack.json'))).toBe(true);
+    expect(existsSync(join(dir, 'packs', 'guidebook', 'bestiary.json'))).toBe(true);
+  });
+
+  it('the archive file is KEPT — installing is not a licence to delete', () => {
+    const path = dropArchive('guidebook', GUIDEBOOK);
+    sweepPacks(dir, shelf);
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it('a second sweep re-installs nothing — the mtime gate holds', () => {
+    dropArchive('guidebook', GUIDEBOOK);
+    sweepPacks(dir, shelf);
+    const manifest = join(dir, 'packs', 'guidebook', 'pack.json');
+    const before = statSync(manifest).mtimeMs;
+    sweepPacks(dir, shelf);
+    expect(statSync(manifest).mtimeMs).toBe(before);
+  });
+
+  it('never clobbers a newer folder — an arriving file is a proposal', () => {
+    writePack('guidebook', {
+      ...GUIDEBOOK,
+      'pack.json': { ...GUIDEBOOK['pack.json'], version: 9, name: 'Edited Here' },
+    });
+    // An OLDER archive, and newer on disk than the folder it names.
+    const path = dropArchive('guidebook', GUIDEBOOK);
+    utimesSync(path, new Date(), new Date(Date.now() + 60_000));
+
+    const swept = sweepPacks(dir, shelf);
+    expect(swept.packs[0].name).toBe('Edited Here');
+    expect(swept.packs[0].version).toBe(9);
+  });
+
+  it('a higher version upgrades the folder', () => {
+    writePack('guidebook', GUIDEBOOK);
+    const path = dropArchive('guidebook', {
+      ...GUIDEBOOK,
+      'pack.json': { ...GUIDEBOOK['pack.json'], version: 11, name: 'Newer Edition' },
+    });
+    utimesSync(path, new Date(), new Date(Date.now() + 60_000));
+
+    const swept = sweepPacks(dir, shelf);
+    expect(swept.packs[0].version).toBe(11);
+    expect(swept.packs[0].name).toBe('Newer Edition');
+  });
+
+  it('a file that is not a zip is a problem in the report, never a crash', () => {
+    mkdirSync(join(dir, 'packs'), { recursive: true });
+    writeFileSync(join(dir, 'packs', 'broken.pack'), 'this is not a zip');
+    const swept = sweepPacks(dir, shelf);
+    expect(swept.packs).toEqual([]);
+    expect(swept.problems[0].problem).toMatch(/did not open/);
+  });
+
+  it('an archive with no pack.json is reported and installs nothing', () => {
+    dropArchive('nameless', { 'bestiary.json': [] });
+    const swept = sweepPacks(dir, shelf);
+    expect(swept.problems[0].problem).toMatch(/no pack.json with an id/);
+    expect(existsSync(join(dir, 'packs', 'nameless'))).toBe(false);
+  });
+});
+
+describe('packArchive — the way back out', () => {
+  it('leaves .build behind and carries art', () => {
+    const packFolder = writePack('guidebook', GUIDEBOOK);
+    mkdirSync(join(packFolder, 'art'), { recursive: true });
+    writeFileSync(join(packFolder, 'art', 'logo.png'), 'pixels');
+    mkdirSync(join(packFolder, '.build', 'presentations'), { recursive: true });
+    writeFileSync(join(packFolder, '.build', 'presentations', 'X.js'), 'compiled');
+
+    const files = openArchive(packArchive(packFolder, 'pak_folder01'));
+    expect([...files.keys()].sort()).toEqual([
+      'art/logo.png',
+      'bestiary.json',
+      'pack.json',
+      'system.json',
+    ]);
+  });
+
+  it('reverses the art rewrite — an installed key goes back to relative', () => {
+    const packFolder = writePack('guidebook', {
+      ...GUIDEBOOK,
+      'bestiary.json': [{ id: 'foe_1', name: 'Coyote', art: 'art/pak_folder01/coyote.png' }],
+    });
+    const files = openArchive(packArchive(packFolder, 'pak_folder01'));
+    expect(archiveJson(files, 'bestiary.json')).toEqual([
+      { id: 'foe_1', name: 'Coyote', art: 'art/coyote.png' },
+    ]);
+  });
+
+  it('a slot with nothing to reverse travels byte-for-byte', () => {
+    const packFolder = writePack('guidebook', GUIDEBOOK);
+    // Deliberately odd formatting: it must survive untouched.
+    writeFileSync(join(packFolder, 'notes.json'), '{"a":1,   "b":2}');
+    const files = openArchive(packArchive(packFolder, 'pak_folder01'));
+    expect(files.get('notes.json')?.toString('utf8')).toBe('{"a":1,   "b":2}');
+  });
+
+  it('rights ride along untouched — the pack\'s own claim about itself', () => {
+    const packFolder = writePack('guidebook', GUIDEBOOK);
+    const files = openArchive(packArchive(packFolder, 'pak_folder01'));
+    expect((archiveJson(files, 'pack.json') as { rights: unknown }).rights).toEqual({
+      status: 'personal',
+    });
+  });
+});
+
+describe('the round trip — export here, install there', () => {
+  it('a pack exported from one shelf lands identically on another', () => {
+    const packFolder = writePack('guidebook', {
+      ...GUIDEBOOK,
+      'bestiary.json': [
+        { id: 'foe_1', name: 'Coyote', art: 'art/coyote.png' },
+        { id: 'foe_2', name: 'Rattler', lists: {} },
+      ],
+    });
+    mkdirSync(join(packFolder, 'art'), { recursive: true });
+    writeFileSync(join(packFolder, 'art', 'coyote.png'), 'pixels');
+    const here = sweepPacks(dir, shelf);
+
+    const bytes = packArchive(packFolder, 'pak_folder01');
+
+    // A SECOND shelf, which has never seen this pack.
+    const other = mkdtempSync(join(tmpdir(), 'teller-packs-there-'));
+    const otherShelf = openShelf(other);
+    try {
+      mkdirSync(join(other, 'packs'), { recursive: true });
+      writeFileSync(join(other, 'packs', 'guidebook.pack'), bytes);
+      const there = sweepPacks(other, otherShelf);
+
+      expect(there.problems).toEqual([]);
+      expect(there.packs).toEqual(here.packs);
+      expect(there.systems).toEqual(here.systems);
+      expect((there.packs[0].data.bestiary as { art?: string }[])[0].art).toBe(
+        'art/pak_folder01/coyote.png',
+      );
+      // …and the rewritten key resolves to bytes on the new host.
+      expect(
+        readFileSync(join(other, 'art', 'pak_folder01', 'coyote.png'), 'utf8'),
+      ).toBe('pixels');
+      expect(there.packs[0].version).toBe(3);
+    } finally {
+      otherShelf.close();
+      rmSync(other, { recursive: true, force: true });
+    }
   });
 });

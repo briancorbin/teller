@@ -28,6 +28,13 @@
 //                    (§M-2's sort: system = unbranded, pack = branded)
 //     art/           the pictures, referenced relative from the slots
 //
+// AND A `.pack` IS THE SAME THING, ZIPPED (rule 4a's other half, landed
+// 2026-08-19). `installPackArchives` runs at the head of the sweep: an
+// archive dropped in `packs/` unpacks to a folder — the installed form —
+// and everything below that line goes on seeing only folders. The file
+// is kept, gated by mtime and settled by `version`; `packArchive` is the
+// way back out. Both are documented where they're defined.
+//
 // **`system.json` in here is now the COMPATIBILITY path** (§M, 2026-08-19).
 // A system is its own folder on its own shelf — `systems-shelf.ts`, which
 // reads the same file with the same `systemFrom` — and it wins on a
@@ -105,8 +112,15 @@ import {
   statSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import {
+  archiveFolder,
+  archiveIsNewer,
+  archiveJson,
+  openArchive,
+  unpackArchive,
+} from './archive.ts';
 import { compileFolder, PACK_IMPORTS } from './compile.ts';
-import { panelDirIn, stamp, sweepPanelsIn } from './panels-shelf.ts';
+import { panelDirIn, stamp, sweepPanelsIn, usableFolderName } from './panels-shelf.ts';
 import type { PanelDef } from './panels.ts';
 import type { Shelf } from './store.ts';
 
@@ -199,6 +213,142 @@ export function withInstalledArt(value: unknown, packId: string): unknown {
     out[key] = withInstalledArt(held, packId);
   }
   return out;
+}
+
+/**
+ * The mirror of `withInstalledArt`, for the way OUT — every `art/…`
+ * string in a blob turned back into a pack-relative reference. Also
+ * idempotent (an already-relative string names no pack id, so
+ * `relativeArtKey` leaves it alone), which is what lets export apply it
+ * to a folder whose files were already relative — the ordinary case,
+ * since the sweep's rewrite happens in memory and never on disk.
+ */
+export function withRelativeArt(value: unknown, packId: string): unknown {
+  if (typeof value === 'string') {
+    return /^art\//.test(value) ? relativeArtKey(packId, value) : value;
+  }
+  if (Array.isArray(value)) return value.map((v) => withRelativeArt(v, packId));
+  const record = asRecord(value);
+  if (!record) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, held] of Object.entries(record)) {
+    out[key] = withRelativeArt(held, packId);
+  }
+  return out;
+}
+
+/**
+ * One pack folder, as the `.pack` you hand someone (rule 4a's other
+ * half). Two things happen on the way out and nothing else does:
+ *
+ *   * `.build/` and every other dot-file is left behind — compile
+ *     output regenerates on the recipient's machine against their own
+ *     mtimes (`folderEntries` skips it, and says why there).
+ *   * Art references go back to RELATIVE. That is the reversal of the
+ *     sweep's install-time rewrite, and it is what lets the same file
+ *     install under any id on any host and still find its own pictures.
+ *     A slot whose rewrite changed nothing keeps its ORIGINAL BYTES —
+ *     formatting, key order and all — so exporting a folder nobody has
+ *     ever touched with an installed key is byte-for-byte the folder.
+ *
+ * `rights` is copied out untouched, like every other key: it is the
+ * pack's own claim about itself, and teller can neither verify it nor
+ * has any business editing it (rule 4).
+ */
+export function packArchive(dir: string, packId: string): Buffer {
+  return archiveFolder(dir, (name, data) => {
+    if (!name.endsWith('.json') || name.includes('/')) return data;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(data.toString('utf8'));
+    } catch {
+      return data; // a slot that doesn't parse travels as it lies
+    }
+    const relative = withRelativeArt(parsed, packId);
+    if (JSON.stringify(relative) === JSON.stringify(parsed)) return data;
+    return Buffer.from(`${JSON.stringify(relative, null, 2)}\n`, 'utf8');
+  });
+}
+
+/**
+ * Install every `<name>.pack` sitting in `packs/` — the archive half of
+ * the sweep, and the answer to "a `.pack` is a file you hand someone,
+ * so what happens when someone hands you one".
+ *
+ * **An archive UNPACKS to a folder, and the folder is the installed
+ * form.** Rule 4a says the two are the same format for different jobs —
+ * the folder is what you author in — so an arriving archive becomes the
+ * thing you can edit, once, and everything downstream (the sweep, the
+ * art copy, the compile, the code routes) goes on seeing only folders.
+ * Nothing had to learn that archives exist.
+ *
+ * **The archive file is KEPT.** Deleting it would be tidier and is
+ * wrong: it is the copy the person dropped in, possibly their only one,
+ * and an install is not a licence to destroy the thing installed. It
+ * costs nothing to keep — the mtime gate means a `.pack` sitting beside
+ * the folder it already produced is one `stat` per sweep, forever.
+ *
+ * **It never clobbers a newer folder** (`PackOrigin`'s law, ported: a
+ * file appearing on disk is a PROPOSAL, and the stored value wins). The
+ * settlement is `version`, exactly as it always was for packs: an
+ * archive installs when there is no folder, or upgrades when its version
+ * is strictly higher. Equal or lower and it does nothing at all — the
+ * folder may have been edited here, and that edit is a person's decision
+ * (rule 1).
+ */
+export function installPackArchives(dataDir: string): PackProblem[] {
+  const problems: PackProblem[] = [];
+  const root = join(dataDir, 'packs');
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return problems;
+  }
+
+  for (const name of names.sort()) {
+    if (!name.endsWith('.pack') || name.startsWith('.')) continue;
+    const archive = join(root, name);
+    try {
+      if (!statSync(archive).isFile()) continue;
+    } catch {
+      continue;
+    }
+    const folderName = name.slice(0, -'.pack'.length);
+    const dir = join(root, folderName);
+    if (!usableFolderName(folderName)) {
+      problems.push({ dir: archive, problem: `'${folderName}' is not a folder name` });
+      continue;
+    }
+    if (!archiveIsNewer(archive, join(dir, 'pack.json'))) continue;
+
+    let files: Map<string, Buffer>;
+    try {
+      files = openArchive(readFileSync(archive));
+    } catch (err) {
+      problems.push({ dir: archive, problem: `did not open: ${String((err as Error).message ?? err)}` });
+      continue;
+    }
+    const manifest = asRecord(archiveJson(files, 'pack.json'));
+    if (!manifest || typeof manifest.id !== 'string' || !manifest.id.trim()) {
+      problems.push({ dir: archive, problem: 'carries no pack.json with an id — not a pack' });
+      continue;
+    }
+
+    if (existsSync(join(dir, 'pack.json'))) {
+      const held = asRecord(readJson(join(dir, 'pack.json')).value);
+      const there = Number(held?.version) || 1;
+      const arriving = Number(manifest.version) || 1;
+      if (arriving <= there) continue; // a proposal that lost — silently, it is the steady state
+    }
+
+    try {
+      unpackArchive(files, dir);
+    } catch (err) {
+      problems.push({ dir: archive, problem: `did not install: ${String(err)}` });
+    }
+  }
+  return problems;
 }
 
 /**
@@ -377,6 +527,9 @@ export function sweepPacks(dataDir: string, shelf?: Shelf): PackSweep {
   const packs: ShelfPack[] = [];
   const problems: PackProblem[] = [];
   const root = join(dataDir, 'packs');
+  // Archives first: an arriving `.pack` becomes a folder, and everything
+  // below this line only ever sees folders.
+  for (const problem of installPackArchives(dataDir)) problems.push(problem);
   let names: string[];
   try {
     names = readdirSync(root);

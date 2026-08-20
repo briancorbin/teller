@@ -17,7 +17,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, extname, join, normalize, resolve as resolvePath } from 'node:path';
+import { basename, dirname, extname, join, normalize, resolve as resolvePath } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { toEntity, type Ref } from '../core/entity.ts';
@@ -49,12 +49,19 @@ import { isPoint, POINTS, type Point } from '../core/registry.ts';
 import {
   copyPanelToTable,
   defaultPanelDir,
+  panelArchive,
   panelDir,
   tablePanelDir,
   usableFolderName,
   type PanelCopy,
 } from '../core/panels-shelf.ts';
-import { packDir, packPanelDir, sweepPacks, systemIndexModule } from '../core/packs-shelf.ts';
+import {
+  packArchive,
+  packDir,
+  packPanelDir,
+  sweepPacks,
+  systemIndexModule,
+} from '../core/packs-shelf.ts';
 import { sweepSystems, systemDir, systemPanelDir } from '../core/systems-shelf.ts';
 import { publicBoardState, publicSnapshot } from './public.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
@@ -66,7 +73,18 @@ const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
 // when built, so the vanilla files remain the fallback until they die.
 const DIST = join(dirname(fileURLToPath(import.meta.url)), 'dist');
 
-type Reply = { status: number; body: unknown };
+/**
+ * `body` is JSON, unless `bytes` is set — the one exception, and it
+ * exists because an archive is a file and a file is not JSON. Keeping it
+ * a Reply rather than a second door in `serve()` is what keeps the
+ * export routes testable without a socket, like every other route.
+ */
+type Reply = {
+  status: number;
+  body: unknown;
+  bytes?: Buffer;
+  headers?: Record<string, string>;
+};
 
 /**
  * Everything a route may know. The key rides along only for tickets.
@@ -85,6 +103,20 @@ function reply(status: number, body: unknown): Reply {
 }
 
 const denied = () => reply(401, { error: 'DM key required' });
+
+/** An archive, as a download. The filename is the folder's own name. */
+function fileReply(bytes: Buffer, filename: string): Reply {
+  return {
+    status: 200,
+    body: null,
+    bytes,
+    headers: {
+      'Content-Type': 'application/zip',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store',
+    },
+  };
+}
 
 /**
  * Who may read PREP — the template half: encounter recipes, bestiary
@@ -654,6 +686,56 @@ export async function handleApi(
       ...shelfListing(host),
       boards: shelf.boards().map(({ id, name }) => ({ id, name })),
     });
+  }
+
+  // -- zip it up and hand it over (rule 4a: "zipped it's a `.pack` you
+  // hand someone"). The way IN is the sweep, which needs no route at all
+  // — drop the file in the folder — so these two are the whole export
+  // surface, and there is deliberately no upload to match them.
+  //
+  // DM only, and not because an archive is secret: a pack is the shelf's
+  // content and the shelf is the DM's business, the same gate
+  // `/api/shelf` sits behind. What the file may then be handed to is the
+  // `rights` question, which travels inside it and which teller neither
+  // verifies nor enforces (rule 4).
+  //
+  // NOT a `.system` export. Doors 2 and 3 hold system serialization
+  // until it's decided (§M's "nothing yet exports a `.system` archive"),
+  // and a `systems/<name>/` folder stays the only serialization there is.
+  if (method === 'GET' && head === 'packs' && a && b === 'export') {
+    if (!canDm(auth)) return denied();
+    const dataDir = host.dataDir;
+    if (!dataDir) return reply(501, { error: 'this host has no data dir' });
+    const packId = decodeURIComponent(a);
+    const dir = packDir(dataDir, packId);
+    if (!dir) return reply(404, { error: `no pack folder for ${packId} on this host` });
+    try {
+      return fileReply(packArchive(dir, packId), `${basename(dir)}.pack`);
+    } catch (err) {
+      return reply(500, { error: `did not archive: ${String(err)}` });
+    }
+  }
+
+  // The panel twin. One lookup order, the same four places
+  // `/panel-code/` looks — the table's own, a system's, a pack's, then
+  // teller's shipped floor — so exporting teller's `log` to start your
+  // own from is one click rather than a hunt for the install directory.
+  if (method === 'GET' && head === 'panels' && a && b === 'export') {
+    if (!canDm(auth)) return denied();
+    const dataDir = host.dataDir;
+    const panelId = decodeURIComponent(a);
+    const dir =
+      (dataDir
+        ? (panelDir(dataDir, panelId) ??
+          systemPanelDir(dataDir, panelId) ??
+          packPanelDir(dataDir, panelId))
+        : undefined) ?? defaultPanelDir(panelId);
+    if (!dir) return reply(404, { error: `no panel folder for ${panelId} on this host` });
+    try {
+      return fileReply(panelArchive(dir), `${basename(dir)}.panel`);
+    } catch (err) {
+      return reply(500, { error: `did not archive: ${String(err)}` });
+    }
   }
 
   // -- the table itself. Watching requires being adopted (or the key). --
@@ -1528,6 +1610,11 @@ export function serve(what: Session | Host, port: number, key: string) {
       req,
     );
     if (handled) {
+      if (handled.bytes) {
+        res.writeHead(handled.status, handled.headers ?? {});
+        res.end(handled.bytes);
+        return;
+      }
       res.writeHead(handled.status, {
         'Content-Type': 'application/json; charset=utf-8',
       });

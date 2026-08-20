@@ -25,6 +25,13 @@
 //     a folder that fails to parse is a problem in the report, never a
 //     crash, and never blocks the rest of the shelf.
 //
+// A `.panel` ARCHIVE is the same folder, zipped (rule 4a's law, which
+// was always written about packs and was never only about packs).
+// `installPanelArchives` runs at the head of `sweepPanels` and unpacks
+// one into the folder it names; `panelArchive` is the way back out. Only
+// the TABLE's own `panels/` sweeps archives — a system's or a pack's
+// panels arrive inside their container and have no separate doorstep.
+//
 // What died with the seeding: a deleted default used to come back on
 // the next boot, and an edited one lived only on the host that edited
 // it. Now a table that wants a different `log` writes its own
@@ -69,6 +76,13 @@ import {
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  archiveFolder,
+  archiveIsNewer,
+  archiveJson,
+  openArchive,
+  unpackArchive,
+} from './archive.ts';
 import { buildOne, compileFolder, newerThan, PANEL_IMPORTS } from './compile.ts';
 import { newId } from './id.ts';
 import { toPanel, type PanelDef } from './panels.ts';
@@ -228,7 +242,106 @@ export function sweepPanels(
   dataDir: string,
   shelf?: Shelf,
 ): { panels: PanelDef[]; problems: PanelProblem[] } {
-  return sweepPanelsIn(join(dataDir, 'panels'), shelf);
+  const root = join(dataDir, 'panels');
+  const arrived = installPanelArchives(root);
+  const swept = sweepPanelsIn(root, shelf);
+  return { panels: swept.panels, problems: [...arrived, ...swept.problems] };
+}
+
+/**
+ * One panel folder, as the `.panel` you hand someone — a pack's
+ * arrangement (`packArchive`), minus the art reversal a panel has
+ * nothing to reverse yet: panel art is §E's TODO, so there is no
+ * install-time rewrite here to undo, and inventing one now would be
+ * writing the reverse of a function that doesn't exist.
+ *
+ * The minted `pan_` id travels baked into `panel.json`. Identity is the
+ * id (rule 4a) and this is the SAME panel arriving somewhere else — it
+ * is `copyPanelToTable` that mints a new one, because that makes a
+ * second panel beside the first, which is a different act entirely.
+ */
+export function panelArchive(dir: string): Buffer {
+  return archiveFolder(dir);
+}
+
+/**
+ * Install every `<name>.panel` sitting in a panels folder — the archive
+ * half of the sweep, `installPackArchives`'s twin, with one law
+ * different and it is the interesting one.
+ *
+ * **An existing folder is never written over.** A pack settles this with
+ * `version`; a panel has none — `PanelDef` carries a name, an id and its
+ * blocks, and nothing that says which of two files is later. With no way
+ * to tell a proposal that should win from one that shouldn't, the answer
+ * is the one rule 1 always gives: the file already on the shelf is a
+ * person's, and it stays.
+ *
+ * The collision is REPORTED — "you dropped this in and nothing happened"
+ * is the failure mode a load report exists to prevent — but only when it
+ * is NEWS, and the mtime gate is what tells the two cases apart. An
+ * archive OLDER than the folder is the archive that made that folder,
+ * lying where it landed; saying so every ten seconds forever would be a
+ * complaint about the steady state. An archive NEWER than the folder is
+ * a fresh file someone just dropped over an existing panel, which is
+ * exactly when they need to hear that nothing happened.
+ *
+ * The archive is kept, for the same reason a `.pack` is: it may be the
+ * only copy, and installing is not a licence to delete.
+ */
+export function installPanelArchives(root: string): PanelProblem[] {
+  const problems: PanelProblem[] = [];
+  let names: string[];
+  try {
+    names = readdirSync(root);
+  } catch {
+    return problems;
+  }
+
+  for (const name of names.sort()) {
+    if (!name.endsWith('.panel') || name.startsWith('.')) continue;
+    const archive = join(root, name);
+    try {
+      if (!statSync(archive).isFile()) continue;
+    } catch {
+      continue;
+    }
+    const folderName = name.slice(0, -'.panel'.length);
+    const dir = join(root, folderName);
+    if (!usableFolderName(folderName)) {
+      problems.push({ dir: archive, problem: `'${folderName}' is not a folder name` });
+      continue;
+    }
+    if (!archiveIsNewer(archive, join(dir, 'panel.json'))) continue;
+    if (existsSync(join(dir, 'panel.json'))) {
+      problems.push({
+        dir: archive,
+        problem: `panels/${folderName}/ already exists — the folder wins and nothing was touched`,
+      });
+      continue;
+    }
+
+    let files: Map<string, Buffer>;
+    try {
+      files = openArchive(readFileSync(archive));
+    } catch (err) {
+      problems.push({
+        dir: archive,
+        problem: `did not open: ${String((err as Error).message ?? err)}`,
+      });
+      continue;
+    }
+    const declared = archiveJson(files, 'panel.json');
+    if (!toPanel(declared)) {
+      problems.push({ dir: archive, problem: 'carries no panel.json with a name — not a panel' });
+      continue;
+    }
+    try {
+      unpackArchive(files, dir);
+    } catch (err) {
+      problems.push({ dir: archive, problem: `did not install: ${String(err)}` });
+    }
+  }
+  return problems;
 }
 
 /**

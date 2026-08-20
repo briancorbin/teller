@@ -12,6 +12,7 @@
 import { useState } from 'react';
 import { registerTool } from './index.ts';
 import { api } from '../lib/api.ts';
+import { Export } from './export.tsx';
 import { useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, card, input, sectionLabel } from '../lib/ui.ts';
 
@@ -262,6 +263,10 @@ function ShelfTool() {
                 ) : (
                   <span className="font-mono text-[11px] text-stone-600">not declared</span>
                 )}
+                <Export
+                  path={`/api/packs/${encodeURIComponent(p.id)}/export`}
+                  filename={`${p.id}.pack`}
+                />
               </li>
             );
           })}
