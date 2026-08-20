@@ -193,6 +193,21 @@ describe('the code door and what a browser may keep', () => {
     expect(bare.headers.get('cache-control')).toBe('no-cache');
   });
 
+  it('an untrusted panel serves no bytes — trust gates the door, not just the url', async () => {
+    // Enabled: the bytes flow. Disabled: the same path is a 404, because
+    // a branded panel's code can carry the book's prose in its strings,
+    // and nothing leaves for a thing nobody enabled (the audit's one
+    // refutation, closed).
+    await api('POST', '/api/plugins/pan_dial000000001', { enabled: true });
+    const dial = (await panelsIn()).find((p: any) => p.name === 'dial');
+    const url: string = dial.code.blocks.Widget.split('?')[0];
+    expect((await fetch(`${base}${url}`)).status).toBe(200);
+
+    await api('POST', '/api/plugins/pan_dial000000001', { enabled: false });
+    expect((await fetch(`${base}${url}`)).status).toBe(404);
+    await api('POST', '/api/plugins/pan_dial000000001', { enabled: true });
+  });
+
   it('the generated system module is never stored — it has no build to name', async () => {
     const res = await fetch(`${base}/pack-code/system.js`);
     expect(res.status).toBe(200);

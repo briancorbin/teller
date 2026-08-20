@@ -103,7 +103,7 @@ export class Loaded {
    * means the declaration is IN and its code PENDING; `enabled: 1` means
    * in and running; `enabled: 0` means gone.
    *
-   * This is also the sanctioned way to reject one of teller's five
+   * This is also the sanctioned way to reject one of teller's own
    * defaults: their ids are baked into the files they ship in, so a row
    * naming one is a tombstone the console can write and take back.
    */
@@ -347,7 +347,7 @@ export class Loaded {
  *
  * `dataDir`, when given, is where the sweeps look —
  * `<dataDir>/panels/*\/panel.json` (§E, the TABLE's own layer) and
- * `<dataDir>/packs/*\/` (§L phase 1). teller's five defaults come from
+ * `<dataDir>/packs/*\/` (§L phase 1). teller's shipped defaults come from
  * the INSTALL either way, so a host with no data dir at all — and every
  * test that passes none — still has its furniture.
  *
@@ -425,7 +425,7 @@ export function loadCampaign(shelf: Shelf, campaign: Campaign, dataDir?: string)
     }
   }
 
-  // teller's own five, from the INSTALL — always, data dir or not.
+  // teller's own defaults, from the INSTALL — always, data dir or not.
   // The table's `panels/` folder is a separate layer that sits on top,
   // and is empty until a human writes something there.
   const swept = dataDir ? sweepPanels(dataDir, shelf) : undefined;

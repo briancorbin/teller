@@ -22,7 +22,7 @@
 //
 // A PANEL's toggle is its on/off switch (2026-08-19), not a code permit
 // — switching one off takes its declaration out of the merge, tab and
-// all, and every panel with an id has one, teller's five defaults
+// all, and every panel with an id has one, teller's own defaults
 // included. A CONTAINER's toggle is still code-only, because that is
 // all a `sys_`/`pak_` grant ever decided, so the two buttons are two
 // components saying two different words. Switched-off panels keep
@@ -153,7 +153,7 @@ function CodeToggle({
  * missing-panel refusal. On (or no row at all) means it's in, with its
  * code following the same row fail-closed.
  *
- * Every panel with an id gets one, teller's own five included — that is
+ * Every panel with an id gets one, teller's own defaults included — that is
  * the sanctioned way to reject a default, and it is why disabling one
  * has to stay reversible from this screen.
  */
@@ -555,7 +555,7 @@ function PluginsTool() {
       <TypeSection
         label="Panels"
         count={`${standalone.reduce((n, c) => n + c.panels.length, 0)} standalone`}
-        note="teller's five are the floor — copy one to this table to edit it in <data>/panels/, or switch it off here."
+        note="teller's defaults are the floor — copy one to this table to edit it in <data>/panels/, or switch it off here."
       >
         {standalone.every((c) => c.panels.length === 0) ? (
           <p className="text-sm text-stone-600">nothing of your own yet</p>

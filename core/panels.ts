@@ -131,7 +131,7 @@ export function byPanelOrder(a: PanelDef, b: PanelDef): number {
  * that used to spill onto held-glass Sheet now spill there instead. */
 export const PLACED = ['skills', 'resources', 'conditions', 'meta'];
 
-// The five panels teller SHIPS — boards, log, plugins, screens, shelf,
+// The panels teller SHIPS — boards, books, log, plugins, screens, shelf,
 // the ones about this machine and the room around it — used to live
 // here as an in-code array. They are files now:
 // `defaults/panels/<name>/panel.json` in the install, loaded by

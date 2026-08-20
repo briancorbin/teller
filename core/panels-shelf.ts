@@ -12,7 +12,7 @@
 // so the data dir's `panels/` is the TABLE's own and teller never
 // writes a byte into it:
 //
-//   * DEFAULTS (`defaultPanels`) reads the five folders teller ships,
+//   * DEFAULTS (`defaultPanels`) reads the folders teller ships,
 //     resolved against this module's own location rather than any cwd
 //     or data dir. They are the FLOOR of the panels merge, source
 //     `teller`, and their `pan_` ids are baked into the files so they
@@ -60,7 +60,7 @@
 // the client can say so rather than silently rendering as if the code
 // didn't exist.
 //
-// teller's shipped defaults carry no code today — they are five tool
+// teller's shipped defaults carry no code today — they are a handful of tool
 // declarations and nothing else — so nothing about them needs trusting.
 // If one ever grows a block, it takes the same route every other
 // code-carrying panel takes: a human enables it.

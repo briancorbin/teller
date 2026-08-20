@@ -1537,9 +1537,14 @@ export function serve(what: Session | Host, port: number, key: string) {
     // A `.panel`'s compiled code (§E UN-DEFERRED) — served PLAIN, no
     // ticket: "panel code is app code, not player-secret content." Only
     // `.build` outputs are reachable, and only for a panel the sweep
-    // actually found — trust decides whether the DECLARATION carries
-    // this url in the first place, not whether the byte is fetchable
-    // once someone has it.
+    // actually found — AND only once a human enabled it (2026-08-20,
+    // closing the adversarial audit's one refutation): §M sanctions a
+    // pack carrying the book's content, and a branded panel's code is a
+    // content container — its strings can be the book's prose. Serving
+    // those bytes before anyone enabled the pack would distribute what
+    // the table never accepted, so the route checks the same trust row
+    // the sweep checks. teller's own shipped defaults are trusted by
+    // install (§M-6) and carry no row.
     if (url.pathname.startsWith('/panel-code/')) {
       const dataDir = host.dataDir;
       const rel = decodeURIComponent(url.pathname.slice('/panel-code/'.length));
@@ -1551,14 +1556,18 @@ export function serve(what: Session | Host, port: number, key: string) {
       // ordinary `pan_` ids, so this is one more place to look, never a
       // second scheme). Order here is only lookup order — precedence at
       // the table is the merge's business, not this route's.
-      const dir = panelId
-        ? ((dataDir
-            ? (panelDir(dataDir, panelId) ??
-              systemPanelDir(dataDir, panelId) ??
-              packPanelDir(dataDir, panelId))
-            : undefined) ?? defaultPanelDir(panelId))
+      const shelfDir = panelId && dataDir
+        ? (panelDir(dataDir, panelId) ??
+          systemPanelDir(dataDir, panelId) ??
+          packPanelDir(dataDir, panelId))
         : undefined;
-      const buildRoot = dir ? join(dir, '.build') : undefined;
+      // A shelf panel's bytes wait on its trust row; an install default
+      // is teller's own and needs none.
+      const trusted = shelfDir
+        ? host.shelf.pluginTrust(panelId)?.enabled === true
+        : true;
+      const dir = shelfDir ?? (panelId ? defaultPanelDir(panelId) : undefined);
+      const buildRoot = dir && trusted ? join(dir, '.build') : undefined;
       const path = buildRoot && fileParts.length
         ? normalize(join(buildRoot, ...fileParts))
         : undefined;
@@ -1576,9 +1585,8 @@ export function serve(what: Session | Host, port: number, key: string) {
     }
 
     // A pack's compiled presentations (§L phase 2) — served plain, on
-    // the same terms as `/panel-code/`: this is app code, not
-    // player-secret content, and trust decides whether anything DECLARES
-    // these urls, not whether a byte is fetchable once someone has one.
+    // the same terms as `/panel-code/`, including the trust gate: no
+    // byte leaves for a pack or system nobody enabled.
     //
     // `/pack-code/system.js` is the `system` specifier's body: generated,
     // not stored, from whatever the campaign's content stack resolves to
@@ -1603,7 +1611,8 @@ export function serve(what: Session | Host, port: number, key: string) {
         dataDir && packId
           ? (packDir(dataDir, packId) ?? systemDir(dataDir, packId))
           : undefined;
-      const buildRoot = dir ? join(dir, '.build') : undefined;
+      const trusted = packId ? host.shelf.pluginTrust(packId)?.enabled === true : false;
+      const buildRoot = dir && trusted ? join(dir, '.build') : undefined;
       const path = buildRoot && fileParts.length
         ? normalize(join(buildRoot, ...fileParts))
         : undefined;
