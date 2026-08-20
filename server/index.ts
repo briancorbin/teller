@@ -99,6 +99,18 @@ import {
 } from './story.ts';
 import { toRights } from '../core/bundle.ts';
 import { notesOf, passNote, visibleTo, type NoteHandout } from './notes.ts';
+import {
+  closeShop,
+  openShop,
+  sell,
+  setCart,
+  shopOf,
+  shopView,
+  vendorOf,
+  vendorsOf,
+  VENDOR_SLOT,
+  type Sale,
+} from './store-flow.ts';
 import { publicBoardState, publicSnapshot } from './public.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
 import { peekUndo, undo } from './undo.ts';
@@ -1689,6 +1701,122 @@ export async function handleApi(
       session.changed('templates');
       return reply(200, { ok: true });
     }
+  }
+
+  // -- the counter: shops, carts, and the sale ---------------------------
+  //
+  // The law lives in `server/store-flow.ts`; these are its doors, and
+  // they split the way that file splits. Opening a vendor and moving a
+  // cart touch NOTHING durable — browsing must never instantiate (§14).
+  // Selling is the transaction, is DM-only, and is the one door here
+  // that writes.
+  //
+  // Reading takes `canPrep`, matching the templates door a seat already
+  // shops the catalogue through: a shelf is prices and stock, which is
+  // prep, and a passive screen learns only that the store is open (the
+  // `/public` snapshot's one line).
+  //
+  // Writing a CART goes through `canEditEntity`, which is rule 7's
+  // existing law and says exactly the right thing without a new one:
+  // the DM may put anything on anyone's counter (handing a cart back is
+  // the DM's own move), and a seat may touch its own and nothing else.
+  if (head === 'shop') {
+    if (method === 'GET' && !a) {
+      if (!canPrep(auth)) return denied();
+      const shop = shopOf(session);
+      if (!shop) return reply(200, null);
+      return reply(200, shopView(session, shop, auth) ?? null);
+    }
+    if (method === 'POST' && a === 'open' && !b) {
+      if (!canDm(auth)) return denied();
+      const body = await bodyOf(req);
+      const actor = actorOf(auth, String(body.actor ?? ''));
+      const id = typeof body.vendorId === 'string' ? body.vendorId.trim() : '';
+      const was = shopOf(session);
+      if (!id) {
+        // Closing. Logged even though it stored nothing: "the shop shut"
+        // is table history worth reading back, and the log is the only
+        // history there is (rule 3).
+        if (was) {
+          const vendor = vendorOf(session, was.vendorId);
+          closeShop(session);
+          session.campaign.append(null, actor, 'shop.closed', {
+            vendorId: was.vendorId,
+            ...(vendor ? { vendorName: vendor.name } : {}),
+          });
+        }
+        session.changed('shop');
+        return reply(200, null);
+      }
+      const vendor = vendorOf(session, id);
+      if (!vendor) return reply(404, { error: `no vendor ${id}` });
+      openShop(session, id);
+      session.campaign.append(null, actor, 'shop.opened', {
+        vendorId: vendor.id,
+        vendorName: vendor.name,
+      });
+      session.changed('shop');
+      return reply(200, shopView(session, shopOf(session)!, auth) ?? null);
+    }
+    if (method === 'PUT' && a === 'cart' && b) {
+      if (!canEditEntity(auth, b)) return denied();
+      const shop = shopOf(session);
+      if (!shop) return reply(409, { error: 'no shop is open' });
+      const body = await bodyOf(req);
+      const lines: { ref: string; qty: number }[] = [];
+      for (const raw of Array.isArray(body.lines) ? body.lines : []) {
+        const line = (raw ?? {}) as { ref?: unknown; qty?: unknown };
+        const ref = String(line.ref ?? '').trim();
+        const qty = Math.floor(Number(line.qty ?? 0));
+        if (ref && qty > 0) lines.push({ ref, qty: Math.min(qty, 99) });
+      }
+      setCart(shop, b, lines, typeof body.offered === 'boolean' ? body.offered : undefined);
+      session.changed('shop');
+      return reply(200, shopView(session, shop, auth) ?? null);
+    }
+    if (method === 'POST' && a === 'sell' && !b) {
+      if (!canDm(auth)) return denied();
+      const shop = shopOf(session);
+      if (!shop) return reply(409, { error: 'no shop is open' });
+      const vendor = vendorOf(session, shop.vendorId);
+      if (!vendor) return reply(404, { error: `no vendor ${shop.vendorId}` });
+      const body = await bodyOf(req);
+      const out = sell(
+        session,
+        vendor,
+        (body.sale ?? {}) as Sale,
+        actorOf(auth, String(body.actor ?? '')),
+      );
+      if ('error' in out) return reply(400, out);
+      session.changed('shop');
+      return reply(200, out);
+    }
+  }
+
+  // Every shop this table knows about — the merged `vendors` slot.
+  // Authoring one is the ordinary templates door (`/api/templates/vendors`);
+  // this is the READ, and it says which layer each came from so the
+  // console can offer "edit" only on the campaign's own.
+  if (method === 'GET' && head === 'vendors' && !a) {
+    if (!canPrep(auth)) return denied();
+    // The campaign's own rows go out RAW underneath the normalised
+    // reading, so whatever else was authored on them — an old world's
+    // `groups`/`filters`, a key this build has never heard of — survives
+    // the console's edit-and-save round trip instead of being quietly
+    // deleted by a form that only knew about four fields.
+    const own = new Map(
+      session.campaign
+        .templatesIn(VENDOR_SLOT)
+        .map((t) => [String((t as { id?: string }).id ?? ''), t] as const),
+    );
+    return reply(
+      200,
+      vendorsOf(session).map((v) => ({
+        ...(own.get(v.id) as object | undefined),
+        ...v,
+        own: own.has(v.id),
+      })),
+    );
   }
 
   // -- passing a note ---------------------------------------------------
