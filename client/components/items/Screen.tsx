@@ -7,6 +7,8 @@
 
 import { useState } from 'react';
 import type { Entity, Entry } from '../../../core/entity.ts';
+import type { DiceRecord } from '../../lib/dice.ts';
+import { usePanelNote } from '../../lib/rules.ts';
 import type { BlockCtx, Glass } from '../../panels/render.tsx';
 import { BigGauge } from '../Counters.tsx';
 import { ItemTile } from './ItemTile.tsx';
@@ -52,10 +54,17 @@ export function CarriedScreen({
   /** Every kind ANY declared screen claims by name — what a `rest` screen catches is what's left over. */
   claimedKinds: Set<string>;
 }) {
+  // Hooks first, unconditionally — the filter's own state and the
+  // pack's captions both have to be asked for before the no-entity
+  // door below, or React counts a different number of them per render.
+  const [kind, setKind] = useState('');
+  const note = usePanelNote();
+
   const entity = ctx.entity as Entity | undefined;
   if (!entity) return <p className="p-4 text-sm text-stone-500">no entity to show</p>;
 
   const use = ctx.records.use as UseRecord | undefined;
+  const dice = ctx.records.dice as DiceRecord | undefined;
   const currency = ctx.records.currency as CurrencyRecord | undefined;
   const icons = (ctx.records.icons as Record<string, string> | undefined) ?? {};
   const children = entity.children ?? [];
@@ -79,7 +88,6 @@ export function CarriedScreen({
   }
 
   const itemKinds = [...new Set(held.map((c) => c.type ?? ''))];
-  const [kind, setKind] = useState('');
   const shown = itemKinds.length > 1 && kind ? held.filter((c) => (c.type ?? '') === kind) : held;
 
   const declared = (screen.counters ?? [])
@@ -111,10 +119,25 @@ export function CarriedScreen({
 
   return (
     <div className={`flex min-h-0 flex-1 gap-2 ${mounted ? '' : 'flex-col'}`}>
+      {/* The pinned left column: the filter chips (when this screen holds
+          more than one KIND) with the pocket beneath them — controls
+          above belongings, neither ever pans away. On mounted glass with
+          a pocket it takes a real column's width, which is what the
+          pocket's chips are laid out for; the filters wrap inside it.
+          Sticky only where the card scrolls (held glass) — mounted glass
+          never scrolls, so there is nothing to stick to. */}
       {(itemKinds.length > 1 || pocketEntries.length > 0) && (
-        <div className={`flex shrink-0 gap-2 self-start ${mounted ? 'flex-col' : 'w-full flex-col'}`}>
+        <div
+          className={`flex shrink-0 flex-col gap-2 self-start ${
+            mounted ? '' : 'sticky top-0 z-10 w-full'
+          } ${mounted && pocketEntries.length > 0 ? 'w-[13rem] self-stretch justify-center' : ''}`}
+        >
           {itemKinds.length > 1 && (
-            <div className={`flex gap-1 ${mounted ? 'flex-col' : 'flex-wrap'}`}>
+            <div
+              className={`flex gap-1 ${
+                !mounted || pocketEntries.length > 0 ? 'flex-wrap' : 'flex-col'
+              }`}
+            >
               {['', ...itemKinds].map((k) => (
                 <button
                   key={k || 'all'}
@@ -136,6 +159,11 @@ export function CarriedScreen({
               entries={pocketEntries}
               icons={icons}
               currency={currency}
+              // A stacked column on mounted glass, a row of chips in a
+              // hand — the old `PocketPanel`'s `row`, decided by the one
+              // question that decides everything else about glass.
+              compact={!mounted}
+              note={note}
               onWrite={(name, value) => {
                 const target = declared.find((d) => d.entry.name === name);
                 if (target) write(target, value);
@@ -177,6 +205,19 @@ export function CarriedScreen({
                   extras={extras}
                   onFireCost={(total) => fireCost(item, total)}
                   fittedTo={fittedTo.get(item.id)}
+                  dice={dice}
+                  currency={currency}
+                  available={
+                    use?.costCounter
+                      ? numberOf(findWithList(entity, use.costCounter)?.entry)
+                      : undefined
+                  }
+                  balances={Object.fromEntries(
+                    (use?.costs ?? []).map((c) => [
+                      c.counter,
+                      numberOf(findWithList(entity, c.counter)?.entry),
+                    ]),
+                  )}
                 />
               </div>
             );

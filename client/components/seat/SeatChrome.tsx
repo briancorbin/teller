@@ -87,8 +87,14 @@ function carriedPanel(screen: ScreenDecl, allScreens: ScreenDecl[]): PanelDef {
  * `rest`'s exclusions for the same reason every placed list does: a
  * list drawn as a ladder above must not surface again as a stray
  * below. */
-function morePanel(claimed: Set<string>, ladderLists: string[]): PanelDef {
+function morePanel(
+  claimed: Set<string>,
+  ladderLists: string[],
+  /** The advancement door, when the system declares a menu to open. */
+  spendDoor?: PanelBlock,
+): PanelDef {
   const blocks: PanelBlock[] = [
+    ...(spendDoor ? [spendDoor] : []),
     { block: 'list', list: 'resources', filter: 'except-named', names: [...claimed], as: 'ledger' },
     { block: 'ladders' },
     { block: 'rest', except: [...PLACED, ...ladderLists] },
@@ -206,50 +212,20 @@ function CostChip({
   );
 }
 
-/** The affordance for a declared advancement menu — the label the
- * system chose, the wallet it spends from, and a tap that opens the
- * menu. It exists only because `spends` was declared: a system without
- * one grows no button, which is the whole test §L is about. */
-function SpendChip({
-  spends,
-  entity,
-  accent,
-  onOpen,
-}: {
-  spends: SpendsDecl;
-  entity?: Entity;
-  accent: string;
-  onOpen: () => void;
-}) {
-  const wallet = locate(entity, spends.counter);
-  return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`${spends.label ?? spends.counter}: ${numberOf(wallet?.entry) ?? 0}`}
-      aria-haspopup="dialog"
-      className="flex items-center gap-1.5"
-    >
-      <span className="text-[0.7rem] uppercase tracking-[0.18em] text-stone-500">
-        {spends.label ?? spends.counter}
-      </span>
-      <span
-        className="flex h-7 min-w-[2.6rem] items-center justify-center rounded-full border px-2.5 font-mono text-sm text-stone-100"
-        style={{ borderColor: accent, background: `${accent}1f` }}
-      >
-        {numberOf(wallet?.entry) ?? 0}
-      </span>
-    </button>
-  );
-}
+// The advancement menu's affordance USED to live here, as a third chip
+// beside Grit and Aces — and it was never the old app's shape (Brian,
+// 2026-08-20, from the iPad). The old bar carried exactly what `use`
+// prices (`SheetHeader`'s `costs`, costCounter first then every extra),
+// because those are the numbers a turn spends; Prestige is what a
+// CAREER spends, it moves twice a session, and it rode on the More
+// screen as `PrestigePanel`. So the bar is the turn's wallet again and
+// the door to the menu is a block on More — see `spendDoor` below.
 
 function TopBar({
   entity,
   seatName,
   records,
   mounted,
-  spends,
-  onOpenSpends,
   onWrite,
   flag,
 }: {
@@ -257,8 +233,6 @@ function TopBar({
   seatName?: string;
   records: Records;
   mounted: boolean;
-  spends?: SpendsDecl;
-  onOpenSpends?: () => void;
   onWrite?: (edit: Record<string, unknown>) => void;
   /** What the order is asking of this seat, if anything (`TurnCall.tsx`).
    *  It rides HERE rather than in a row of its own because mounted glass
@@ -292,17 +266,6 @@ function TopBar({
         />,
       ];
     }),
-    ...(spends && onOpenSpends
-      ? [
-          <SpendChip
-            key="__spends"
-            spends={spends}
-            entity={entity}
-            accent={accent}
-            onOpen={onOpenSpends}
-          />,
-        ]
-      : []),
   ];
 
   if (!entity && !player) return null;
@@ -617,17 +580,34 @@ export function SeatChrome({
       !ladderLists.some((n) => n.toLowerCase() === l.toLowerCase()) &&
       entriesOf(entity, l).length > 0,
   );
-  const hasSpare =
-    spareResources.length > 0 ||
-    strayLists ||
-    ladderLists.length > 0 ||
-    Boolean(entity?.notes) ||
-    Boolean(entity?.children?.length);
-
   // The advancement menu, if the system declares one. The affordance,
   // the overlay and the whole feature exist only because `spends` is in
   // the merged records — a system without it grows no button.
   const spends = toSpends(records.spends);
+
+  const hasSpare =
+    spareResources.length > 0 ||
+    strayLists ||
+    ladderLists.length > 0 ||
+    Boolean(spends) ||
+    Boolean(entity?.notes) ||
+    Boolean(entity?.children?.length);
+
+  /**
+   * The door to the advancement menu, as a block on More — where the
+   * old app kept its `PrestigePanel`. Synthesized, so it may carry a
+   * callback: this panel is the chrome's own and never a declared one,
+   * and a DECLARED panel could not write a function into JSON even if
+   * it wanted to.
+   */
+  const spendDoor: PanelBlock | undefined = spends
+    ? {
+        block: 'spend-door',
+        label: spends.label ?? spends.counter,
+        wallet: numberOf(locate(entity, spends.counter)?.entry) ?? 0,
+        onOpen: () => setSpendsOpen(true),
+      }
+    : undefined;
 
   const tabs: Tab[] = sheetPanel
     ? [
@@ -639,7 +619,9 @@ export function SeatChrome({
           panel: paneToPanel(p),
           pane: p,
         })),
-        ...(hasSpare ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed, ladderLists) }] : []),
+        ...(hasSpare
+          ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed, ladderLists, spendDoor) }]
+          : []),
       ]
     : [];
   const tab = tabs.find((t) => t.name === current) ?? tabs[0];
@@ -658,8 +640,6 @@ export function SeatChrome({
         seatName={seatName}
         records={records}
         mounted={glass === 'mounted'}
-        spends={spends}
-        onOpenSpends={spends ? () => setSpendsOpen(true) : undefined}
         onWrite={ctx.write ? (edit) => ctx.write!(edit) : undefined}
         flag={calling(call) ? <TurnFlag call={call} /> : undefined}
       />

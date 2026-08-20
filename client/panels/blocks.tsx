@@ -616,6 +616,42 @@ registerBlock('aside', (block, _ctx) => {
   return text ? <Refusal>{text}</Refusal> : null;
 });
 
+// ---- spend-door (the way in to a declared advancement menu) -------------
+// Synthesized by the seat chrome onto 'More', which is where the old app
+// kept its `PrestigePanel`. It is deliberately NOT a chip on the top bar:
+// that bar carries what a TURN spends (`use`), and Prestige is what a
+// career spends. The block carries its own `onOpen` because the chrome
+// synthesizes it — a declared panel has no way to write a callback into
+// JSON, and no business opening this menu.
+
+registerBlock('spend-door', (block, _ctx) => {
+  const onOpen = block.onOpen as (() => void) | undefined;
+  if (typeof onOpen !== 'function') return null;
+  const label = typeof block.label === 'string' ? block.label : 'advancement';
+  const wallet = typeof block.wallet === 'number' ? block.wallet : 0;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-haspopup="dialog"
+      aria-label={`${label}: ${wallet}`}
+      className={`${card} flex items-center gap-3 text-left transition-colors hover:bg-stone-800/40`}
+    >
+      <span className={sectionLabel}>{label}</span>
+      <span
+        className="flex h-7 min-w-[2.6rem] items-center justify-center rounded-full border px-2.5 font-mono text-sm text-stone-100"
+        style={{
+          borderColor: 'var(--sheet-accent, #f59e0b)',
+          background: 'color-mix(in srgb, var(--sheet-accent, #f59e0b) 12%, transparent)',
+        }}
+      >
+        {wallet}
+      </span>
+      <span className="ml-auto text-xs uppercase tracking-widest text-stone-500">open ▸</span>
+    </button>
+  );
+});
+
 // ---- carried (§K — the system's own Weapons/Abilities/Inventory) -------
 // The seat chrome synthesizes one of these per declared screen
 // (`carriedPanel`, `client/components/seat/SeatChrome.tsx`) — the block
