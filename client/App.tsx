@@ -252,7 +252,23 @@ function Console() {
   // land, but it's a system-layer panel now (2026-08-19) and a bare host
   // has none — so the `?? tools[0]` below is the real contract, and the
   // highlight reads from `current`, never from `pane`.
-  const [pane, setPane] = useState('roster');
+  //
+  // Remembered per browser, never in the URL: the hash is the screen's
+  // IDENTITY (rule 6) and must not change as the DM clicks around — but
+  // a refresh mid-fight landing back on the roster loses the runner, so
+  // the last pick survives in storage. A remembered pane a later system
+  // doesn't declare falls through `?? tools[0]` like any other absence.
+  const [pane, setPaneState] = useState(
+    () => localStorage.getItem('teller.console.pane') ?? 'roster',
+  );
+  const setPane = (name: string) => {
+    setPaneState(name);
+    try {
+      localStorage.setItem('teller.console.pane', name);
+    } catch {
+      // Storage full or blocked — the click still works for this visit.
+    }
+  };
   const tools = (panels.data ?? []).filter((p) => p.subject !== 'entity');
   const current = tools.find((p) => p.name === pane) ?? tools[0];
 
