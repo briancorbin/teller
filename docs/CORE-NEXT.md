@@ -1513,9 +1513,12 @@ than 404 when there's nothing — importing `system` must never break a
 panel.
 
 *Step 2 — the components moved.* `Cylinder`, `HealthPanel`,
-`StatusPanel` and `DicePool` now live in
+`StatusPanel` and `DicePool` moved to
 `~/.teller-next/packs/wiw-guidebook/presentations/`, one file each,
-**filename = export name = the name a record summons**. They import
+**filename = export name = the name a record summons**. (They moved
+AGAIN when the system/pack split landed — §M-4's sort sent the
+unbranded four to `systems/wiw/`, and §M-3's second correction sent
+the Cylinder back to the pack, where it now stays.) They import
 `teller` for the neutral parts (`SheetPanel`, the dice helpers) and
 carry no facts: entity, records and the write door all arrive as props.
 
@@ -1685,20 +1688,25 @@ encounter-builder tuned to WiW. Until then, content REQUIRING a
 plugin by ref (§15 — a claim, never a grant) covers the actual need.
 
 **3 · The function/flavor line — CORRECTED (2026-08-19, the
-Cylinder).** The first sort used "function vs flavor" and put the
-revolver in the pack; Brian's correction exposed that as a PROXY for
-the real test: **rights**. *Can this container's author freely share
-everything in it?* The Cylinder has personality, but the personality
-is Brian's own invention — no publisher IP anywhere in it — so it
-lives in the SYSTEM, whose whole point is free distributability.
-**Theme ≠ IP: a system may have all the personality its author owns;
-what it may not carry is anything only a rightsholder could hand
-on.** "Nothing branded" is retired as the phrasing; the pack is for
-the BOOK's stuff, and the sort question at every future call is
-"whose is this, really?" (Sorted so far: StatusPanel, HealthPanel,
-DicePool, SpendMenu, LadderPanel, Cylinder → system. The pack
-currently carries no code at all — purely the book's content, which
-is exactly the shape rule 4 wants to hand a publisher.)
+Cylinder), then FINISHED (2026-08-20, the Cylinder again).** The
+first sort used "function vs flavor" and put the revolver in the
+pack; Brian's correction exposed that as a PROXY for the real test:
+**rights**. *Can this container's author freely share everything in
+it?* **Theme ≠ IP: a system may have all the personality its author
+owns; what it may not carry is anything only a rightsholder could
+hand on.** That stands — as a CEILING. What the next day added
+(Brian: "it's weird that there is one piece of branded thing in all
+of the default system") is that the ceiling was being read as a
+placement rule, and it isn't: **rights answer what a container MAY
+carry; they don't say what the default SHOULD look like.** The
+Cylinder's personality is Brian's own invention and could legally
+live anywhere — and it moved to the PACK anyway, because the system
+should read fully generic and the book's face rides with the book.
+Two questions at every future sort, in order: "whose is this,
+really?" bounds where it MAY go; "does the unbranded layer want to
+wear it?" decides where it DOES. (Sorted: StatusPanel, HealthPanel,
+DicePool, SpendMenu, LadderPanel → system; Cylinder → pack, both
+tests agreeing with the very first instinct after all.)
 
 **4 · On disk, eventually** — a fourth shelf dir:
 
@@ -1737,8 +1745,10 @@ toggle. `sys_wiw`'s row was enabled by hand on Brian's own shelf (his
 own files, rule 7's "a table's own files are its own").
 
 `Loaded#presentations()` now merges **system first, then packs in
-declared order, later winning** — which is precisely what makes the
-revolver beat the generic dial rather than the reverse.
+declared order, later winning** — brand beats generic on a name
+collision, never the reverse. (The revolver was the motivating case;
+since its 2026-08-20 re-sort there's no system dial under it, but the
+order is what lets any pack skin any system name.)
 
 **The sort calls, one line each** (the code was the evidence, not the
 header comments — every one of these files was *described* as the
@@ -1760,14 +1770,18 @@ book's face while containing no branded string):
 - `LadderPanel.tsx` → **system**, same test. Rungs, modifiers and the
   roster are all data; the parties and their write-ups stay pack-side in
   `sections.json`.
-- `Cylinder.tsx` → **stays in the pack**. §M's named hard case, decided
-  as §M decided it: the six-slot reloading dial is function, drawing it
-  as a revolver is flavor.
+- `Cylinder.tsx` → **the pack**, finally and settled (2026-08-20,
+  Brian — after a day in the system under the rights reading; see
+  point 3's second correction). The six-slot reloading dial is a
+  mechanic the system DECLARES (`dials: {…: "cylinder"}`); the
+  revolver drawing it is the book's face and ships with the book.
 
-Next steps this leaves: (1) the *function* half of the dial doesn't
-exist yet — the system has no unbranded `Cylinder` for the pack to skin,
-so removing the pack's would fall through to teller's stepper floor
-rather than to a system dial; (2) `client/lib/presentations.ts`'s
+Next steps this leaves: (1) ~~the system has no unbranded `Cylinder`
+for the pack to skin~~ — DISSOLVED 2026-08-20 rather than filled: no
+unbranded system dial gets built, deliberately. A host with the
+system and no pack falls through to teller's stepper floor for the
+dial, which is the floor doing its job — a +/− that always works
+beats a de-branded revolver nobody asked for; (2) `client/lib/presentations.ts`'s
 `FALLBACK_PRESENTATIONS` is still §L's transitional floor, and phase 3.5
 (emptying it) is now cheaper to argue for, since a *system* exists to
 own those files; (3) nothing yet exports a `.system` archive — Door 2/3
