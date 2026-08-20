@@ -376,6 +376,8 @@ export type PublicBoard = {
   };
   state: {
     placements?: PublicPlacement[];
+    /** Hidden ones never arrive — the redaction strips them server-side. */
+    zones?: { id?: string; effect?: string; cells: [number, number][] }[];
     /** Already flattened to plain revealed cells — no region shapes. */
     fog?: { on?: boolean; revealed?: [number, number][] };
     view?: { mode?: 'fit' | 'true'; zoom?: number; cu?: number; cv?: number };
@@ -392,6 +394,9 @@ export type PublicPlacement = {
   u: number;
   v: number;
   sizeInches?: number;
+  shape?: 'disc' | 'square' | 'triangle';
+  /** Degrees, clockwise. */
+  rot?: number;
 };
 
 /** The picture the art frame is showing. Null means the frame rests. */
