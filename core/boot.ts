@@ -29,11 +29,56 @@ import { mergeBy } from './merge.ts';
 import { byPanelOrder, includeProblems, type PanelDef } from './panels.ts';
 import { defaultPanels, sweepPanels } from './panels-shelf.ts';
 import { sweepPacks, type PackProblem } from './packs-shelf.ts';
-import { sweepSystems } from './systems-shelf.ts';
+import { sweepSystems, type SystemExport } from './systems-shelf.ts';
 import { toTemplate, type Template, type TemplateOf } from './stamp.ts';
 import type { Campaign, Shelf } from './store.ts';
 
 export type Missing = { slot: 'system' | 'pack'; ref: Ref };
+
+/**
+ * What a load-time requirement check needs to know about the active
+ * system: what it's CALLED (the refusal names all three parties) and
+ * what it exports. `undefined` is a table with no system at all.
+ */
+type ExportSurface = { name: string; exports: string[] } | undefined;
+
+/**
+ * Whose code asked for what — one entry per pack, panel or system whose
+ * compiled files named `system/<name>` specifiers.
+ */
+export type Requirement = { who: string; needs: string[] };
+
+/**
+ * The §M-4a refusal, out loud and at LOAD: a pack (or panel, or the
+ * system's own code) importing `system/creation` from a system that
+ * exports no such file is a problem in the report, naming all three
+ * parties — the asker, the export, the system that doesn't have it.
+ *
+ * **No version ranges, deliberately.** The requirement is on the
+ * SURFACE, not on the bytes that shipped it: house-fork a system under
+ * a new id, keep exporting the same names, and every import keeps
+ * working. When that isn't true the refusal tells you to update the
+ * system, which is the only advice a range would have given anyway.
+ */
+export function exportProblems(
+  system: ExportSurface,
+  requirements: Requirement[],
+): { dir: string; problem: string }[] {
+  const problems: { dir: string; problem: string }[] = [];
+  const have = new Set(system?.exports ?? []);
+  for (const { who, needs } of requirements) {
+    for (const need of needs) {
+      if (have.has(need)) continue;
+      problems.push({
+        dir: who,
+        problem: system
+          ? `${who} needs \`${need}\` from ${system.name}, which this version doesn't export`
+          : `${who} needs \`${need}\` from a system, and this table has none`,
+      });
+    }
+  }
+  return problems;
+}
 
 /** One content layer's blob, with where it came from for the console to say. */
 type Layer = { source: string; data: Record<string, unknown> };
@@ -62,7 +107,13 @@ export class Loaded {
     id: string;
     name: string;
     version: number;
-    code?: { presentations: Record<string, string> };
+    code?: {
+      presentations: Record<string, string>;
+      /** What it EXPORTS (§M-4a) — `system/<name>` resolves against this. */
+      exports?: Record<string, SystemExport>;
+      /** What its own code imports through `system/<name>`. */
+      needs?: string[];
+    };
     codePending?: boolean;
   };
   /**
@@ -75,7 +126,7 @@ export class Loaded {
     id: string;
     name: string;
     version: number;
-    code?: { presentations: Record<string, string> };
+    code?: { presentations: Record<string, string>; needs?: string[] };
     codePending?: boolean;
   }[];
   /** Every ref that didn't resolve. The console's business to say out loud. */
@@ -126,7 +177,19 @@ export class Loaded {
     this.system = system;
     this.packs = packs;
     this.missing = missing;
-    this.packProblems = packProblems;
+    // What the CONTENT stack asked of the system's export surface
+    // (§M-4a). A pack's requirement is a fact about the pack, so it
+    // lands in the pack report; a panel's is asked further down, once
+    // the panels have merged.
+    this.packProblems = [
+      ...packProblems,
+      ...exportProblems(this.#surface(), [
+        ...(system?.code?.needs?.length ? [{ who: system.name, needs: system.code.needs }] : []),
+        ...packs
+          .filter((p) => p.code?.needs?.length)
+          .map((p) => ({ who: p.name, needs: p.code!.needs! })),
+      ]),
+    ];
     // teller's own furniture is the FLOOR: the panels that ship with
     // the install (`defaults/panels/`), overridable by any layer above
     // restating the name (§E). The one slot teller ships declarations
@@ -146,10 +209,45 @@ export class Loaded {
     // collection, not about any one folder (§M-5a′), so it can only be
     // asked once every layer is stacked — here, at the end of the
     // constructor, and it joins the problems the sweeps already found.
+    const merged = this.declarations('panels') as PanelDef[];
     this.panelProblems = [
       ...panelProblems,
-      ...includeProblems(this.declarations('panels') as PanelDef[]),
+      ...includeProblems(merged),
+      // A panel's requirement is asked HERE for the same reason an
+      // include's is: only the merged collection knows which panel of a
+      // name actually won, and it's the winner's code that will run.
+      ...exportProblems(
+        this.#surface(),
+        merged
+          .filter((p) => p.code?.needs?.length)
+          .map((p) => ({ who: `panel '${p.name}'`, needs: p.code!.needs! })),
+      ),
     ];
+  }
+
+  /**
+   * The active system's export surface — its NAME and the export names
+   * `system/<name>` may resolve to. A system whose code nobody trusted
+   * has none attached, and that is the honest answer: nothing of its
+   * would be served either.
+   */
+  #surface(): ExportSurface {
+    if (!this.system) return undefined;
+    return {
+      name: this.system.name,
+      exports: Object.keys(this.system.code?.exports ?? {}),
+    };
+  }
+
+  /**
+   * What `system/<name>` resolves to right now (§M-4a) — one entry per
+   * file in the ACTIVE system's `exports/`, absent for a table with no
+   * system or a system nobody trusted. Unlike `presentations()` this
+   * never merges: `exports/` is system-tier only, which is exactly what
+   * keeps the dependency arrow pointing down.
+   */
+  exports(): Record<string, SystemExport> {
+    return this.system?.code?.exports ?? {};
   }
 
   /**

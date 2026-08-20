@@ -12,7 +12,7 @@
 // the minimal loop refetches on change, and pushing richer deltas is a
 // later optimisation with this exact seam already in place.
 
-import { loadCampaign, type Loaded } from '../core/boot.ts';
+import { exportProblems, loadCampaign, type Loaded } from '../core/boot.ts';
 import type { LoadedPlugin, PluginProblem } from '../core/plugins.ts';
 import { findEntry, sameName, withoutEntry, type Entity } from '../core/entity.ts';
 import { kindFor, setEntry, toKindDef, type KindDef } from '../core/kind.ts';
@@ -350,10 +350,28 @@ export class Host {
 
   setPlugins(plugins: LoadedPlugin[], problems: PluginProblem[]): void {
     this.plugins = plugins;
-    this.pluginProblems = problems;
+    // A pane that imports `system/<name>` asks the same question a
+    // pack's presentation does (§M-4a), and gets the same answer in the
+    // same words — asked HERE because this is the one seam where the
+    // running plugins and the active campaign's system meet.
+    const loaded = this.session?.loaded;
+    const all = [
+      ...problems,
+      ...exportProblems(
+        loaded?.system
+          ? { name: loaded.system.name, exports: Object.keys(loaded.exports()) }
+          : undefined,
+        plugins.flatMap((p) =>
+          p.panes
+            .filter((pane) => pane.code.needs?.length)
+            .map((pane) => ({ who: `pane '${pane.name}'`, needs: pane.code.needs! })),
+        ),
+      ),
+    ];
+    this.pluginProblems = all;
     if (this.session) {
       this.session.plugins = plugins;
-      this.session.pluginProblems = problems;
+      this.session.pluginProblems = all;
     }
   }
 
