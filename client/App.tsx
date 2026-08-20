@@ -8,6 +8,7 @@ import {
   api,
   displaySlot,
   hello,
+  reportViewport,
   stored,
   forgetSlips,
   type DisplayInfo,
@@ -18,6 +19,7 @@ import type { PanelDef } from '../core/panels.ts';
 import { PanelSurface, type BlockCtx, type Glass } from './panels/render.tsx';
 import { SeatChrome } from './components/seat/SeatChrome.tsx';
 import { CampaignScreen } from './views/campaigns.tsx';
+import { CalibrationOverlay } from './components/board/CalibrationOverlay.tsx';
 import { TableView } from './views/TableView.tsx';
 import { BoardView } from './views/BoardView.tsx';
 import { BadgeView } from './views/BadgeView.tsx';
@@ -406,6 +408,27 @@ export default function App() {
   const [unlocked, setUnlocked] = useState(() => Boolean(stored.key));
   const me = useLive(() => hello(), []);
 
+  // How big this glass is, told once and again when it changes. The
+  // console reads it back to draw what the table can actually SHOW at
+  // true scale, and to warn when a calibration strip runs off the edge
+  // — neither of which can be derived from anywhere else, because only
+  // the screen knows its own pixel count.
+  const ready = Boolean(me.data?.display?.id);
+  useEffect(() => {
+    if (!ready) return;
+    void reportViewport();
+    let t: ReturnType<typeof setTimeout> | null = null;
+    const onResize = () => {
+      if (t) clearTimeout(t);
+      t = setTimeout(() => void reportViewport(), 500);
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      if (t) clearTimeout(t);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [ready]);
+
   const params = hashParams(hash);
   const wantsConsole =
     hash === 'console' ||
@@ -434,6 +457,12 @@ export default function App() {
     <>
       {view}
       <IdentifyFlash me={me.data?.display} />
+      {/* Beside the identify flash and for the same reason: both are
+          console-driven things that must reach a surface whatever that
+          surface's job is, and neither belongs to the view underneath
+          (rule 6). A screen being measured against a physical inch is
+          not doing its job at that moment — the ruler covers the lot. */}
+      <CalibrationOverlay />
     </>
   );
 }

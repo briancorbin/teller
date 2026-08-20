@@ -8,14 +8,17 @@
 // Trimmed for this host (single campaign, no `campaignId` on a
 // `Display` — core-next serves one table): no "on another campaign" /
 // "bring here" section, since there's nowhere else for a screen to be.
-// Also left out: the calibration wizard and pretend-glass sizing
-// (`ppi`/`glass` params exist on the type but nothing here sets them —
-// noted as a gap) and the guided "saddle up from a trade" stamp flow
+// The CALIBRATION wizard is here now (it was the noted gap): every
+// screen row carries a "calibrate" button, and the pattern it draws
+// arrives at that screen over the stream — console-driven, because a
+// passive surface grows no controls of its own (rule 6). Still left
+// out: pretend-glass sizing, and the guided "saddle up from a trade" stamp flow
 // (`encounters`/`roster` own character creation; a seat here just
 // points at whoever the roster already has).
 
 import { useState } from 'react';
 import { api } from '../lib/api.ts';
+import { CalibrationWizard } from '../components/board/CalibrationWizard.tsx';
 import { useLive } from '../lib/use-session.ts';
 import { btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
 import { registerTool } from './index.ts';
@@ -34,6 +37,11 @@ type Display = {
   code?: string;
   position?: number;
   lastSeenAt?: string;
+  /** This screen's own calibration — px per true inch, per axis. */
+  ppi?: number;
+  ppiY?: number;
+  /** What it last reported about itself; the wizard sizes its strip by it. */
+  viewport?: { w: number; h: number };
 };
 
 type PanelDecl = { name: string; label?: string; subject?: 'entity' | 'none' };
@@ -72,6 +80,7 @@ function ScreensTool() {
 
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  const [calibrating, setCalibrating] = useState<Display | null>(null);
 
   // Only ADOPTED screens get a card. An unclaimed screen is showing its
   // code across the room and the adopt box above is how it arrives
@@ -143,6 +152,21 @@ function ScreensTool() {
 
   return (
     <div className="space-y-3">
+      {calibrating && (
+        <CalibrationWizard
+          displayId={calibrating.id}
+          name={calibrating.name}
+          role={calibrating.role}
+          ppi={calibrating.ppi}
+          ppiY={calibrating.ppiY}
+          viewport={calibrating.viewport}
+          onCancel={() => setCalibrating(null)}
+          onDone={(ppi, ppiY) => {
+            patch(calibrating.id, { ppi, ppiY });
+            setCalibrating(null);
+          }}
+        />
+      )}
       <section className={`${card} space-y-2`}>
         <span className={sectionLabel}>Add a screen</span>
         <p className="text-sm text-stone-500">
@@ -228,6 +252,23 @@ function ScreensTool() {
                 onClick={() => api(`/api/displays/${d.id}/identify`, { method: 'POST' })}
               >
                 identify
+              </button>
+              {/* An inch is an inch on every display, via that display's
+                  own ppi — and this is where a human works it out.
+                  Offered on every screen, not just the table: a rail
+                  panel draws inch-sized things too. */}
+              <button
+                className={`rounded-md px-2 py-1 text-sm transition-colors hover:bg-stone-800 hover:text-stone-200 ${
+                  d.ppi ? 'text-emerald-600/90' : 'text-stone-500'
+                }`}
+                title={
+                  d.ppi
+                    ? `calibrated: ${d.ppi.toFixed(1)} × ${(d.ppiY ?? d.ppi).toFixed(1)} px/in`
+                    : 'measure this screen against a real inch'
+                }
+                onClick={() => setCalibrating(d)}
+              >
+                calibrate
               </button>
               <button
                 className="rounded-md px-2 py-1 text-sm text-stone-600 transition-colors hover:bg-red-950 hover:text-red-300"
