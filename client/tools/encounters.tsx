@@ -112,6 +112,7 @@ function EncounterCard({
   const [adding, setAdding] = useState('');
   const [count, setCount] = useState(1);
   const [viewing, setViewing] = useState<Template | null>(null);
+  const use = useLive(() => api<{ costCounter?: string }>('/api/stack/record/use'), []);
 
   const foes = encounter.foes ?? [];
   const patch = (next: Partial<EncounterTemplate>) => onSave({ ...encounter, ...next });
@@ -213,6 +214,7 @@ function EncounterCard({
       {viewing && (
         <TemplateSheet
           template={viewing}
+          costCounter={use.data?.costCounter}
           onClose={() => setViewing(null)}
           actions={
             <button

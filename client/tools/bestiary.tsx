@@ -79,6 +79,7 @@ function CountStepper({ count, onChange }: { count: number; onChange: (n: number
 
 function BestiaryTool() {
   const bestiary = useLive(() => api<Template[]>('/api/stack/templates/bestiary'), []);
+  const use = useLive(() => api<{ costCounter?: string }>('/api/stack/record/use'), []);
   const [query, setQuery] = useState('');
   const [type, setType] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -206,6 +207,7 @@ function BestiaryTool() {
       {shown && (
         <TemplateSheet
           template={shown}
+          costCounter={use.data?.costCounter}
           onClose={() => setOpen(null)}
           actions={
             <button className={btnPrimary} disabled={busy} onClick={() => doSpawn(shown)}>

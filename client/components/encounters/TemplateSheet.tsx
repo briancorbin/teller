@@ -89,7 +89,7 @@ export function StatusChip({ entry }: { entry: Entry }) {
  * zero parsing (§I). A band heading groups these; this renders the
  * line the old app's `AttackLines` drew from parsed prose.
  */
-function AttackLine({ attack }: { attack: Template }) {
+function AttackLine({ attack, costCounter }: { attack: Template; costCounter?: string }) {
   const profile = attack.lists?.profile ?? [];
   const inflicts = attack.lists?.inflicts ?? [];
   const cost = findEntry(profile, 'Cost');
@@ -110,7 +110,11 @@ function AttackLine({ attack }: { attack: Template }) {
           piercing {piercing.value ?? ''}
         </span>
       )}
-      {cost && <span className="font-mono text-[10px] text-stone-500">{cost.value} grit</span>}
+      {cost && (
+        <span className="font-mono text-[10px] text-stone-500">
+          {cost.value} {(costCounter ?? cost.name).toLowerCase()}
+        </span>
+      )}
       {inflicts.map((s) => (
         <StatusChip key={s.name} entry={s} />
       ))}
@@ -121,7 +125,13 @@ function AttackLine({ attack }: { attack: Template }) {
 /** Attack children, band by band, in declared order — Melee, Short, Long. */
 const BAND_ORDER = ['Melee', 'Short', 'Long'];
 
-export function AttacksSection({ template }: { template: Template }) {
+export function AttacksSection({
+  template,
+  costCounter,
+}: {
+  template: Template;
+  costCounter?: string;
+}) {
   const attacks = (template.children ?? []).filter((c) => c.type === 'attack');
   if (!attacks.length) return null;
   const bandOf = (a: Template) => String(findEntry(a.lists?.profile ?? [], 'Band')?.value ?? '');
@@ -142,7 +152,7 @@ export function AttacksSection({ template }: { template: Template }) {
               {attacks
                 .filter((a) => bandOf(a) === band)
                 .map((a) => (
-                  <AttackLine key={a.id} attack={a} />
+                  <AttackLine key={a.id} attack={a} costCounter={costCounter} />
                 ))}
             </div>
           </div>
@@ -397,11 +407,14 @@ export function TemplateSheet({
   template,
   onClose,
   actions,
+  costCounter,
 }: {
   template: Template;
   onClose: () => void;
   /** Row actions handed in by the caller — "add to the fight", etc. */
   actions?: React.ReactNode;
+  /** The system's cost counter name (`use.costCounter`) — falls back to the entry's own word. */
+  costCounter?: string;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -455,7 +468,7 @@ export function TemplateSheet({
               <p className="text-sm text-stone-600">nothing printed for this foe</p>
             )}
           <StatPools template={template} />
-          <AttacksSection template={template} />
+          <AttacksSection template={template} costCounter={costCounter} />
           <StatblockProse template={template} />
 
           {template.notes && (
