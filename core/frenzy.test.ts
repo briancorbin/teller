@@ -13,9 +13,12 @@ import {
   grantsOf,
   immunities,
   isActive,
+  isEvent,
+  isSpent,
   modificationsFor,
   modificationsOf,
   modifiedAttack,
+  pendingEvents,
 } from './frenzy.ts';
 
 const bite: Entity = {
@@ -258,5 +261,81 @@ describe('modifiedAttack — the chip, rewritten in place', () => {
       { set: [{ name: 'Damage', value: '9B' }], add: [], inflicts: [], properties: [], from: { id: 'x', name: 'x' } },
     ]);
     expect(bite.lists.profile).toContainEqual({ name: 'Damage', value: '2B2G' });
+  });
+});
+
+// ---- the two lifecycles: a switch that runs, and a thing that happens
+// once. The Event marker is the book's, and it lives in the NAME. ----
+
+const burst: Entity = {
+  id: 'frz_burst',
+  name: 'Shed Its Coat (Event)',
+  type: 'frenzy',
+  notes: 'It sheds, all at once.',
+  lists: {
+    gate: [{ name: 'Health', value: 4 }],
+    inflicts: [{ name: 'Dazed', value: 2 }],
+    add: [{ name: 'Defense', value: '2B' }],
+  },
+};
+
+const shedder = (mark?: string | null): Entity => ({
+  id: 'ent_shedder',
+  name: 'Invented Shedder',
+  type: 'foe',
+  lists: {
+    stats: [{ name: 'Defense', value: '1G' }],
+    resources: [{ name: 'Health', value: 4, max: 20 }],
+    ...(mark === undefined ? {} : { frenzy: [{ name: 'Shed Its Coat (Event)', ...(mark === null ? {} : { value: mark }) }] }),
+  },
+  children: [burst, frenzy],
+});
+
+describe('isEvent — the book says which kind it is, in the name', () => {
+  it('reads the marker however it was spaced or cased', () => {
+    expect(isEvent({ name: 'Shed Its Coat (Event)' })).toBe(true);
+    expect(isEvent({ name: 'Shed Its Coat ( event )' })).toBe(true);
+    expect(isEvent({ name: 'Shed Its Coat (EVENT)' })).toBe(true);
+  });
+
+  it('is false for every ordinary one, and for nothing at all', () => {
+    expect(isEvent(frenzy)).toBe(false);
+    expect(isEvent({ name: 'Eventide Howl' })).toBe(false);
+    expect(isEvent({ name: '' })).toBe(false);
+    expect(isEvent(undefined)).toBe(false);
+  });
+});
+
+describe('spent — the same mark, wearing a value', () => {
+  it('is unspent until the mark says otherwise', () => {
+    expect(isSpent(shedder(), burst)).toBe(false);
+    expect(isSpent(shedder(null), burst)).toBe(false);
+    expect(isSpent(shedder('spent'), burst)).toBe(true);
+    expect(isSpent(shedder(' Spent '), burst)).toBe(true);
+  });
+
+  it('stops it running — a one-shot that fired rewrites nothing', () => {
+    expect(isActive(shedder(null), burst)).toBe(true);
+    expect(isActive(shedder('spent'), burst)).toBe(false);
+    expect(effectiveList(shedder(null), 'stats')).toEqual([{ name: 'Defense', value: '2B1G' }]);
+    expect(effectiveList(shedder('spent'), 'stats')).toEqual([{ name: 'Defense', value: '1G' }]);
+  });
+});
+
+describe('pendingEvents — what cannot wait for its own turn', () => {
+  it('proposes a met one-shot, and only a one-shot', () => {
+    expect(pendingEvents(shedder()).map((f) => f.name)).toEqual(['Shed Its Coat (Event)']);
+  });
+
+  it('says nothing once it is spent, or already marked', () => {
+    expect(pendingEvents(shedder('spent'))).toEqual([]);
+    expect(pendingEvents(shedder(null))).toEqual([]);
+  });
+
+  it('says nothing while the line is uncrossed, or when there is no sheet', () => {
+    const healthy = shedder();
+    healthy.lists.resources = [{ name: 'Health', value: 5, max: 20 }];
+    expect(pendingEvents(healthy)).toEqual([]);
+    expect(pendingEvents(undefined)).toEqual([]);
   });
 });

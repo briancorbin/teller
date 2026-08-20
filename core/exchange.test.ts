@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   afterDamage,
+  coversOf,
   damageFrom,
   defensesOf,
   isAoe,
@@ -73,6 +74,26 @@ describe('defensesOf — whatever the system pinned to the vital', () => {
   it('offers nothing when the system pinned nothing, or pinned what is missing', () => {
     expect(defensesOf(sheet, undefined, vitalIn(sheet)!.entry)).toEqual([]);
     expect(defensesOf(sheet, { Vigor: ['Aura'] }, vitalIn(sheet)!.entry)).toEqual([]);
+  });
+});
+
+describe('coversOf — what the system offers anybody, per attack', () => {
+  it('reads the record into the same entries a pinned defense arrives as', () => {
+    expect(coversOf({ 'Behind a Rock': '1B', 'Behind a Wall': '2B' })).toEqual([
+      { name: 'Behind a Rock', value: '1B' },
+      { name: 'Behind a Wall', value: '2B' },
+    ]);
+  });
+
+  it('offers nothing at all when the system declares none', () => {
+    expect(coversOf(undefined)).toEqual([]);
+    expect(coversOf({})).toEqual([]);
+  });
+
+  it('keeps a flat number and drops what carries no value to roll', () => {
+    expect(coversOf({ Dug_In: 2, Nothing: null, Shapeless: { pool: '1B' }, '  ': '1B' })).toEqual([
+      { name: 'Dug_In', value: 2 },
+    ]);
   });
 });
 

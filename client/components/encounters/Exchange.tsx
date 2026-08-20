@@ -41,9 +41,10 @@
 
 import { useRef, useState } from 'react';
 import { findEntry, numberOf, type Entity, type Entry } from '../../../core/entity.ts';
-import { effectiveList } from '../../../core/frenzy.ts';
+import { FRENZY, SPENT, effectiveList } from '../../../core/frenzy.ts';
 import {
   afterDamage,
+  coversOf,
   damageFrom,
   defensesOf,
   locate,
@@ -89,6 +90,13 @@ export type Armed = {
   name: string;
   /** A frenzy pays in prose, and is treated differently below. */
   frenzy?: boolean;
+  /**
+   * A ONE-SHOT frenzy — the book's Event kind. Resolving it spends it,
+   * which is the only write here that isn't damage, a status or a price:
+   * a thing that happens once has to record that it happened, or the
+   * next turn proposes it again.
+   */
+  event?: boolean;
   /** The reach it's printed under, when the printing gives one. */
   band?: string;
   /**
@@ -119,6 +127,14 @@ export type Combatant = { id: string; label: string };
  */
 type TargetState = {
   defenses: string[];
+  /**
+   * What they took from the SITUATION rather than the sheet — whatever
+   * the system's `defenses` record offers, chosen per target and per
+   * exchange. Never stored on anybody: cover is a choice made under one
+   * attack, and a creature that keeps it becomes a creature defending
+   * twice as well against the next one.
+   */
+  covers: string[];
   defFaces?: (string | null)[];
   /** What the table rolled with its own hands, typed in. */
   typed: string;
@@ -128,7 +144,7 @@ type TargetState = {
   landed?: { name: string; from: number; to: number };
 };
 
-const BLANK: TargetState = { defenses: [], typed: '' };
+const BLANK: TargetState = { defenses: [], covers: [], typed: '' };
 
 /**
  * The list a printed sheet keeps its resistances in. Named here because
@@ -328,6 +344,7 @@ export function Exchange({
   dice,
   icons,
   pins,
+  defenses,
   statuses,
   conditionsList,
   conditionCap,
@@ -345,6 +362,12 @@ export function Exchange({
   icons?: Record<string, string>;
   /** The system's `pins` record — which entries stand beside which counter. */
   pins?: Record<string, string[]>;
+  /**
+   * The system's `defenses` record — what anybody may bring to an attack
+   * that isn't on their sheet, by the system's own names and pools. A
+   * host whose system declares none renders no chips and loses nothing.
+   */
+  defenses?: Record<string, unknown>;
   statuses: StatusDecl[];
   /** Which list a hung condition is written to — the system's word. */
   conditionsList: string;
@@ -459,17 +482,23 @@ export function Exchange({
   const offeredOn = (t: Entity) =>
     defensesOf(readingLists(t), pins, vitalIn(t.lists)?.entry);
 
-  const defPoolOn = (t: Entity) =>
-    combinePools(
-      offeredOn(t)
-        .filter(
-          (o) =>
-            stateOf(t.id).defenses.includes(o.name) &&
-            typeof o.value === 'string' &&
-            isPool(o.value),
-        )
+  /**
+   * What the system says anyone may take cover behind. Read once, off
+   * the record — the words and the pools are the system's, and this file
+   * carries neither.
+   */
+  const covers = coversOf(defenses).filter((c) => typeof c.value === 'string' && isPool(c.value));
+
+  /** Every pool this target is rolling: what they have, plus what they took. */
+  const defPoolOn = (t: Entity) => {
+    const s = stateOf(t.id);
+    return combinePools([
+      ...offeredOn(t)
+        .filter((o) => s.defenses.includes(o.name) && typeof o.value === 'string' && isPool(o.value))
         .map((o) => String(o.value)),
-    );
+      ...covers.filter((c) => s.covers.includes(c.name)).map((c) => String(c.value)),
+    ]);
+  };
 
   /**
    * What one inflicted status proposes right now, ON ONE TARGET —
@@ -611,6 +640,14 @@ export function Exchange({
         }
       }
 
+      // A one-shot has now happened, so it says so — through the same
+      // entry door as everything else, which is what makes it an
+      // ordinary value the Warden can take straight back off (rule 1)
+      // and what puts it in the log (rule 3).
+      if (armed.event) {
+        await onWrite(actor.id, { list: FRENZY, name: armed.name, value: SPENT });
+      }
+
       // One record, however many it caught: the head is the first of
       // them, kept flat for every reader that only ever knew one.
       const head = outcomes[0];
@@ -679,9 +716,9 @@ export function Exchange({
       parts.push(`${actor.name} — ${armed.name}`);
     }
     for (const target of targets) {
-      const { defenses, landed } = stateOf(target.id);
+      const { defenses: brought, covers: behind, landed } = stateOf(target.id);
       const blocked = blockedOn(target.id);
-      const how = defenses.length ? defenses.join(' + ') : '';
+      const how = [...brought, ...behind].join(' + ');
       parts.push(
         how
           ? `${target.name} defended with ${how}: ${blocked}`
@@ -817,6 +854,34 @@ export function Exchange({
                         }}
                       >
                         {o.name} {o.value !== undefined ? String(o.value) : '—'}
+                      </button>
+                    );
+                  })}
+                  {/* What they took from the SITUATION — the system's own
+                      offer, per target, because being attacked is what
+                      calls for it and each of them was somewhere else
+                      when it landed. Nothing about it is stored: the
+                      next attack asks again. */}
+                  {covers.map((c) => {
+                    const on = s.covers.includes(c.name);
+                    return (
+                      <button
+                        key={c.name}
+                        className={`rounded-full px-2 py-0.5 font-mono text-[10px] transition-colors ${
+                          on
+                            ? 'bg-emerald-900 text-emerald-100'
+                            : 'bg-stone-800 text-stone-500 hover:bg-stone-700'
+                        }`}
+                        title={`roll this alongside anything else ${target.name} brought`}
+                        onClick={() => {
+                          patch(target.id, {
+                            covers: on ? s.covers.filter((x) => x !== c.name) : [...s.covers, c.name],
+                            defFaces: undefined,
+                          });
+                          touched();
+                        }}
+                      >
+                        {c.name} {String(c.value)}
                       </button>
                     );
                   })}

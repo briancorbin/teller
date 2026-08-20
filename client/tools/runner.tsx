@@ -29,6 +29,7 @@
 
 import { useState } from 'react';
 import type { Entity } from '../../core/entity.ts';
+import { pendingEvents } from '../../core/frenzy.ts';
 import { api } from '../lib/api.ts';
 import { rollPool, tallyFaces, type DiceRecord } from '../lib/dice.ts';
 import { useLive } from '../lib/use-session.ts';
@@ -154,6 +155,7 @@ function RunnerTool() {
   const accents = useLive(() => api<Record<string, string>>('/api/stack/record/accents'), []);
   const icons = useLive(() => api<Record<string, string>>('/api/stack/record/icons'), []);
   const pins = useLive(() => api<Record<string, string[]>>('/api/stack/record/pins'), []);
+  const defenses = useLive(() => api<Record<string, unknown>>('/api/stack/record/defenses'), []);
   const use = useLive(() => api<UseRecord>('/api/stack/record/use'), []);
   const kinds = useLive(() => api<KindDecl[]>('/api/stack/declarations/kinds'), []);
   const displays = useLive(() => api<Display[]>('/api/displays'), []);
@@ -278,6 +280,11 @@ function RunnerTool() {
     const owed = rolling && entry.score == null;
     const seat = entry.entityId ? seats.get(entry.entityId) : undefined;
     const accent = sheet?.type ? accents.data?.[sheet.type] : undefined;
+    // A one-shot whose line has just been crossed doesn't wait for its
+    // owner's turn, so the ROW is where it has to say so — the stage is
+    // showing somebody else. It only ever proposes: crossing it is still
+    // a tap, over on that creature's own turn (rule 1).
+    const pending = pendingEvents(sheet);
 
     return (
       <li
@@ -339,6 +346,16 @@ function RunnerTool() {
           >
             {label}
           </span>
+
+          {/* The one thing on this row that can't wait for a turn. */}
+          {pending.length > 0 && (
+            <span
+              className="shrink-0 animate-pulse font-mono text-[11px] text-rose-300"
+              title={`${pending.map((f) => f.name).join(', ')} — happens now, once`}
+            >
+              ◈
+            </span>
+          )}
 
           {/* Somebody is sitting in front of this one, and whether their
               screen is still talking to us. */}
@@ -658,6 +675,7 @@ function RunnerTool() {
                       dice={dice.data}
                       icons={icons.data}
                       pins={pins.data}
+                      defenses={defenses.data}
                       statuses={statuses.data ?? []}
                       conditionsList={CONDITIONS}
                       conditionCap={conditionCap}

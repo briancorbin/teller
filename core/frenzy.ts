@@ -56,12 +56,41 @@
 // an ordinary entry in a list named for the child type, so it goes
 // through the ordinary entry door, appends to the log like everything
 // else, and survives a refetch.
+//
+// TWO LIFECYCLES, one door. Most gated children are a switch: it opens,
+// somebody throws it, and it runs until they throw it back. A few are a
+// one-shot — they happen the moment the line is crossed, whosever turn
+// it is, and then they are done for the fight. A printing tells them
+// apart in the NAME ('… (Event)'), so `isEvent` reads it there and
+// nothing renames anybody's book to suit us.
+//
+// The one-shot's extra state rides the SAME entry: the mark with no
+// value is running (what every sheet already stores), and the mark
+// valued `spent` is a one-shot that has fired. So an event that fired is
+// not running — its rewrites stop — and un-spending it is removing or
+// retyping an ordinary entry, which is the only way this could be
+// allowed to work (rule 1: never a state nobody can change).
 
 import { findEntry, numberOf, sameName, type Entity, type Entry, type Ref } from './entity.ts';
+import { readGate } from './gate.ts';
 import { combinePools, isPool, subtractPools } from './pool.ts';
 
 /** The type a gated child wears, and the list its active marks live in. */
 export const FRENZY = 'frenzy';
+
+/** What a one-shot's mark says once it has fired. */
+export const SPENT = 'spent';
+
+/**
+ * The book's own marker for a one-shot, read off the name.
+ *
+ * A printing says which kind a Frenzy is by writing it into the title —
+ * so this is a READ of the data as it comes, never a rename: the name
+ * belongs to whoever wrote it. Cased and spaced however they liked.
+ */
+export function isEvent(frenzy: { name?: string } | undefined): boolean {
+  return /\(\s*event\s*\)/i.test(frenzy?.name ?? '');
+}
 
 /** One attack rewrite, read off a `modifies` child. */
 export type Modification = {
@@ -91,12 +120,50 @@ export function frenziesOf(entity: { children?: Entity[] } | undefined): Entity[
   return (entity?.children ?? []).filter((c) => c.type === FRENZY);
 }
 
-/** Is this one running? A stored mark, matched by the child's own name. */
+/** The stored mark for one child, if somebody has written one. */
+export function markOf(
+  entity: { lists?: Record<string, Entry[]> } | undefined,
+  frenzy: { name: string },
+): Entry | undefined {
+  return list(entity, FRENZY).find((e) => sameName(e, frenzy.name));
+}
+
+/** Has this one-shot already happened? The mark says so, and only it. */
+export function isSpent(
+  entity: { lists?: Record<string, Entry[]> } | undefined,
+  frenzy: { name: string },
+): boolean {
+  const value = markOf(entity, frenzy)?.value;
+  return typeof value === 'string' && value.trim().toLowerCase() === SPENT;
+}
+
+/**
+ * Is this one running? A stored mark, matched by the child's own name —
+ * and a mark that says `spent` is a one-shot that is OVER, so it stops
+ * rewriting anything it was rewriting.
+ */
 export function isActive(
   entity: { lists?: Record<string, Entry[]> } | undefined,
   frenzy: { name: string },
 ): boolean {
-  return list(entity, FRENZY).some((e) => sameName(e, frenzy.name));
+  return markOf(entity, frenzy) !== undefined && !isSpent(entity, frenzy);
+}
+
+/**
+ * The one-shots whose line has been crossed and that nobody has spent —
+ * what a surface says out loud the moment it happens, on ANYBODY's turn
+ * (a regular Frenzy waits for the creature's own; an Event does not).
+ *
+ * It proposes and nothing more: firing one is still a tap (rule 1).
+ */
+export function pendingEvents(entity: Entity | undefined): Entity[] {
+  return frenziesOf(entity).filter(
+    (f) =>
+      isEvent(f) &&
+      !isSpent(entity, f) &&
+      !isActive(entity, f) &&
+      (readGate(f, entity?.lists)?.met ?? false),
+  );
 }
 
 /** Every gated child currently running. */

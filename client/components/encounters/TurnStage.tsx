@@ -25,11 +25,14 @@
 import { numberOf, type Entity, type Entry } from '../../../core/entity.ts';
 import {
   FRENZY,
+  SPENT,
   costOf,
   durationOf,
   effectiveList,
   grantsOf,
   isActive,
+  isEvent,
+  isSpent,
   modificationsFor,
   modifiedAttack,
 } from '../../../core/frenzy.ts';
@@ -171,7 +174,27 @@ function DoesRow({
           const gate = readGate(frenzy, acting.lists);
           const open = gate?.met ?? false;
           const running = isActive(sheet, frenzy);
+          // The two lifecycles, told apart once, here. A one-shot says
+          // so in its own name; everything below only asks this file.
+          const event = isEvent(frenzy);
+          const spent = event && isSpent(sheet, frenzy);
           const on = armed?.id === frenzy.id;
+          /** What the chip says it is: a switch that runs, or a thing that happens once. */
+          const state = spent
+            ? 'spent'
+            : running
+              ? 'running'
+              : event
+                ? open
+                  ? 'now — once'
+                  : gate
+                    ? `once, at ${gate.at} ${gate.counter.toLowerCase()}`
+                    : 'once'
+                : open
+                  ? 'ready — its next turn'
+                  : gate
+                    ? `at ${gate.at} ${gate.counter.toLowerCase()}`
+                    : '';
           // A frenzy IS an action when the book gave it numbers of its
           // own — a pool, a reach, a status on everyone in it. Read off
           // the same profile an attack keeps, so the chip is the chip.
@@ -188,41 +211,65 @@ function DoesRow({
               {/* The MARK — stored, toggleable, and proposed the moment
                   the gate opens. teller never crosses the line itself:
                   it lights the switch up and waits (rule 1), and the
-                  Warden may throw it early, or back off. */}
+                  Warden may throw it early, or back off.
+
+                  A one-shot's mark is the same entry wearing a value, so
+                  the same tap spends it by hand and un-spends it again —
+                  there is no state here nobody can change. */}
               <button
                 className={`px-1.5 font-mono text-[11px] transition-colors ${
-                  running
-                    ? 'bg-rose-800 text-rose-50'
-                    : open
-                      ? 'animate-pulse bg-rose-950 text-rose-300 hover:bg-rose-900'
-                      : 'bg-stone-900 text-stone-700 hover:bg-stone-800'
+                  spent
+                    ? 'bg-stone-900 text-stone-700 line-through hover:bg-stone-800'
+                    : running
+                      ? 'bg-rose-800 text-rose-50'
+                      : open
+                        ? 'animate-pulse bg-rose-950 text-rose-300 hover:bg-rose-900'
+                        : 'bg-stone-900 text-stone-700 hover:bg-stone-800'
                 }`}
                 title={
-                  running
-                    ? `${frenzy.name} is running — tap to stop it`
-                    : open
-                      ? `${frenzy.name} can start — tap to start it`
-                      : `start ${frenzy.name} early`
+                  spent
+                    ? `${frenzy.name} has already happened — tap to put it back`
+                    : event
+                      ? open
+                        ? `${frenzy.name} happens now, once — tap to mark it spent`
+                        : `mark ${frenzy.name} spent`
+                      : running
+                        ? `${frenzy.name} is running — tap to stop it`
+                        : open
+                          ? `${frenzy.name} can start on its next turn — tap to start it`
+                          : `start ${frenzy.name} early`
                 }
-                aria-pressed={running}
+                aria-pressed={spent || running}
                 onClick={() =>
-                  onWrite({ list: FRENZY, name: frenzy.name, ...(running ? { remove: true } : {}) })
+                  onWrite(
+                    event
+                      ? spent
+                        ? { list: FRENZY, name: frenzy.name, remove: true }
+                        : { list: FRENZY, name: frenzy.name, value: SPENT }
+                      : { list: FRENZY, name: frenzy.name, ...(running ? { remove: true } : {}) },
+                  )
                 }
               >
-                {running ? '◆' : '◇'}
+                {event ? '◈' : running ? '◆' : '◇'}
               </button>
               <button
                 className={`px-2 py-1 text-left font-mono text-[11px] transition-colors ${
-                  on
-                    ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
-                    : open || running
-                      ? 'bg-rose-950/70 text-rose-200 hover:bg-rose-900/70'
-                      : 'bg-stone-900 text-stone-600 hover:bg-stone-800'
+                  spent
+                    ? 'bg-stone-900 text-stone-700 line-through'
+                    : on
+                      ? 'bg-amber-900/60 text-amber-100 ring-1 ring-amber-600'
+                      : open || running
+                        ? 'bg-rose-950/70 text-rose-200 hover:bg-rose-900/70'
+                        : 'bg-stone-900 text-stone-600 hover:bg-stone-800'
                 }`}
-                title={frenzy.notes ?? undefined}
+                title={spent ? `${frenzy.name} has already happened` : (frenzy.notes ?? undefined)}
                 // An unmet gate still arms. teller shows the Warden where
                 // the line is and lets them cross it (rule 1) — a chip that
-                // dims is a warning, never a lock.
+                // dims is a warning, never a lock. A SPENT one-shot is the
+                // one exception, and it isn't teller's ruling: the book
+                // says it can't be used again, and the mark beside it puts
+                // it back the moment the table disagrees.
+                disabled={spent}
                 onClick={() =>
                   onArm(
                     on
@@ -231,6 +278,9 @@ function DoesRow({
                           id: frenzy.id,
                           name: frenzy.name,
                           frenzy: true,
+                          // A one-shot spends itself where it resolves,
+                          // so the exchange has to know which kind it is.
+                          ...(event ? { event: true } : {}),
                           ...(p.band ? { band: p.band } : {}),
                           ...(p.aoe ? { aoe: true } : {}),
                           ...(typeof p.damage?.value === 'string' ? { damage: p.damage.value } : {}),
@@ -242,11 +292,13 @@ function DoesRow({
                 }
               >
                 {frenzy.name}
-                {gate && (
+                {state && (
                   <span
-                    className={`ml-1.5 text-[10px] ${open ? 'text-rose-300' : 'text-stone-600'}`}
+                    className={`ml-1.5 text-[10px] ${
+                      spent ? 'text-stone-700' : open || running ? 'text-rose-300' : 'text-stone-600'
+                    }`}
                   >
-                    {running ? 'running' : open ? 'ready' : `at ${gate.at} ${gate.counter.toLowerCase()}`}
+                    {state}
                   </span>
                 )}
                 {p.band && <span className="ml-1.5 text-[10px] text-stone-500">{p.band}</span>}

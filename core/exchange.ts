@@ -111,6 +111,27 @@ export function defensesOf(
     .filter((e): e is Entry => e !== undefined);
 }
 
+/**
+ * What the SYSTEM says anyone may bring, over and above what's printed
+ * on their sheet — the `defenses` record, read.
+ *
+ * A defense pinned to the vital belongs to the creature; this is the
+ * other kind, the one that belongs to the SITUATION: a wall you ducked
+ * behind is not a stat, it's a choice made per attack by whoever is
+ * being attacked. Which of those a system HAS, and what they're called,
+ * and what they're worth, is entirely the record's business — teller
+ * carries no word of it and a host without the record offers none.
+ *
+ * `{ 'Light Cover': '1B' }` in, `[{ name: 'Light Cover', value: '1B' }]`
+ * out — the same `Entry` shape a pinned defense arrives as, so the
+ * pooling below never learns there were two sources.
+ */
+export function coversOf(record: Record<string, unknown> | undefined): Entry[] {
+  return Object.entries(record ?? {})
+    .filter(([name, value]) => name.trim() !== '' && (typeof value === 'string' || typeof value === 'number'))
+    .map(([name, value]) => ({ name: name.trim(), value: value as string | number }));
+}
+
 /** The old app's line, exactly: `Math.max(0, hits - blocked)`. */
 export function damageFrom(hits: number, blocked: number): number {
   return Math.max(0, Math.round(hits) - Math.round(blocked));
