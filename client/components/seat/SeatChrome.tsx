@@ -37,6 +37,7 @@ import { Glyph } from '../sheet/glyphs.tsx';
 import { PanelSurface, type BlockCtx, type Glass } from '../../panels/render.tsx';
 import type { ScreenDecl } from '../items/types.ts';
 import { calling, TurnFlag, TurnRing, useTurnCall } from './TurnCall.tsx';
+import { PassedNoteOverlay, usePassedNotes } from './PassedNote.tsx';
 
 type Records = Record<string, Record<string, unknown>>;
 
@@ -523,6 +524,9 @@ export function SeatChrome({
   // Where this seat stands in the fight, and the one thing it may say
   // back into it (`TurnCall.tsx`).
   const call = useTurnCall(entityId);
+  // What was passed to THIS screen — never the room's business
+  // (`PassedNote.tsx`). Asked on the same nudge as everything else.
+  const passed = usePassedNotes();
 
   const load = useCallback(() => {
     api<PanelDef[]>('/api/stack/declarations/panels').then(setPanels).catch(() => setPanels([]));
@@ -615,6 +619,8 @@ export function SeatChrome({
       style={{ '--sheet-accent': accent ?? '#f59e0b' } as React.CSSProperties}
     >
       <TurnRing on={call.up} />
+
+      <PassedNoteOverlay notes={passed.notes} onDismiss={passed.dismiss} />
 
       <TopBar
         entity={entity}

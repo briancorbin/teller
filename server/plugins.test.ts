@@ -157,12 +157,13 @@ describe('the grouped reading', () => {
     expect(containerOf(body, 'sys_wiw').panels.map((p: any) => p.name)).not.toContain('wiw-sheet');
   });
 
-  it("lists teller's own six as the floor, data-only", async () => {
+  it("lists teller's own seven as the floor, data-only", async () => {
     const { body } = await api('GET', '/api/plugins');
     const teller = body.containers.find((c: any) => c.kind === 'teller');
     expect(teller.panels.map((p: any) => p.name).sort()).toEqual([
       'boards',
       'books',
+      'handouts',
       'log',
       'plugins',
       'screens',

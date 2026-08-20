@@ -305,7 +305,7 @@ describe("teller's own furniture (§E)", () => {
 
     const loaded = loadCampaign(shelf, campaign); // no dataDir
     const names = loaded.declarations('panels').map((p: any) => p.name).sort();
-    expect(names).toEqual(['boards', 'books', 'log', 'plugins', 'screens', 'shelf']);
+    expect(names).toEqual(['boards', 'books', 'handouts', 'log', 'plugins', 'screens', 'shelf']);
     for (const name of names) expect(loaded.sourceOf('panels', name)).toBe('teller');
     campaign.close();
   });
@@ -399,14 +399,15 @@ describe('the order a bar of panels is drawn in', () => {
     const names = loadCampaign(openShelf(dir), campaign).declarations('panels').map(
       (p: any) => p.name,
     );
-    // Runner declared 10, roster declared nothing (50), the six
+    // Runner declared 10, roster declared nothing (50), the seven
     // defaults 90-98. Alphabetical within a tie is the tiebreak, which
-    // is why the tools read screens · boards · books · shelf · plugins
-    // · log.
+    // is why the tools read screens · handouts · boards · books · shelf
+    // · plugins · log.
     expect(names).toEqual([
       'runner',
       'roster',
       'screens',
+      'handouts',
       'boards',
       'books',
       'shelf',
@@ -626,7 +627,7 @@ describe('a panel switched off (§15 — a trust row is a switch)', () => {
     campaign.close();
   });
 
-  it("rejects one of teller's own six — the console tombstone, across a fresh load", () => {
+  it("rejects one of teller's own seven — the console tombstone, across a fresh load", () => {
     const shelf = openShelf(dir);
     shelf.putSystem({ id: 'sys_off4', name: 'Off4', data: {} });
     const campaign = createCampaign(dir, 'off4', 'Off Four');
@@ -641,7 +642,7 @@ describe('a panel switched off (§15 — a trust row is a switch)', () => {
       .declarations('panels')
       .map((p: any) => p.name)
       .sort();
-    expect(names).toEqual(['boards', 'books', 'plugins', 'screens', 'shelf']);
+    expect(names).toEqual(['boards', 'books', 'handouts', 'plugins', 'screens', 'shelf']);
     campaign.close();
   });
 });

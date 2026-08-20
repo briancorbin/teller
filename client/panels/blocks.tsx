@@ -914,6 +914,7 @@ import '../tools/screens.tsx';
 import '../tools/shelf.tsx';
 import '../tools/plugins.tsx';
 import '../tools/boards.tsx';
+import '../tools/handouts.tsx';
 import '../tools/log.tsx';
 import '../tools/rules.tsx';
 import '../tools/books.tsx';

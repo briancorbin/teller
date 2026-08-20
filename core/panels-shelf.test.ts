@@ -32,7 +32,7 @@ function copyDefaultsOntoShelf(): void {
   cpSync(defaultsRoot(), join(dir, 'panels'), { recursive: true });
 }
 
-const DEFAULT_NAMES = ['boards', 'books', 'log', 'plugins', 'screens', 'shelf'];
+const DEFAULT_NAMES = ['boards', 'books', 'handouts', 'log', 'plugins', 'screens', 'shelf'];
 
 /** The `?v=` a code url is expected to carry, worked out from the
  * artifact the same way the sweep does — so these tests pin the RULE
@@ -50,7 +50,7 @@ afterEach(() => {
 });
 
 describe('defaultPanels — teller\'s own, shipped with the install', () => {
-  it('reads the six host tools from defaults/panels, with ids baked into the files', () => {
+  it('reads the seven host tools from defaults/panels, with ids baked into the files', () => {
     const panels = defaultPanels();
     expect(panels.map((p) => p.name).sort()).toEqual(DEFAULT_NAMES);
     for (const panel of panels) {

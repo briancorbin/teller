@@ -108,6 +108,22 @@ function describe(e: EventRow, names: Map<string, string>): string {
       return `board updated`;
     case 'board.cleared':
       return `board cleared`;
+    // The reveal history: what the table has been shown, and what was
+    // slid across it to whom. These rows exist so those two questions
+    // read as lines here rather than as a diff of the manifest's refs.
+    // The note's WORDS go in whole — this list is the DM's own, so a
+    // secret is no more exposed here than on the screen they typed it
+    // on — and its recipients are counted, never listed by id.
+    case 'handout.shown':
+      return `showed the table — ${String(p.name ?? p.id ?? 'a handout')}`;
+    case 'handout.cleared':
+      return `the frame was cleared`;
+    case 'note.passed': {
+      const to = (p.to as string[] | undefined) ?? [];
+      const who = to.length === 0 ? 'the table' : `${to.length} at the table`;
+      const said = [p.text, p.handoutName].filter((s) => typeof s === 'string' && s).join(' · ');
+      return `passed a note to ${who}${said ? ` — ${said}` : ''}`;
+    }
     // The two the runner files. A roll and an exchange are the only
     // events that describe themselves rather than a row's before/after,
     // which is what makes a fight replayable from this list.

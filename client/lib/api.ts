@@ -264,13 +264,110 @@ export type PublicPlacement = {
   sizeInches?: number;
 };
 
+/** The picture the art frame is showing. Null means the frame rests. */
+export type PublicHandout = { id: string; name: string; key: string };
+
 export type PublicSnapshot = {
   campaign: { slug: string; name: string };
   roster: PublicEntity[];
   turn: PublicTurn;
   board: PublicBoard | null;
+  handout: PublicHandout | null;
 };
 
 export function publicSnapshot(): Promise<PublicSnapshot> {
   return api<PublicSnapshot>('/api/public');
+}
+
+// ---- handouts and passed notes ----------------------------------------
+//
+// A handout is a named campaign row whose file is a host asset
+// (`server/handouts.ts`); a note is ephemeral table traffic aimed at
+// zero or more characters (`server/notes.ts`). The one thing this file
+// has to be careful about is the ASYMMETRY of the two note doors: the
+// DM's list comes from `/api/notes`, and every other screen asks
+// `/api/notes/mine`, which the server resolves from that screen's own
+// assignment. A seat never asks about anyone else, because there is no
+// way to phrase the question.
+
+export type Handout = { id: string; name: string; key: string; notes?: string };
+
+export function handouts(): Promise<Handout[]> {
+  return api<Handout[]>('/api/handouts');
+}
+
+/**
+ * The one place the client sends bytes instead of JSON. Hand-rolled for
+ * that reason — `api()` serializes everything it's given — and the auth
+ * headers are the same two, because rule 7 has only the one secret.
+ */
+export async function uploadHandout(file: File): Promise<{ key: string }> {
+  const headers: Record<string, string> = { 'Content-Type': file.type };
+  if (stored.key) headers['x-teller-key'] = stored.key;
+  if (stored.display) headers['x-teller-display'] = stored.display;
+  const res = await fetch('/api/handouts/upload', { method: 'POST', headers, body: file });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(
+      res.status,
+      typeof (body as { error?: string }).error === 'string'
+        ? (body as { error: string }).error
+        : res.statusText,
+    );
+  }
+  return body as { key: string };
+}
+
+/** Author or rename — the ordinary templates door, which handouts share. */
+export function saveHandout(
+  handout: { id?: string; name: string; key: string; notes?: string },
+): Promise<{ id: string }> {
+  const { id, name, key, notes } = handout;
+  return api<{ id: string }>('/api/templates/handouts', {
+    body: {
+      template: {
+        ...(id ? { id } : {}),
+        name,
+        data: { key, ...(notes?.trim() ? { notes: notes.trim() } : {}) },
+      },
+    },
+  });
+}
+
+/** Its own door: the frame stops showing it and the bytes go with it. */
+export function deleteHandout(id: string): Promise<{ ok: true }> {
+  return api<{ ok: true }>(`/api/handouts/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/** Aim the art frame — one manifest ref, written like the board's. Null rests it. */
+export function showHandout(id: string | null): Promise<unknown> {
+  return api('/api/campaign/refs', { method: 'PUT', body: { handout: id } });
+}
+
+export type PassedNote = {
+  id: string;
+  at: string;
+  text?: string;
+  handout?: { id: string; name: string; key: string };
+  /** Entity ids. EMPTY IS THE WHOLE TABLE, never nobody. */
+  to: string[];
+};
+
+/** Pass one. Absent or empty `to` is the table-wide notice. */
+export function passNote(note: {
+  text?: string;
+  handoutId?: string;
+  to?: string[];
+}): Promise<PassedNote> {
+  return api<PassedNote>('/api/notes', { body: note });
+}
+
+/** Every note passed at this table — the DM's own review list. */
+export function passedNotes(): Promise<PassedNote[]> {
+  return api<PassedNote[]>('/api/notes');
+}
+
+/** What THIS screen was passed, answered from its assignment. */
+export function myNotes(): Promise<PassedNote[]> {
+  return api<PassedNote[]>('/api/notes/mine');
 }
