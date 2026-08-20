@@ -3,8 +3,11 @@
 // The denominations named in the `currency` record collapse into one
 // Purse chip (a total, coins a tap away); every other iconed counter
 // (Scrap, Supplies) gets its own compact chip beside it.
+//
+// Each chip's GLYPH is a second door: what the pack wrote about that
+// counter, overlaid on tap rather than printed under the row.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Entry } from '../../../core/entity.ts';
 import { Glyph } from '../sheet/glyphs.tsx';
 import type { CurrencyRecord } from './types.ts';
@@ -42,18 +45,102 @@ function Step({ sign, onClick, label }: { sign: '−' | '+'; onClick: () => void
 }
 
 /**
- * The pack's caption for this counter, where there is one — "declare
- * what a Supply is the moment you need it…". Publisher prose (rule 4),
- * so it arrives from the `notes` record and never from here; the chip
- * that has none simply doesn't grow a line. Same styling as
- * `SheetPanel`'s note, because it is the same thing one size down: the
- * sentence under the heading.
+ * The pack's words about this counter, one tap away — what a Supply is,
+ * what Scrap kitbashes into, what the coins are worth. Publisher prose
+ * (rule 4), so it arrives from the `notes` record and never from here.
+ *
+ * It used to render INLINE under the chip, and that was wrong twice
+ * over: three sentences of italics under a number is the row's whole
+ * height spent on something nobody reads twice, and on a strip it is
+ * height there isn't. So it overlays instead — the same bargain the
+ * statuses column already struck (`StatusPanel`, the system's own
+ * plate): the row stays clean, the words are a tap away, and nothing
+ * reflows when someone taps.
  */
-function Caption({ text }: { text: string }) {
+function NotePopover({ title, text, onClose }: { title: string; text: string; onClose: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    // `pointerdown` rather than `click`: the button that opened this is
+    // still under the finger on mouseup, and a click listener would
+    // catch its own opening event and close again immediately.
+    const onDown = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    };
+  }, [onClose]);
+
   return (
-    <span className="block font-serif text-[0.7rem] italic leading-snug text-stone-400">
-      {text}
-    </span>
+    <div
+      ref={box}
+      role="dialog"
+      aria-label={title}
+      className="absolute inset-x-0 top-full z-20 mt-1 max-h-[11rem] overflow-y-auto rounded-lg border border-amber-900/60 bg-stone-950 p-3 shadow-xl"
+    >
+      <div className="flex items-baseline gap-2">
+        <span
+          className="min-w-0 break-words font-serif text-sm font-bold uppercase tracking-wide"
+          style={{ color: 'var(--sheet-accent, #f59e0b)' }}
+        >
+          {title}
+        </span>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="close"
+          className="-my-1 ml-auto shrink-0 px-1.5 py-1 text-stone-500 transition-colors hover:text-stone-200"
+        >
+          ✕
+        </button>
+      </div>
+      <p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-stone-300">{text}</p>
+    </div>
+  );
+}
+
+/**
+ * The chip's identity — its glyph, and its name where there's room —
+ * doubling as the door to the pack's words when the pack wrote any.
+ *
+ * The old app's line, and it holds here: **the thing itself is the
+ * target, there is no ⓘ.** A dot would cost a column in a chip that is
+ * already three facts wide. The glyph is the one part of the row that
+ * isn't a control — the value is typed or tapped, the steppers step,
+ * the purse's total opens the coins — so it is the only part free to
+ * mean "tell me about this". A counter the pack said nothing about is
+ * simply not a button.
+ */
+function Identity({
+  entry,
+  icon,
+  hasNote,
+  open,
+  onToggle,
+}: {
+  entry: string;
+  icon: string;
+  hasNote: boolean;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const glyph = <Glyph name={icon} className="h-5 w-5 shrink-0 text-stone-400" />;
+  if (!hasNote) return glyph;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      aria-label={`what is ${entry}`}
+      className="-m-1 shrink-0 rounded p-1 transition-colors hover:bg-stone-800/60"
+    >
+      {glyph}
+    </button>
   );
 }
 
@@ -78,14 +165,21 @@ function Chip({
   compact: boolean;
   note?: string;
 }) {
+  const [open, setOpen] = useState(false);
   return (
     <div
       title={compact ? entry.name : undefined}
-      className={`flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5 ${
+      className={`relative flex items-center gap-1.5 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5 ${
         compact ? (boxable(entry) ? 'w-full' : 'min-w-[9.5rem] flex-1') : ''
       }`}
     >
-      <Glyph name={icon} className="h-5 w-5 shrink-0 text-stone-400" />
+      <Identity
+        entry={entry.name}
+        icon={icon}
+        hasNote={Boolean(note)}
+        open={open}
+        onToggle={() => setOpen((o) => !o)}
+      />
       <div className="flex min-w-0 flex-1 flex-col">
         {!compact && (
           <span className="text-[9px] uppercase tracking-widest text-stone-500">{entry.name}</span>
@@ -115,7 +209,6 @@ function Chip({
             {numberOf(entry)}
           </span>
         )}
-        {note && <Caption text={note} />}
       </div>
       {/* Boxes are their own steppers; only the numbers need a pair. */}
       {!boxable(entry) && (
@@ -132,6 +225,9 @@ function Chip({
           />
         </div>
       )}
+      {open && note && (
+        <NotePopover title={entry.name} text={note} onClose={() => setOpen(false)} />
+      )}
     </div>
   );
 }
@@ -142,14 +238,17 @@ function PurseChip({
   icon,
   onWrite,
   compact,
+  note,
 }: {
   entries: Entry[];
   currency: CurrencyRecord;
   icon: string;
   onWrite: (name: string, value: number) => void;
   compact: boolean;
+  note?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [telling, setTelling] = useState(false);
   const denoms = currency.denominations ?? [];
   const held = denoms
     .map((d) => ({ d, entry: entries.find((e) => e.name === d.counter) }))
@@ -160,24 +259,35 @@ function PurseChip({
 
   return (
     <div
-      className={`flex flex-col gap-1 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5 ${
+      className={`relative flex flex-col gap-1 rounded-lg border border-stone-800 bg-stone-900/60 px-2 py-1.5 ${
         compact ? 'min-w-[9.5rem] flex-1' : ''
       }`}
     >
-      <button
-        type="button"
-        className="flex items-center gap-1.5 text-left"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-label={`purse, ${formatPrice(total, symbol)} — ${open ? 'close' : 'open'} the coin counts`}
-      >
-        <Glyph name={icon} className="h-5 w-5 shrink-0 text-stone-400" />
-        {!compact && (
-          <span className="text-[9px] uppercase tracking-widest text-stone-500">Purse</span>
-        )}
-        <span className="font-mono text-base tabular-nums text-stone-100">{formatPrice(total, symbol)}</span>
-        <span className="ml-auto text-[10px] text-stone-600">{open ? '▾' : '▸'}</span>
-      </button>
+      {/* Two doors on one row, and they are different questions: the
+          glyph asks what money IS in this world, the total asks what
+          coins you're holding. Only the second one changes the sheet. */}
+      <div className="flex items-center gap-1.5">
+        <Identity
+          entry="Purse"
+          icon={icon}
+          hasNote={Boolean(note)}
+          open={telling}
+          onToggle={() => setTelling((t) => !t)}
+        />
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-label={`purse, ${formatPrice(total, symbol)} — ${open ? 'close' : 'open'} the coin counts`}
+        >
+          {!compact && (
+            <span className="text-[9px] uppercase tracking-widest text-stone-500">Purse</span>
+          )}
+          <span className="font-mono text-base tabular-nums text-stone-100">{formatPrice(total, symbol)}</span>
+          <span className="ml-auto text-[10px] text-stone-600">{open ? '▾' : '▸'}</span>
+        </button>
+      </div>
       {open && (
         <div className="flex flex-col gap-1 border-t border-stone-800 pt-1">
           {held.map(({ entry }) => (
@@ -204,6 +314,9 @@ function PurseChip({
           ))}
         </div>
       )}
+      {telling && note && (
+        <NotePopover title="Purse" text={note} onClose={() => setTelling(false)} />
+      )}
     </div>
   );
 }
@@ -224,12 +337,12 @@ export function Pocket({
   /**
    * Shoulder to shoulder on one line, instead of a stack — the old
    * `PocketPanel`'s `row`. What a character carries in loose change is
-   * three facts, and in a hand three facts should cost one row of a
-   * sheet. On mounted glass the pocket has a column of its own and
-   * stacks, with each counter's name and caption printed.
+   * three facts, and three facts should cost one row of a sheet. Only
+   * the STRIP stacks, where the pocket has a pinned 13rem column of its
+   * own and each counter's name is printed above its value.
    */
   compact?: boolean;
-  /** The pack's caption for a counter, when it wrote one (rule 4). */
+  /** The pack's words about a counter, when it wrote any (rule 4) — behind its glyph. */
   note?: (title: string) => string | undefined;
 }) {
   const denomNames = new Set((currency?.denominations ?? []).map((d) => d.counter));
@@ -245,6 +358,7 @@ export function Pocket({
           icon={icons.Purse ?? 'coin'}
           onWrite={onWrite}
           compact={compact}
+          note={note?.('Purse')}
         />
       )}
       {loose.map((entry) => (

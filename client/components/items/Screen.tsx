@@ -48,21 +48,18 @@ function tileWidth(glass: Glass): string {
     : 'min-w-[15rem] flex-1 self-start';
 }
 
-function Shelf({ glass, children }: { glass: Glass; children: React.ReactNode }) {
-  const strip = glass === 'mounted' && isStrip();
+/** The strip's shelf: one full-height row that pans, never two rows stacked. */
+function Pan({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      className={`flex min-h-0 gap-2 ${
-        strip
-          ? 'flex-1 snap-x snap-mandatory flex-nowrap items-stretch overflow-x-auto overflow-y-hidden'
-          : glass === 'mounted'
-            ? 'flex-1 flex-wrap content-start overflow-y-auto'
-            : 'flex-wrap content-start'
-      }`}
-    >
+    <div className="flex min-h-0 flex-1 snap-x snap-mandatory flex-nowrap items-stretch gap-2 overflow-x-auto overflow-y-hidden">
       {children}
     </div>
   );
+}
+
+/** Everywhere else: tiles wrap. The REGION that scrolls is the caller's, not this. */
+function Wrap({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-wrap content-start gap-2">{children}</div>;
 }
 
 export function CarriedScreen({
@@ -137,26 +134,98 @@ export function CarriedScreen({
   };
 
   const mounted = ctx.glass === 'mounted';
+  const strip = mounted && isStrip();
+
+  const pocket = pocketEntries.length > 0 && (
+    <Pocket
+      entries={pocketEntries}
+      icons={icons}
+      currency={currency}
+      // Stacked with its names printed only in the strip's pinned
+      // column, which is 13rem wide precisely so it can be; everywhere
+      // else the pocket lies down into a row of chips — the old
+      // `PocketPanel`'s `row`.
+      compact={!strip}
+      note={note}
+      onWrite={(name, value) => {
+        const target = declared.find((d) => d.entry.name === name);
+        if (target) write(target, value);
+      }}
+    />
+  );
+
+  const gauges = tallies.map(({ entry, list }) => (
+    <div key={entry.name} className={`flex flex-col gap-2 ${tileWidth(ctx.glass)}`}>
+      <BigGauge entry={entry} onWrite={(v) => ctx.write?.({ list, name: entry.name, value: v })} />
+    </div>
+  ));
+
+  const tile = (item: Entity, armed: boolean) => {
+    const costEntry = use?.costCounter
+      ? (item.lists.stats ?? []).find((s) => s.name.toLowerCase() === use.costCounter!.toLowerCase())
+      : undefined;
+    const extras = (use?.costs ?? []).flatMap((c) => {
+      const stat = (item.lists.stats ?? []).find((s) => s.name === c.counter);
+      const amount = numberOf(stat);
+      return amount > 0 ? [{ counter: c.counter, amount }] : [];
+    });
+    return (
+      <div key={item.id} className={`flex flex-col gap-2 ${tileWidth(ctx.glass)}`}>
+        <ItemTile
+          characterId={entity.id}
+          child={item}
+          fill={mounted}
+          use={use}
+          arming={armed}
+          ammoPool={ammoPool}
+          costEntry={costEntry}
+          extras={extras}
+          onFireCost={(total) => fireCost(item, total)}
+          fittedTo={fittedTo.get(item.id)}
+          dice={dice}
+          currency={currency}
+          available={
+            use?.costCounter ? numberOf(findWithList(entity, use.costCounter)?.entry) : undefined
+          }
+          balances={Object.fromEntries(
+            (use?.costs ?? []).map((c) => [
+              c.counter,
+              numberOf(findWithList(entity, c.counter)?.entry),
+            ]),
+          )}
+        />
+      </div>
+    );
+  };
+
+  // The pools (a system's ammo) sit under their own rule rather than
+  // mixed in with the things that fire them — everywhere but the strip,
+  // where a screen is ONE shelf and there are no two rows to rule
+  // between.
+  const pools = shown.filter((c) => ammoPool.includes(c));
+  const rest = strip ? shown : shown.filter((c) => !ammoPool.includes(c));
+  const empty = shown.length === 0 && tallies.length === 0;
 
   return (
     <div className={`flex min-h-0 flex-1 gap-2 ${mounted ? '' : 'flex-col'}`}>
       {/* The pinned left column: the filter chips (when this screen holds
-          more than one KIND) with the pocket beneath them — controls
-          above belongings, neither ever pans away. On mounted glass with
-          a pocket it takes a real column's width, which is what the
-          pocket's chips are laid out for; the filters wrap inside it.
+          more than one KIND), and on the STRIP the pocket beneath them —
+          controls above belongings, neither ever pans away, because the
+          whole point of money and supplies is that they're always in
+          reach. Glass with height doesn't need that: there the pocket
+          leads the shelf instead, as full-width rows nothing pans past.
           Sticky only where the card scrolls (held glass) — mounted glass
           never scrolls, so there is nothing to stick to. */}
-      {(itemKinds.length > 1 || pocketEntries.length > 0) && (
+      {(itemKinds.length > 1 || (strip && pocketEntries.length > 0)) && (
         <div
           className={`flex shrink-0 flex-col gap-2 self-start ${
             mounted ? '' : 'sticky top-0 z-10 w-full'
-          } ${mounted && pocketEntries.length > 0 ? 'w-[13rem] self-stretch justify-center' : ''}`}
+          } ${strip && pocketEntries.length > 0 ? 'w-[13rem] self-stretch justify-center' : ''}`}
         >
           {itemKinds.length > 1 && (
             <div
               className={`flex gap-1 ${
-                !mounted || pocketEntries.length > 0 ? 'flex-wrap' : 'flex-col'
+                !mounted || (strip && pocketEntries.length > 0) ? 'flex-wrap' : 'flex-col'
               }`}
             >
               {['', ...itemKinds].map((k) => (
@@ -175,75 +244,47 @@ export function CarriedScreen({
               ))}
             </div>
           )}
-          {pocketEntries.length > 0 && (
-            <Pocket
-              entries={pocketEntries}
-              icons={icons}
-              currency={currency}
-              // A stacked column on mounted glass, a row of chips in a
-              // hand — the old `PocketPanel`'s `row`, decided by the one
-              // question that decides everything else about glass.
-              compact={!mounted}
-              note={note}
-              onWrite={(name, value) => {
-                const target = declared.find((d) => d.entry.name === name);
-                if (target) write(target, value);
-              }}
-            />
-          )}
+          {strip && pocket}
         </div>
       )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-2">
-        <Shelf glass={ctx.glass}>
-          {tallies.map(({ entry, list }) => (
-            <div key={entry.name} className={`flex flex-col gap-2 ${tileWidth(ctx.glass)}`}>
-              <BigGauge entry={entry} onWrite={(v) => ctx.write?.({ list, name: entry.name, value: v })} />
-            </div>
-          ))}
-          {shown.length === 0 && tallies.length === 0 && (
-            <p className="p-4 text-sm text-stone-600 italic">nothing here yet</p>
-          )}
-          {shown.map((item) => {
-            const costEntry = use?.costCounter
-              ? (item.lists.stats ?? []).find((s) => s.name.toLowerCase() === use.costCounter!.toLowerCase())
-              : undefined;
-            const extras = (use?.costs ?? []).flatMap((c) => {
-              const stat = (item.lists.stats ?? []).find((s) => s.name === c.counter);
-              const amount = numberOf(stat);
-              return amount > 0 ? [{ counter: c.counter, amount }] : [];
-            });
-            return (
-              <div key={item.id} className={`flex flex-col gap-2 ${tileWidth(ctx.glass)}`}>
-                <ItemTile
-                  characterId={entity.id}
-                  child={item}
-                  fill={ctx.glass === 'mounted'}
-                  use={use}
-                  arming={arming}
-                  ammoPool={ammoPool}
-                  costEntry={costEntry}
-                  extras={extras}
-                  onFireCost={(total) => fireCost(item, total)}
-                  fittedTo={fittedTo.get(item.id)}
-                  dice={dice}
-                  currency={currency}
-                  available={
-                    use?.costCounter
-                      ? numberOf(findWithList(entity, use.costCounter)?.entry)
-                      : undefined
-                  }
-                  balances={Object.fromEntries(
-                    (use?.costs ?? []).map((c) => [
-                      c.counter,
-                      numberOf(findWithList(entity, c.counter)?.entry),
-                    ]),
-                  )}
-                />
-              </div>
-            );
-          })}
-        </Shelf>
+        {strip ? (
+          <Pan>
+            {gauges}
+            {empty && <p className="p-4 text-sm text-stone-600 italic">nothing here yet</p>}
+            {rest.map((item) => tile(item, arming))}
+          </Pan>
+        ) : (
+          // ONE scrolling region, not one per shelf: the rule between
+          // gear and pools has to travel with them, and a screwed-down
+          // panel must never grow a second thing to scroll.
+          <div
+            className={`flex min-h-0 flex-col gap-2 ${mounted ? 'flex-1 overflow-y-auto' : ''}`}
+          >
+            {pocketEntries.length > 0 && <div className="w-full">{pocket}</div>}
+            <Wrap>
+              {gauges}
+              {empty && <p className="p-4 text-sm text-stone-600 italic">nothing here yet</p>}
+              {rest.map((item) => tile(item, arming))}
+            </Wrap>
+            {pools.length > 0 && (
+              <>
+                {/* The rule separates pools from the things that fire
+                    them; an all-pools screen has nothing to separate. */}
+                {rest.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[0.65rem] uppercase tracking-widest text-stone-500">
+                      {use?.consumesKind}
+                    </span>
+                    <div className="h-px flex-1 bg-stone-800" />
+                  </div>
+                )}
+                <Wrap>{pools.map((item) => tile(item, false))}</Wrap>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
