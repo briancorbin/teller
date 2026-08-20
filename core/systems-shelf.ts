@@ -45,21 +45,34 @@
 
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { compileFolder, readBuildMeta, stamp, NEUTRAL_IMPORTS } from './compile.ts';
 import {
   compilePackCode,
   copyNewer,
   systemFrom,
   type PackProblem,
+  type SystemExport,
   type ShelfSystem,
 } from './packs-shelf.ts';
 import { panelDirIn, sweepPanelsIn } from './panels-shelf.ts';
 import type { PanelDef } from './panels.ts';
 import type { Shelf } from './store.ts';
 
+// `SystemExport` is declared in `packs-shelf.ts`, beside the shim that
+// re-exports one and the index module it is a sibling of; re-exported
+// here because a system folder is what produces them.
+export type { SystemExport } from './packs-shelf.ts';
+
 /** A system as its own folder holds one — the shelf shape, plus what only a folder can carry. */
 export type ShelfSystemFolder = ShelfSystem & {
   /** Compiled presentations, attached only once a human trusted the `sys_` id. */
-  code?: { presentations: Record<string, string> };
+  code?: {
+    presentations: Record<string, string>;
+    /** `exports/<name>` → where it is and what it exports. */
+    exports?: Record<string, SystemExport>;
+    /** `system/<name>` specifiers the system's OWN code imports. */
+    needs?: string[];
+  };
   /** A folder that compiled code nobody has enabled yet. Its DATA loaded regardless. */
   codePending?: boolean;
 };
@@ -135,16 +148,68 @@ export function sweepSystems(dataDir: string, shelf?: Shelf): SystemSweep {
     }
 
     const entry: ShelfSystemFolder = system;
-    const { presentations, problems: codeProblems } = compilePackCode(dir, system.id);
+    const { presentations, needs, problems: codeProblems } = compilePackCode(dir, system.id);
     for (const problem of codeProblems) problems.push({ dir, problem });
-    if (presentations) {
-      if (shelf?.pluginTrust(system.id)?.enabled) entry.code = { presentations };
-      else entry.codePending = true;
+    // …and the system's declared function beside its faces (§M-4a).
+    // Both halves take the SAME trust row, because they are the same
+    // system's code arriving through the same door.
+    const { exports, problems: exportProblems } = compileSystemExports(dir, system.id);
+    for (const problem of exportProblems) problems.push({ dir, problem });
+    if (presentations || exports) {
+      if (shelf?.pluginTrust(system.id)?.enabled) {
+        entry.code = {
+          presentations: presentations ?? {},
+          ...(exports ? { exports } : {}),
+          ...(needs?.length ? { needs } : {}),
+        };
+      } else entry.codePending = true;
     }
     systems.push(entry);
   }
 
   return { systems, problems };
+}
+
+/**
+ * A system's DECLARED FUNCTION (§M-4a): `exports/*.ts(x)`, compiled by
+ * the same pass as everything else, into the same `.build` folder, served
+ * through the same `/pack-code/<sys_id>/…` door. The FILENAME is the
+ * export name — `exports/creation.ts` is `system/creation`, and a pack
+ * importing that specifier is asking for this file.
+ *
+ * The neutral externals only: an export is the bottom of the merge, so
+ * it may not import the merged index (`system`) — that is the cycle bare
+ * `system` is closed to packs to prevent, and it would be the same cycle
+ * here — and it may not import a sibling through `system/…` either. A
+ * helper beside it is an ordinary relative import and gets bundled.
+ *
+ * Trust is the caller's business, as ever: this compiles and reports
+ * regardless, and only the folder sweep decides who gets the urls.
+ */
+export function compileSystemExports(
+  dir: string,
+  systemId: string,
+): { exports?: Record<string, SystemExport>; problems: string[] } {
+  const srcDir = join(dir, 'exports');
+  if (!existsSync(srcDir)) return { problems: [] };
+
+  const problems: string[] = [];
+  const outDir = join(dir, '.build', 'exports');
+  const { built, problems: compileProblems } = compileFolder(srcDir, outDir, NEUTRAL_IMPORTS, [
+    '.tsx',
+    '.ts',
+  ]);
+  for (const { file, problem } of compileProblems) problems.push(`exports/${file}: ${problem}`);
+
+  const exports: Record<string, SystemExport> = {};
+  for (const name of built) {
+    const out = join(outDir, `${name}.js`);
+    exports[name] = {
+      url: `/pack-code/${systemId}/exports/${name}.js${stamp(out)}`,
+      names: readBuildMeta(out).exports,
+    };
+  }
+  return { exports: Object.keys(exports).length ? exports : undefined, problems };
 }
 
 /**

@@ -153,6 +153,56 @@ describe('sweepSystems — a system carries code, on the pack terms', () => {
   });
 });
 
+describe('sweepSystems — the export surface (§M-4a)', () => {
+  const ENGINE = `export const rung = 4;\nexport default function make() { return rung; }\n`;
+
+  it('compiles exports/*.ts, names them by their file, and stamps the url', () => {
+    const sysDir = writeSystem('wiw', WIW);
+    writeFile(join(sysDir, 'exports', 'creation.ts'), ENGINE);
+    shelf.setPluginEnabled('sys_test', true);
+
+    const { systems, problems } = sweepSystems(dir, shelf);
+    expect(problems).toEqual([]);
+    const creation = systems[0].code?.exports?.creation;
+    expect(creation?.url).toMatch(
+      /^\/pack-code\/sys_test\/exports\/creation\.js\?v=[a-z0-9]+$/,
+    );
+    // What it exports is read off the build, not guessed — the shim
+    // re-exports exactly these names.
+    expect(creation?.names.sort()).toEqual(['default', 'rung']);
+    expect(existsSync(join(sysDir, '.build', 'exports', 'creation.js'))).toBe(true);
+  });
+
+  it('a .tsx export compiles too — an export is function, not necessarily a component', () => {
+    const sysDir = writeSystem('wiw', WIW);
+    writeFile(join(sysDir, 'exports', 'dialog.tsx'), `export const Face = () => null;\n`);
+    shelf.setPluginEnabled('sys_test', true);
+    expect(sweepSystems(dir, shelf).systems[0].code?.exports?.dialog?.names).toEqual(['Face']);
+  });
+
+  it('untrusted: the exports compile and the urls wait, exactly as presentations do', () => {
+    const sysDir = writeSystem('wiw', WIW);
+    writeFile(join(sysDir, 'exports', 'creation.ts'), ENGINE);
+
+    const { systems } = sweepSystems(dir, shelf);
+    expect(systems[0].code).toBeUndefined();
+    expect(systems[0].codePending).toBe(true);
+  });
+
+  it('an export may not import the merged index it sits under — that is the cycle', () => {
+    const sysDir = writeSystem('wiw', WIW);
+    writeFile(join(sysDir, 'exports', 'cyclic.ts'), `export { Dial } from 'system';\n`);
+    shelf.setPluginEnabled('sys_test', true);
+
+    const { systems, problems } = sweepSystems(dir, shelf);
+    expect(problems).toHaveLength(1);
+    expect(problems[0].problem).toContain('exports/cyclic.ts');
+    expect(problems[0].problem).toContain('system');
+    // …and the DATA loaded regardless, as ever.
+    expect(systems[0].data.dials).toEqual({ Grit: 'dial' });
+  });
+});
+
 describe('sweepSystems — a system may ship panels', () => {
   it('panel declarations ride the system layer, and their code takes the same trust', () => {
     const sysDir = writeSystem('wiw', WIW);
@@ -278,6 +328,72 @@ describe('loadCampaign — systems-dir beats pack-embedded beats row (§M)', () 
     expect(presentations.Dial).toMatch(
       /^\/pack-code\/pak_book\/presentations\/Dial\.js\?v=[a-z0-9]+$/,
     );
+    campaign.close();
+  });
+
+  it('a pack may import `system/<name>`, and the requirement is checked at LOAD', () => {
+    const sysDir = writeSystem('wiw', WIW);
+    writeFile(join(sysDir, 'exports', 'creation.ts'), `export const rung = 4;\n`);
+    const packDir = writePack('book', {
+      'pack.json': { id: 'pak_book', system: 'sys_test', name: 'The Book', version: 1 },
+    });
+    writeFile(
+      join(packDir, 'presentations', 'Builder.tsx'),
+      `import { rung } from 'system/creation';\nexport default function Builder() { return rung; }\n`,
+    );
+    shelf.setPluginEnabled('sys_test', true);
+    shelf.setPluginEnabled('pak_book', true);
+
+    const campaign = campaignOn('sys_test', ['pak_book']);
+    const loaded = loadCampaign(shelf, campaign, dir);
+    // It COMPILED — `system/*` is external for every tier, packs included.
+    expect(loaded.packProblems).toEqual([]);
+    expect(loaded.presentations().Builder).toMatch(/^\/pack-code\/pak_book\/presentations\//);
+    campaign.close();
+  });
+
+  it('a name the system does not export refuses out loud, naming all three parties', () => {
+    writeSystem('wiw', WIW);
+    const packDir = writePack('book', {
+      'pack.json': { id: 'pak_book', system: 'sys_test', name: 'The Book', version: 1 },
+    });
+    writeFile(
+      join(packDir, 'presentations', 'Builder.tsx'),
+      `import { rung } from 'system/creation';\nexport default function Builder() { return rung; }\n`,
+    );
+    shelf.setPluginEnabled('pak_book', true);
+
+    const campaign = campaignOn('sys_test', ['pak_book']);
+    const loaded = loadCampaign(shelf, campaign, dir);
+    expect(loaded.packProblems.map((p) => p.problem)).toEqual([
+      'The Book needs `creation` from Test System, which this version doesn\'t export',
+    ]);
+    campaign.close();
+  });
+
+  it('a PANEL of the merged collection asks the same question', () => {
+    const sysDir = writeSystem('wiw', WIW);
+    writeFile(
+      join(sysDir, 'panels', 'builder', 'panel.json'),
+      JSON.stringify({ id: 'pan_build0001', name: 'builder', surface: false }),
+    );
+    writeFile(
+      join(sysDir, 'panels', 'builder', 'blocks', 'Step.tsx'),
+      `import { rung } from 'system/creation';\nexport default function Step() { return rung; }\n`,
+    );
+    shelf.setPluginEnabled('sys_test', true);
+    shelf.setPluginEnabled('pan_build0001', true);
+
+    const campaign = campaignOn('sys_test');
+    const loaded = loadCampaign(shelf, campaign, dir);
+    expect(loaded.panelProblems.map((p) => p.problem)).toEqual([
+      "panel 'builder' needs `creation` from Test System, which this version doesn't export",
+    ]);
+
+    // Ship the export and the refusal goes away — the requirement is on
+    // the SURFACE, not on any version number.
+    writeFile(join(sysDir, 'exports', 'creation.ts'), `export const rung = 4;\n`);
+    expect(loadCampaign(shelf, campaign, dir).panelProblems).toEqual([]);
     campaign.close();
   });
 

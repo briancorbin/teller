@@ -24,17 +24,35 @@
 // beside it, a dependency it vendored) — externals are the seam the
 // client's import map answers, not a whitelist of the whole language.
 
-import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import * as esbuild from 'esbuild';
 
-/** The bare specifiers `client/index.html`'s import map answers for everyone. */
-export const NEUTRAL_IMPORTS = ['react', 'react/jsx-runtime', 'teller'];
+/**
+ * The prefix a SYSTEM's declared function arrives under (§M-4a):
+ * `system/<name>` names one file in the active system's `exports/`
+ * folder, RELATIVELY — the system's id is spelled once, in `pack.json`,
+ * and the import grammar cannot restate it, so the declaration and the
+ * import can never disagree.
+ *
+ * Every tier gets it, packs INCLUDED. That is the difference from bare
+ * `system`, which stays closed to packs: the merged presentation index
+ * is the thing a pack rides, so importing it is a cycle by
+ * construction, while `exports/` is system-tier only and the dependency
+ * arrow can only ever point down.
+ */
+export const SYSTEM_EXPORT_PREFIX = 'system/';
 
-/** What panel code may import — the neutral three plus the active system. */
+/** The wildcard esbuild takes for it — `external` accepts a `*` anywhere in the pattern. */
+export const SYSTEM_EXPORTS = `${SYSTEM_EXPORT_PREFIX}*`;
+
+/** The bare specifiers `client/index.html`'s import map answers for everyone. */
+export const NEUTRAL_IMPORTS = ['react', 'react/jsx-runtime', 'teller', SYSTEM_EXPORTS];
+
+/** What panel code may import — the neutral ones plus the active system's merged index. */
 export const PANEL_IMPORTS = [...NEUTRAL_IMPORTS, 'system'];
 
-/** What a pack's own presentations may import — the neutral three, and no `system`. */
+/** What a pack's own presentations may import — the neutral ones, and no bare `system`. */
 export const PACK_IMPORTS = NEUTRAL_IMPORTS;
 
 /**
@@ -86,6 +104,69 @@ export function stamp(outPath: string): string {
   }
 }
 
+/**
+ * What a compiled artifact turned out to be, recorded BESIDE it as
+ * `<out>.meta.json` (§M-4a).
+ *
+ * Two facts, both of them read back long after the compile that learned
+ * them, and neither cheap to re-derive: which `system/<name>` exports
+ * this file IMPORTS (so boot can say "this pack needs `creation` and the
+ * system doesn't export it" without re-parsing anyone's source), and
+ * what an export file EXPORTS (so the shim can re-export exactly those
+ * names — a blind `export *` drops `default` and a blind
+ * `export { default }` throws when there isn't one).
+ *
+ * On disk because the compile is mtime-gated: the pass that skips a
+ * file learns nothing about it, and the answer has to survive that.
+ */
+export type BuildMeta = {
+  /** `system/<name>` specifiers, as bare NAMES, in first-seen order. */
+  needs: string[];
+  /** Every name the output exports, `default` included. */
+  exports: string[];
+};
+
+const EMPTY_META: BuildMeta = { needs: [], exports: [] };
+
+function metaPath(outPath: string): string {
+  return `${outPath}.meta.json`;
+}
+
+/** What one build learned, or the empty answer — never a throw. */
+export function readBuildMeta(outPath: string): BuildMeta {
+  try {
+    const raw = JSON.parse(readFileSync(metaPath(outPath), 'utf8')) as Partial<BuildMeta>;
+    return {
+      needs: Array.isArray(raw.needs) ? raw.needs.filter((n) => typeof n === 'string') : [],
+      exports: Array.isArray(raw.exports)
+        ? raw.exports.filter((n) => typeof n === 'string')
+        : [],
+    };
+  } catch {
+    return EMPTY_META;
+  }
+}
+
+/** Read the metafile esbuild handed back into the two facts worth keeping. */
+function metaFrom(result: esbuild.BuildResult, outPath: string): BuildMeta {
+  const meta = result.metafile;
+  if (!meta) return EMPTY_META;
+  const needs: string[] = [];
+  for (const input of Object.values(meta.inputs)) {
+    for (const imported of input.imports ?? []) {
+      if (!imported.external) continue;
+      if (!imported.path.startsWith(SYSTEM_EXPORT_PREFIX)) continue;
+      const name = imported.path.slice(SYSTEM_EXPORT_PREFIX.length).trim();
+      if (name && !needs.includes(name)) needs.push(name);
+    }
+  }
+  // esbuild keys outputs by a path relative to the cwd; the entry we
+  // asked for is the only one written, so the single output is ours.
+  const output = Object.entries(meta.outputs).find(([path]) => outPath.endsWith(path))?.[1]
+    ?? Object.values(meta.outputs)[0];
+  return { needs, exports: output?.exports ?? [] };
+}
+
 /** `undefined` on success, an error message on failure — never a throw. */
 export function buildOne(
   srcPath: string,
@@ -94,7 +175,7 @@ export function buildOne(
 ): string | undefined {
   try {
     mkdirSync(dirname(outPath), { recursive: true });
-    esbuild.buildSync({
+    const result = esbuild.buildSync({
       entryPoints: [srcPath],
       outfile: outPath,
       bundle: true,
@@ -103,8 +184,16 @@ export function buildOne(
       external,
       minify: false,
       write: true,
+      metafile: true,
       logLevel: 'silent',
     });
+    try {
+      writeFileSync(metaPath(outPath), `${JSON.stringify(metaFrom(result, outPath))}\n`);
+    } catch {
+      // A meta file that won't write costs a requirement check, never
+      // the build: the code still runs, and the refusal that would have
+      // named a missing export lands at the render site instead.
+    }
     return undefined;
   } catch (err) {
     const errors = (err as { errors?: { text: string }[] }).errors;
@@ -124,12 +213,17 @@ export function compileFolder(
   srcDir: string,
   outDir: string,
   external: string[],
+  /** Which sources count. A `.panel`'s blocks and a pack's presentations
+   *  are components; a system's `exports/` is plain function as often as
+   *  it is a component, so that sweep asks for both (§M-4a). */
+  exts: string[] = ['.tsx'],
 ): { built: string[]; problems: { file: string; problem: string }[] } {
   const built: string[] = [];
   const problems: { file: string; problem: string }[] = [];
   for (const file of readdirSync(srcDir).sort()) {
-    if (!file.endsWith('.tsx')) continue;
-    const name = file.slice(0, -'.tsx'.length);
+    const ext = exts.find((e) => file.endsWith(e));
+    if (!ext) continue;
+    const name = file.slice(0, -ext.length);
     const src = join(srcDir, file);
     const out = join(outDir, `${name}.js`);
     if (newerThan(src, out)) {
