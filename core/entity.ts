@@ -229,6 +229,26 @@ export function findEntry(
   return entries.find((e) => sameName(e, name));
 }
 
+/**
+ * The DRAFT MARK — an entry called `draft` in the `meta` list, and the
+ * only trace a half-made character carries.
+ *
+ * Creation writes it first and clears it at the last step, so anything
+ * interrupted in between leaves an ORDINARY entity wearing an ordinary
+ * entry: it's in the roster, it can be finished by hand, it can be
+ * deleted like anything else, and a human can strike the mark off
+ * itself (rule 1 — nothing hidden, nothing locked). teller reads it in
+ * exactly one place, the seat's draft takeover (§M-4a's companion), and
+ * a system that never writes one simply never has a drafting seat.
+ */
+export const DRAFT_LIST = 'meta';
+export const DRAFT_MARK = 'draft';
+
+/** Is this one still being made? */
+export function isDraft(entity: Entity | undefined): boolean {
+  return hasEntry(entity?.lists?.[DRAFT_LIST] ?? [], DRAFT_MARK);
+}
+
 /** Every entry except that one — whatever value it was wearing. */
 export function withoutEntry(entries: Entry[], name: Entry | string): Entry[] {
   return entries.filter((e) => !sameName(e, name));

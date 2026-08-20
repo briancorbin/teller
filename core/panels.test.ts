@@ -8,6 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  draftTakeover,
   includeProblems,
   includedNames,
   surfaceable,
@@ -38,6 +39,12 @@ describe('what toPanel keeps', () => {
     // Silence means surfaceable — the ordinary case must never need saying.
     expect(toPanel({ name: 'sheet' })?.surface).toBeUndefined();
     expect(toPanel({ name: 'sheet', surface: true })?.surface).toBeUndefined();
+  });
+
+  it('keeps the draft takeover the composite names, trimmed', () => {
+    expect(toPanel({ name: 'seat', draft: '  builder ' })?.draft).toBe('builder');
+    expect(toPanel({ name: 'seat', draft: '   ' })?.draft).toBeUndefined();
+    expect(toPanel({ name: 'seat', draft: 7 })?.draft).toBeUndefined();
   });
 
   it('drops a tabs list that is not a list of words', () => {
@@ -122,5 +129,42 @@ describe('includes that refuse out loud', () => {
         { name: 'vitals', held: [] },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("the composite's draft takeover (§M-4a)", () => {
+  const builder: PanelDef = { name: 'builder', surface: false, held: [] };
+  const seat: PanelDef = { name: 'seat', tabs: ['sheet'], draft: 'builder' };
+
+  it('hands the whole strip to the named panel while the subject is a draft', () => {
+    expect(draftTakeover(seat, [builder], true)).toEqual({ panel: builder });
+  });
+
+  it('a fragment is a legal target — a builder is nowhere anyone can be pointed', () => {
+    expect(surfaceable(builder)).toBe(false);
+    expect(draftTakeover(seat, [builder], true)).toEqual({ panel: builder });
+  });
+
+  it('the mark clearing hands the seat straight back — no reload, it is live data', () => {
+    expect(draftTakeover(seat, [builder], false)).toBeUndefined();
+  });
+
+  it('no draft key is the FLOOR: today\'s behaviour, unchanged', () => {
+    expect(draftTakeover({ name: 'seat', tabs: ['sheet'] }, [builder], true)).toBeUndefined();
+    expect(draftTakeover(undefined, [builder], true)).toBeUndefined();
+  });
+
+  it('a dangling name refuses out loud, and the caller keeps the normal seat', () => {
+    const answer = draftTakeover(seat, [], true);
+    expect(answer).toEqual({
+      refusal:
+        "no panel named 'builder' — this seat's draft takeover asked for it and nothing declares it",
+    });
+  });
+
+  it('resolves the name against the merge, case-insensitively', () => {
+    expect(draftTakeover({ name: 'seat', draft: 'BUILDER' }, [builder], true)).toEqual({
+      panel: builder,
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   findEntry,
+  isDraft,
   formatEntry,
   hasEntry,
   numberOf,
@@ -127,5 +128,17 @@ describe('entry helpers', () => {
   it('formats for a human, and for a model that wants the number', () => {
     expect(formatEntry({ name: 'Afraid', value: 3 })).toBe('Afraid 3');
     expect(formatEntry({ name: 'Prone' })).toBe('Prone');
+  });
+});
+
+describe('the draft mark — the only trace a half-made entity carries', () => {
+  it('is an ordinary entry in an ordinary list, readable and strikeable by hand', () => {
+    expect(isDraft({ id: 'ent_a', name: 'Nobody', lists: { meta: [{ name: 'draft' }] } })).toBe(
+      true,
+    );
+    // Cleared at the last step — and cleared is the ordinary state.
+    expect(isDraft({ id: 'ent_a', name: 'Nobody', lists: { meta: [] } })).toBe(false);
+    expect(isDraft({ id: 'ent_a', name: 'Nobody', lists: {} })).toBe(false);
+    expect(isDraft(undefined)).toBe(false);
   });
 });

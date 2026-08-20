@@ -23,9 +23,9 @@
 // and the `meta` list's own "Player" entry is only the fallback.
 
 import { useCallback, useEffect, useState } from 'react';
-import type { Entity } from '../../../core/entity.ts';
+import { isDraft, type Entity } from '../../../core/entity.ts';
 import type { PanelBlock, PanelDef } from '../../../core/panels.ts';
-import { PLACED, surfaceable } from '../../../core/panels.ts';
+import { draftTakeover, PLACED, surfaceable } from '../../../core/panels.ts';
 import { toSpends } from '../../../core/effects.ts';
 import { ladderList, toLadder } from '../LadderFloor.tsx';
 import { api, displaySlot, panes as fetchPanes, scoreEntry, type Pane } from '../../lib/api.ts';
@@ -123,6 +123,7 @@ type Tab = SeatTab & {
 };
 
 const word = (name: string): string => name.trim().toLowerCase();
+
 
 /** A tab a composite asked for that nothing supplies — a labeled
  * refusal wearing a tab's clothes, because a name that resolves to
@@ -259,6 +260,17 @@ export function SeatChrome({
   const composite = named?.tabs?.length ? named : undefined;
   const seams = useSeams(composite?.chrome);
 
+  // The composite's DRAFT takeover (§M-4a's companion): while the
+  // subject still wears its draft mark, one named panel gets the whole
+  // strip — no tabs, no seams, nothing of teller's around it. The outer
+  // glass clip is NOT part of the deal (it is `App.tsx`'s, outside this
+  // component entirely), because that law is structural and never
+  // yields. The decision itself is `draftTakeover`'s, in core, which is
+  // also where the dangling-name refusal is worded.
+  const takeover = draftTakeover(composite, panels ?? [], isDraft(shown));
+  const draftPanel = takeover && 'panel' in takeover ? takeover.panel : undefined;
+  const draftRefusal = takeover && 'refusal' in takeover ? takeover.refusal : undefined;
+
   // What the Sheet screen itself draws for `resources` — Health + Grit,
   // whatever's pinned-to or dialled a cylinder (fix 6's generic rule,
   // `shaped()`, ported from the 'sheet' block's own selection). Anything
@@ -378,6 +390,24 @@ export function SeatChrome({
   const { Header, ScreenBar, TurnCall, NoteBanner, SeatFrame } = seams;
   const mounted = glass === 'mounted';
 
+  if (draftPanel) {
+    return (
+      <PanelCollection panels={panels}>
+        <div className={`flex min-h-0 flex-col ${mounted ? 'h-full overflow-hidden' : 'min-h-full'}`}>
+          <PanelSurface
+            panel={draftPanel}
+            ctx={ctx}
+            fallback={
+              <p className="p-8 text-sm text-stone-500">
+                '{draftPanel.label ?? draftPanel.name}' failed to render — the floor has it
+              </p>
+            }
+          />
+        </div>
+      </PanelCollection>
+    );
+  }
+
   return (
     <PanelCollection panels={panels}>
       <SeatFrame glass={glass} accent={accent}>
@@ -416,6 +446,10 @@ export function SeatChrome({
             glass={glass}
           />
         </div>
+
+        {draftRefusal && (
+          <p className="shrink-0 px-2 text-xs text-amber-400/90">{draftRefusal}</p>
+        )}
 
         <div className={`flex min-h-0 flex-1 flex-col ${mounted ? 'overflow-hidden' : ''}`}>
           {tab ? (
