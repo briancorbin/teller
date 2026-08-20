@@ -30,7 +30,7 @@ import { ladderList, toLadder } from '../LadderFloor.tsx';
 import { applyPlan, loadCatalog, spendWorld } from '../../lib/spend.ts';
 import { presentationOf, useSystemFaces } from '../../lib/presentations.ts';
 import { usePanelNote } from '../../lib/rules.ts';
-import { api } from '../../lib/api.ts';
+import { api, shop as fetchShop, type ShopView } from '../../lib/api.ts';
 import { onNudge } from '../../lib/use-session.ts';
 import { entriesOf, entryNamed, shaped } from '../../panels/blocks.tsx';
 import { Glyph } from '../sheet/glyphs.tsx';
@@ -41,7 +41,7 @@ import { PassedNoteOverlay, usePassedNotes } from './PassedNote.tsx';
 
 type Records = Record<string, Record<string, unknown>>;
 
-const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'currency', 'icons', 'groups', 'dice', 'marks', 'spends'];
+const RECORD_SLOTS = ['accents', 'dials', 'brand', 'portraits', 'pins', 'use', 'currency', 'icons', 'groups', 'dice', 'marks', 'spends', 'vocabulary'];
 
 /** Every declared screen's own claimed counters, lower-cased, in one set. */
 function screenClaims(screens: ScreenDecl[]): Set<string> {
@@ -62,6 +62,17 @@ function carriedPanel(screen: ScreenDecl, allScreens: ScreenDecl[]): PanelDef {
     { block: 'carried', screen, claimedKinds: allClaimedKinds(allScreens) },
   ];
   return { name: screen.name, subject: 'entity', mounted: blocks, held: blocks };
+}
+
+/** The shop, while one is open (§14) — a synthetic panel like the
+ * carried screens above, and present only when `/api/shop` answered
+ * with something. The tab appears when the Warden opens the general
+ * store and goes when it shuts, which is exactly the behaviour a table
+ * expects and the reason this is not a declared screen: what a seat may
+ * shop is a fact about the moment, not about the system. */
+function shopPanel(view: ShopView, onChanged: () => void): PanelDef {
+  const blocks: PanelBlock[] = [{ block: 'shop', view, onChanged }];
+  return { name: 'Shop', subject: 'entity', mounted: blocks, held: blocks };
 }
 
 /** The old app's holding pen ('More'): every resource the Sheet screen
@@ -518,6 +529,8 @@ export function SeatChrome({
   const [ladderLists, setLadderLists] = useState<string[]>([]);
   /** What a purchase may hand you. Loaded once; empty on a host with no pack. */
   const [catalog, setCatalog] = useState<Template[]>([]);
+  /** The open shop, or nothing. Refetched on the same nudge as the rest. */
+  const [shopView, setShopView] = useState<ShopView | null>(null);
   const [spendsOpen, setSpendsOpen] = useState(false);
   useSystemFaces(); // re-render when the system module lands (url-loaded, async)
   const note = usePanelNote();
@@ -539,6 +552,7 @@ export function SeatChrome({
       )
       .catch(() => setLadderLists([]));
     loadCatalog().then(setCatalog);
+    fetchShop().then(setShopView).catch(() => setShopView(null));
     Promise.all(
       RECORD_SLOTS.map((slot) =>
         api<Record<string, unknown>>(`/api/stack/record/${slot}`).then((r) => [slot, r] as const),
@@ -608,6 +622,9 @@ export function SeatChrome({
     ? [
         { name: 'Sheet', icon: 'sheet', panel: sheetPanel },
         ...screenDecls.map((s) => ({ name: s.name, icon: s.icon, panel: carriedPanel(s, screenDecls) })),
+        ...(shopView
+          ? [{ name: 'Shop', icon: 'coin', panel: shopPanel(shopView, load) }]
+          : []),
         ...(hasSpare ? [{ name: 'More', icon: 'more', panel: morePanel(allClaimed, ladderLists) }] : []),
       ]
     : [];

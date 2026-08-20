@@ -408,6 +408,8 @@ export type PublicSnapshot = {
   turn: PublicTurn;
   board: PublicBoard | null;
   handout: PublicHandout | null;
+  /** The name over the door when a shop is open — never anyone's cart. */
+  shop: { id: string; name: string; blurb?: string } | null;
 };
 
 export function publicSnapshot(): Promise<PublicSnapshot> {
@@ -477,6 +479,127 @@ export function deleteHandout(id: string): Promise<{ ok: true }> {
 /** Aim the art frame — one manifest ref, written like the board's. Null rests it. */
 export function showHandout(id: string | null): Promise<unknown> {
   return api('/api/campaign/refs', { method: 'PUT', body: { handout: id } });
+}
+
+// ---- the counter (§14) -------------------------------------------------
+//
+// Shapes mirrored from `server/store-flow.ts` rather than imported, for
+// the same reason everything else here is: the server module is not
+// part of the client's graph.
+//
+// The asymmetry to keep in mind is the notes doors' again. `GET
+// /api/shop` answers ONE payload to everybody who may read it, and the
+// `carts` in it are already filtered by the asking screen's own
+// assignment — the DM's answer carries the whole counter, a seat's
+// carries its own row, and there is no way to phrase the question about
+// somebody else's. Writing a cart is `canEditEntity`, which says the
+// same thing from the other side.
+
+export type VendorLine = { ref: string; name?: string; price?: string; qty?: number | null };
+
+export type Vendor = {
+  id: string;
+  name: string;
+  blurb?: string;
+  lines: VendorLine[];
+  /** This campaign authored it, so this console may edit it. */
+  own?: boolean;
+};
+
+export type StockLine = {
+  ref: string;
+  name: string;
+  type?: string;
+  stats: PublicEntry[];
+  price: string | null;
+  /** null = unlimited, and that is the ordinary case. */
+  qty: number | null;
+  missing?: true;
+};
+
+export type CartLine = { ref: string; qty: number };
+
+export type ShopQuote = {
+  entityId: string;
+  name: string;
+  lines: (CartLine & { name: string; price: string | null; each: number | null })[];
+  offered: boolean;
+  total: number;
+  symbol: string;
+  missing: string[];
+  purse?: { name: string; value: number; held: number }[];
+  held?: number;
+  payment?: { counters: { name: string; value: number }[]; paid: number; change: number };
+  counter?: { name: string; value: number };
+};
+
+export type ShopView = {
+  vendor: { id: string; name: string; blurb?: string; live: boolean };
+  shelf: StockLine[];
+  carts: ShopQuote[];
+};
+
+export type Receipt = {
+  vendor: { id: string; name: string; entityId: string };
+  buyer: { id: string; name: string };
+  total: number;
+  lines: { ref: string; name: string; qty: number }[];
+  carried: { id: string; name: string }[];
+  refused: string[];
+};
+
+/** Every shop this table knows about — system, packs and the campaign's own. */
+export function vendors(): Promise<Vendor[]> {
+  return api<Vendor[]>('/api/vendors');
+}
+
+/** Author or amend one of the campaign's own — the ordinary templates door. */
+export function saveVendor(
+  vendor: Omit<Vendor, 'own' | 'id'> & { id?: string },
+): Promise<{ id: string }> {
+  return api<{ id: string }>('/api/templates/vendors', { body: { template: vendor } });
+}
+
+export function deleteVendor(id: string): Promise<{ ok: true }> {
+  return api<{ ok: true }>(`/api/templates/vendors/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** What's open, and whatever of the counter this screen may see. Null = shut. */
+export function shop(): Promise<ShopView | null> {
+  return api<ShopView | null>('/api/shop');
+}
+
+/** Open a vendor for the table, or (null) shut the shop. Instantiates nothing. */
+export function openShop(vendorId: string | null): Promise<ShopView | null> {
+  return api<ShopView | null>('/api/shop/open', { body: { vendorId } });
+}
+
+/** One cart, replaced whole. A seat may write its own; the DM may write anyone's. */
+export function writeCart(
+  entityId: string,
+  lines: CartLine[],
+  offered?: boolean,
+): Promise<ShopView | null> {
+  return api<ShopView | null>(`/api/shop/cart/${encodeURIComponent(entityId)}`, {
+    method: 'PUT',
+    body: { lines, ...(offered === undefined ? {} : { offered }) },
+  });
+}
+
+/**
+ * THE TRANSACTION. Every figure in `sale` is one the DM saw and could
+ * type over first — the server proposes through `shop()`, a human
+ * confirms here, and rule 1 is satisfied by the shape of the door.
+ */
+export function sell(sale: {
+  entityId: string;
+  lines?: CartLine[];
+  counters?: { name: string; value: number }[];
+  total?: number;
+}): Promise<Receipt> {
+  return api<Receipt>('/api/shop/sell', { body: { sale } });
 }
 
 export type PassedNote = {
