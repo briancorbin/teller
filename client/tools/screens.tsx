@@ -12,11 +12,18 @@
 // screen row carries a "calibrate" button, and the pattern it draws
 // arrives at that screen over the stream — console-driven, because a
 // passive surface grows no controls of its own (rule 6). Still left
-// out: pretend-glass sizing, and the guided "saddle up from a trade" stamp flow
-// (`encounters`/`roster` own character creation; a seat here just
-// points at whoever the roster already has).
+// out: pretend-glass sizing.
+//
+// What came BACK is the last entry in the seat's picker: "+ new
+// character…", which the old app had and this didn't. The old one
+// then asked the console for a tier and stamped the whole thing here;
+// this one writes an empty draft and stops, because the seat now has
+// a builder of its own — the draft mark is the whole handoff (§M-4a).
+// So the console's job shrank to two ordinary writes a human can undo:
+// make an entity wearing the mark, and point the screen at it.
 
 import { useState } from 'react';
+import { DRAFT_LIST, DRAFT_MARK } from '../../core/entity.ts';
 import { api, panes as fetchPanes } from '../lib/api.ts';
 import { CalibrationWizard } from '../components/board/CalibrationWizard.tsx';
 import { surfaces } from '../lib/panes.ts';
@@ -60,6 +67,19 @@ const ROLES: { value: DisplayRole; label: string; needsEntity?: boolean }[] = [
 
 const COLORS = ['#f59e0b', '#38bdf8', '#a3e635', '#f472b6', '#c084fc', '#fb7185'];
 const SLOT_SUGGESTIONS = ['tv', 'board', 'art', 'seat'];
+
+/**
+ * The picker's last entry, and the sentinel it wears. A `<select>`
+ * option needs a value, and every other one here is an entity id — so
+ * the new-character door is spelled as something no id can be.
+ */
+const NEW_ENTITY = '__new';
+/**
+ * What a character is called before anybody has named it. Ported
+ * verbatim from the old app, which stamped a fresh seat as this: a
+ * placeholder the builder's first step types over, not a decision.
+ */
+const FRESH_NAME = 'Drifter';
 
 /** A screen is "live" if it has spoken to us lately. */
 function isLive(display: Display): boolean {
@@ -157,6 +177,34 @@ function ScreensTool() {
 
   const patch = (id: string, body: Record<string, unknown>) => {
     api(`/api/displays/${id}`, { method: 'PATCH', body }).then(displays.reload).catch(displays.reload);
+  };
+
+  /**
+   * Make somebody for this seat to be, and point it at them.
+   *
+   * Two ordinary writes through the ordinary doors — an entity wearing
+   * the draft mark, then the assignment — so this is undoable, editable
+   * and deletable like anything else (rule 1). Nothing else happens
+   * here: the seat notices the mark on its own and puts the builder up.
+   * The display's other params are SPREAD, because who a seat shows is
+   * a different question from how it's set up.
+   */
+  const freshFor = (d: Display) => {
+    api<{ id: string }>('/api/entities', {
+      body: {
+        draft: {
+          name: FRESH_NAME,
+          type: 'pc',
+          lists: { [DRAFT_LIST]: [{ name: DRAFT_MARK }] },
+        },
+      },
+    })
+      .then((made) => {
+        patch(d.id, { params: { ...(d.params ?? {}), entityId: made.id } });
+        setError('');
+        roster.reload();
+      })
+      .catch((e) => setError(String(e instanceof Error ? e.message : e)));
   };
 
   return (
@@ -309,9 +357,10 @@ function ScreensTool() {
                 <select
                   className={input}
                   value={typeof params.entityId === 'string' ? params.entityId : ''}
-                  onChange={(e) =>
-                    patch(d.id, { params: { ...params, entityId: e.target.value || null } })
-                  }
+                  onChange={(e) => {
+                    if (e.target.value === NEW_ENTITY) return freshFor(d);
+                    patch(d.id, { params: { ...params, entityId: e.target.value || null } });
+                  }}
                 >
                   <option value="">— whose? —</option>
                   {party.map((e) => (
@@ -319,6 +368,10 @@ function ScreensTool() {
                       {e.name}
                     </option>
                   ))}
+                  {/* Only a seat: a badge shows somebody who already
+                      exists, and a blank draft on one would be a card
+                      with nothing on it and no way to fill it in. */}
+                  {d.role === 'seat' && <option value={NEW_ENTITY}>+ new character…</option>}
                 </select>
               )}
 

@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { DRAFT_LIST, DRAFT_MARK, isDraft } from '../core/entity.ts';
 import { createCampaign, openShelf } from '../core/store.ts';
 import { checkTicket, loadDmKey, mintTicket } from './auth.ts';
 import { serve } from './index.ts';
@@ -217,6 +218,56 @@ describe("a screen's life", () => {
       (await call('DELETE', `/api/entities/${other.id}`, { display: seat.id })).status,
     ).toBe(401);
     expect((await call('GET', '/api/events', { display: seat.id })).status).toBe(401);
+  });
+
+  // The console's "+ new character…" — the old app's stamp flow, cut
+  // down to what the seat's builder left it. Two ordinary doors, in
+  // this order: make somebody wearing the draft mark, then point the
+  // screen at them. Nothing here is special-cased, which is the point.
+  it('a seat can be given somebody new to be, still being made', async () => {
+    const seat = await adoptScreen('seat');
+
+    const made = await call('POST', '/api/entities', {
+      key: true,
+      body: {
+        draft: {
+          name: 'Drifter',
+          type: 'pc',
+          lists: { [DRAFT_LIST]: [{ name: DRAFT_MARK }] },
+        },
+      },
+    });
+    expect(made.status).toBe(201);
+    expect(made.body.name).toBe('Drifter');
+    expect(isDraft(made.body)).toBe(true);
+
+    const pointed = await call('PATCH', `/api/displays/${seat.id}`, {
+      key: true,
+      body: { params: { entityId: made.body.id } },
+    });
+    expect(pointed.status).toBe(200);
+    expect(pointed.body.params.entityId).toBe(made.body.id);
+
+    // The seat owns them now, and reads a draft like any other sheet.
+    const read = await call('GET', `/api/entities/${made.body.id}`, {
+      display: seat.id,
+    });
+    expect(read.status).toBe(200);
+    expect(isDraft(read.body)).toBe(true);
+
+    // Ordinary data, so the mark comes off the ordinary way (rule 1) —
+    // which is exactly what the builder's last step does.
+    const done = { ...read.body, lists: { ...read.body.lists, [DRAFT_LIST]: [] } };
+    const cleared = await call('PUT', `/api/entities/${made.body.id}`, {
+      display: seat.id,
+      body: { entity: done },
+    });
+    expect(cleared.status).toBe(200);
+    expect(isDraft(cleared.body)).toBe(false);
+
+    // And it was written down, both halves (rule 3).
+    const events = await call('GET', `/api/events?entity=${made.body.id}`, { key: true });
+    expect(events.body.map((e: any) => e.kind)).toContain('entity.created');
   });
 
   it('a passive screen watches and never writes', async () => {
