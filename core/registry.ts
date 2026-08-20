@@ -6,15 +6,41 @@
 // name is declared here, and an unrecognised provide is refused out
 // loud at load — never silently accepted, never silently dropped.
 //
-// It starts tiny on purpose. `propose.*` is what the assistant needs to
-// exist as plugin №1; `control.*` (generalising `dials`) and `pane.*`
-// are named in the design and arrive when a real plugin needs them —
-// the empirical-ceiling rule, not a roadmap.
+// It started tiny on purpose and it grew the way the design said it
+// would: `propose.*` is what the assistant needs to exist as plugin №1,
+// and `pane.*` + `door.*` arrived on 2026-08-20 with plugin №2 — the
+// store, extracted whole (§15's "the argument arrived"). The
+// empirical-ceiling rule held: neither family was built until a real
+// plugin needed a real point. `control.*` still isn't one, because
+// nothing has asked.
+//
+// TWO KINDS OF NAME live here, and the difference is the whole reason
+// this file has a second half:
+//
+//   * A FIXED point (`propose.turn`) is one question with one shape.
+//     The registry owns the name AND the payload contract, and every
+//     provider answers the same way — which is what lets the runner
+//     render a proposal without knowing what produced it.
+//   * A FAMILY (`pane.`, `door.`) is a KIND of provision whose second
+//     half is the plugin's own word. `pane.store` and `door.cart` are
+//     names teller never heard of and never has to: what the registry
+//     fixes is the SHAPE of a pane and the SHAPE of a door call, not
+//     the vocabulary. A family with no suffix, or a suffix with a
+//     slash or a capital in it, is not a point — the same refusal an
+//     unknown fixed name gets, and out loud.
+//
+// The `panes.ts` law is unchanged by that: a provision whose family
+// isn't declared here isn't callable, and a plugin claiming one is
+// refused at load with its own name in the report.
 //
 // Every point is a PROPOSER by construction: a serializable snapshot
-// goes in, a serializable proposal comes out, and whatever comes out
+// goes in, a serializable answer comes out, and whatever comes out
 // lands somewhere a human can overrule (rule 1). A plugin never holds
-// a live object and never queries — snapshots are pushed to it.
+// a live object and never queries — snapshots are pushed to it. `door.*`
+// is where that line was tested hardest and it HELD: a door receives the
+// slice of the table its manifest asked for, and answers with words plus
+// PROPOSED EFFECTS the host executes through its own session doors. The
+// plugin never holds the session; the bridge never invents an effect.
 
 export const POINTS = {
   /** Given the table's state, whose turn should come next — a proposal for the tracker, never a decision. */
@@ -23,10 +49,52 @@ export const POINTS = {
   'propose.narrate': 'offer narration for a resolved outcome',
 } as const;
 
-export type Point = keyof typeof POINTS;
+/**
+ * The families, and what a member of each is.
+ *
+ * The trailing dot is part of the key so the check is a prefix test
+ * with nothing to get wrong, and so a family reads at a glance as the
+ * open-ended thing it is.
+ */
+export const POINT_FAMILIES = {
+  /** A surface this plugin declares — a panel, rendered by teller's own renderer, with its own compiled code. */
+  'pane.': 'declare a panel: a console tab, a seat screen, an assignable pane',
+  /** A request-shaped handler the host bridges at `/api/plugin/<plg_id>/<door>`. */
+  'door.': 'answer a request from a screen, and propose effects for the host to execute',
+} as const;
+
+export type Family = keyof typeof POINT_FAMILIES;
+
+export type Point = keyof typeof POINTS | `${Family}${string}`;
+
+/** The half a plugin chose, for a family point — 'store' out of 'pane.store'. */
+export function suffixOf(point: string): string | undefined {
+  for (const family of Object.keys(POINT_FAMILIES)) {
+    if (point.startsWith(family)) return point.slice(family.length);
+  }
+  return undefined;
+}
+
+/** Which family a point belongs to, or undefined for a fixed one. */
+export function familyOf(point: string): Family | undefined {
+  for (const family of Object.keys(POINT_FAMILIES) as Family[]) {
+    if (point.startsWith(family)) return family;
+  }
+  return undefined;
+}
+
+/**
+ * A plugin's own word for its pane or door. Lower-case, and no slash —
+ * a door name becomes a PATH SEGMENT (`/api/plugin/<id>/<door>`) and a
+ * pane name becomes a merge word, so this is the one place either has
+ * to be told no.
+ */
+export const USABLE_SUFFIX = /^[a-z0-9][a-z0-9-]*$/;
 
 export function isPoint(name: string): name is Point {
-  return name in POINTS;
+  if (name in POINTS) return true;
+  const suffix = suffixOf(name);
+  return suffix !== undefined && USABLE_SUFFIX.test(suffix);
 }
 
 /**
@@ -54,3 +122,224 @@ export type TurnProposal = {
 
 /** What a `propose.narrate` provider hands back — words, and only words. */
 export type NarrationProposal = { narration?: string };
+
+// ---------------------------------------------------------------------
+// `pane.*` — a plugin declares a surface.
+//
+// §M-2's line, kept crisp: **a plugin never touches the merge.** A
+// pane is not a `panels` declaration arriving from a fifth layer; it is
+// a PROVISION, read out of the registry beside the merged collection
+// and offered in the same list, sorted by the same comparator. Two
+// sources, one bar. The consequence is the one that matters: nothing a
+// plugin provides can override a system's, a pack's or the table's
+// panel by restating its name, because provisions were never in that
+// argument. A pane that collides is a second entry with the same word,
+// and the merge is untouched.
+//
+// What a provision carries is what a tool declaration carries — the
+// word, the label, the blurb, the order, the subject — plus the one
+// thing a declaration never needs: WHERE ITS CODE IS. A pane is always
+// a takeover (§E rung 5); there is no arrangement to declare because
+// the plugin brought a component, not a layout.
+
+export type PaneProvision = {
+  /** `pane.<name>` — the point, as claimed in the manifest. */
+  point: string;
+  /** The word this pane is known by. Defaults to the point's suffix. */
+  name: string;
+  label?: string;
+  blurb?: string;
+  /** Where it sits in a bar of panes — `core/panels.ts`'s own comparator reads it. */
+  order?: number;
+  /** What it arranges: one entity (a seat screen) or nothing (a console tab). */
+  subject?: 'entity' | 'none';
+  /** A glyph name for the seat's tab bar, when it has one. */
+  icon?: string;
+  /**
+   * The door that decides whether this pane is SHOWING right now.
+   *
+   * A seat's shop tab exists while the Warden has a shop open and not
+   * otherwise — a fact about the moment, never about the system — and
+   * that was the store's own hook into the seat before it was a plugin.
+   * Generalised to one declared word: the surface calls this door, and
+   * a null answer means the pane isn't offered. Absent means always.
+   */
+  when?: string;
+  /** The source file, relative to the plugin folder — compiled at load. */
+  entry: string;
+  /** Optional CSS beside it, served and linked like a panel's own. */
+  style?: string;
+};
+
+// ---------------------------------------------------------------------
+// `door.*` — a plugin answers a request, and proposes what to write.
+//
+// The shape is a REQUEST and a RESULT, both plain data, because the
+// boundary is `structuredClone` in both directions (`core/plugins.ts`)
+// and always was. What's new is not the boundary — it's that a door may
+// ask for something to CHANGE, and cannot make it change itself.
+
+/**
+ * WHO MAY KNOCK — declared per door in the manifest, enforced by the
+ * SERVER before the plugin sees the call.
+ *
+ * teller's own three gates, by their own names: `dm` is the key-holder,
+ * `prep` is the DM or a seat (what `canPrep` already means — a seat
+ * browses the catalogue legitimately), `table` is any adopted screen.
+ * **Absent means `dm`**, which is the only safe default: a door that
+ * anyone at the table may knock on has to say so out loud, and a plugin
+ * that forgets is closed rather than open.
+ *
+ * This is not the plugin authorising anything (rule 7 — authorisation
+ * is role-derived and the server derives it). It is the plugin
+ * declaring which of teller's existing gates its door sits behind, the
+ * same way `needs` declares what it touches. Anything finer — whose
+ * cart is whose — is the plugin's own law, decided against the `who`
+ * facts it is handed and never against a secret it holds.
+ */
+export type DoorAccess = 'dm' | 'prep' | 'table';
+
+export function toAccess(raw: unknown): DoorAccess {
+  return raw === 'prep' || raw === 'table' ? raw : 'dm';
+}
+
+/** What the bridge pushes into a door. Everything is data; nothing is live. */
+export type DoorRequest = {
+  /** The door's own word — 'shop' out of `door.shop`. */
+  door: string;
+  method: string;
+  /** Path segments after the door — `/api/plugin/<id>/cart/ent_x` is `['ent_x']`. */
+  path: string[];
+  /** The JSON body, for a write; `{}` for a read. */
+  body: Record<string, unknown>;
+  /**
+   * WHO IS ASKING, resolved by the host before the plugin sees a byte.
+   * A door never gets a header and never re-derives authority (rule 7):
+   * the server decided, and these are the facts of that decision.
+   */
+  who: {
+    /** The event-log actor this call writes as — 'dm', a screen's name. */
+    actor: string;
+    /** 'dm' for the key-holder, else the screen's assigned role. */
+    role: string;
+    /** The asking seat's own entity, when it is a seat. Never anyone else's. */
+    entityId?: string;
+  };
+  /** The slice of the table this plugin's `needs` asked for. */
+  table: TableSnapshot;
+  /** This plugin's own memory for this table, as it left it. */
+  state: unknown;
+};
+
+/** What a door hands back. Every field optional; an empty result is a 200 with nothing. */
+export type DoorResult = {
+  status?: number;
+  /** The JSON answer. Minted ids are substituted in before it ships (see `Effect.as`). */
+  body?: unknown;
+  /** Replace this plugin's memory for this table. Absent leaves it alone. */
+  state?: unknown;
+  /** What the host should do, in order, before answering. */
+  effects?: Effect[];
+  /** What to nudge the room about — 'entities', 'templates', or the plugin's own word. */
+  changed?: string[];
+};
+
+/**
+ * THE EFFECTS VOCABULARY — the whole of what a plugin may ask for.
+ *
+ * Small on purpose, and every member maps onto a door teller already
+ * had: `Session.create`, `Session.save`, `Session.remove`,
+ * `Session.writeEntry`, `Campaign.putTemplate`, `Campaign.removeTemplate`,
+ * `Campaign.append`. There is no effect that reaches past those, which
+ * is what makes rule 1 and rule 3 structural here rather than a promise:
+ * a plugin's write is an ordinary write, logged, undoable, and typed over
+ * by a human afterwards exactly like one the DM made by hand.
+ *
+ * `as` is the one piece of plumbing: an effect that MINTS something may
+ * label it, and every later effect — plus the result's own `body` — has
+ * `{{label}}` substituted with the id that came back. It exists because
+ * the first sale instantiates the vendor and then writes its shelf down,
+ * and a plugin that cannot name what it just created would need a second
+ * round trip to finish one transaction.
+ */
+export type Effect =
+  | { effect: 'entity.create'; draft: unknown; parentId?: string; as?: string }
+  | { effect: 'entity.save'; entity: unknown }
+  | { effect: 'entity.remove'; id: string }
+  | {
+      effect: 'entry.write';
+      entityId: string;
+      list: string;
+      name: string;
+      value?: number | string;
+      max?: number | null;
+      remove?: boolean;
+    }
+  | { effect: 'template.save'; slot: string; template: unknown; as?: string }
+  | { effect: 'template.remove'; slot: string; id: string }
+  | { effect: 'log'; entityId?: string; kind: string; payload?: unknown };
+
+/**
+ * The slice of the table a door is handed — assembled by the host per
+ * call, from what the manifest's `needs` named and nothing else.
+ *
+ * Two things are worth saying about the shape. Declarations arrive as
+ * `{ merged, own }` because anything that EDITS a declaration needs to
+ * know which rows are the campaign's to edit and which came from a pack
+ * (the store's console says "a pack wrote this one" off exactly that).
+ * And entities arrive as `{ stored, reading }` pairs because both are
+ * true and they are true about different questions: what a purse HOLDS
+ * is the reading, and what a save must not thicken is the stored.
+ */
+export type TableSnapshot = {
+  campaign: { slug: string; name: string; rootId: string };
+  declarations: Record<string, { merged: unknown[]; own: unknown[] }>;
+  templates: Record<string, unknown[]>;
+  records: Record<string, Record<string, unknown>>;
+  /** The campaign root's children — everyone and everything at the top level. */
+  entities?: { stored: unknown; reading: unknown }[];
+};
+
+/**
+ * ONE NEED — what a plugin says it touches, in the enable dialog's own
+ * terms and in the bridge's.
+ *
+ * `read:templates/catalog` reads as English and gates as code: the
+ * snapshot carries exactly the slots named, and an effect whose verb
+ * and subject nobody granted is REFUSED — reported back in the result,
+ * never silently dropped. A trailing ` — note` is the author's
+ * explanation and is shown to whoever is deciding.
+ */
+export type Need = {
+  verb: 'read' | 'write';
+  /** 'declarations' | 'templates' | 'records' | 'entities' | 'entries' | 'log', plus whatever a later point adds. */
+  subject: string;
+  /** The one slot, when the need names one. Absent means the subject whole. */
+  slot?: string;
+  note?: string;
+};
+
+const NEED = /^(read|write):([a-z]+)(?:\/([a-z0-9_-]+))?\s*(?:[—-]\s*(.*))?$/i;
+
+/** `"write:templates/vendors — the shops a Warden writes"` → a Need. */
+export function toNeed(raw: unknown): Need | undefined {
+  if (typeof raw !== 'string') return undefined;
+  const m = NEED.exec(raw.trim());
+  if (!m) return undefined;
+  const out: Need = { verb: m[1].toLowerCase() as Need['verb'], subject: m[2].toLowerCase() };
+  if (m[3]) out.slot = m[3];
+  if (m[4]?.trim()) out.note = m[4].trim();
+  return out;
+}
+
+/** Does this list of needs grant `verb` on `subject` (and `slot`, when one is named)? */
+export function grants(needs: Need[], verb: Need['verb'], subject: string, slot?: string): boolean {
+  return needs.some(
+    (n) =>
+      n.verb === verb &&
+      n.subject === subject &&
+      // A need with no slot is the subject WHOLE; one with a slot is
+      // that slot alone. Nothing widens by accident.
+      (n.slot === undefined || n.slot === slot),
+  );
+}

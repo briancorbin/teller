@@ -37,10 +37,53 @@ export const PANEL_IMPORTS = [...NEUTRAL_IMPORTS, 'system'];
 /** What a pack's own presentations may import — the neutral three, and no `system`. */
 export const PACK_IMPORTS = NEUTRAL_IMPORTS;
 
+/**
+ * What a PLUGIN's pane code may import — the same four as a panel's.
+ *
+ * `system` is in the list, and the call is worth stating because a
+ * plugin is the one container that is deliberately system-AGNOSTIC
+ * (§M-2: usable with any system). It reads like a contradiction and
+ * isn't: a pane is client code rendering AT A TABLE, and a table always
+ * has a system (§M-6 — a host with none is a host mid-setup). The
+ * specifier resolves to a module the host GENERATES, empty when nothing
+ * supplies a presentation, so importing it never 404s and never
+ * requires anything. So the honest rule is the same one panels got —
+ * a pane may consume the active system's vocabulary if it wants to
+ * dress itself in the book's face, and a pane that imports nothing but
+ * `teller` works identically on every system. Leaving `system` out
+ * would have banned the good case to prevent no bad one.
+ */
+export const PLUGIN_IMPORTS = PANEL_IMPORTS;
+
 /** Has this source changed since its output was written? A missing output always has. */
 export function newerThan(srcPath: string, outPath: string): boolean {
   if (!existsSync(outPath)) return true;
   return statSync(srcPath).mtimeMs > statSync(outPath).mtimeMs;
+}
+
+/**
+ * The `?v=` a code url carries: the compiled artifact's own mtime, in
+ * base 36. A browser caches a module by its url, and an edited-and-swept
+ * folder used to serve yesterday's bytes behind today's url until
+ * somebody thought to hard-refresh. Naming the mtime makes the url
+ * change EXACTLY when the code changed and never otherwise.
+ *
+ * The mtime, not a content hash: the sweep already stats these files to
+ * decide whether to compile at all, so this costs nothing, and the
+ * question a cache is asking ("is this the same build?") is one an
+ * mtime answers honestly. An unstattable file gets no stamp rather than
+ * a made-up one.
+ *
+ * Lives here, beside the compile, because both shelves that carry code
+ * ask it the same question — panels since §E, plugins since §15's pane
+ * tier landed.
+ */
+export function stamp(outPath: string): string {
+  try {
+    return `?v=${Math.floor(statSync(outPath).mtimeMs).toString(36)}`;
+  } catch {
+    return '';
+  }
 }
 
 /** `undefined` on success, an error message on failure — never a throw. */

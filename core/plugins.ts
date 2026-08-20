@@ -18,6 +18,21 @@
 //     everything it refused — a provide against a point this build has
 //     never heard of is refused OUT LOUD, not dropped.
 //
+// Since the UI tier landed (§15, 2026-08-20) a plugin may also carry
+// SURFACES and DOORS, and both ride the same three acts above:
+//
+//   * A `pane.*` provision is pure declaration — the word, the label,
+//     the subject, and where its code is — compiled here by the same
+//     esbuild pass a `.panel` folder gets, into `.build/panes/`. It is
+//     compiled only for a plugin somebody ENABLED, because a pane IS
+//     its code and there is nothing useful to load for a plugin nobody
+//     trusts.
+//   * A `door.*` provision is an implementation in `host.mjs`, wired
+//     like any other point. What makes it a door is the bridge on the
+//     other side (`server/plugin-bridge.ts`), not anything here: this
+//     file still only ever wires a name to a function behind a clone
+//     boundary.
+//
 // The call boundary is async and message-shaped from day one:
 // serializable snapshots in, serializable proposals out, no live
 // objects — enforced here by structuredClone on both sides of every
@@ -25,11 +40,35 @@
 // not an API break. Stated honestly: in-process code is NOT sandboxed;
 // pre-alpha, the enable gate is the security model.
 
-import { readdirSync, readFileSync, existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { isPoint, type Point } from './registry.ts';
+import { buildOne, newerThan, stamp, PLUGIN_IMPORTS } from './compile.ts';
+import {
+  familyOf,
+  isPoint,
+  suffixOf,
+  toAccess,
+  toNeed,
+  type DoorAccess,
+  type Need,
+  type PaneProvision,
+  type Point,
+} from './registry.ts';
 import type { Shelf } from './store.ts';
+
+/**
+ * ONE CLAIM in a manifest's `provides`.
+ *
+ * A string is the whole claim for a point whose implementation lives in
+ * `host.mjs` (`propose.turn`, `door.shop`) — the module says how, the
+ * manifest only says that. A `pane.*` provision has no host half at all
+ * and everything about it is declaration, so it arrives as an OBJECT
+ * with its word, its label and where its code is. Same list, because it
+ * is the same question ("what does this plugin add?") and splitting it
+ * into two manifest keys would mean reading two places to answer it.
+ */
+export type Provision = { point: string } & Record<string, unknown>;
 
 export type PluginManifest = {
   /** `plg_…`, minted at authoring. Identity is the id, never the folder name. */
@@ -37,9 +76,17 @@ export type PluginManifest = {
   name: string;
   version: number;
   /** Extension points it claims to implement. Checked against the registry at load. */
-  provides: string[];
-  /** What it wants from the host — app-permissions style, shown at enable. `[]` is a meaningful, checkable claim. */
-  needs: string[];
+  provides: Provision[];
+  /**
+   * What it wants from the host — app-permissions style, shown at
+   * enable. `[]` is a meaningful, checkable claim, and since the door
+   * tier landed it is a checkED one: the snapshot a door receives
+   * carries exactly the `read:` needs, and an effect outside the
+   * `write:` needs is refused (`server/plugin-bridge.ts`).
+   */
+  needs: Need[];
+  /** The needs as WRITTEN, for a console that shows a human what it's agreeing to. */
+  wants: string[];
 };
 
 export type Discovered = {
@@ -51,10 +98,69 @@ export type Discovered = {
 /** A folder that didn't parse, a provide that isn't a point — reported, never silently dropped. */
 export type PluginProblem = { dir: string; problem: string };
 
+/** A pane provision, with its compiled code resolved to urls the client can fetch. */
+export type LoadedPane = PaneProvision & {
+  /** Which plugin provided it — how a surface calls its doors back. */
+  plugin: string;
+  code: { takeover: string; style?: string };
+};
+
 export type LoadedPlugin = {
   manifest: PluginManifest;
+  /** Where it lives, for the code route to serve `.build/` out of. */
+  dir: string;
   provides: Partial<Record<Point, (payload: unknown) => Promise<unknown>>>;
+  /** Its declared surfaces, compiled and ready to hand to a screen. */
+  panes: LoadedPane[];
+  /** Door name → which of teller's gates the server puts in front of it. */
+  doors: Record<string, DoorAccess>;
 };
+
+function toProvision(raw: unknown): Provision | undefined {
+  if (typeof raw === 'string') {
+    const point = raw.trim();
+    return point ? { point } : undefined;
+  }
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const point = String(o.point ?? '').trim();
+  return point ? { ...o, point } : undefined;
+}
+
+/**
+ * A pane provision, read defensively. `entry` is the one thing it
+ * cannot do without — a pane with no code is a tab that renders
+ * nothing, which is worse than a pane that never appeared.
+ */
+export function toPane(provision: Provision): PaneProvision | undefined {
+  const entry = String(provision.entry ?? '').trim();
+  if (!entry) return undefined;
+  const suffix = suffixOf(provision.point) ?? '';
+  const name = String(provision.name ?? suffix).trim() || suffix;
+  if (!name) return undefined;
+  const out: PaneProvision = { point: provision.point, name, entry };
+  const text = (key: string) => {
+    const v = provision[key];
+    return typeof v === 'string' && v.trim() ? v.trim() : undefined;
+  };
+  const label = text('label');
+  const blurb = text('blurb');
+  const icon = text('icon');
+  const when = text('when');
+  const style = text('style');
+  if (label) out.label = label;
+  if (blurb) out.blurb = blurb;
+  if (icon) out.icon = icon;
+  if (when) out.when = when;
+  if (style) out.style = style;
+  if (provision.subject === 'entity' || provision.subject === 'none') {
+    out.subject = provision.subject;
+  }
+  if (typeof provision.order === 'number' && Number.isFinite(provision.order)) {
+    out.order = provision.order;
+  }
+  return out;
+}
 
 function toManifest(raw: unknown): PluginManifest | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -62,14 +168,22 @@ function toManifest(raw: unknown): PluginManifest | undefined {
   const id = String(o.id ?? '').trim();
   const name = String(o.name ?? '').trim();
   if (!id.startsWith('plg_') || !name) return undefined;
-  const strings = (v: unknown) =>
-    Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean) : [];
+  const wants = Array.isArray(o.needs)
+    ? o.needs.map((s) => String(s).trim()).filter(Boolean)
+    : [];
   return {
     id,
     name,
     version: typeof o.version === 'number' ? o.version : 1,
-    provides: strings(o.provides),
-    needs: strings(o.needs),
+    provides: Array.isArray(o.provides)
+      ? o.provides.map(toProvision).filter((p): p is Provision => p !== undefined)
+      : [],
+    // A need that doesn't parse grants nothing and is kept in `wants`,
+    // where a human still reads it: an author's typo must never widen
+    // what a plugin may touch, and must never silently narrow the
+    // sentence they wrote either.
+    needs: wants.map(toNeed).filter((n): n is Need => n !== undefined),
+    wants,
   };
 }
 
@@ -135,6 +249,62 @@ function messageShaped(
 }
 
 /**
+ * Compile one pane's source into `<dir>/.build/panes/<name>.js` and say
+ * where the client may fetch it. The panel precedent whole
+ * (`compilePanelCode`): esbuild, mtime-gated, a failure REPORTED rather
+ * than thrown, and the same four bare specifiers left external for the
+ * client's import map to answer (`PLUGIN_IMPORTS`).
+ *
+ * Unlike a panel's, this runs only for a plugin a human ENABLED —
+ * `loadPlugins` skips the rest before it ever gets here. That is not a
+ * different rule, it's the same one arriving earlier: a panel's
+ * declaration is useful without its code, and a pane IS its code, so
+ * there is nothing to compile for a plugin nobody trusts.
+ */
+function compilePane(
+  dir: string,
+  pluginId: string,
+  pane: PaneProvision,
+): { code?: LoadedPane['code']; problem?: string } {
+  const src = join(dir, pane.entry);
+  if (!existsSync(src)) return { problem: `pane '${pane.name}' names ${pane.entry}, which isn't there` };
+  // The compiled artifact is named by the POINT's suffix, never by the
+  // pane's `name`. The suffix is registry-checked (`USABLE_SUFFIX` —
+  // lower-case, no slash) and the name is a free word a human chose,
+  // and this is the one place either becomes a PATH. Same reasoning as
+  // `usableFolderName` for a panel folder, and the same answer.
+  const file = suffixOf(pane.point) ?? pane.name;
+  const out = join(dir, '.build', 'panes', `${file}.js`);
+  if (newerThan(src, out)) {
+    const err = buildOne(src, out, PLUGIN_IMPORTS);
+    if (err) return { problem: `pane '${pane.name}' (${pane.entry}): ${err}` };
+  }
+  if (!existsSync(out)) return { problem: `pane '${pane.name}' compiled to nothing` };
+  const code: LoadedPane['code'] = {
+    takeover: `/plugin-code/${pluginId}/panes/${file}.js${stamp(out)}`,
+  };
+  if (pane.style) {
+    const styleSrc = join(dir, pane.style);
+    const styleOut = join(dir, '.build', 'panes', `${file}.css`);
+    if (existsSync(styleSrc)) {
+      if (newerThan(styleSrc, styleOut)) {
+        try {
+          mkdirSync(join(dir, '.build', 'panes'), { recursive: true });
+          writeFileSync(styleOut, readFileSync(styleSrc));
+        } catch {
+          // A style that won't copy is a pane without a stylesheet, not
+          // a pane that fails to exist. The declaration still loads.
+        }
+      }
+      if (existsSync(styleOut)) {
+        code.style = `/plugin-code/${pluginId}/panes/${file}.css${stamp(styleOut)}`;
+      }
+    }
+  }
+  return { code };
+}
+
+/**
  * Import every ENABLED plugin and wire its provides to the registry.
  * Missing entry file, a throw on import, a provide against no point —
  * each is a problem in the report and never a crash: a broken plugin
@@ -148,9 +318,51 @@ export async function loadPlugins(
   const loaded: LoadedPlugin[] = [];
   for (const { dir, manifest, enabled } of found) {
     if (!enabled) continue;
+
+    // The DECLARED half first, and separately: a plugin may be all
+    // panes and no host module (a surface over teller's own doors is a
+    // whole plugin), so "no host.mjs" only ends the loop for one that
+    // claimed a point needing one.
+    const panes: LoadedPane[] = [];
+    for (const provision of manifest.provides) {
+      if (familyOf(provision.point) !== 'pane.') continue;
+      if (!isPoint(provision.point)) {
+        problems.push({
+          dir,
+          problem: `provides '${provision.point}', which is not a point in the registry`,
+        });
+        continue;
+      }
+      const pane = toPane(provision);
+      if (!pane) {
+        problems.push({ dir, problem: `'${provision.point}' declares no entry file` });
+        continue;
+      }
+      const { code, problem } = compilePane(dir, manifest.id, pane);
+      if (problem || !code) {
+        problems.push({ dir, problem: problem ?? `pane '${pane.name}' has no code` });
+        continue;
+      }
+      panes.push({ ...pane, plugin: manifest.id, code });
+    }
+
+    // Which gate each door sits behind, read off the manifest and
+    // enforced by the server — never by the plugin (see `DoorAccess`).
+    const doors: Record<string, DoorAccess> = {};
+    for (const provision of manifest.provides) {
+      if (familyOf(provision.point) !== 'door.') continue;
+      const name = suffixOf(provision.point);
+      if (name) doors[name] = toAccess(provision.role);
+    }
+
+    const hostPoints = manifest.provides.filter((p) => familyOf(p.point) !== 'pane.');
     const entry = join(dir, 'host.mjs');
     if (!existsSync(entry)) {
-      problems.push({ dir, problem: 'enabled but has no host.mjs' });
+      if (hostPoints.length) {
+        problems.push({ dir, problem: 'enabled but has no host.mjs' });
+        continue;
+      }
+      loaded.push({ manifest, dir, provides: {}, panes, doors: {} });
       continue;
     }
     let module: Record<string, unknown>;
@@ -188,9 +400,25 @@ export async function loadPlugins(
         shelf.pluginTrust(manifest.id)?.config,
       );
     }
-    loaded.push({ manifest, provides: wired });
+    loaded.push({ manifest, dir, provides: wired, panes, doors });
   }
   return { loaded, problems };
+}
+
+/**
+ * Every pane every running plugin declares, in load order.
+ *
+ * The list a surface reads BESIDE the merged `panels` slot — never
+ * merged into it (§M-2). Ordering across the two is `byPanelOrder`'s
+ * job at the consumer, which is where the two sources become one bar.
+ */
+export function panesOf(loaded: LoadedPlugin[]): LoadedPane[] {
+  return loaded.flatMap((p) => p.panes);
+}
+
+/** The one plugin a `plg_` id names, among those running. */
+export function pluginOf(loaded: LoadedPlugin[], id: string): LoadedPlugin | undefined {
+  return loaded.find((p) => p.manifest.id === id);
 }
 
 /**
