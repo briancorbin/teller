@@ -255,8 +255,12 @@ export class Campaign {
     for (const child of this.children(id)) this.remove(child.id, actor);
     const before = this.get(id);
     if (!before) return;
+    // The parent rides along because the row it lived under is not IN
+    // the row — and a restore that forgot it would put the thing back
+    // at the root, which is a different table than the one deleted.
+    const parent = this.parentOf(id);
     this.#db.prepare('DELETE FROM entities WHERE id = ?').run(id);
-    this.append(id, actor, 'entity.deleted', { before });
+    this.append(id, actor, 'entity.deleted', { before, parent });
   }
 
   /**
@@ -375,8 +379,14 @@ export class Campaign {
   removeTemplate(id: string, actor: string): void {
     const before = this.templateRaw(id);
     if (before === undefined) return;
+    // The slot is a column, not part of what was authored — so it is
+    // logged, or nothing could ever put the row back where it was.
+    const row = this.#db
+      .prepare('SELECT slot FROM templates WHERE id = ?')
+      .get(id) as Row | undefined;
+    const slot = row ? String(row.slot) : undefined;
     this.#db.prepare('DELETE FROM templates WHERE id = ?').run(id);
-    this.append(id, actor, 'template.deleted', { before });
+    this.append(id, actor, 'template.deleted', { slot, before });
   }
 
   // -- live board state -----------------------------------------------
@@ -421,14 +431,22 @@ export class Campaign {
     return row ? parseJson(row.data) : undefined;
   }
 
-  putTurnState(data: unknown, actor: string, op?: string): void {
+  putTurnState(
+    data: unknown,
+    actor: string,
+    op?: string | { op?: string; before?: unknown; after?: unknown },
+  ): void {
     this.#db
       .prepare(
         `INSERT INTO turn_state (id, data, updated_at) VALUES (1, ?, ?)
          ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
       )
       .run(JSON.stringify(data ?? null), now());
-    this.append(null, actor, 'turn.updated', op ? { op } : undefined);
+    // A caller that hands over the whole before/after keeps the op
+    // undoable; a bare op name is still accepted and logs what it
+    // always did (the row is then a record, not a step back).
+    const payload = typeof op === 'string' ? { op } : op;
+    this.append(null, actor, 'turn.updated', payload || undefined);
   }
 
   close(): void {

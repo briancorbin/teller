@@ -51,6 +51,7 @@ import { packDir, packPanelDir, sweepPacks, systemIndexModule } from '../core/pa
 import { sweepSystems, systemDir, systemPanelDir } from '../core/systems-shelf.ts';
 import { publicBoardState, publicSnapshot } from './public.ts';
 import { ACTIVE_CAMPAIGN, Host, Session, type EntryEdit } from './session.ts';
+import { peekUndo, undo } from './undo.ts';
 import type { TurnOp } from './turn.ts';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
@@ -77,6 +78,18 @@ function reply(status: number, body: unknown): Reply {
 }
 
 const denied = () => reply(401, { error: 'DM key required' });
+
+/**
+ * Who may read PREP — the template half: encounter recipes, bestiary
+ * numbers, the catalogue. The DM, obviously; and a seat, which shops
+ * the catalogue at the table and browses what it may stamp. A passive
+ * screen (table, board, badge, art) may not: it is player-facing glass
+ * in the middle of the room, and the recipes are what the fight is
+ * about to be. Vocabulary and records stay watchable — those aren't
+ * secrets, they're what a panel renders with.
+ */
+const canPrep = (auth: Auth): boolean =>
+  canDm(auth) || (adopted(auth.display) && auth.display.role === 'seat');
 const notAtTable = () => reply(401, { error: 'not at this table' });
 const noCampaign = () =>
   reply(503, { error: 'no campaign is active — pick one from the campaign screen' });
@@ -1049,8 +1062,16 @@ export async function handleApi(
   }
 
   // -- the campaign's own template half — prep (§13), DM's business.
+  //
+  // Reading is gated too: encounter recipes and bestiary numbers are
+  // the Warden's prep, and an adopted table TV is player-facing glass.
+  // A SEAT reads it legitimately (the catalogue it shops from), so the
+  // gate is DM-or-seat rather than DM alone.
   if (head === 'templates' && a) {
-    if (method === 'GET' && !b) return reply(200, session.campaign.templatesIn(a));
+    if (method === 'GET' && !b) {
+      if (!canPrep(auth)) return denied();
+      return reply(200, session.campaign.templatesIn(a));
+    }
     if (!canDm(auth)) return denied();
     if (method === 'POST' && !b) {
       const body = await bodyOf(req);
@@ -1083,8 +1104,15 @@ export async function handleApi(
   }
 
   if (method === 'GET' && head === 'stack' && a && b) {
+    // Declarations and records are the table's vocabulary — panels,
+    // statuses, what the dice are called — and every passive surface
+    // renders from them. Templates are prep, so they take the same
+    // gate the campaign's own template half does.
     if (a === 'declarations') return reply(200, session.loaded.declarations(b));
-    if (a === 'templates') return reply(200, session.loaded.templates(b));
+    if (a === 'templates') {
+      if (!canPrep(auth)) return denied();
+      return reply(200, session.loaded.templates(b));
+    }
     if (a === 'record') return reply(200, session.loaded.record(b));
   }
 
@@ -1139,6 +1167,25 @@ export async function handleApi(
     session.campaign.append(record.target ?? record.by, actorOf(auth), 'turn.resolved', record);
     session.changed('events');
     return reply(200, { ok: true });
+  }
+
+  // -- stepping back (rule 3's payoff — see server/undo.ts) ------------
+  //
+  // The log is already the whole mechanism, so these two doors are a
+  // walk and one inversion. Nothing to undo is a 200 with nothing in
+  // it: a fresh table has nothing behind it and pressing the button is
+  // not an error.
+  if (head === 'undo' && !a) {
+    if (!canDm(auth)) return denied();
+    if (method === 'POST') {
+      const body = await bodyOf(req);
+      return reply(200, { undone: undo(session, actorOf(auth, String(body.actor ?? ''))) });
+    }
+  }
+
+  if (method === 'GET' && head === 'undo' && a === 'peek' && !b) {
+    if (!canDm(auth)) return denied();
+    return reply(200, { undoable: peekUndo(session) });
   }
 
   if (method === 'GET' && head === 'events' && !a) {

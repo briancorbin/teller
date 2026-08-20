@@ -226,10 +226,23 @@ export class Session {
   }
 
   turnOp(op: TurnOp, actor: string): TurnState {
-    const next = applyTurnOp(this.turnState(), op);
-    this.campaign.putTurnState(next, actor, op.op);
+    const before = this.turnState();
+    const next = applyTurnOp(before, op);
+    // The whole state, both sides — an accidental "next turn" mid-fight
+    // is the headline thing a DM undoes, and an op name alone can't be
+    // inverted (rule 3's payoff: `/undo` reads the log, it doesn't
+    // replay the ops).
+    this.campaign.putTurnState(next, actor, { op: op.op, before, after: next });
     this.changed('turn');
     return next;
+  }
+
+  /** Put the order back the way it was — how `/undo` steps a turn op back. */
+  restoreTurn(state: TurnState, actor: string): TurnState {
+    const before = this.turnState();
+    this.campaign.putTurnState(state, actor, { op: 'restore', before, after: state });
+    this.changed('turn');
+    return state;
   }
 
   /**
@@ -264,11 +277,12 @@ export class Session {
         if (entity) deployed.push(entity);
       }
     }
-    let turn = this.turnState();
+    const before = this.turnState();
+    let turn = before;
     for (const entity of deployed) {
       turn = applyTurnOp(turn, { op: 'add', entityId: entity.id });
     }
-    this.campaign.putTurnState(turn, actor, 'deploy');
+    this.campaign.putTurnState(turn, actor, { op: 'deploy', before, after: turn });
     this.changed('turn');
     return { deployed, turn };
   }
