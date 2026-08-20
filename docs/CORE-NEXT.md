@@ -1786,6 +1786,47 @@ above still stand, and the folder is the only serialization.
   actual Wednesday table. Build single-table-first; the platform is
   what falls out.
 
+**5a · The seat dissolves into files — composites, and five chrome
+seams** (2026-08-20, Brian, ratified in conversation: "that NEEDS to
+be in the wiw character panel… the navigation should be in the panel
+also… so long as we can override the you're-up ring, note banner,
+glass container… I'd like things to be as modular as possible").
+
+The seat's chrome was the last un-authorable surface — plate, cost
+chips and the segmented bar hardcoded in `SeatChrome` while every
+screen behind them rode the ladder. It dissolves along the same line
+as everything else: **facts stay teller's, rendering is summonable.**
+
+- **Five seams**, each a presentation resolved system-first,
+  pack-override, teller floor: `Header` (identity + chips),
+  `ScreenBar` (tabs/current/onGo as props — teller assembles the tab
+  LIST, the theme only draws it), `TurnCall` ({up, onDeck, rolling,
+  submitScore} in; a ring, a banner, a spinning revolver out),
+  `NoteBanner` (payload + dismiss in), `SeatFrame` (the container's
+  look). A theme may quiet or even suppress a delivery affordance —
+  rule 1 for UI, the author's own table.
+- **One law stays structural, not themeable**: the outer glass clip.
+  Mounted glass never page-scrolls, and teller holds the overflow
+  boundary OUTSIDE whatever the frame renders — rule 6 enforced by
+  the frame the author renders within, the same way the effects
+  vocabulary enforces rule 3 on plugins.
+- **The COMPOSITE panel** declares the seat: subject `entity`, an
+  ordered `tabs` list of panel NAMES, and an optional `chrome` map
+  naming seam presentations. Three refinements are load-bearing:
+  (1) sub-panels merge independently by name — a pack restates one
+  screen without owning the set, and the composite itself merges by
+  name so a table reorders everyone's tabs in four lines of json;
+  (2) **strays surface**: an entity-subject panel not listed in
+  `tabs` APPENDS rather than vanishing (the `rest` law applied to
+  navigation; explicit exclusion exists for the author who means it);
+  (3) `chrome` keys are OVERRIDE hooks, not requirements — absent,
+  each seam resolves the normal way, so the themed set arrives with
+  zero composite edits.
+- Consequences: `More` stops being code and becomes a system `.panel`
+  file; the carried screens enter the same tab namespace; and with NO
+  composite declared the floor is exactly the old behavior — every
+  entity panel a tab — so a data-only system loses nothing.
+
 **6 · The play screens are the system's** (2026-08-19, Brian, the
 first cut made under this section — "when you load a system, it adds
 the extra console screens it needs").
