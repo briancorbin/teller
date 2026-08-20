@@ -18,7 +18,7 @@ import {
   type PublicEntry,
   type PublicSnapshot,
 } from '../lib/api.ts';
-import { useLive } from '../lib/use-session.ts';
+import { DECLARED, PUBLIC, useLive } from '../lib/use-session.ts';
 import { useWakeLock } from '../lib/use-wake-lock.ts';
 import { sectionLabel } from '../lib/ui.ts';
 import { barsOf, chipLabel, chipsOf, kinds, type KindDef } from './passive.ts';
@@ -79,8 +79,8 @@ function Chips({ entries, tone }: { entries: PublicEntry[]; tone: 'party' | 'foe
 
 export function BoardView() {
   useWakeLock();
-  const snapshot = useLive<PublicSnapshot>(publicSnapshot, []);
-  const defs = useLive<KindDef[]>(kinds, []);
+  const snapshot = useLive<PublicSnapshot>(publicSnapshot, [], { on: PUBLIC });
+  const defs = useLive<KindDef[]>(kinds, [], { on: DECLARED });
 
   if (!snapshot.data) {
     return <main className="p-8 text-stone-500">opening the books…</main>;

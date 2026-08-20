@@ -39,7 +39,9 @@ type Answer = { plugin: string; proposal?: unknown; error?: string };
 
 /** Is this point provided by anything running? The only question a tool asks. */
 export function useProvided(point: string): boolean {
-  const points = useLive(() => api<PointInfo[]>('/api/points'), []);
+  const points = useLive(() => api<PointInfo[]>('/api/points'), [], {
+    on: ['plugins'],
+  });
   return (points.data ?? []).some((p) => p.point === point && p.providers > 0);
 }
 

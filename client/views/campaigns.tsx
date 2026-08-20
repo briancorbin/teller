@@ -65,7 +65,7 @@ function Row({ row, onSwitched }: { row: CampaignRow; onSwitched: () => void }) 
 }
 
 function StartOne({ onStarted }: { onStarted: () => void }) {
-  const shelf = useLive(() => api<ShelfOut>('/api/shelf'), []);
+  const shelf = useLive(() => api<ShelfOut>('/api/shelf'), [], { on: ['books'] });
   const [name, setName] = useState('');
   const [system, setSystem] = useState('');
   const [busy, setBusy] = useState(false);
@@ -132,7 +132,9 @@ function StartOne({ onStarted }: { onStarted: () => void }) {
  * which is exactly the state a fresh data dir boots into.
  */
 export function CampaignScreen({ onBack }: { onBack?: () => void }) {
-  const { data, error, reload } = useLive(() => api<CampaignsOut>('/api/campaigns'), []);
+  const { data, error, reload } = useLive(() => api<CampaignsOut>('/api/campaigns'), [], {
+    on: ['books'],
+  });
   const [opening, setOpening] = useState(false);
 
   return (

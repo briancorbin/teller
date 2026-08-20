@@ -112,7 +112,9 @@ function EncounterCard({
   const [adding, setAdding] = useState('');
   const [count, setCount] = useState(1);
   const [viewing, setViewing] = useState<Template | null>(null);
-  const use = useLive(() => api<{ costCounter?: string }>('/api/stack/record/use'), []);
+  const use = useLive(() => api<{ costCounter?: string }>('/api/stack/record/use'), [], {
+    on: ['plugins'],
+  });
 
   const foes = encounter.foes ?? [];
   const patch = (next: Partial<EncounterTemplate>) => onSave({ ...encounter, ...next });
@@ -237,8 +239,11 @@ function EncountersTool() {
   const { data: encounters, reload: reloadEncounters } = useLive(
     () => api<EncounterTemplate[]>('/api/templates/encounters'),
     [],
+    { on: ['templates'] },
   );
-  const { data: bestiary } = useLive(() => api<Template[]>('/api/stack/templates/bestiary'), []);
+  const { data: bestiary } = useLive(() => api<Template[]>('/api/stack/templates/bestiary'), [], {
+    on: ['templates'],
+  });
   const [open, setOpen] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [status, setStatus] = useState<Record<string, string>>({});

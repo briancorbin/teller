@@ -28,7 +28,7 @@ import {
   type Board,
   type DisplayInfo,
 } from '../lib/api.ts';
-import { useLive } from '../lib/use-session.ts';
+import { PUBLIC, useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
 import { BoardEditor, type RosterRow } from '../components/board/BoardEditor.tsx';
 import type { BoardState } from '../components/board/model.ts';
@@ -40,14 +40,23 @@ import type { BoardState } from '../components/board/model.ts';
 type ActiveBoard = { board: { board: { id: string } } | null };
 
 function BoardsTool() {
-  const { data: boards, reload: reloadBoards } = useLive(fetchBoards, []);
-  const { data: roster } = useLive(() => api<RosterRow[]>('/api/entities'), []);
-  const { data: displays } = useLive(() => api<DisplayInfo[]>('/api/displays'), []);
+  const { data: boards, reload: reloadBoards } = useLive(fetchBoards, [], {
+    on: ['boards', 'board'],
+  });
+  const { data: roster } = useLive(() => api<RosterRow[]>('/api/entities'), [], {
+    on: ['entities'],
+  });
+  const { data: displays } = useLive(() => api<DisplayInfo[]>('/api/displays'), [], {
+    on: ['displays', 'assign'],
+  });
   const { data: active, reload: reloadActive } = useLive(
     () => api<ActiveBoard>('/api/public'),
     [],
+    { on: PUBLIC },
   );
-  const { data: turn } = useLive(() => api<{ turn: number | null }>('/api/turn'), []);
+  const { data: turn } = useLive(() => api<{ turn: number | null }>('/api/turn'), [], {
+    on: ['turn'],
+  });
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState('');
@@ -56,6 +65,7 @@ function BoardsTool() {
   const { data: state, reload: reloadState } = useLive(
     () => (openId ? api<BoardState | null>(`/api/board-state/${openId}`) : Promise.resolve(null)),
     [openId],
+    { on: ['boards', 'board'] },
   );
   const [mapUrl, setMapUrl] = useState<string | null>(null);
 

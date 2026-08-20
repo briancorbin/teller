@@ -266,9 +266,11 @@ function LogTool() {
       api<EventRow[]>(
         `/api/events?limit=200${entityId ? `&entity=${encodeURIComponent(entityId)}` : ''}`,
       ),
+    // No interest declared, on purpose: EVERY mutation writes an event
+    // (rule 3), so there is no shorter honest list than "anything".
     [entityId],
   );
-  const roster = useLive(() => api<RosterEntry[]>('/api/entities'), []);
+  const roster = useLive(() => api<RosterEntry[]>('/api/entities'), [], { on: ['entities'] });
   const names = new Map((roster.data ?? []).map((e) => [e.id, e.name]));
 
   const rows = events.data ?? [];

@@ -43,7 +43,7 @@ import {
   type PublicSnapshot,
 } from '../lib/api.ts';
 import { useArtMap } from '../lib/art.ts';
-import { useLive } from '../lib/use-session.ts';
+import { PUBLIC, useLive } from '../lib/use-session.ts';
 import { btn, btnGhost, btnPrimary, card, input, sectionLabel } from '../lib/ui.ts';
 
 type RosterRow = { id: string; name: string; type?: string | null };
@@ -63,10 +63,14 @@ function when(at: string): string {
 }
 
 function HandoutsTool() {
-  const { data: list, reload } = useLive(handouts, []);
-  const { data: snapshot, reload: reloadActive } = useLive<PublicSnapshot>(publicSnapshot, []);
-  const { data: roster } = useLive(() => api<RosterRow[]>('/api/entities'), []);
-  const { data: recent, reload: reloadNotes } = useLive(passedNotes, []);
+  const { data: list, reload } = useLive(handouts, [], { on: ['templates'] });
+  const { data: snapshot, reload: reloadActive } = useLive<PublicSnapshot>(publicSnapshot, [], {
+    on: PUBLIC,
+  });
+  const { data: roster } = useLive(() => api<RosterRow[]>('/api/entities'), [], {
+    on: ['entities'],
+  });
+  const { data: recent, reload: reloadNotes } = useLive(passedNotes, [], { on: ['notes'] });
 
   // Every thumbnail's ticketed url in one pass — one hook however many
   // pictures the gallery grew (`client/lib/art.ts`).

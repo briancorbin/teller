@@ -59,7 +59,7 @@ function Snippet({ text }: { text: string }) {
 }
 
 function BooksTool() {
-  const { data, reload } = useLive(() => api<Shelf>('/api/books'), []);
+  const { data, reload } = useLive(() => api<Shelf>('/api/books'), [], { on: ['books'] });
   const [showAll, setShowAll] = useState(false);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<Hit[] | null>(null);

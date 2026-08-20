@@ -25,12 +25,12 @@
 
 import { useEffect, useState } from 'react';
 import { fileUrl, publicSnapshot, type PublicSnapshot } from '../lib/api.ts';
-import { useLive } from '../lib/use-session.ts';
+import { PUBLIC, useLive } from '../lib/use-session.ts';
 import { useWakeLock } from '../lib/use-wake-lock.ts';
 
 export function ArtView() {
   useWakeLock();
-  const snapshot = useLive<PublicSnapshot>(publicSnapshot, []);
+  const snapshot = useLive<PublicSnapshot>(publicSnapshot, [], { on: PUBLIC });
   const handout = snapshot.data?.handout ?? null;
   const [src, setSrc] = useState<string | undefined>(undefined);
 

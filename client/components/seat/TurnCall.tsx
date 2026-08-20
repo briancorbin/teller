@@ -43,7 +43,7 @@ export type TurnCall = {
  *  `useLive` holds off while a field has focus — which is what keeps a
  *  score arriving from another seat from wiping what you're typing. */
 export function useTurnCall(entityId: string): TurnCall {
-  const turn = useLive(turnState, []);
+  const turn = useLive(turnState, [], { on: ['turn'] });
   const state = turn.data;
   const order = state?.order ?? [];
   const entry = order.find((e) => e.entityId === entityId);

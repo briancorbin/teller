@@ -6,7 +6,7 @@
 
 import { useMemo } from 'react';
 import { api } from './api.ts';
-import { useLive } from './use-session.ts';
+import { DECLARED, useLive } from './use-session.ts';
 
 export type RuleEntry = {
   name: string;
@@ -22,7 +22,9 @@ export type RuleHit = RuleEntry & { section: string };
 
 /** The declared sections, live — empty on a host with no pack. */
 export function useRuleSections(): RuleSection[] {
-  const { data } = useLive(() => api<RuleSection[]>('/api/stack/declarations/sections'), []);
+  const { data } = useLive(() => api<RuleSection[]>('/api/stack/declarations/sections'), [], {
+    on: DECLARED,
+  });
   return data ?? [];
 }
 
@@ -53,6 +55,7 @@ export function usePanelNote(): (title: string) => string | undefined {
   const { data } = useLive(
     () => api<Record<string, string>>('/api/stack/record/notes'),
     [],
+    { on: DECLARED },
   );
   return useMemo(() => {
     const map = new Map<string, string>();

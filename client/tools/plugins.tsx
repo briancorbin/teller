@@ -491,7 +491,9 @@ function TypeSection({
 }
 
 function PluginsTool() {
-  const { data, reload } = useLive(() => api<PluginsOut>('/api/plugins'), []);
+  const { data, reload } = useLive(() => api<PluginsOut>('/api/plugins'), [], {
+    on: ['plugins'],
+  });
   if (!data) return null;
 
   if ('error' in data) {

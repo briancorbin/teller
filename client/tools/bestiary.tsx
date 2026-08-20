@@ -78,8 +78,12 @@ function CountStepper({ count, onChange }: { count: number; onChange: (n: number
 }
 
 function BestiaryTool() {
-  const bestiary = useLive(() => api<Template[]>('/api/stack/templates/bestiary'), []);
-  const use = useLive(() => api<{ costCounter?: string }>('/api/stack/record/use'), []);
+  const bestiary = useLive(() => api<Template[]>('/api/stack/templates/bestiary'), [], {
+    on: ['templates'],
+  });
+  const use = useLive(() => api<{ costCounter?: string }>('/api/stack/record/use'), [], {
+    on: ['plugins'],
+  });
   const [query, setQuery] = useState('');
   const [type, setType] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);

@@ -61,7 +61,7 @@ const BASES: { value: Rights['basis']; label: string; about: string }[] = [
 ];
 
 export function ExportStory({ onClose }: { onClose: () => void }) {
-  const held = useLive(() => storyIdentity(), []);
+  const held = useLive(() => storyIdentity(), [], { on: [] });
   const [sections, setSections] = useState<StorySections>({ ...ALL });
   const [basis, setBasis] = useState<Rights['basis'] | ''>('');
   // `null` is UNTOUCHED, and empty string is a deliberate clearing —

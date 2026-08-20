@@ -32,7 +32,7 @@ export function usePassedNotes(): {
   notes: PassedNote[];
   dismiss: (id: string) => void;
 } {
-  const { data } = useLive(myNotes, []);
+  const { data } = useLive(myNotes, [], { on: ['notes'] });
   const [seen, setSeen] = useState<string[]>([]);
   const notes = (data ?? []).filter((n) => !seen.includes(n.id));
   return { notes, dismiss: (id) => setSeen((s) => (s.includes(id) ? s : [...s, id])) };

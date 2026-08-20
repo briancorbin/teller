@@ -44,6 +44,7 @@ function useBookFor(): (hit: RuleHit) => BookTarget | undefined {
       '/api/books',
     ),
     [],
+    { on: ['books'] },
   );
   return useMemo(() => {
     const held = new Map(

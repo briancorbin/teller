@@ -75,13 +75,17 @@ function isLive(display: Display): boolean {
 }
 
 function ScreensTool() {
-  const displays = useLive(() => api<Display[]>('/api/displays'), []);
-  const panels = useLive(() => api<PanelDecl[]>('/api/stack/declarations/panels'), []);
+  const displays = useLive(() => api<Display[]>('/api/displays'), [], {
+    on: ['displays', 'assign'],
+  });
+  const panels = useLive(() => api<PanelDecl[]>('/api/stack/declarations/panels'), [], {
+    on: ['plugins'],
+  });
   // The provisions, beside the declarations (§15's UI tier, §M-2): a
   // pane nobody can be assigned to is a pane that doesn't exist, and
   // that law never said which of the two sources a pane came from.
-  const provided = useLive(() => fetchPanes(), []);
-  const roster = useLive(() => api<RosterEntry[]>('/api/entities'), []);
+  const provided = useLive(() => fetchPanes(), [], { on: ['plugins'] });
+  const roster = useLive(() => api<RosterEntry[]>('/api/entities'), [], { on: ['entities'] });
 
   const [code, setCode] = useState('');
   const [error, setError] = useState('');

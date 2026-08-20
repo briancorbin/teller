@@ -247,6 +247,7 @@ function ShelfTool() {
   const { data, reload } = useLive(
     () => Promise.all([api<ShelfOut>('/api/shelf'), api<CampaignOut>('/api/campaign')]),
     [],
+    { on: ['books'] },
   );
   if (!data) return null;
   const [shelf, campaign] = data;

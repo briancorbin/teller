@@ -735,12 +735,14 @@ function ShopShelf({
 }
 
 export default function ShopPane({ entity, glass, records, plugin }: PaneProps) {
-  // Its own fetch, on its own nudges. `useLive` re-runs on every SSE
-  // stir, so a sale at the console empties this cart without the seat
-  // chrome knowing the store exists.
+  // Its own fetch, on its own nudges — and 'shop' is the store's own
+  // word (`host.mjs` answers with `changed: ['shop']`), so a sale at the
+  // console empties this cart without the seat chrome knowing the store
+  // exists, and a tap on a counter costs this pane nothing.
   const { data: view, reload } = useLive<ShopView | null>(
     () => plugin.call<ShopView | null>('shop'),
     [],
+    { on: ['shop', 'entities'] },
   );
 
   const write = (entityId: string, lines: CartLine[], offered?: boolean) => {

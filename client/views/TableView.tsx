@@ -27,7 +27,7 @@ import {
 } from '../lib/api.ts';
 import { Zones } from '../components/board/Zones.tsx';
 import type { Placement, Zone } from '../components/board/model.ts';
-import { useLive } from '../lib/use-session.ts';
+import { DECLARED, PUBLIC, useLive } from '../lib/use-session.ts';
 import { useWakeLock } from '../lib/use-wake-lock.ts';
 import { chipsOf, kinds, type KindDef } from './passive.ts';
 
@@ -211,8 +211,8 @@ export function TableView({
   ppiY?: number;
 }) {
   useWakeLock();
-  const snapshot = useLive<PublicSnapshot>(publicSnapshot, []);
-  const defs = useLive<KindDef[]>(kinds, []);
+  const snapshot = useLive<PublicSnapshot>(publicSnapshot, [], { on: PUBLIC });
+  const defs = useLive<KindDef[]>(kinds, [], { on: DECLARED });
   const [nat, setNat] = useState<{ w: number; h: number } | null>(null);
   const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight });
 

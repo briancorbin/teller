@@ -154,7 +154,7 @@ export function CalibrationOverlay() {
   // change and `useLive` refetches on any nudge. A screen that
   // reconnected mid-wizard catches up on the DM's next nudge, which in
   // this flow is the very next thing that happens.
-  const { data } = useLive(myCalibration, []);
+  const { data } = useLive(myCalibration, [], { on: ['calibration'] });
   if (!data) return null;
   return <CalibrationPattern calibration={data} />;
 }

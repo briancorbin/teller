@@ -494,17 +494,22 @@ export default function StorePane({ plugin, records }: PaneProps) {
   const costField = String(
     (records.store as { costField?: unknown } | undefined)?.costField ?? 'cost',
   );
+  // Each on its own word: a vendor and the open shop are the store's
+  // own ('shop'), the catalogue is the content stack's ('templates').
   const { data: vendors, reload: reloadVendors } = useLive(
     () => plugin.call<Vendor[]>('vendors'),
     [],
+    { on: ['shop', 'templates'] },
   );
   const { data: catalog } = useLive(
     () => api<Template[]>('/api/stack/templates/catalog').catch(() => []),
     [],
+    { on: ['templates'] },
   );
   const { data: view, reload: reloadShop } = useLive<ShopView | null>(
     () => plugin.call<ShopView | null>('shop'),
     [],
+    { on: ['shop', 'entities'] },
   );
   const [open, setOpen] = useState<string | null>(null);
   const [status, setStatus] = useState('');
