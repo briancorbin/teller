@@ -14,6 +14,11 @@
 //     system.json          sys_ id, name, version, and the record slots
 //                          inline — the same file, the same reserved
 //                          keys, read by the same `systemFrom`
+//     trades.json          every other *.json is a SLOT named by its
+//                          file, exactly as in a pack folder — for the
+//                          lists that don't want to be in the one
+//                          hand-edited buffer. `system.json` wins on a
+//                          name collision.
 //     presentations/*.tsx  the system's own components, compiled by the
 //                          shared esbuild pass, `PACK_IMPORTS` (no
 //                          `system` self-import — these ARE the system)
@@ -50,6 +55,7 @@ import {
   compilePackCode,
   copyNewer,
   systemFrom,
+  withInstalledArt,
   type PackProblem,
   type SystemExport,
   type ShelfSystem,
@@ -133,6 +139,28 @@ export function sweepSystems(dataDir: string, shelf?: Shelf): SystemSweep {
     const { system, problem } = systemFrom(record, id);
     if (problem) problems.push({ dir, problem });
     if (!system) continue;
+
+    // …and every OTHER `*.json` beside it is a slot named by its file,
+    // exactly as a pack folder's are. The file split is a serialization,
+    // not a data model (rule 4a): a system's twenty small records still
+    // want one editor buffer, but a list — seven trades, each with a
+    // skill spread — is a file, the same way sixty-five foes are.
+    // `system.json` WINS on a collision: it is the file a person edits
+    // by hand, and the reserved three (`id`, `name`, `version`) are
+    // never slots wherever they're written.
+    for (const file of readdirSync(dir).sort()) {
+      if (!file.endsWith('.json') || file === 'system.json') continue;
+      const slot = file.slice(0, -'.json'.length);
+      if (slot in system.data) continue;
+      let held: unknown;
+      try {
+        held = JSON.parse(readFileSync(join(dir, file), 'utf8'));
+      } catch (err) {
+        problems.push({ dir, problem: `${file} did not parse: ${String((err as Error).message ?? err)}` });
+        continue;
+      }
+      system.data[slot] = withInstalledArt(held, id);
+    }
 
     // The system's own panels ride in its data blob, as the `panels`
     // slot every layer merges by name — so a system panel overrides

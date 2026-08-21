@@ -65,6 +65,45 @@ describe('sweepSystems — the fourth shelf dir (§M)', () => {
     expect(systems[0].data.version).toBeUndefined();
   });
 
+  it('every other *.json beside it is a slot named by its file', () => {
+    writeSystem('wiw', {
+      ...WIW,
+      'trades.json': [{ name: 'Digger', skills: { Nerve: '3B' } }],
+      'creation.json': { tiers: [{ name: 'First' }] },
+    });
+    const { systems, problems } = sweepSystems(dir);
+    expect(problems).toEqual([]);
+    expect(systems[0].data.trades).toEqual([{ name: 'Digger', skills: { Nerve: '3B' } }]);
+    expect(systems[0].data.creation).toEqual({ tiers: [{ name: 'First' }] });
+    // …with the art rewrite a pack's slots get, keyed by the system's id.
+  });
+
+  it('a sibling slot rewrites its art to the installed key, like a pack slot', () => {
+    writeSystem('wiw', { ...WIW, 'trades.json': [{ name: 'Digger', art: 'art/digger.png' }] });
+    const { systems } = sweepSystems(dir);
+    expect(systems[0].data.trades).toEqual([
+      { name: 'Digger', art: 'art/sys_test/digger.png' },
+    ]);
+  });
+
+  it('system.json wins a slot collision — the hand-edited file is the authority', () => {
+    writeSystem('wiw', {
+      'system.json': { ...WIW['system.json'], trades: [{ name: 'Inline' }] },
+      'trades.json': [{ name: 'Sibling' }],
+    });
+    const { systems } = sweepSystems(dir);
+    expect(systems[0].data.trades).toEqual([{ name: 'Inline' }]);
+  });
+
+  it('a sibling slot that does not parse is a problem, and the system still loads', () => {
+    const sysDir = writeSystem('wiw', WIW);
+    writeFile(join(sysDir, 'trades.json'), '{ nope');
+    const { systems, problems } = sweepSystems(dir);
+    expect(systems).toHaveLength(1);
+    expect(systems[0].data.trades).toBeUndefined();
+    expect(problems[0].problem).toMatch(/^trades\.json did not parse: /);
+  });
+
   it('a folder with no system.json is not a system — skipped in silence', () => {
     mkdirSync(join(dir, 'systems', 'not-a-system'), { recursive: true });
     expect(sweepSystems(dir)).toEqual({ systems: [], problems: [] });
