@@ -154,8 +154,10 @@ function ScreensTool() {
       .then(displays.reload)
       .catch(displays.reload);
   };
+  // Panels are OFFERED in exactly one dropdown: the console role's
+  // pane picker. A seat's shape is the merge's business, not a DM's
+  // (Brian, 2026-08-20) — so there is no `'entity'` list here.
   const panes = surfaces(panels.data as PanelDecl[] | undefined, provided.data, 'none');
-  const layouts = surfaces(panels.data as PanelDecl[] | undefined, provided.data, 'entity');
   // core-next has no reliable PC/NPC signal left on an entity (rule 2 —
   // `type` is free text, a trade name here, and often absent on a fresh
   // character). The old app could restrict this to `kind === 'pc'`;
@@ -375,20 +377,13 @@ function ScreensTool() {
                 </select>
               )}
 
-              {d.role === 'seat' && (
-                <select
-                  className={input}
-                  value={typeof params.layout === 'string' ? params.layout : 'sheet'}
-                  aria-label="how this seat arranges its card"
-                  onChange={(e) => patch(d.id, { params: { ...params, layout: e.target.value } })}
-                >
-                  {(layouts.length ? layouts : [{ name: 'sheet', label: 'Sheet' }]).map((p) => (
-                    <option key={p.name} value={p.name}>
-                      {p.label ?? p.name}
-                    </option>
-                  ))}
-                </select>
-              )}
+              {/* A seat takes exactly two things — the role and the
+                  character — and NO layout (Brian, 2026-08-20). The
+                  dropdown that used to sit here offered a seat every
+                  entity-subject panel as a "layout", which was the
+                  console-pane law leaking into a role it was never
+                  written for. Panels are picked in ONE place now: the
+                  console's pane picker below. */}
 
               {d.role === 'console' && (
                 <select
