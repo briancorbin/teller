@@ -11,6 +11,7 @@ import {
   draftTakeover,
   includeProblems,
   includedNames,
+  seatComposite,
   surfaceable,
   toPanel,
   type PanelDef,
@@ -166,5 +167,39 @@ describe("the composite's draft takeover (§M-4a)", () => {
     expect(draftTakeover({ name: 'seat', draft: 'BUILDER' }, [builder], true)).toEqual({
       panel: builder,
     });
+  });
+});
+
+describe('which composite the seat wears (§M-5a, ruled 2026-08-20)', () => {
+  const sheet: PanelDef = { name: 'sheet', subject: 'entity', held: [] };
+  const seat: PanelDef = { name: 'seat', subject: 'entity', tabs: ['sheet', 'More'] };
+
+  it('is the entity-subject panel carrying tabs — nothing the DM points at', () => {
+    expect(seatComposite([sheet, seat])).toBe(seat);
+  });
+
+  it('is nothing at all on a shelf that declares none — the floor keeps the seat', () => {
+    expect(seatComposite([sheet])).toBeUndefined();
+    // A tool panel with tabs is not a seat, and neither is an empty list.
+    expect(seatComposite([{ name: 'seat', subject: 'none', tabs: ['sheet'] }])).toBeUndefined();
+    expect(seatComposite([{ name: 'seat', subject: 'entity', tabs: [] }])).toBeUndefined();
+  });
+
+  it("the word 'seat' wins, wherever it sits in the merge", () => {
+    const other: PanelDef = { name: 'strip', subject: 'entity', tabs: ['sheet'], order: 1 };
+    expect(seatComposite([other, seat])).toBe(seat);
+    expect(seatComposite([{ ...seat, name: 'SEAT' }, other])?.name).toBe('SEAT');
+  });
+
+  it('otherwise the lowest order, and otherwise the earliest declaration', () => {
+    const first: PanelDef = { name: 'strip', subject: 'entity', tabs: ['sheet'] };
+    const second: PanelDef = { name: 'card', subject: 'entity', tabs: ['sheet'] };
+    expect(seatComposite([first, second])).toBe(first);
+    expect(seatComposite([first, { ...second, order: 1 }])?.name).toBe('card');
+  });
+
+  it('a fragment is a legal answer — nobody is pointed at a seat any more', () => {
+    const hidden: PanelDef = { name: 'seat', subject: 'entity', tabs: ['sheet'], surface: false };
+    expect(seatComposite([hidden])).toBe(hidden);
   });
 });

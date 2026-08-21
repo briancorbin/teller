@@ -295,6 +295,41 @@ export function draftTakeover(
 }
 
 /**
+ * WHICH composite the seat is (§M-5a, ruled 2026-08-20 by Brian): a
+ * seat takes exactly two things from the DM — the role and the
+ * character — and NO layout, so the shape it wears is the merge's to
+ * decide, not a dropdown's.
+ *
+ * The answer is the merged collection's entity-subject panel carrying
+ * `tabs`. Nothing declares one on a bare host, which is why this
+ * returns `undefined` rather than inventing one: the floor assembly
+ * around `sheet` is still the answer for a system that ships no
+ * composite, exactly as §M-5a promised.
+ *
+ * More than one is possible — a pack may add a composite beside the
+ * system's instead of restating its name — so the tie-break is stated
+ * rather than left to whichever folder the sweep opened first: the one
+ * named `seat` wins, else the lowest `order`, else the earliest in the
+ * merged list (floor, system, pack, campaign, table). A collision
+ * anybody minds is fixed the way every other one is — restate the name.
+ *
+ * `surface: false` is not consulted. A fragment is "nowhere anyone can
+ * be POINTED" (§M-5a′), and since the ruling nobody is pointed at a
+ * seat's shape at all — the same reason `draftTakeover` looks at every
+ * declaration too.
+ */
+export function seatComposite(panels: PanelDef[]): PanelDef | undefined {
+  const composites = panels.filter((p) => p.subject === 'entity' && p.tabs?.length);
+  const named = composites.find((p) => p.name.trim().toLowerCase() === 'seat');
+  if (named) return named;
+  return composites.reduce<PanelDef | undefined>(
+    (best, p) =>
+      !best || (p.order ?? PANEL_ORDER_DEFAULT) < (best.order ?? PANEL_ORDER_DEFAULT) ? p : best,
+    undefined,
+  );
+}
+
+/**
  * Where an undeclared panel sits: the MIDDLE, not the end. A system's
  * play screens declare nothing today, and they are the reason anyone
  * opens the console — so the rule has to read right when the number is
