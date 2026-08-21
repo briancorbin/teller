@@ -1899,6 +1899,26 @@ as everything else: **facts stay teller's, rendering is summonable.**
   the build correctly declined to invent; the floor is what was, not
   what a summary said. Corrected 2026-08-20.)
 
+**A seat takes no layout** (2026-08-20, Brian, ratified in
+conversation). A seat screen takes exactly two things from the DM —
+the role, and which character — and the Screens tool's "layout"
+dropdown on a seat row offered it every entity-subject panel as a
+choice: `Seat`, `Character Sheet`, `Sheet`, `Shop`, `More`, as though
+any of those were a way to arrange a seat. That was the console-pane
+law (a pane nobody can be assigned to is a pane that doesn't exist)
+leaking into a role it was never written for. **Panels are offered in
+exactly ONE dropdown — the console role's pane picker — and nowhere
+else.** The seat resolves its own shape instead: the merged
+collection's entity-subject panel carrying `tabs` if one exists, and
+otherwise the floor assembly around `sheet`, unchanged. More than one
+composite is possible, so the tie-break is stated rather than left to
+the sweep's folder order — the one named `seat`, else the lowest
+`order`, else the earliest in the merge — and it lives in core beside
+`draftTakeover` (`seatComposite`). `params.layout` is retired for
+seats: no longer read, and no stored value touched, because nobody's
+display should need a migration to stop being asked a question that
+was never theirs.
+
 **5a′ · The include — panels nest, atoms stay atoms** (2026-08-20,
 Brian: "everything becomes just modular levels of nested panels…
 [and] this doesn't stop people from just not using panels like this").
