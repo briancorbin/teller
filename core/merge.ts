@@ -47,3 +47,54 @@ export function mergeById<T extends { id: string }>(
 ): T[] {
   return mergeBy((item) => item.id, ...layers);
 }
+
+// ---------------------------------------------------------------------
+// The same law, one level finer.
+//
+// Replacing whole entries answers "who wins" and nothing else, and that
+// costs a later layer everything it didn't restate. The statuses lesson
+// (CLAUDE.md rule 4) is the general case: the SYSTEM carries the
+// mechanic and the PACK carries the book's words about it, and neither
+// half should have to copy the other's to state its own. So a layer
+// REFINES: it wins every field it names, and leaves the fields it
+// doesn't alone.
+//
+// Arrays and scalars replace whole — a list is a statement about all of
+// it, and merging two lists position by position means nothing. Only
+// plain objects refine, and they refine all the way down.
+
+function plain(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** `later` laid over `earlier`, field by field, recursively. */
+export function refine<T>(earlier: T, later: T): T {
+  const under = plain(earlier);
+  const over = plain(later);
+  if (!under || !over) return later;
+  const out: Record<string, unknown> = { ...under };
+  for (const [key, held] of Object.entries(over)) {
+    out[key] = key in under ? refine(under[key], held) : held;
+  }
+  return out as T;
+}
+
+/** `mergeBy`, refining instead of replacing — the fine-grained reading. */
+export function layerBy<T>(
+  keyOf: (item: T) => string,
+  ...layers: (readonly T[] | undefined)[]
+): T[] {
+  const out: T[] = [];
+  for (const layer of layers) {
+    if (!layer) continue;
+    for (const item of layer) {
+      const key = keyOf(item);
+      const at = out.findIndex((held) => keyOf(held) === key);
+      if (at < 0) out.push(item);
+      else out[at] = refine(out[at], item);
+    }
+  }
+  return out;
+}

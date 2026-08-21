@@ -25,7 +25,7 @@
 // stampable collections by id.
 
 import { refIn, refsIn, sameName, type Entity, type Ref } from './entity.ts';
-import { mergeBy } from './merge.ts';
+import { layerBy, mergeBy, refine } from './merge.ts';
 import { byPanelOrder, includeProblems, type PanelDef } from './panels.ts';
 import { defaultPanels, sweepPanels } from './panels-shelf.ts';
 import { sweepPacks, type PackProblem } from './packs-shelf.ts';
@@ -271,7 +271,17 @@ export class Loaded {
   /**
    * A slot's VOCABULARY-coupled reading — declarations, statuses:
    * later restates earlier by name, the campaign's own word last and
-   * winning.
+   * winning — FIELD BY FIELD (`layerBy`), so the system may carry a
+   * status's mechanic and the pack only the book's words about it,
+   * neither restating the other's half (rule 4's statuses paragraph, as
+   * a merge).
+   *
+   * **`panels` is the one exception, and it is about CODE.** A panel
+   * declaration carries compiled urls and a trust row belonging to the
+   * layer that shipped it, so a later layer restating a panel's name
+   * REPLACES it whole: branded-over-unbranded (§M-6) means the pack's
+   * panel, not a chimera wearing the system's code. Trust never
+   * launders through a merge any more than it does through an include.
    *
    * `panels` leaves here SORTED, and that is deliberate: every surface
    * that draws a bar of panels — the console's tabs, the Screens
@@ -282,10 +292,11 @@ export class Loaded {
    * something a human wrote down.
    */
   declarations(slot: string): unknown[] {
-    const merged = mergeBy(
-      (item: unknown) => String(asRecord(item).name ?? '').trim().toLowerCase(),
-      ...this.#live(slot).map((s) => s.items),
-    ).filter((item) => String(asRecord(item).name ?? '').trim());
+    const key = (item: unknown) => String(asRecord(item).name ?? '').trim().toLowerCase();
+    const stack = this.#live(slot).map((s) => s.items);
+    const merged = (slot === 'panels' ? mergeBy(key, ...stack) : layerBy(key, ...stack)).filter(
+      (item) => String(asRecord(item).name ?? '').trim(),
+    );
     if (slot !== 'panels') return merged;
     return (merged as PanelDef[]).slice().sort(byPanelOrder);
   }
@@ -316,16 +327,20 @@ export class Loaded {
 
   /**
    * A slot holding one RECORD per layer (the system's visual
-   * vocabulary: `accents`, `icons`, `vocabulary`) — shallow-merged,
-   * later layer winning per key. The declaration stack for objects
-   * that aren't lists.
+   * vocabulary: `accents`, `icons`, `vocabulary`) — merged per key,
+   * later layer winning, and a nested record refining rather than
+   * replacing (`refine`). The declaration stack for objects that aren't
+   * lists: the system states how the money is rolled and the pack states
+   * which page says so, under the same key, neither losing the other.
    */
   record(slot: string): Record<string, unknown> {
     const out: Record<string, unknown> = {};
     for (const layer of this.#layers) {
       const held = layer.data[slot];
       if (held && typeof held === 'object' && !Array.isArray(held)) {
-        Object.assign(out, held as Record<string, unknown>);
+        for (const [key, value] of Object.entries(held as Record<string, unknown>)) {
+          out[key] = key in out ? refine(out[key], value) : value;
+        }
       }
     }
     return out;

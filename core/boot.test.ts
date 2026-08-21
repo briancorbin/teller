@@ -154,6 +154,61 @@ describe('the merged readings', () => {
     expect(loaded.sourceOf('statuses', 'Nothing')).toBeUndefined();
   });
 
+  it('a declaration LAYERS by field — the system carries the mechanic, the pack the words', () => {
+    const loaded = loadCampaign(shelf, campaign);
+    const trapped = (loaded.declarations('statuses') as Record<string, unknown>[]).find(
+      (s) => s.name === 'trapped',
+    );
+    // The pack restated neither cap nor severity to add its prose, and
+    // the system never learned the book's words. Both survive.
+    expect(trapped).toEqual({ name: 'trapped', cap: 5, note: 'the book prose' });
+  });
+
+  it('panels are the exception — a later layer replaces one whole, code and all', () => {
+    shelf.putSystem({
+      id: 'sys_wiw',
+      name: 'Wild Imaginary West',
+      version: 4,
+      data: {
+        panels: [
+          { name: 'sheet', label: 'Sheet', icon: 'sheet', code: { blocks: { vitals: '/x.js' } } },
+        ],
+      },
+    });
+    shelf.putPack({
+      id: 'pak_guide',
+      system: 'sys_wiw',
+      name: 'Guidebook',
+      data: { panels: [{ name: 'sheet', label: "The Book's Sheet" }] },
+    });
+    const loaded = loadCampaign(shelf, campaign);
+    const sheet = (loaded.declarations('panels') as Record<string, unknown>[]).find(
+      (p) => p.name === 'sheet',
+    );
+    expect(sheet).toEqual({ name: 'sheet', label: "The Book's Sheet" });
+  });
+
+  it('a record slot merges per key, and a nested record refines', () => {
+    shelf.putSystem({
+      id: 'sys_wiw',
+      name: 'Wild Imaginary West',
+      version: 4,
+      data: { creation: { wallet: { roll: '6B' }, tiers: [{ name: 'Tenderfoot' }] } },
+    });
+    shelf.putPack({
+      id: 'pak_guide',
+      system: 'sys_wiw',
+      name: 'Guidebook',
+      data: { creation: { wallet: { page: 8 }, welcome: { title: 'Welcome to the' } } },
+    });
+    const loaded = loadCampaign(shelf, campaign);
+    expect(loaded.record('creation')).toEqual({
+      wallet: { roll: '6B', page: 8 },
+      tiers: [{ name: 'Tenderfoot' }],
+      welcome: { title: 'Welcome to the' },
+    });
+  });
+
   it('templates merge by id — the campaign overrides a pack monster by restating its id', () => {
     campaign.putTemplate(
       'bestiary',
