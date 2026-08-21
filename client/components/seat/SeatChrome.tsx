@@ -7,12 +7,21 @@
 // presentation the same way every other face does, system-first,
 // pack-winning, teller's floor last.
 //
-// Two shapes, one file. `params.layout` names either an ARRANGEMENT —
-// the old behavior, and still exactly the old behavior: its blocks are
-// the first tab, the carried screens and panes follow, More catches the
-// strays — or a COMPOSITE, a panel carrying `tabs`, which declares the
-// seat outright: the order is its list, a stray appends rather than
-// vanishing, and its `chrome` map may name a presentation per seam.
+// Two shapes, one file, and the SEAT PICKS NEITHER (Brian, 2026-08-20):
+// a seat takes the role and the character, and no layout at all. So the
+// shape is resolved from the merge — `seatComposite` in core — and the
+// two answers are: a COMPOSITE, a panel carrying `tabs`, which declares
+// the seat outright (the order is its list, a stray appends rather than
+// vanishing, and its `chrome` map may name a presentation per seam); or,
+// where a shelf declares none, the floor assembly around `sheet`,
+// exactly the shipped old behavior — its blocks are the first tab, the
+// carried screens and panes follow, More catches the strays.
+//
+// `initialPanel` is what remains of the old `params.layout`, and it is
+// the CONSOLE's now, not a seat's: the `#panel=<name>&entity=<id>` route
+// previewing one arrangement on a screen that isn't a seat. A composite
+// still wins over it, because there is one seat and this is a look at
+// it.
 //
 // The seam from the old app, unchanged and now the Header floor's:
 // `SheetHeader` read the trade/player off `groups.title`/`groups.player`
@@ -25,7 +34,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isDraft, type Entity } from '../../../core/entity.ts';
 import type { PanelBlock, PanelDef } from '../../../core/panels.ts';
-import { draftTakeover, PLACED, surfaceable } from '../../../core/panels.ts';
+import { draftTakeover, PLACED, seatComposite, surfaceable } from '../../../core/panels.ts';
 import { toSpends } from '../../../core/effects.ts';
 import { ladderList, toLadder } from '../LadderFloor.tsx';
 import { api, displaySlot, panes as fetchPanes, scoreEntry, type Pane } from '../../lib/api.ts';
@@ -146,11 +155,11 @@ export function SeatChrome({
   glass,
 }: {
   entityId: string;
-  /** `params.layout` — what the DM pointed this seat at. It names either
-   * an ARRANGEMENT (the old shape: its blocks are the first tab's
-   * content, and the tab set is assembled around it) or a COMPOSITE
-   * (§M-5a: a panel with `tabs`, which declares the whole seat). */
-  initialPanel: string;
+  /** One ARRANGEMENT to open on, for the console previewing an
+   * entity-subject panel through `#panel=`. A real seat passes nothing
+   * — it takes no layout (the ruling above) — and a declared composite
+   * outranks this wherever it's set. */
+  initialPanel?: string;
   seatName?: string;
   glass: Glass;
 }) {
@@ -251,13 +260,16 @@ export function SeatChrome({
     write: (edit) => writeEntry(entityId, edit as EntryEdit),
   };
 
-  // What `params.layout` resolves to, and whether it declares the seat.
-  // A panel with `tabs` is the COMPOSITE: it drives the tab set and may
-  // name a presentation per chrome seam. Anything else is an
-  // arrangement, and the assembly below is exactly what it always was.
+  // What shape this seat wears, and nobody chose it: the merge's own
+  // COMPOSITE if one is declared — it drives the tab set and may name a
+  // presentation per chrome seam — and otherwise the floor assembly
+  // below, exactly what it always was. `initialPanel` only ever names
+  // the arrangement that floor opens on (the console's preview route).
   const layoutPanels = (panels ?? []).filter((p) => p.subject === 'entity');
-  const named = layoutPanels.find((p) => word(p.name) === word(initialPanel));
-  const composite = named?.tabs?.length ? named : undefined;
+  const named = initialPanel
+    ? layoutPanels.find((p) => word(p.name) === word(initialPanel))
+    : undefined;
+  const composite = seatComposite(panels ?? []);
   const seams = useSeams(composite?.chrome);
 
   // The composite's DRAFT takeover (§M-4a's companion): while the

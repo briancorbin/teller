@@ -126,6 +126,20 @@ function useGlass(params: Record<string, unknown> | undefined): Glass {
   return aspect;
 }
 
+/** A SEAT: role and character, and nothing else (Brian, 2026-08-20).
+ * There is no layout in this route because a seat takes none — the
+ * shape comes off the merge inside `SeatChrome`, which fetches the
+ * declarations itself. All this owes it is the glass and the clip
+ * (rule 6, held OUTSIDE whatever the frame draws). */
+function SeatRoute({ entityId, seatName }: { entityId: string; seatName?: string }) {
+  const glass = useGlass(undefined);
+  return (
+    <div className={glass === 'mounted' ? 'h-dvh overflow-hidden p-3' : 'min-h-dvh p-3'}>
+      <SeatChrome entityId={entityId} seatName={seatName} glass={glass} />
+    </div>
+  );
+}
+
 function PanelRoute({
   name,
   entityId,
@@ -415,13 +429,7 @@ function PairScreen() {
     );
   const params = (display.params ?? {}) as Record<string, unknown>;
   if (display.role === 'seat' && typeof params.entityId === 'string')
-    return (
-      <PanelRoute
-        name={typeof params.layout === 'string' ? params.layout : 'sheet'}
-        entityId={params.entityId}
-        seatName={display.name}
-      />
-    );
+    return <SeatRoute entityId={params.entityId} seatName={display.name} />;
   if (display.role === 'console')
     return typeof params.pane === 'string' ? (
       <PanelRoute name={params.pane} />
