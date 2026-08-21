@@ -5,7 +5,7 @@
 // awaiting enablement, system/pack code awaiting enablement, and code
 // you'd trusted. That is the TRUST TABLE's shape — one row per grant,
 // sorted by whether the grant had been made — and it answered the wrong
-// question. A DM reading "wiw-sheet carries code" wants to know which
+// question. A DM reading "sheet carries code" wants to know which
 // book it arrived in, and that fact appeared nowhere on the screen; the
 // same panel could be listed as pending on Monday and trusted on
 // Tuesday, in two different cards, with nothing tying either to the

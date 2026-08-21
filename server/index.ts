@@ -264,7 +264,7 @@ function trustedCode(
 //
 // The console used to render trust as three flat lists — pending
 // panels, pending system/pack code, code you've trusted — which is the
-// TRUST TABLE's shape, not the table's. A DM looking at "wiw-sheet
+// TRUST TABLE's shape, not the table's. A DM looking at "sheet
 // carries code" wants to know which book it came in, and that answer
 // existed nowhere on the screen. So the endpoint assembles containers
 // instead: one per thing that SHIPS things (the active system, each

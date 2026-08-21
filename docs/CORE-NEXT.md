@@ -2043,6 +2043,75 @@ app never requires what the fanciest rung needs, so the author who
 never learns React and the author who rebuilds every pixel are both
 first-class, on the same host, at the same table.
 
+**6a · Trades are the system's, and the pack's `sheet` is the sheet**
+(2026-08-20, Brian, two rulings ratified together — the statuses
+precedent and §M-6's own rule, each applied to the first file that
+tested it).
+
+**A. The trades moved to the system.** Same line rule 4 drew for
+Trapped and Afraid: *the system carries the mechanic, the pack carries
+the book's words about it.* A Wild Imaginary West character without a
+trade is not a WiW character, so the seven trades are not optional
+content a book brings — and they had ended up in the Guidebook for
+exactly the reason the statuses did, because they arrived attached to
+their prose. The test at every field was "numbers and rules, or words
+and pictures?":
+
+- **To `systems/wiw/`** — the trade's `id` and `name`, its quick-build
+  `skills` spread, its `abilities` and `aceInTheHole` id lists; and from
+  `creation`, the `start` counts, the six `tiers`, the `map` of which
+  counter a tier's numbers land in, the `wallet` roll, the starting
+  `weapons` and `equipmentPacks` ids, and the `skills` budget.
+- **Left in the Guidebook** — `tagline`, `page`, `text`, `overview`,
+  `art`; and from `creation`, the `keepsakes`, the name wells, the
+  `questions`, the `welcome`, the `prefaces`, the die `marks`, and the
+  page citations beside the mechanics they cite. Not one word of prose
+  was edited — only moved, or left where it was.
+
+The merge does the rest, **by name and field by field** (`layerBy` in
+`core/merge.ts`): the system states a Doctor's spread, the pack states
+what a Doctor's life is like, and neither restates the other's half to
+say its own. That is a change to the resolution law and worth naming —
+a declaration used to be REPLACED whole by a later layer, which quietly
+charged every layer for everything it didn't mention. Records refine the
+same way, one key deep and then further (the system rolls `6B`, the book
+says page 8, both survive). **`panels` is the one exception, and it is
+about CODE**: a panel declaration carries compiled urls and a trust row
+belonging to whoever shipped it, so a later layer replaces one whole.
+Trust never launders through a merge any more than it does through an
+include (§M-5a′).
+
+With NO pack installed, the unbranded creator now produces a complete
+character — seven trades, spreads, tiers, wallet, a typed name — and the
+kit it can't describe is REPORTED rather than dropped: "4 of this kit
+isn't on this host — … The system names them; the pack that describes
+them isn't installed." The system names starting gear by catalogue id
+and the catalogue is the book's, so that gap is structural and the
+honest thing is to say so where the picker would have been (rule 9's
+"you don't have this beats forgetting it existed", `absentIds`).
+
+One mechanism landed under this: **a system folder reads sibling
+`*.json` files as slots**, exactly as a pack folder does, so
+`systems/wiw/trades.json` sits beside `system.json` instead of inside
+it. The reason `system.json` carries its slots inline is that twenty
+small records want one editor buffer; a list of seven trades with their
+spreads does not. `system.json` still wins a name collision — it is the
+file a person hand-edits. The file split is a serialization, not a data
+model (rule 4a), and nothing downstream learned it happened.
+
+**B. `wiw-sheet` is now `sheet`.** §M-6 already said a pack's panel
+beats the system's on a name collision, branded over unbranded — the
+Guidebook's coded sheet just wasn't taking the offer. It shipped under
+its own word and was therefore `omit`ted from the seat composite and
+reachable only by pointing a screen at it by hand, while the seat's
+Sheet tab drew the system's data-only arrangement. Renaming the
+declaration to `sheet` is the rule applied rather than a new rule: the
+pack's coded sheet IS the sheet tab on a table with the Guidebook
+installed, and the system's is what a host without it falls back to. The
+`pan_` id is unchanged — **trust rides the id, never the word** — so the
+enablement a human already gave it carries across the rename, and the
+composite's `omit` list is down to `bare`.
+
 **7 · The table picks its campaign at the door** (2026-08-19, Brian:
 "dynamically select which campaign is selected from like, a 'login'
 screen").

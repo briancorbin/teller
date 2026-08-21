@@ -124,7 +124,7 @@ function morePanel(
 /** One tab: the bar's own key/label/icon, decoupled from whichever
  * PanelDef it renders. The NAME is the key (what `current` holds and
  * what a composite's `tabs` list names); the LABEL is only what a
- * person reads, so a panel called `wiw-sheet` can still say 'Sheet'. */
+ * person reads, so a pack's `sheet` can still say 'Character Sheet'. */
 type Tab = SeatTab & {
   panel: PanelDef;
   /** Set for a PLUGIN's pane — what binds its door caller into the ctx. */

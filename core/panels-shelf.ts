@@ -411,7 +411,7 @@ export function tablePanelDir(dataDir: string, name: string): string {
 
 /**
  * A folder name safe to write into `<data>/panels/`. Panel names are
- * the merge's own words (`log`, `wiw-sheet`), and this is the only
+ * the merge's own words (`log`, `sheet`), and this is the only
  * place one of them becomes a PATH — so it is the only place that has
  * to say no to a name with a slash in it.
  */
